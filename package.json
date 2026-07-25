@@ -1,0 +1,18 @@
+{
+  "name": "anyq",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "db:generate": "npm run generate --workspace=packages/db",
+    "db:migrate": "npm run migrate --workspace=packages/db",
+    "dev:admin": "npm run dev --workspace=apps/admin",
+    "dev:pos": "npm run dev --workspace=apps/pos",
+    "dev:api": "npm run dev --workspace=apps/api"
+  },
+  "devDependencies": {
+    "railway": "^3.6.0"
+  }
+}

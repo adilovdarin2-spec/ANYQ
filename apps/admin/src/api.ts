@@ -1,0 +1,84 @@
+import type { Company } from './types';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+export class ApiError extends Error {}
+
+async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.error || 'Ошибка запроса');
+  }
+  return data as T;
+}
+
+export interface LoginResult {
+  token: string;
+  user: { id: string; email: string; name: string };
+}
+
+export function login(email: string, password: string): Promise<LoginResult> {
+  return request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+}
+
+export function getCompanies(token: string): Promise<Company[]> {
+  return request('/companies', {}, token);
+}
+
+export interface CreateCompanyPayload {
+  name: string;
+  phone: string;
+  location: { name: string; type: string; address: string };
+  owner: { name: string; phone: string };
+  tariff: {
+    modules: string[];
+    locationLimit: number | null;
+    userLimit: number | null;
+    skuLimit: number | null;
+    supportLevel: string;
+    validUntil: string;
+    notes: string;
+  };
+}
+
+export function createCompany(token: string, payload: CreateCompanyPayload): Promise<Company> {
+  return request('/companies', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export interface TariffPayload {
+  modules: string[];
+  locationLimit: number | null;
+  userLimit: number | null;
+  skuLimit: number | null;
+  supportLevel: string;
+  validUntil: string;
+  blocked: boolean;
+  notes: string;
+}
+
+export function updateTariff(token: string, companyId: string, payload: TariffPayload): Promise<Company> {
+  return request(`/companies/${companyId}/tariff`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
+}
+
+export interface ShiftSummary {
+  id: string;
+  cashierName: string;
+  openedAt: string;
+  openingCash: number;
+  closedAt: string | null;
+  closingCashCounted: number | null;
+  salesCount: number;
+  totalSales: number;
+  totalsByMethod: Record<string, number>;
+}
+
+export function getShifts(token: string, companyId: string): Promise<ShiftSummary[]> {
+  return request(`/companies/${companyId}/shifts`, {}, token);
+}

@@ -1,0 +1,226 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Fields that would naturally be enums (LocationType, UserRole, SupportLevel,
+// DocumentType, DocumentStatus, CounterpartyType, SubstanceMovementType) are
+// kept as plain strings validated in the API layer, and Tariff.modules stays
+// a JSON-encoded string[] — this schema started on SQLite (no native enum/array
+// support) and the string-based shape carried over unchanged to Postgres.
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  @@map("admin_users")
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String
+  createdAt DateTime @default(now())
+
+  tariff         Tariff?
+  locations      Location[]
+  users          User[]
+  products       Product[]
+  documents      Document[]
+  counterparties Counterparty[]
+  shifts         Shift[]
+
+  @@map("companies")
+}
+
+model Tariff {
+  id                String   @id @default(cuid())
+  company           Company  @relation(fields: [companyId], references: [id])
+  companyId         String   @unique
+  modules           String
+  locationLimit     Int?
+  userLimit         Int?
+  skuLimit          Int?
+  docsPerMonthLimit Int?
+  supportLevel      String   @default("basic")
+  validUntil        DateTime
+  blocked           Boolean  @default(false)
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("tariffs")
+}
+
+model Location {
+  id        String  @id @default(cuid())
+  company   Company @relation(fields: [companyId], references: [id])
+  companyId String
+  name      String
+  type      String
+  address   String?
+
+  stocks        Stock[]
+  documents     Document[]
+  prescriptions Prescription[]
+  shifts        Shift[]
+
+  @@map("locations")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  company   Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  name      String
+  role      String
+  phone     String?
+  email     String?
+  posPin    String?
+  createdAt DateTime @default(now())
+
+  @@map("users")
+}
+
+model Shift {
+  id                 String    @id @default(cuid())
+  company            Company   @relation(fields: [companyId], references: [id])
+  companyId          String
+  location           Location  @relation(fields: [locationId], references: [id])
+  locationId         String
+  cashierName        String
+  openedAt           DateTime
+  openingCash        Int
+  closedAt           DateTime?
+  closingCashCounted Int?
+  createdAt          DateTime  @default(now())
+
+  @@map("shifts")
+}
+
+model Product {
+  id            String  @id @default(cuid())
+  company       Company @relation(fields: [companyId], references: [id])
+  companyId     String
+  name          String
+  category      String?
+  unit          String
+  barcode       String?
+  ntinCode      String?
+  purchasePrice Int
+  salePrice     Int
+  taxMode       String?
+
+  stocks        Stock[]
+  batches       ProductBatch[]
+  documentItems DocumentItem[]
+  prescriptions Prescription[]
+  ledgerEntries ControlledSubstanceLedger[]
+
+  @@map("products")
+}
+
+model Stock {
+  id          String   @id @default(cuid())
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  location    Location @relation(fields: [locationId], references: [id])
+  locationId  String
+  quantity    Int
+  binLocation String?
+
+  @@unique([productId, locationId, binLocation])
+  @@map("stocks")
+}
+
+model ProductBatch {
+  id          String   @id @default(cuid())
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  batchNumber String
+  expiryDate  DateTime
+  quantity    Int
+
+  documentItems DocumentItem[]
+  ledgerEntries ControlledSubstanceLedger[]
+
+  @@map("product_batches")
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  String
+  location   Location @relation(fields: [locationId], references: [id])
+  locationId String
+  type          String
+  status        String   @default("draft")
+  paymentMethod String?
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  items DocumentItem[]
+
+  @@map("documents")
+}
+
+model DocumentItem {
+  id         String        @id @default(cuid())
+  document   Document      @relation(fields: [documentId], references: [id])
+  documentId String
+  product    Product       @relation(fields: [productId], references: [id])
+  productId  String
+  batch      ProductBatch? @relation(fields: [batchId], references: [id])
+  batchId    String?
+  quantity   Int
+  price      Int
+
+  @@map("document_items")
+}
+
+model Counterparty {
+  id        String  @id @default(cuid())
+  company   Company @relation(fields: [companyId], references: [id])
+  companyId String
+  name      String
+  type      String
+  binIin    String?
+
+  @@map("counterparties")
+}
+
+model Prescription {
+  id                 String   @id @default(cuid())
+  location           Location @relation(fields: [locationId], references: [id])
+  locationId         String
+  product            Product  @relation(fields: [productId], references: [id])
+  productId          String
+  prescriptionNumber String
+  issuedDate         DateTime
+  retainUntil        DateTime
+  createdAt          DateTime @default(now())
+
+  @@map("prescriptions")
+}
+
+model ControlledSubstanceLedger {
+  id           String       @id @default(cuid())
+  product      Product      @relation(fields: [productId], references: [id])
+  productId    String
+  batch        ProductBatch @relation(fields: [batchId], references: [id])
+  batchId      String
+  movementType String
+  quantity     Int
+  documentRef  String?
+  loggedBy     String
+  loggedAt     DateTime     @default(now())
+
+  @@map("controlled_substance_ledger")
+}

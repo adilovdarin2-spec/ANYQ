@@ -1,0 +1,10 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "npm install && npm run generate --workspace=packages/db && npm run build --workspace=apps/admin && npm run build --workspace=apps/pos"
+  },
+  "deploy": {
+    "startCommand": "node scripts/railway-start.js"
+  }
+}

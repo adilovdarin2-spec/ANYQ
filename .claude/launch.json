@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:admin"],
+      "port": 5183
+    },
+    {
+      "name": "pos",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:pos"],
+      "port": 5184
+    }
+  ]
+}
