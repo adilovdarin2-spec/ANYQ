@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { CartLine, Order, PaymentMethod, Product, Sale, Shift } from './types';
+import type { CartLine, Order, PaymentMethod, Product, Report, Sale, Shift } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
-import { createRemoteShift, closeRemoteShift, fetchOrders, fulfillOrder, rejectOrder, ApiError } from './api';
+import { useIsDesktop } from './hooks/useIsDesktop';
+import { createRemoteShift, closeRemoteShift, fetchOrders, fulfillOrder, rejectOrder, fetchReports, ApiError } from './api';
 import type { PosSession } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
@@ -15,11 +16,13 @@ import { SearchBar } from './components/SearchBar';
 import { ProductGrid } from './components/ProductGrid';
 import { CartBar } from './components/CartBar';
 import { CartSheet } from './components/CartSheet';
+import { CartPanel } from './components/CartPanel';
 import { PaymentModal } from './components/PaymentModal';
 import { ReceiptScreen } from './components/ReceiptScreen';
 import { OrdersScreen } from './components/OrdersScreen';
+import { ReportsScreen } from './components/ReportsScreen';
 
-type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders';
+type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders' | 'reports';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -32,10 +35,16 @@ export default function App() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  const [report, setReport] = useState<Report | null>(null);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState<string | null>(null);
+  const [reportRangeDays, setReportRangeDays] = useState(7);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
   const hasSupply = session?.modules?.includes('supply') ?? false;
+  const hasTerminal = session?.modules?.includes('terminal') ?? false;
+  const isDesktop = useIsDesktop();
 
   function handleLogin(newSession: PosSession) {
     saveSession(newSession);
@@ -93,6 +102,32 @@ export default function App() {
     } finally {
       setBusyOrderId(null);
     }
+  }
+
+  async function loadReport(days: number) {
+    if (!session) return;
+    setReportsLoading(true);
+    setReportsError(null);
+    try {
+      const to = new Date();
+      const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+      const data = await fetchReports(session.token, from.toISOString(), to.toISOString());
+      setReport(data);
+    } catch (err) {
+      setReportsError(err instanceof ApiError ? err.message : 'Не удалось загрузить отчёт');
+    } finally {
+      setReportsLoading(false);
+    }
+  }
+
+  function handleShowReports() {
+    setView('reports');
+    void loadReport(reportRangeDays);
+  }
+
+  function handleRangeChange(days: number) {
+    setReportRangeDays(days);
+    void loadReport(days);
   }
 
   async function openShift(openingCash: number) {
@@ -219,7 +254,7 @@ export default function App() {
   }
 
   return (
-    <div className="pos-shell">
+    <div className={isDesktop ? 'pos-shell desktop' : 'pos-shell'}>
       <ShiftBar
         shift={shift}
         cashierName={session.user.name}
@@ -230,9 +265,20 @@ export default function App() {
         onLogout={handleLogout}
         onShowOrders={hasSupply ? () => setView('orders') : undefined}
         pendingOrdersCount={orders.filter((o) => o.status === 'pending').length}
+        onShowReports={hasTerminal ? handleShowReports : undefined}
       />
 
-      {view === 'sale' && (
+      {view === 'sale' && isDesktop && (
+        <div className="pos-main">
+          <div>
+            <SearchBar query={query} onQueryChange={setQuery} onEnter={handleSearchEnter} />
+            <ProductGrid products={filteredProducts} cartQtyByProduct={cartQtyByProduct} onPick={addToCart} />
+          </div>
+          <CartPanel cart={cart} total={cartTotal} onChangeQty={changeQty} onRemove={removeLine} onCheckout={() => setView('payment')} />
+        </div>
+      )}
+
+      {view === 'sale' && !isDesktop && (
         <>
           <SearchBar query={query} onQueryChange={setQuery} onEnter={handleSearchEnter} />
           <ProductGrid products={filteredProducts} cartQtyByProduct={cartQtyByProduct} onPick={addToCart} />
@@ -255,7 +301,9 @@ export default function App() {
         <PaymentModal total={cartTotal} onCancel={() => setView('cart')} onConfirm={completeSale} />
       )}
 
-      {view === 'receipt' && lastSale && <ReceiptScreen sale={lastSale} onNewSale={() => setView('sale')} />}
+      {view === 'receipt' && lastSale && (
+        <ReceiptScreen sale={lastSale} onNewSale={() => setView('sale')} canPrint={hasTerminal} />
+      )}
 
       {view === 'close-shift' && (
         <CloseShiftScreen
@@ -276,6 +324,18 @@ export default function App() {
           onRefresh={loadOrders}
           onFulfill={handleFulfillOrder}
           onReject={handleRejectOrder}
+        />
+      )}
+
+      {view === 'reports' && (
+        <ReportsScreen
+          report={report}
+          loading={reportsLoading}
+          error={reportsError}
+          rangeDays={reportRangeDays}
+          onRangeChange={handleRangeChange}
+          onBack={() => setView('sale')}
+          onRefresh={() => loadReport(reportRangeDays)}
         />
       )}
 

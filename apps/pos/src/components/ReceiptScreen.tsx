@@ -5,9 +5,10 @@ import { formatMoney, formatDateTime } from '../utils';
 interface Props {
   sale: Sale;
   onNewSale: () => void;
+  canPrint?: boolean;
 }
 
-export function ReceiptScreen({ sale, onNewSale }: Props) {
+export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
   return (
     <div className="screen">
       <div className="screen-header">
@@ -31,6 +32,9 @@ export function ReceiptScreen({ sale, onNewSale }: Props) {
         </div>
       </div>
       <div className="screen-footer">
+        {canPrint && (
+          <button className="btn btn-secondary" onClick={() => window.print()}>🖨 Печать</button>
+        )}
         <button className="btn btn-primary btn-block" onClick={onNewSale}>Новая продажа</button>
       </div>
     </div>

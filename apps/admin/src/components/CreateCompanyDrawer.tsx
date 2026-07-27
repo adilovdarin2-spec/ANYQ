@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ModuleKey, SupportLevel } from '../types';
+import type { LocationType, ModuleKey, SupportLevel } from '../types';
 import { MODULE_LABELS, SUPPORT_LABELS } from '../types';
 import { newValidUntil, formatDate } from '../utils';
 import type { DurationPreset } from '../utils';
@@ -11,7 +11,8 @@ interface Props {
   onCreate: (payload: CreateCompanyPayload) => Promise<void>;
 }
 
-const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply'];
+const LOCATION_TYPES: LocationType[] = ['shop', 'warehouse', 'pharmacy', 'supply'];
+const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal'];
 const ALL_DURATIONS: DurationPreset[] = ['1m', '3m', '6m', '1y'];
 
 function parseLimit(v: string): number | null {
@@ -28,7 +29,7 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [locationName, setLocationName] = useState('');
-  const [locationType, setLocationType] = useState<ModuleKey>('shop');
+  const [locationType, setLocationType] = useState<LocationType>('shop');
   const [locationAddress, setLocationAddress] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
@@ -108,8 +109,8 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
                 </div>
                 <div className="field">
                   <label htmlFor="locType">Тип</label>
-                  <select id="locType" value={locationType} onChange={(e) => setLocationType(e.target.value as ModuleKey)}>
-                    {ALL_MODULES.map((m) => <option key={m} value={m}>{MODULE_LABELS[m]}</option>)}
+                  <select id="locType" value={locationType} onChange={(e) => setLocationType(e.target.value as LocationType)}>
+                    {LOCATION_TYPES.map((m) => <option key={m} value={m}>{MODULE_LABELS[m]}</option>)}
                   </select>
                 </div>
               </div>
