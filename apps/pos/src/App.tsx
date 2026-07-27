@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import type { CartLine, PaymentMethod, Product, Sale, Shift } from './types';
+import { useEffect, useState } from 'react';
+import type { CartLine, Order, PaymentMethod, Product, Sale, Shift } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
-import { createRemoteShift, closeRemoteShift } from './api';
+import { createRemoteShift, closeRemoteShift, fetchOrders, fulfillOrder, rejectOrder, ApiError } from './api';
 import type { PosSession } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
@@ -17,8 +17,9 @@ import { CartBar } from './components/CartBar';
 import { CartSheet } from './components/CartSheet';
 import { PaymentModal } from './components/PaymentModal';
 import { ReceiptScreen } from './components/ReceiptScreen';
+import { OrdersScreen } from './components/OrdersScreen';
 
-type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift';
+type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -27,9 +28,14 @@ export default function App() {
   const [view, setView] = useState<View>('sale');
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [query, setQuery] = useState('');
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
+  const hasSupply = session?.modules?.includes('supply') ?? false;
 
   function handleLogin(newSession: PosSession) {
     saveSession(newSession);
@@ -39,6 +45,54 @@ export default function App() {
   function handleLogout() {
     saveSession(null);
     setSession(null);
+  }
+
+  async function loadOrders() {
+    if (!session) return;
+    setOrdersLoading(true);
+    setOrdersError(null);
+    try {
+      const data = await fetchOrders(session.token);
+      setOrders(data);
+    } catch (err) {
+      setOrdersError(err instanceof ApiError ? err.message : 'Не удалось загрузить заказы');
+    } finally {
+      setOrdersLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!session || !hasSupply) return;
+    loadOrders();
+    const interval = setInterval(loadOrders, 20000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.token, hasSupply]);
+
+  async function handleFulfillOrder(id: string) {
+    if (!session) return;
+    setBusyOrderId(id);
+    try {
+      await fulfillOrder(session.token, id);
+      await loadOrders();
+    } catch (err) {
+      setOrdersError(err instanceof ApiError ? err.message : 'Не удалось выдать заказ');
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  async function handleRejectOrder(id: string) {
+    if (!session) return;
+    setBusyOrderId(id);
+    try {
+      await rejectOrder(session.token, id);
+      await loadOrders();
+    } catch (err) {
+      setOrdersError(err instanceof ApiError ? err.message : 'Не удалось отклонить заказ');
+    } finally {
+      setBusyOrderId(null);
+    }
   }
 
   async function openShift(openingCash: number) {
@@ -174,6 +228,8 @@ export default function App() {
         onCloseShift={() => setView('close-shift')}
         onShowInstall={install.reopen}
         onLogout={handleLogout}
+        onShowOrders={hasSupply ? () => setView('orders') : undefined}
+        pendingOrdersCount={orders.filter((o) => o.status === 'pending').length}
       />
 
       {view === 'sale' && (
@@ -207,6 +263,19 @@ export default function App() {
           sales={salesForShift(shift.id)}
           onCancel={() => setView('sale')}
           onConfirm={closeShift}
+        />
+      )}
+
+      {view === 'orders' && (
+        <OrdersScreen
+          orders={orders}
+          loading={ordersLoading}
+          error={ordersError}
+          busyId={busyOrderId}
+          onBack={() => setView('sale')}
+          onRefresh={loadOrders}
+          onFulfill={handleFulfillOrder}
+          onReject={handleRejectOrder}
         />
       )}
 

@@ -1,4 +1,4 @@
-import type { CompanyLocation, PaymentMethod, Product } from './types';
+import type { CompanyLocation, Order, PaymentMethod, Product } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -23,6 +23,7 @@ export interface PosSession {
   token: string;
   user: { id: string; name: string; role: string };
   company: { id: string; name: string };
+  modules: string[];
   locations: CompanyLocation[];
   products: Product[];
 }
@@ -54,4 +55,16 @@ export function closeRemoteShift(
   closingCashCounted: number,
 ): Promise<{ id: string; closedAt: string }> {
   return request(`/pos/shifts/${shiftId}/close`, { method: 'PATCH', body: JSON.stringify({ closingCashCounted }) }, token);
+}
+
+export function fetchOrders(token: string): Promise<Order[]> {
+  return request('/pos/orders', { method: 'GET' }, token);
+}
+
+export function fulfillOrder(token: string, id: string): Promise<{ id: string; status: string }> {
+  return request(`/pos/orders/${id}/fulfill`, { method: 'POST' }, token);
+}
+
+export function rejectOrder(token: string, id: string): Promise<{ id: string; status: string }> {
+  return request(`/pos/orders/${id}/reject`, { method: 'POST' }, token);
 }

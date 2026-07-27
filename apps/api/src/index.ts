@@ -4,8 +4,9 @@ import cors from 'cors';
 import { authRouter } from './routes/auth';
 import { companiesRouter } from './routes/companies';
 import { posRouter } from './routes/pos';
+import { supplyRouter } from './routes/supply';
 
-const defaultOrigins = ['http://localhost:5183', 'http://localhost:5184'];
+const defaultOrigins = ['http://localhost:5183', 'http://localhost:5184', 'http://localhost:5185'];
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
   : defaultOrigins;
@@ -28,6 +29,7 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/auth', authRouter);
 app.use('/companies', companiesRouter);
 app.use('/pos', posRouter);
+app.use('/supply', supplyRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Не найдено' });

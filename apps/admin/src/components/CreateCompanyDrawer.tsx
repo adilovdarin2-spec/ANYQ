@@ -11,7 +11,7 @@ interface Props {
   onCreate: (payload: CreateCompanyPayload) => Promise<void>;
 }
 
-const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy'];
+const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply'];
 const ALL_DURATIONS: DurationPreset[] = ['1m', '3m', '6m', '1y'];
 
 function parseLimit(v: string): number | null {

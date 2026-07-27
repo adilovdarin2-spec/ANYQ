@@ -42,6 +42,7 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     token: signPosToken(user.id, user.companyId),
     user: { id: user.id, name: user.name, role: user.role },
     company: { id: user.company.id, name: user.company.name },
+    modules: user.company.tariff ? (JSON.parse(user.company.tariff.modules) as string[]) : [],
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
     products: products.map((p) => ({
       id: p.id,
@@ -167,6 +168,103 @@ posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedReques
   });
 
   res.json({ id: closed.id, closedAt: closed.closedAt?.toISOString() });
+});
+
+posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const orders = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'order' },
+    include: { items: { include: { product: true } }, counterparty: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    orders.map((o) => ({
+      id: o.id,
+      status: o.status,
+      createdAt: o.createdAt.toISOString(),
+      fulfilledAt: o.fulfilledAt ? o.fulfilledAt.toISOString() : null,
+      customerName: o.counterparty?.name ?? 'Клиент',
+      customerPhone: o.counterparty?.phone ?? '',
+      items: o.items.map((it) => ({
+        productId: it.productId,
+        name: it.product.name,
+        quantity: it.quantity,
+        price: it.price,
+      })),
+      total: o.items.reduce((sum, it) => sum + it.price * it.quantity, 0),
+    })),
+  );
+});
+
+posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const order = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' },
+    include: { items: true },
+  });
+  if (!order) {
+    res.status(404).json({ error: 'Заказ не найден' });
+    return;
+  }
+  if (order.status !== 'pending') {
+    res.status(409).json({ error: 'Заказ уже обработан' });
+    return;
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const stockRows = await tx.stock.findMany({
+        where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
+      });
+      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+
+      const shortages = findStockShortages(
+        order.items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price })),
+        quantityByProduct,
+      );
+      if (shortages.length > 0) {
+        throw new StockError(shortages);
+      }
+
+      for (const item of order.items) {
+        const stock = stockByProduct.get(item.productId)!;
+        await tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } });
+      }
+
+      await tx.document.update({
+        where: { id: order.id },
+        data: { status: 'confirmed', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+      });
+    });
+
+    res.json({ id: order.id, status: 'confirmed' });
+  } catch (err) {
+    if (err instanceof StockError) {
+      res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
+      return;
+    }
+    throw err;
+  }
+});
+
+posRouter.post('/orders/:id/reject', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const order = await prisma.document.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' } });
+  if (!order) {
+    res.status(404).json({ error: 'Заказ не найден' });
+    return;
+  }
+  if (order.status !== 'pending') {
+    res.status(409).json({ error: 'Заказ уже обработан' });
+    return;
+  }
+
+  await prisma.document.update({
+    where: { id: order.id },
+    data: { status: 'cancelled', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+  });
+
+  res.json({ id: order.id, status: 'cancelled' });
 });
 
 class StockError extends Error {

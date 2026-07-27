@@ -10,6 +10,7 @@
     "db:migrate": "npm run migrate --workspace=packages/db",
     "dev:admin": "npm run dev --workspace=apps/admin",
     "dev:pos": "npm run dev --workspace=apps/pos",
+    "dev:orders": "npm run dev --workspace=apps/orders",
     "dev:api": "npm run dev --workspace=apps/api",
     "test": "vitest run"
   },

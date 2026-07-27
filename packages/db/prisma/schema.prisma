@@ -155,16 +155,20 @@ model ProductBatch {
 }
 
 model Document {
-  id         String   @id @default(cuid())
-  company    Company  @relation(fields: [companyId], references: [id])
-  companyId  String
-  location   Location @relation(fields: [locationId], references: [id])
-  locationId String
+  id            String        @id @default(cuid())
+  company       Company       @relation(fields: [companyId], references: [id])
+  companyId     String
+  location      Location      @relation(fields: [locationId], references: [id])
+  locationId    String
   type          String
-  status        String   @default("draft")
+  status        String        @default("draft")
   paymentMethod String?
-  createdBy     String
-  createdAt     DateTime @default(now())
+  counterparty  Counterparty? @relation(fields: [counterpartyId], references: [id])
+  counterpartyId String?
+  createdBy     String?
+  createdAt     DateTime      @default(now())
+  fulfilledBy   String?
+  fulfilledAt   DateTime?
 
   items DocumentItem[]
 
@@ -190,8 +194,11 @@ model Counterparty {
   company   Company @relation(fields: [companyId], references: [id])
   companyId String
   name      String
+  phone     String?
   type      String
   binIin    String?
+
+  documents Document[]
 
   @@map("counterparties")
 }

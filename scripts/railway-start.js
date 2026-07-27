@@ -19,6 +19,8 @@ if (service === 'api') {
   run('npm', ['run', 'start', '--workspace=apps/admin']);
 } else if (service === 'pos') {
   run('npm', ['run', 'start', '--workspace=apps/pos']);
+} else if (service === 'orders') {
+  run('npm', ['run', 'start', '--workspace=apps/orders']);
 } else {
   console.error('Unknown RAILWAY_SERVICE_NAME:', JSON.stringify(service));
   process.exit(1);

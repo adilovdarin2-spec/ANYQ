@@ -105,6 +105,25 @@ const companies: SeedCompany[] = [
       notes: 'Ключевой клиент — персональный менеджер, офис в Астане.',
     },
   },
+  {
+    name: 'Склад HoReCa «Дастархан Опт»',
+    phone: '+7 700 450 30 20',
+    locations: [{ name: 'Склад «Дастархан Опт»', type: 'supply', address: 'г. Алматы, ул. Радостовца 12' }],
+    users: [
+      { name: 'Бахыт Сериков', role: 'owner', phone: '+7 700 450 30 20' },
+      { name: 'Айбек Нургалиев', role: 'warehouse_staff', phone: '+7 700 450 30 21' },
+    ],
+    tariff: {
+      modules: ['supply'],
+      locationLimit: 1,
+      userLimit: 5,
+      skuLimit: null,
+      supportLevel: 'priority',
+      validUntil: '2026-10-24',
+      blocked: false,
+      notes: 'Тариф для поставок кафе и ресторанам — заказы принимаются через публичный сайт заказов.',
+    },
+  },
 ];
 
 async function main() {
@@ -147,6 +166,7 @@ async function main() {
   }
 
   await seedPosDemoData();
+  await seedSupplyDemoData();
 }
 
 const posProducts = [
@@ -213,6 +233,78 @@ async function seedPosDemoData() {
         productId: p.id,
         locationId: location.id,
         quantity: byBarcode.get(p.barcode!) ?? 0,
+      }));
+
+    if (toCreate.length > 0) {
+      await prisma.stock.createMany({ data: toCreate });
+      console.log(`Seeded stock for ${toCreate.length} products at ${location.name}`);
+    }
+  }
+}
+
+const supplyProducts = [
+  { name: 'Мука высший сорт 25кг', price: 12500, unit: 'мешок', category: 'Бакалея', stock: 40 },
+  { name: 'Масло растительное 5л', price: 6200, unit: 'канистра', category: 'Бакалея', stock: 30 },
+  { name: 'Рис круглозёрный 25кг', price: 15800, unit: 'мешок', category: 'Бакалея', stock: 25 },
+  { name: 'Сахар песок 50кг', price: 21000, unit: 'мешок', category: 'Бакалея', stock: 18 },
+  { name: 'Соль пищевая 25кг', price: 3200, unit: 'мешок', category: 'Бакалея', stock: 35 },
+  { name: 'Курица тушка охл.', price: 1450, unit: 'кг', category: 'Мясо', stock: 120 },
+  { name: 'Говядина котлетная', price: 3100, unit: 'кг', category: 'Мясо', stock: 60 },
+  { name: 'Картофель', price: 220, unit: 'кг', category: 'Овощи', stock: 300 },
+  { name: 'Лук репчатый', price: 180, unit: 'кг', category: 'Овощи', stock: 200 },
+  { name: 'Помидоры', price: 650, unit: 'кг', category: 'Овощи', stock: 80 },
+  { name: 'Салфетки бумажные', price: 890, unit: 'упаковка', category: 'Расходники', stock: 100 },
+  { name: 'Стаканы одноразовые 200мл', price: 1450, unit: 'упаковка', category: 'Расходники', stock: 4 },
+];
+
+async function seedSupplyDemoData() {
+  const supply = await prisma.company.findFirst({
+    where: { name: 'Склад HoReCa «Дастархан Опт»' },
+    include: { users: true, products: true, locations: true },
+  });
+  if (!supply) {
+    console.log('Demo supply warehouse not found, skipping supply demo data');
+    return;
+  }
+
+  const owner = supply.users.find((u) => u.role === 'owner');
+  if (owner && !owner.posPin) {
+    await prisma.user.update({ where: { id: owner.id }, data: { posPin: '5678' } });
+    console.log(`Set POS PIN 5678 for owner ${owner.name}`);
+  }
+  const staff = supply.users.find((u) => u.role === 'warehouse_staff');
+  if (staff && !staff.posPin) {
+    await prisma.user.update({ where: { id: staff.id }, data: { posPin: '5679' } });
+    console.log(`Set POS PIN 5679 for warehouse staff ${staff.name}`);
+  }
+
+  if (supply.products.length === 0) {
+    await prisma.product.createMany({
+      data: supplyProducts.map((p) => ({
+        companyId: supply.id,
+        name: p.name,
+        category: p.category,
+        unit: p.unit,
+        purchasePrice: Math.round(p.price * 0.75),
+        salePrice: p.price,
+      })),
+    });
+    console.log(`Seeded ${supplyProducts.length} products for Склад HoReCa «Дастархан Опт»`);
+  }
+
+  const location = supply.locations[0];
+  if (location) {
+    const products = await prisma.product.findMany({ where: { companyId: supply.id } });
+    const existingStock = await prisma.stock.findMany({ where: { locationId: location.id } });
+    const stockedProductIds = new Set(existingStock.map((s) => s.productId));
+    const byName = new Map(supplyProducts.map((p) => [p.name, p.stock]));
+
+    const toCreate = products
+      .filter((p) => !stockedProductIds.has(p.id) && byName.has(p.name))
+      .map((p) => ({
+        productId: p.id,
+        locationId: location.id,
+        quantity: byName.get(p.name) ?? 0,
       }));
 
     if (toCreate.length > 0) {

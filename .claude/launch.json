@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:pos"],
       "port": 5184
+    },
+    {
+      "name": "orders",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:orders"],
+      "port": 5185
     }
   ]
 }

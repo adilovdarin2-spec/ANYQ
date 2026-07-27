@@ -9,9 +9,21 @@ interface Props {
   onCloseShift: () => void;
   onShowInstall: () => void;
   onLogout: () => void;
+  onShowOrders?: () => void;
+  pendingOrdersCount?: number;
 }
 
-export function ShiftBar({ shift, cashierName, online, pendingCount, onCloseShift, onShowInstall, onLogout }: Props) {
+export function ShiftBar({
+  shift,
+  cashierName,
+  online,
+  pendingCount,
+  onCloseShift,
+  onShowInstall,
+  onLogout,
+  onShowOrders,
+  pendingOrdersCount = 0,
+}: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
 
@@ -31,6 +43,12 @@ export function ShiftBar({ shift, cashierName, online, pendingCount, onCloseShif
             <span className={`dot ${online ? 'online' : 'offline'}`}></span>
             {online ? 'Онлайн' : 'Офлайн'}
           </span>
+          {onShowOrders && (
+            <button className="icon-btn" onClick={onShowOrders} aria-label="Заказы с сайта">
+              📦
+              {pendingOrdersCount > 0 && <span className="icon-btn-badge">{pendingOrdersCount}</span>}
+            </button>
+          )}
           <button className="icon-btn" onClick={onShowInstall} aria-label="Установить приложение">⬇</button>
           <button className="icon-btn" onClick={onCloseShift} aria-label="Закрыть смену">⏻</button>
           <button className="icon-btn" onClick={onLogout} aria-label="Сменить кассира">↪</button>

@@ -48,3 +48,23 @@ export interface Shift {
   closingCashCounted: number | null;
   syncedToServer: boolean;
 }
+
+export interface OrderItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  price: number;
+}
+
+export type OrderStatus = 'pending' | 'confirmed' | 'cancelled';
+
+export interface Order {
+  id: string;
+  status: OrderStatus;
+  createdAt: string;
+  fulfilledAt: string | null;
+  customerName: string;
+  customerPhone: string;
+  items: OrderItem[];
+  total: number;
+}
