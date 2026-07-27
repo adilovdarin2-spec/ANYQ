@@ -10,9 +10,11 @@
     "db:migrate": "npm run migrate --workspace=packages/db",
     "dev:admin": "npm run dev --workspace=apps/admin",
     "dev:pos": "npm run dev --workspace=apps/pos",
-    "dev:api": "npm run dev --workspace=apps/api"
+    "dev:api": "npm run dev --workspace=apps/api",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "railway": "^3.6.0"
+    "railway": "^3.6.0",
+    "vitest": "^2.1.4"
   }
 }

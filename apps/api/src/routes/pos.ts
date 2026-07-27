@@ -3,23 +3,11 @@ import { prisma } from '@anyq/db';
 import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
+import { tariffState, tariffDenialMessage } from '../tariff';
+import { findStockShortages } from '../stock';
+import type { SaleItemInput, StockShortage } from '../stock';
 
 export const posRouter = Router();
-
-type TariffState = 'active' | 'expired' | 'blocked' | 'missing';
-
-function tariffState(tariff: { blocked: boolean; validUntil: Date } | null): TariffState {
-  if (!tariff) return 'missing';
-  if (tariff.blocked) return 'blocked';
-  if (tariff.validUntil < new Date()) return 'expired';
-  return 'active';
-}
-
-function tariffDenialMessage(state: TariffState): string {
-  if (state === 'blocked') return 'Доступ заблокирован — обратитесь в поддержку';
-  if (state === 'expired') return 'Срок действия тарифа истёк — обратитесь в поддержку';
-  return 'Тариф не назначен — обратитесь в поддержку';
-}
 
 posRouter.post('/login', loginRateLimit, async (req, res) => {
   const { pin } = req.body ?? {};
@@ -66,12 +54,6 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   });
 });
 
-interface SaleItemInput {
-  productId: string;
-  quantity: number;
-  price: number;
-}
-
 posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: SaleItemInput[] = Array.isArray(b.items) ? b.items : [];
@@ -93,14 +75,9 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         where: { locationId: b.locationId, productId: { in: items.map((it) => it.productId) } },
       });
       const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
 
-      const shortages: { productId: string; available: number; requested: number }[] = [];
-      for (const item of items) {
-        const available = stockByProduct.get(item.productId)?.quantity ?? 0;
-        if (available < item.quantity) {
-          shortages.push({ productId: item.productId, available, requested: item.quantity });
-        }
-      }
+      const shortages = findStockShortages(items, quantityByProduct);
       if (shortages.length > 0) {
         throw new StockError(shortages);
       }
@@ -193,8 +170,8 @@ posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedReques
 });
 
 class StockError extends Error {
-  shortages: { productId: string; available: number; requested: number }[];
-  constructor(shortages: { productId: string; available: number; requested: number }[]) {
+  shortages: StockShortage[];
+  constructor(shortages: StockShortage[]) {
     super('Insufficient stock');
     this.shortages = shortages;
   }
