@@ -1,10 +1,11 @@
-export type ModuleKey = 'shop' | 'warehouse' | 'pharmacy' | 'supply';
+export type ModuleKey = 'shop' | 'warehouse' | 'pharmacy' | 'supply' | 'terminal';
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   shop: 'Магазин',
   warehouse: 'Склад',
   pharmacy: 'Аптека',
   supply: 'Склад для HoReCa',
+  terminal: 'ПК/Терминал (отчёты и печать)',
 };
 
 export type SupportLevel = 'basic' | 'priority' | 'dedicated';
@@ -34,7 +35,7 @@ export interface Tariff {
   notes: string;
 }
 
-export type LocationType = ModuleKey;
+export type LocationType = 'shop' | 'warehouse' | 'pharmacy' | 'supply';
 
 export interface CompanyLocation {
   id: string;

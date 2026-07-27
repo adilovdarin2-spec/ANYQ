@@ -1,4 +1,4 @@
-import type { CompanyLocation, Order, PaymentMethod, Product } from './types';
+import type { CompanyLocation, Order, PaymentMethod, Product, Report } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -67,4 +67,8 @@ export function fulfillOrder(token: string, id: string): Promise<{ id: string; s
 
 export function rejectOrder(token: string, id: string): Promise<{ id: string; status: string }> {
   return request(`/pos/orders/${id}/reject`, { method: 'POST' }, token);
+}
+
+export function fetchReports(token: string, from: string, to: string): Promise<Report> {
+  return request(`/pos/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { method: 'GET' }, token);
 }

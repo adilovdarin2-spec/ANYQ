@@ -11,6 +11,7 @@ interface Props {
   onLogout: () => void;
   onShowOrders?: () => void;
   pendingOrdersCount?: number;
+  onShowReports?: () => void;
 }
 
 export function ShiftBar({
@@ -23,6 +24,7 @@ export function ShiftBar({
   onLogout,
   onShowOrders,
   pendingOrdersCount = 0,
+  onShowReports,
 }: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
@@ -48,6 +50,9 @@ export function ShiftBar({
               📦
               {pendingOrdersCount > 0 && <span className="icon-btn-badge">{pendingOrdersCount}</span>}
             </button>
+          )}
+          {onShowReports && (
+            <button className="icon-btn" onClick={onShowReports} aria-label="Отчёты">📊</button>
           )}
           <button className="icon-btn" onClick={onShowInstall} aria-label="Установить приложение">⬇</button>
           <button className="icon-btn" onClick={onCloseShift} aria-label="Закрыть смену">⏻</button>

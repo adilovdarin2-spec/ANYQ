@@ -6,6 +6,8 @@ import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage } from '../tariff';
 import { findStockShortages } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
+import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock } from '../reports';
+import type { SaleRecord } from '../reports';
 
 export const posRouter = Router();
 
@@ -168,6 +170,69 @@ posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedReques
   });
 
   res.json({ id: closed.id, closedAt: closed.closedAt?.toISOString() });
+});
+
+posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  const state = tariffState(company?.tariff ?? null);
+  if (!modules.includes('terminal')) {
+    res.status(403).json({ error: 'Отчёты недоступны на вашем тарифе' });
+    return;
+  }
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const now = new Date();
+  const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const from = req.query.from ? new Date(String(req.query.from)) : defaultFrom;
+  const to = req.query.to ? new Date(String(req.query.to)) : now;
+
+  const documents = await prisma.document.findMany({
+    where: {
+      companyId: req.posCompanyId,
+      type: 'sale',
+      status: 'confirmed',
+      createdAt: { gte: from, lte: to },
+    },
+    include: { items: { include: { product: true } } },
+  });
+
+  const sales: SaleRecord[] = documents.map((d) => ({
+    id: d.id,
+    createdAt: d.createdAt,
+    paymentMethod: d.paymentMethod,
+    createdBy: d.createdBy,
+    items: d.items.map((it) => ({
+      productId: it.productId,
+      name: it.product.name,
+      quantity: it.quantity,
+      price: it.price,
+    })),
+  }));
+
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+
+  const location = company?.locations[0];
+  const stockRows = location
+    ? await prisma.stock.findMany({ where: { locationId: location.id }, include: { product: true } })
+    : [];
+  const stockForLowCheck = stockRows.map((s) => ({ productId: s.productId, name: s.product.name, quantity: s.quantity }));
+
+  res.json({
+    from: from.toISOString(),
+    to: to.toISOString(),
+    summary: buildSummary(sales),
+    topProducts: buildTopProducts(sales, 10),
+    byCashier: buildCashierBreakdown(sales, nameByUserId),
+    lowStock: findLowStock(stockForLowCheck, 10),
+  });
 });
 
 posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {

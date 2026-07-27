@@ -68,3 +68,39 @@ export interface Order {
   items: OrderItem[];
   total: number;
 }
+
+export interface ReportSummary {
+  revenue: number;
+  salesCount: number;
+  averageCheck: number;
+  byPaymentMethod: Record<string, number>;
+}
+
+export interface TopProduct {
+  productId: string;
+  name: string;
+  quantity: number;
+  revenue: number;
+}
+
+export interface CashierBreakdown {
+  userId: string;
+  name: string;
+  salesCount: number;
+  revenue: number;
+}
+
+export interface LowStockItem {
+  productId: string;
+  name: string;
+  quantity: number;
+}
+
+export interface Report {
+  from: string;
+  to: string;
+  summary: ReportSummary;
+  topProducts: TopProduct[];
+  byCashier: CashierBreakdown[];
+  lowStock: LowStockItem[];
+}

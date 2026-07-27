@@ -239,3 +239,58 @@ button { cursor: pointer; }
 .chip-status { display: inline-block; margin-top: 10px; font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
 .chip-status.confirmed { background: var(--status-active-bg); color: var(--status-active); }
 .chip-status.cancelled { background: var(--status-overdue-bg); color: var(--status-overdue); }
+
+/* desktop / terminal split view (>=900px) */
+@media (min-width: 900px) {
+  .pos-shell.desktop {
+    max-width: 1200px;
+  }
+  .pos-shell.desktop .pos-main {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    align-items: start;
+    gap: 20px;
+    padding: 0 20px;
+  }
+  .pos-shell.desktop .search-bar {
+    position: static;
+    padding: 16px 0 10px;
+  }
+  .pos-shell.desktop .product-grid {
+    padding: 0 0 24px;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
+}
+
+.cart-panel {
+  position: sticky;
+  top: 76px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 96px);
+}
+.cart-panel-title { font-weight: 700; font-size: 1rem; margin-bottom: 10px; }
+.cart-panel-body { flex: 1; overflow-y: auto; }
+.cart-panel-footer { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 4px; }
+
+/* reports (terminal tariff) */
+.report-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
+.report-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
+}
+.report-card .value { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.report-card .label { font-size: 0.72rem; color: var(--ink-muted); }
+.report-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.report-row.low { color: var(--status-overdue); font-weight: 600; }
+
+/* printable receipt (terminal tariff) */
+@media print {
+  body * { visibility: hidden; }
+  .receipt-card, .receipt-card * { visibility: visible; }
+  .receipt-card { position: absolute; top: 0; left: 0; width: 100%; border: none; }
+}
