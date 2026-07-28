@@ -1,4 +1,4 @@
-import type { Company, Product } from './types';
+import type { Company, CompanyUser, Product } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -103,4 +103,19 @@ export function createProduct(token: string, companyId: string, payload: Product
 
 export function updateProduct(token: string, companyId: string, productId: string, payload: ProductPayload): Promise<Product> {
   return request(`/companies/${companyId}/products/${productId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
+}
+
+export interface UserPayload {
+  name: string;
+  role: string;
+  phone: string;
+  posPin: string;
+}
+
+export function createUser(token: string, companyId: string, payload: UserPayload): Promise<CompanyUser> {
+  return request(`/companies/${companyId}/users`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function updateUser(token: string, companyId: string, userId: string, payload: UserPayload): Promise<CompanyUser> {
+  return request(`/companies/${companyId}/users/${userId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
 }

@@ -61,6 +61,7 @@ export interface CompanyUser {
   name: string;
   role: UserRole;
   phone: string;
+  posPin: string;
 }
 
 export interface Company {

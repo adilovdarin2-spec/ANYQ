@@ -18,6 +18,7 @@ interface Props {
   onUpdateTariff: (companyId: string, payload: TariffPayload) => Promise<void>;
   onLoadShifts: (companyId: string) => Promise<ShiftSummary[]>;
   onManageProducts: () => void;
+  onManageUsers: () => void;
 }
 
 const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal', 'restaurant', 'retail'];
@@ -42,7 +43,7 @@ function toPayload(t: Tariff): TariffPayload {
   };
 }
 
-export function CompanyDetailDrawer({ company, onClose, onUpdateTariff, onLoadShifts, onManageProducts }: Props) {
+export function CompanyDetailDrawer({ company, onClose, onUpdateTariff, onLoadShifts, onManageProducts, onManageUsers }: Props) {
   const [tariff, setTariff] = useState<Tariff>(company.tariff);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +110,7 @@ export function CompanyDetailDrawer({ company, onClose, onUpdateTariff, onLoadSh
 
           <div className="quick-actions">
             <button className="btn btn-secondary" onClick={onManageProducts}>📦 Товары</button>
+            <button className="btn btn-secondary" onClick={onManageUsers}>👥 Сотрудники</button>
           </div>
 
           <div className="section-title">Продлить</div>

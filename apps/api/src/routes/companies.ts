@@ -15,7 +15,7 @@ function serializeCompany(company: CompanyWithRelations) {
     phone: company.phone,
     createdAt: company.createdAt.toISOString().slice(0, 10),
     locations: company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
-    users: company.users.map((u) => ({ id: u.id, name: u.name, role: u.role, phone: u.phone ?? '' })),
+    users: company.users.map((u) => ({ id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', posPin: u.posPin ?? '' })),
     tariff: company.tariff && {
       modules: JSON.parse(company.tariff.modules) as string[],
       locationLimit: company.tariff.locationLimit,
@@ -203,6 +203,79 @@ companiesRouter.patch('/:id/products/:productId', async (req, res) => {
     },
   });
   res.json(serializeProduct(product));
+});
+
+function serializeUser(u: { id: string; name: string; role: string; phone: string | null; posPin: string | null }) {
+  return { id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', posPin: u.posPin ?? '' };
+}
+
+const PIN_PATTERN = /^\d{4,6}$/;
+
+// posPin is looked up globally (not scoped by company) at /pos/login, so it
+// must be unique across every company on the platform, not just this one.
+companiesRouter.post('/:id/users', async (req, res) => {
+  const b = req.body ?? {};
+  if (!b.name || !b.role) {
+    res.status(400).json({ error: 'Заполните имя и роль' });
+    return;
+  }
+
+  const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
+  if (posPin && !PIN_PATTERN.test(posPin)) {
+    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!company) {
+    res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  if (posPin) {
+    const conflict = await prisma.user.findFirst({ where: { posPin } });
+    if (conflict) {
+      res.status(409).json({ error: 'Этот PIN уже используется другим сотрудником' });
+      return;
+    }
+  }
+
+  const user = await prisma.user.create({
+    data: { companyId: company.id, name: b.name, role: b.role, phone: b.phone || null, posPin: posPin || null },
+  });
+  res.status(201).json(serializeUser(user));
+});
+
+companiesRouter.patch('/:id/users/:userId', async (req, res) => {
+  const b = req.body ?? {};
+  const existing = await prisma.user.findFirst({ where: { id: req.params.userId, companyId: req.params.id } });
+  if (!existing) {
+    res.status(404).json({ error: 'Сотрудник не найден' });
+    return;
+  }
+  if (!b.name || !b.role) {
+    res.status(400).json({ error: 'Заполните имя и роль' });
+    return;
+  }
+
+  const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
+  if (posPin && !PIN_PATTERN.test(posPin)) {
+    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
+    return;
+  }
+  if (posPin && posPin !== existing.posPin) {
+    const conflict = await prisma.user.findFirst({ where: { posPin, id: { not: existing.id } } });
+    if (conflict) {
+      res.status(409).json({ error: 'Этот PIN уже используется другим сотрудником' });
+      return;
+    }
+  }
+
+  const user = await prisma.user.update({
+    where: { id: existing.id },
+    data: { name: b.name, role: b.role, phone: b.phone || null, posPin: posPin || null },
+  });
+  res.json(serializeUser(user));
 });
 
 companiesRouter.patch('/:id/tariff', async (req, res) => {
