@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Order, PaymentMethod, Product, ProductModifierOption, Report, Sale, Shift, Transfer } from './types';
+import type { Batch, CartLine, Count, Order, PaymentMethod, Product, ProductModifierOption, Receipt, Report, Sale, Shift, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -17,6 +17,10 @@ import {
   setStopListed,
   fetchTransfers,
   createTransfer,
+  fetchReceipts,
+  createReceipt,
+  fetchCounts,
+  createCount,
   ApiError,
 } from './api';
 import type { PosSession } from './api';
@@ -37,8 +41,21 @@ import { ReportsScreen } from './components/ReportsScreen';
 import { BatchesScreen } from './components/BatchesScreen';
 import { ModifierPicker } from './components/ModifierPicker';
 import { TransfersScreen } from './components/TransfersScreen';
+import { IncomingScreen } from './components/IncomingScreen';
+import { CycleCountScreen } from './components/CycleCountScreen';
 
-type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders' | 'reports' | 'batches' | 'transfers';
+type View =
+  | 'sale'
+  | 'cart'
+  | 'payment'
+  | 'receipt'
+  | 'close-shift'
+  | 'orders'
+  | 'reports'
+  | 'batches'
+  | 'transfers'
+  | 'incoming'
+  | 'counts';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -64,6 +81,14 @@ export default function App() {
   const [transfersLoading, setTransfersLoading] = useState(false);
   const [transfersError, setTransfersError] = useState<string | null>(null);
   const [transferSubmitting, setTransferSubmitting] = useState(false);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
+  const [receiptsError, setReceiptsError] = useState<string | null>(null);
+  const [receiptSubmitting, setReceiptSubmitting] = useState(false);
+  const [counts, setCounts] = useState<Count[]>([]);
+  const [countsLoading, setCountsLoading] = useState(false);
+  const [countsError, setCountsError] = useState<string | null>(null);
+  const [countSubmitting, setCountSubmitting] = useState(false);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -250,6 +275,80 @@ export default function App() {
     }
   }
 
+  async function loadReceipts() {
+    if (!session) return;
+    setReceiptsLoading(true);
+    setReceiptsError(null);
+    try {
+      const data = await fetchReceipts(session.token);
+      setReceipts(data);
+    } catch (err) {
+      setReceiptsError(err instanceof ApiError ? err.message : 'Не удалось загрузить приёмки');
+    } finally {
+      setReceiptsLoading(false);
+    }
+  }
+
+  function handleShowIncoming() {
+    setView('incoming');
+    void loadReceipts();
+  }
+
+  async function handleCreateReceipt(payload: {
+    supplierName: string;
+    supplierPhone: string;
+    items: { productId: string; quantity: number; price: number }[];
+  }) {
+    if (!session) return false;
+    setReceiptSubmitting(true);
+    setReceiptsError(null);
+    try {
+      await createReceipt(session.token, payload);
+      await loadReceipts();
+      return true;
+    } catch (err) {
+      setReceiptsError(err instanceof ApiError ? err.message : 'Не удалось оприходовать товар');
+      return false;
+    } finally {
+      setReceiptSubmitting(false);
+    }
+  }
+
+  async function loadCounts() {
+    if (!session) return;
+    setCountsLoading(true);
+    setCountsError(null);
+    try {
+      const data = await fetchCounts(session.token);
+      setCounts(data);
+    } catch (err) {
+      setCountsError(err instanceof ApiError ? err.message : 'Не удалось загрузить пересчёты');
+    } finally {
+      setCountsLoading(false);
+    }
+  }
+
+  function handleShowCounts() {
+    setView('counts');
+    void loadCounts();
+  }
+
+  async function handleCreateCount(payload: { items: { productId: string; countedQuantity: number }[] }) {
+    if (!session) return false;
+    setCountSubmitting(true);
+    setCountsError(null);
+    try {
+      await createCount(session.token, payload);
+      await loadCounts();
+      return true;
+    } catch (err) {
+      setCountsError(err instanceof ApiError ? err.message : 'Не удалось сохранить пересчёт');
+      return false;
+    } finally {
+      setCountSubmitting(false);
+    }
+  }
+
   async function openShift(openingCash: number) {
     let s: Shift = {
       id: genId('shift'),
@@ -410,6 +509,8 @@ export default function App() {
         onShowBatches={hasPharmacy ? handleShowBatches : undefined}
         expiringBatchesCount={batches.filter((b) => b.status !== 'ok').length}
         onShowTransfers={hasWarehouse ? handleShowTransfers : undefined}
+        onShowIncoming={hasWarehouse ? handleShowIncoming : undefined}
+        onShowCounts={hasWarehouse ? handleShowCounts : undefined}
       />
 
       {view === 'sale' && isDesktop && (
@@ -519,6 +620,32 @@ export default function App() {
           onBack={() => setView('sale')}
           onRefresh={loadTransfers}
           onSubmit={handleCreateTransfer}
+        />
+      )}
+
+      {view === 'incoming' && (
+        <IncomingScreen
+          receipts={receipts}
+          products={session.products}
+          loading={receiptsLoading}
+          error={receiptsError}
+          submitting={receiptSubmitting}
+          onBack={() => setView('sale')}
+          onRefresh={loadReceipts}
+          onSubmit={handleCreateReceipt}
+        />
+      )}
+
+      {view === 'counts' && (
+        <CycleCountScreen
+          counts={counts}
+          products={session.products}
+          loading={countsLoading}
+          error={countsError}
+          submitting={countSubmitting}
+          onBack={() => setView('sale')}
+          onRefresh={loadCounts}
+          onSubmit={handleCreateCount}
         />
       )}
 

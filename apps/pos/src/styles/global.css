@@ -310,6 +310,14 @@ button { cursor: pointer; }
 }
 .transfer-add-row .btn { flex-shrink: 0; padding: 10px 14px; font-size: 0.86rem; }
 
+/* cycle count (warehouse tariff) */
+.count-hint { font-size: 0.82rem; color: var(--ink-muted); line-height: 1.5; padding: 4px 0 16px; }
+.count-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.count-row input {
+  width: 90px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  font-size: 0.9rem; background: var(--surface); color: var(--ink); text-align: right;
+}
+
 /* printable receipt (terminal tariff) */
 @media print {
   body * { visibility: hidden; }
