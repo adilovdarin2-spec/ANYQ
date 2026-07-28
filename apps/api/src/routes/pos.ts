@@ -15,6 +15,7 @@ import { computeCountAdjustments } from '../counts';
 import { computeDiscount } from '../discounts';
 import type { DiscountType } from '../discounts';
 import { computeLoyalty } from '../loyalty';
+import { groupProductVariants } from '../variants';
 
 // 1 point = 1 tenge earned/redeemed. Not yet configurable per company — a fixed
 // MVP rate, same simplification as the rest of the Retail Pack slice so far.
@@ -73,22 +74,33 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     modifiersByProduct.set(m.productId, list);
   }
 
+  const productRows = products.map((p) => ({
+    id: p.id,
+    name: p.name,
+    price: p.salePrice,
+    barcode: p.barcode ?? '',
+    category: p.category ?? '',
+    stock: dishProductIds.has(p.id) ? 9999 : (stockByProduct.get(p.id) ?? 0),
+    stopListed: p.stopListed,
+    modifiers: modifiersByProduct.get(p.id) ?? [],
+    parentProductId: p.parentProductId,
+    variantLabel: p.variantLabel,
+  }));
+
+  // Variant grouping only applies for retail-tariff companies — everyone else sees
+  // every product (including variant children) as a flat, ungrouped list, which is
+  // exactly today's behaviour and stays backward-compatible.
+  const groupedProducts = modules.includes('retail')
+    ? groupProductVariants(productRows).map(({ product, variants }) => ({ ...product, variants }))
+    : productRows.map((p) => ({ ...p, variants: [] }));
+
   res.json({
     token: signPosToken(user.id, user.companyId),
     user: { id: user.id, name: user.name, role: user.role },
     company: { id: user.company.id, name: user.company.name },
     modules,
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
-    products: products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      price: p.salePrice,
-      barcode: p.barcode ?? '',
-      category: p.category ?? '',
-      stock: dishProductIds.has(p.id) ? 9999 : (stockByProduct.get(p.id) ?? 0),
-      stopListed: p.stopListed,
-      modifiers: modifiersByProduct.get(p.id) ?? [],
-    })),
+    products: groupedProducts,
   });
 });
 

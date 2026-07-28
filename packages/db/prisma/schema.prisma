@@ -108,19 +108,23 @@ model Shift {
 }
 
 model Product {
-  id            String  @id @default(cuid())
-  company       Company @relation(fields: [companyId], references: [id])
-  companyId     String
-  name          String
-  category      String?
-  unit          String
-  barcode       String?
-  ntinCode      String?
-  purchasePrice Int
-  salePrice     Int
-  taxMode       String?
-  stopListed    Boolean @default(false)
-  sellable      Boolean @default(true)
+  id              String  @id @default(cuid())
+  company         Company @relation(fields: [companyId], references: [id])
+  companyId       String
+  name            String
+  category        String?
+  unit            String
+  barcode         String?
+  ntinCode        String?
+  purchasePrice   Int
+  salePrice       Int
+  taxMode         String?
+  stopListed      Boolean @default(false)
+  sellable        Boolean @default(true)
+  parentProduct   Product?  @relation("ProductVariants", fields: [parentProductId], references: [id])
+  parentProductId String?
+  variantLabel    String?
+  variants        Product[] @relation("ProductVariants")
 
   stocks         Stock[]
   batches        ProductBatch[]

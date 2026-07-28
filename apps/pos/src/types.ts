@@ -4,6 +4,12 @@ export interface ProductModifierOption {
   priceDelta: number;
 }
 
+export interface ProductVariantOption {
+  id: string;
+  label: string;
+  stock: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -13,6 +19,7 @@ export interface Product {
   stock: number;
   stopListed: boolean;
   modifiers: ProductModifierOption[];
+  variants: ProductVariantOption[];
 }
 
 export interface CompanyLocation {

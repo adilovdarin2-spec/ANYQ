@@ -187,6 +187,7 @@ button { cursor: pointer; }
   background: var(--surface); font-size: 1rem; font-weight: 700; color: var(--ink);
 }
 .payment-option:active { background: var(--surface-2); }
+.payment-option:disabled { color: var(--ink-muted); opacity: 0.6; }
 .qr-box {
   margin: 24px auto; width: 200px; height: 200px; border: 2px dashed var(--border);
   border-radius: 12px; display: flex; align-items: center; justify-content: center;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Count, Discount, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, Receipt, Report, Sale, Shift, Transfer } from './types';
+import type { Batch, CartLine, Count, Discount, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductVariantOption, Receipt, Report, Sale, Shift, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -41,6 +41,7 @@ import { OrdersScreen } from './components/OrdersScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { BatchesScreen } from './components/BatchesScreen';
 import { ModifierPicker } from './components/ModifierPicker';
+import { VariantPicker } from './components/VariantPicker';
 import { TransfersScreen } from './components/TransfersScreen';
 import { IncomingScreen } from './components/IncomingScreen';
 import { CycleCountScreen } from './components/CycleCountScreen';
@@ -78,6 +79,7 @@ export default function App() {
   const [batchesError, setBatchesError] = useState<string | null>(null);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
+  const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [transfersLoading, setTransfersLoading] = useState(false);
   const [transfersError, setTransfersError] = useState<string | null>(null);
@@ -410,7 +412,9 @@ export default function App() {
   }
 
   function handleProductClick(product: Product) {
-    if (product.modifiers.length > 0) {
+    if (product.variants.length > 0) {
+      setVariantProduct(product);
+    } else if (product.modifiers.length > 0) {
       setModifierProduct(product);
     } else {
       addToCart(product);
@@ -422,6 +426,23 @@ export default function App() {
       addToCart(modifierProduct, modifier ?? undefined);
     }
     setModifierProduct(null);
+  }
+
+  function handlePickVariant(variant: ProductVariantOption) {
+    if (variantProduct) {
+      addToCart({
+        id: variant.id,
+        name: `${variantProduct.name} — ${variant.label}`,
+        price: variantProduct.price,
+        barcode: '',
+        category: variantProduct.category,
+        stock: variant.stock,
+        stopListed: false,
+        modifiers: [],
+        variants: [],
+      });
+    }
+    setVariantProduct(null);
   }
 
   function changeQty(lineId: string, delta: number) {
@@ -707,6 +728,10 @@ export default function App() {
 
       {modifierProduct && (
         <ModifierPicker product={modifierProduct} onPick={handlePickModifier} onCancel={() => setModifierProduct(null)} />
+      )}
+
+      {variantProduct && (
+        <VariantPicker product={variantProduct} onPick={handlePickVariant} onCancel={() => setVariantProduct(null)} />
       )}
 
       <InstallPrompt {...install} />
