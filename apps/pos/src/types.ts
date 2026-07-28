@@ -10,6 +10,8 @@ export interface ProductVariantOption {
   stock: number;
 }
 
+export type SaleUnit = 'piece' | 'weight';
+
 export interface Product {
   id: string;
   name: string;
@@ -18,6 +20,7 @@ export interface Product {
   category: string;
   stock: number;
   stopListed: boolean;
+  saleUnit: SaleUnit;
   modifiers: ProductModifierOption[];
   variants: ProductVariantOption[];
 }
@@ -35,6 +38,7 @@ export interface CartLine {
   name: string;
   price: number;
   qty: number;
+  saleUnit?: SaleUnit;
 }
 
 export type PaymentMethod = 'cash' | 'kaspi' | 'card';

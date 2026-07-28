@@ -878,9 +878,48 @@ async function seedProductionDemoData() {
   console.log(`Seeded production BOM: "Сахар 1кг" from "${bulkSugar.name}" (200kg bulk stock at ${location.name})`);
 }
 
+async function seedWeightProductDemoData() {
+  const network = await prisma.company.findFirst({
+    where: { name: 'Сеть магазинов «Алма Маркет»' },
+    include: { locations: true },
+  });
+  if (!network) {
+    console.log('Demo network not found, skipping weight-product demo data');
+    return;
+  }
+
+  const existing = await prisma.product.findFirst({ where: { companyId: network.id, name: 'Сыр Российский' } });
+  if (existing) {
+    console.log('Weight-product demo already seeded, skipping');
+    return;
+  }
+
+  const location = network.locations.find((l) => l.name.includes('Бостандык'));
+  if (!location) {
+    console.log('Бостандык location not found, skipping weight-product demo data');
+    return;
+  }
+
+  const cheese = await prisma.product.create({
+    data: {
+      companyId: network.id,
+      name: 'Сыр Российский',
+      category: 'Молочка',
+      unit: 'кг',
+      purchasePrice: 2800,
+      salePrice: 3500,
+      saleUnit: 'weight',
+    },
+  });
+  await prisma.stock.create({ data: { productId: cheese.id, locationId: location.id, quantity: 12.5 } });
+
+  console.log(`Seeded weight-based product "${cheese.name}" (3500₸/кг, 12.5кг stock at ${location.name})`);
+}
+
 main()
   .then(() => seedVariantDemoData())
   .then(() => seedProductionDemoData())
+  .then(() => seedWeightProductDemoData())
   .catch((err) => {
     console.error(err);
     process.exit(1);

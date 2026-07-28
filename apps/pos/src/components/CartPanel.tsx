@@ -1,6 +1,6 @@
 import type { CartLine, Discount, LoyaltySelection } from '../types';
 import type { CustomerLookupResult } from '../api';
-import { formatMoney } from '../utils';
+import { formatMoney, formatWeight } from '../utils';
 import { DiscountEditor } from './DiscountEditor';
 import { LoyaltyEditor } from './LoyaltyEditor';
 
@@ -17,6 +17,7 @@ interface Props {
   onChangeLoyalty: (selection: LoyaltySelection | null) => void;
   onLookupCustomer: (phone: string) => Promise<CustomerLookupResult>;
   onChangeQty: (lineId: string, delta: number) => void;
+  onEditWeight: (line: CartLine) => void;
   onRemove: (lineId: string) => void;
   onCheckout: () => void;
 }
@@ -34,6 +35,7 @@ export function CartPanel({
   onChangeLoyalty,
   onLookupCustomer,
   onChangeQty,
+  onEditWeight,
   onRemove,
   onCheckout,
 }: Props) {
@@ -46,15 +48,19 @@ export function CartPanel({
           <div key={line.id} className="line-item">
             <div style={{ flex: 1 }}>
               <div className="li-name">{line.name}</div>
-              <div className="li-price">{formatMoney(line.price)} за шт.</div>
+              <div className="li-price">{formatMoney(line.price)} за {line.saleUnit === 'weight' ? 'кг' : 'шт.'}</div>
               <button className="li-remove" onClick={() => onRemove(line.id)}>Удалить</button>
             </div>
-            <div className="qty-stepper">
-              <button onClick={() => onChangeQty(line.id, -1)} aria-label="Меньше">–</button>
-              <span>{line.qty}</span>
-              <button onClick={() => onChangeQty(line.id, 1)} aria-label="Больше">+</button>
-            </div>
-            <div className="li-total">{formatMoney(line.price * line.qty)}</div>
+            {line.saleUnit === 'weight' ? (
+              <button className="li-remove" onClick={() => onEditWeight(line)}>{formatWeight(line.qty)} · изменить</button>
+            ) : (
+              <div className="qty-stepper">
+                <button onClick={() => onChangeQty(line.id, -1)} aria-label="Меньше">–</button>
+                <span>{line.qty}</span>
+                <button onClick={() => onChangeQty(line.id, 1)} aria-label="Больше">+</button>
+              </div>
+            )}
+            <div className="li-total">{formatMoney(Math.round(line.price * line.qty))}</div>
           </div>
         ))}
       </div>

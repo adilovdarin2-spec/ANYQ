@@ -49,6 +49,7 @@ import { TransfersScreen } from './components/TransfersScreen';
 import { IncomingScreen } from './components/IncomingScreen';
 import { CycleCountScreen } from './components/CycleCountScreen';
 import { ProductionScreen } from './components/ProductionScreen';
+import { WeightEntryModal } from './components/WeightEntryModal';
 
 type View =
   | 'sale'
@@ -85,6 +86,7 @@ export default function App() {
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
+  const [weightProduct, setWeightProduct] = useState<Product | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [transfersLoading, setTransfersLoading] = useState(false);
   const [transfersError, setTransfersError] = useState<string | null>(null);
@@ -442,23 +444,35 @@ export default function App() {
     setView('sale');
   }
 
-  function addToCart(product: Product, modifier?: ProductModifierOption) {
+  function addToCart(product: Product, modifier?: ProductModifierOption, explicitQty?: number) {
     const lineId = modifier ? `${product.id}:${modifier.id}` : product.id;
     const displayName = modifier ? `${product.name} (${modifier.name})` : product.name;
     const price = product.price + (modifier?.priceDelta ?? 0);
     setCart((prev) => {
+      // Weight-based lines are set (re-entering a weight corrects the amount),
+      // not incremented like piece-based lines.
+      if (explicitQty !== undefined) {
+        if (explicitQty <= 0 || explicitQty > product.stock) return prev;
+        const existing = prev.find((l) => l.id === lineId);
+        if (existing) {
+          return prev.map((l) => (l.id === lineId ? { ...l, qty: explicitQty } : l));
+        }
+        return [...prev, { id: lineId, productId: product.id, name: displayName, price, qty: explicitQty, saleUnit: product.saleUnit }];
+      }
       const existing = prev.find((l) => l.id === lineId);
       const currentQty = existing?.qty ?? 0;
       if (currentQty + 1 > product.stock) return prev;
       if (existing) {
         return prev.map((l) => (l.id === lineId ? { ...l, qty: l.qty + 1 } : l));
       }
-      return [...prev, { id: lineId, productId: product.id, name: displayName, price, qty: 1 }];
+      return [...prev, { id: lineId, productId: product.id, name: displayName, price, qty: 1, saleUnit: product.saleUnit }];
     });
   }
 
   function handleProductClick(product: Product) {
-    if (product.variants.length > 0) {
+    if (product.saleUnit === 'weight') {
+      setWeightProduct(product);
+    } else if (product.variants.length > 0) {
       setVariantProduct(product);
     } else if (product.modifiers.length > 0) {
       setModifierProduct(product);
@@ -474,6 +488,13 @@ export default function App() {
     setModifierProduct(null);
   }
 
+  function handleConfirmWeight(kg: number) {
+    if (weightProduct) {
+      addToCart(weightProduct, undefined, kg);
+    }
+    setWeightProduct(null);
+  }
+
   function handlePickVariant(variant: ProductVariantOption) {
     if (variantProduct) {
       addToCart({
@@ -481,6 +502,7 @@ export default function App() {
         name: `${variantProduct.name} — ${variant.label}`,
         price: variantProduct.price,
         barcode: '',
+        saleUnit: 'piece',
         category: variantProduct.category,
         stock: variant.stock,
         stopListed: false,
@@ -503,6 +525,11 @@ export default function App() {
     setCart((prev) => prev.filter((l) => l.id !== lineId));
   }
 
+  function handleEditWeightLine(line: CartLine) {
+    const product = session?.products.find((p) => p.id === line.productId);
+    if (product) setWeightProduct(product);
+  }
+
   function handleSearchEnter() {
     if (!session) return;
     const match = session.products.find((p) => p.barcode === query.trim());
@@ -512,7 +539,7 @@ export default function App() {
     }
   }
 
-  const cartSubtotal = cart.reduce((sum, l) => sum + l.price * l.qty, 0);
+  const cartSubtotal = cart.reduce((sum, l) => sum + Math.round(l.price * l.qty), 0);
   const cartDiscountAmount = discount
     ? discount.type === 'percent'
       ? Math.round((cartSubtotal * Math.min(Math.max(discount.value, 0), 100)) / 100)
@@ -638,6 +665,7 @@ export default function App() {
             onChangeLoyalty={setLoyalty}
             onLookupCustomer={lookupCustomer}
             onChangeQty={changeQty}
+            onEditWeight={handleEditWeightLine}
             onRemove={removeLine}
             onCheckout={() => setView('payment')}
           />
@@ -672,6 +700,7 @@ export default function App() {
           onChangeLoyalty={setLoyalty}
           onLookupCustomer={lookupCustomer}
           onChangeQty={changeQty}
+          onEditWeight={handleEditWeightLine}
           onRemove={removeLine}
           onBack={() => setView('sale')}
           onCheckout={() => setView('payment')}
@@ -792,6 +821,10 @@ export default function App() {
 
       {variantProduct && (
         <VariantPicker product={variantProduct} onPick={handlePickVariant} onCancel={() => setVariantProduct(null)} />
+      )}
+
+      {weightProduct && (
+        <WeightEntryModal product={weightProduct} onConfirm={handleConfirmWeight} onCancel={() => setWeightProduct(null)} />
       )}
 
       <InstallPrompt {...install} />

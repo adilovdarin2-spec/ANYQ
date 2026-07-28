@@ -29,7 +29,9 @@ export interface ReportSummary {
 // Net of any applied discount and loyalty-point redemption — the actual amount
 // collected, not the list-price sum.
 function saleTotal(sale: SaleRecord): number {
-  const gross = sale.items.reduce((sum, it) => sum + it.price * it.quantity, 0);
+  // Rounded per line — a no-op for piece-based items (already whole tenge),
+  // necessary for weight-based ones (price-per-kg × a decimal kg quantity).
+  const gross = sale.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
   return gross - (sale.discountAmount ?? 0) - (sale.pointsRedeemed ?? 0);
 }
 
@@ -73,7 +75,7 @@ export function buildTopProducts(sales: SaleRecord[], limit = 10): TopProduct[] 
 
   for (const sale of sales) {
     for (const item of sale.items) {
-      const revenue = item.price * item.quantity;
+      const revenue = Math.round(item.price * item.quantity);
       const existing = byProduct.get(item.productId);
       if (existing) {
         existing.quantity += item.quantity;

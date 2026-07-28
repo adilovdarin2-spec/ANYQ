@@ -83,6 +83,10 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     category: p.category ?? '',
     stock: dishProductIds.has(p.id) ? 9999 : (stockByProduct.get(p.id) ?? 0),
     stopListed: p.stopListed,
+    // Weight-based sale is part of the same Retail Pack bundle as variants —
+    // non-retail companies always see 'piece' regardless of what's stored,
+    // same gating pattern used for variant grouping just below.
+    saleUnit: modules.includes('retail') ? p.saleUnit : 'piece',
     modifiers: modifiersByProduct.get(p.id) ?? [],
     parentProductId: p.parentProductId,
     variantLabel: p.variantLabel,
@@ -129,7 +133,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     return;
   }
   const discount = discountType && discountValue !== undefined ? { type: discountType, value: discountValue } : null;
-  const subtotal = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
+  const subtotal = items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
   const { discountAmount } = computeDiscount(subtotal, discount);
 
   const customerPhone = typeof b.customerPhone === 'string' ? b.customerPhone.trim() : '';
@@ -408,7 +412,7 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   });
 
   const sales: SaleRecord[] = documents.map((d) => {
-    const subtotal = d.items.reduce((sum, it) => sum + it.price * it.quantity, 0);
+    const subtotal = d.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
     const discount: { type: DiscountType; value: number } | null =
       d.discountType === 'percent' || d.discountType === 'fixed'
         ? { type: d.discountType, value: d.discountValue ?? 0 }
