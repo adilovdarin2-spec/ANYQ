@@ -12,6 +12,8 @@ import { allocateFefo, classifyExpiry } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments } from '../counts';
+import { computeDiscount } from '../discounts';
+import type { DiscountType } from '../discounts';
 
 export const posRouter = Router();
 
@@ -101,6 +103,16 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   }
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
+
+  const discountType: DiscountType | undefined = b.discountType === 'percent' || b.discountType === 'fixed' ? b.discountType : undefined;
+  const discountValue: number | undefined = Number.isFinite(b.discountValue) ? Number(b.discountValue) : undefined;
+  if (discountType && !modules.includes('retail')) {
+    res.status(403).json({ error: 'Скидки недоступны на вашем тарифе' });
+    return;
+  }
+  const discount = discountType && discountValue !== undefined ? { type: discountType, value: discountValue } : null;
+  const subtotal = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
+  const { discountAmount } = computeDiscount(subtotal, discount);
 
   try {
     const document = await prisma.$transaction(async (tx) => {
@@ -211,6 +223,8 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           type: 'sale',
           status: 'confirmed',
           paymentMethod: b.paymentMethod,
+          discountType: discount?.type,
+          discountValue: discount?.value,
           createdBy: req.posUserId!,
           items: { create: documentItemsData },
         },
@@ -218,7 +232,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       });
     }, { timeout: 15000 });
 
-    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString(), discountAmount });
   } catch (err) {
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
@@ -312,18 +326,26 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
     include: { items: { include: { product: true } } },
   });
 
-  const sales: SaleRecord[] = documents.map((d) => ({
-    id: d.id,
-    createdAt: d.createdAt,
-    paymentMethod: d.paymentMethod,
-    createdBy: d.createdBy,
-    items: d.items.map((it) => ({
-      productId: it.productId,
-      name: it.product.name,
-      quantity: it.quantity,
-      price: it.price,
-    })),
-  }));
+  const sales: SaleRecord[] = documents.map((d) => {
+    const subtotal = d.items.reduce((sum, it) => sum + it.price * it.quantity, 0);
+    const discount: { type: DiscountType; value: number } | null =
+      d.discountType === 'percent' || d.discountType === 'fixed'
+        ? { type: d.discountType, value: d.discountValue ?? 0 }
+        : null;
+    return {
+      id: d.id,
+      createdAt: d.createdAt,
+      paymentMethod: d.paymentMethod,
+      createdBy: d.createdBy,
+      discountAmount: computeDiscount(subtotal, discount).discountAmount,
+      items: d.items.map((it) => ({
+        productId: it.productId,
+        name: it.product.name,
+        quantity: it.quantity,
+        price: it.price,
+      })),
+    };
+  });
 
   const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
 

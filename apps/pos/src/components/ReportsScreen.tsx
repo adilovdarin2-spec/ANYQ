@@ -63,6 +63,12 @@ export function ReportsScreen({ report, loading, error, rangeDays, onRangeChange
                 <span className="value">{formatMoney(report.summary.averageCheck)}</span>
                 <span className="label">Средний чек</span>
               </div>
+              {report.summary.totalDiscount > 0 && (
+                <div className="report-card">
+                  <span className="value">{formatMoney(report.summary.totalDiscount)}</span>
+                  <span className="label">Скидки</span>
+                </div>
+              )}
             </div>
 
             {Object.keys(report.summary.byPaymentMethod).length > 0 && (

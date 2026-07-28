@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Count, Order, PaymentMethod, Product, ProductModifierOption, Receipt, Report, Sale, Shift, Transfer } from './types';
+import type { Batch, CartLine, Count, Discount, Order, PaymentMethod, Product, ProductModifierOption, Receipt, Report, Sale, Shift, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -89,6 +89,7 @@ export default function App() {
   const [countsLoading, setCountsLoading] = useState(false);
   const [countsError, setCountsError] = useState<string | null>(null);
   const [countSubmitting, setCountSubmitting] = useState(false);
+  const [discount, setDiscount] = useState<Discount | null>(null);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -97,6 +98,7 @@ export default function App() {
   const hasPharmacy = session?.modules?.includes('pharmacy') ?? false;
   const hasRestaurant = session?.modules?.includes('restaurant') ?? false;
   const hasWarehouse = session?.modules?.includes('warehouse') ?? false;
+  const hasRetail = session?.modules?.includes('retail') ?? false;
   const isDesktop = useIsDesktop();
 
   function handleLogin(newSession: PosSession) {
@@ -441,12 +443,22 @@ export default function App() {
     }
   }
 
-  const cartTotal = cart.reduce((sum, l) => sum + l.price * l.qty, 0);
+  const cartSubtotal = cart.reduce((sum, l) => sum + l.price * l.qty, 0);
+  const cartDiscountAmount = discount
+    ? discount.type === 'percent'
+      ? Math.round((cartSubtotal * Math.min(Math.max(discount.value, 0), 100)) / 100)
+      : Math.min(Math.max(discount.value, 0), cartSubtotal)
+    : 0;
+  const cartTotal = cartSubtotal - cartDiscountAmount;
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
   const cartQtyByProduct = cart.reduce<Record<string, number>>((acc, l) => {
     acc[l.productId] = (acc[l.productId] ?? 0) + l.qty;
     return acc;
   }, {});
+
+  useEffect(() => {
+    if (cart.length === 0 && discount) setDiscount(null);
+  }, [cart.length, discount]);
 
   function completeSale(method: PaymentMethod) {
     if (!shift || !session) return;
@@ -456,6 +468,8 @@ export default function App() {
       locationId: session.locations[0]?.id ?? '',
       items: cart,
       total: cartTotal,
+      discount,
+      discountAmount: cartDiscountAmount,
       paymentMethod: method,
       createdAt: new Date().toISOString(),
       synced: false,
@@ -465,6 +479,7 @@ export default function App() {
     void sync();
     setLastSale(sale);
     setCart([]);
+    setDiscount(null);
     setView('receipt');
   }
 
@@ -525,7 +540,18 @@ export default function App() {
               onToggleStopList={handleToggleStopList}
             />
           </div>
-          <CartPanel cart={cart} total={cartTotal} onChangeQty={changeQty} onRemove={removeLine} onCheckout={() => setView('payment')} />
+          <CartPanel
+            cart={cart}
+            subtotal={cartSubtotal}
+            total={cartTotal}
+            discount={discount}
+            discountAmount={cartDiscountAmount}
+            canDiscount={hasRetail}
+            onChangeDiscount={setDiscount}
+            onChangeQty={changeQty}
+            onRemove={removeLine}
+            onCheckout={() => setView('payment')}
+          />
         </div>
       )}
 
@@ -546,7 +572,12 @@ export default function App() {
       {view === 'cart' && (
         <CartSheet
           cart={cart}
+          subtotal={cartSubtotal}
           total={cartTotal}
+          discount={discount}
+          discountAmount={cartDiscountAmount}
+          canDiscount={hasRetail}
+          onChangeDiscount={setDiscount}
           onChangeQty={changeQty}
           onRemove={removeLine}
           onBack={() => setView('sale')}

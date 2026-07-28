@@ -16,9 +16,9 @@ database per vertical.
 | Layer | What it is | ANYQ status |
 |---|---|---|
 | Core domain | Organizations, locations, users/roles, products, stock, sales, documents | Built |
-| Retail Pack | Variants, discounts, loyalty, weight-based sale | Not built (shop tariff today = bare POS) |
+| Retail Pack | Variants, discounts, loyalty, weight-based sale | **Partially built** (2026-07-28) — per-sale discount (percent/fixed, gated by `retail` module) shipped and net-of-discount reporting. Variants, loyalty, and weight-based sale still not built — deliberately scoped as a bigger, separate follow-up |
 | Pharmacy Pack | Batch/expiry FEFO dispensing | **Built** — batches, expiry-aware sale allocation, receiving screen. `Prescription`/`ControlledSubstanceLedger` schema still has zero wiring (compliance/marking scope, deliberately deferred) |
-| Warehouse Pro Pack | Multi-warehouse transfers | **Built** (2026-07-28) — `Document.type='transfer'`, gated by `warehouse` module. Receiving documents/cycle counts still not built |
+| Warehouse Pro Pack | Multi-warehouse transfers, receiving, cycle counts | **Built** (2026-07-28) — `Document.type='transfer'/'receipt'/'adjustment'`, all gated by `warehouse` module |
 | Distribution Pack (B2B) | Personal pricing, credit limits, order portal, linked buyer/seller documents | **Built** — this is the `supply` module (`apps/orders` + `/pos/orders`) |
 | Restaurant Pack | Recipes, ingredient deduction, food cost, stop-list, modifiers | **Built** (2026-07-28). KDS, table/floor plan, split bills still not built — scoped out as a deliberately separate, larger follow-up |
 | Terminal/reports | Desktop layout, sales analytics, receipt printing | Built (2026-07-28, MVP scope) |
@@ -42,12 +42,12 @@ Carried forward from the brief, because violating any of these is expensive to u
 
 - **Stock must be a computed projection of a movement ledger, not a mutable number.**
   This is the one place ANYQ's current implementation already violates the target architecture:
-  `/pos/sales`, `/pos/orders/:id/fulfill`, and now `/pos/transfers` all do
-  `prisma.stock.update({ data: { quantity: ... } })` directly. It works today because there's no
+  `/pos/sales`, `/pos/orders/:id/fulfill`, `/pos/transfers`, `/pos/receipts`, and `/pos/counts` all
+  do `prisma.stock.update({ data: { quantity: ... } })` directly. It works today because there's no
   reconciliation, no audit trail, and no multi-writer contention story yet — but every new
-  consumer of this pattern (transfers being the latest) makes the eventual migration to a real
-  ledger more work, not less. Flagging as the top architectural debt item, not fixing
-  opportunistically — but don't let the pile keep growing indefinitely either.
+  consumer of this pattern makes the eventual migration to a real ledger more work, not less.
+  Flagging as the top architectural debt item, not fixing opportunistically — but don't let the
+  pile keep growing indefinitely either.
 - Never store the whole business in one flat table per vertical — one core schema, feature
   flags per module, industry-specific fields live behind their own pack tables (matches the
   `ProductBatch`/`Prescription` split already in `schema.prisma`).
@@ -86,13 +86,17 @@ built, which is a good sign the existing sequencing wasn't wrong:
 5. Restaurant Pack (recipes, ingredient deduction, food cost, stop-list, modifiers) — done (2026-07-28)
 6. Pharmacy Pack (batch/expiry FEFO dispensing) — done (2026-07-28)
 7. Multi-warehouse transfers — done (2026-07-28)
-8. Advanced WMS (receiving documents, cycle counts) / manufacturing — not started
-9. Ecosystem (integrations marketplace, AI layer, fraud detection) — not started, and shouldn't
-   be attempted before step 8 and real paying usage justify the investment
+8. Advanced WMS (receiving documents, cycle counts) / manufacturing — receiving + cycle counts
+   done (2026-07-28); manufacturing (BOM-driven production orders beyond restaurant recipes) not
+   started
+9. Retail Pack MVP slice (per-sale discounts) — done (2026-07-28); variants, loyalty, and
+   weight-based sale still not started
+10. Ecosystem (integrations marketplace, AI layer, fraud detection) — not started, and shouldn't
+    be attempted before real paying usage justifies the investment
 
-Every near-term vertical pack from the original brief is now built to MVP scope. What's left before
-ecosystem-level features is: KDS/table management for restaurants, prescription/marking compliance
-for pharmacies, and receiving-document/cycle-count workflows for warehouses — all deliberately
-scoped out of their respective MVPs as bigger, separate follow-ups. Don't jump to ecosystem
-features while any of those remain unbuilt; they're what actually differentiate the product for
-the customers ANYQ already has.
+Every near-term vertical pack from the original brief is now built to at least MVP scope. What's
+left before ecosystem-level features: KDS/table management for restaurants, prescription/marking
+compliance for pharmacies, manufacturing/BOM beyond recipes, and the rest of Retail Pack (product
+variants, loyalty/points, weight-based sale) — all deliberately scoped out of their respective
+MVPs as bigger, separate follow-ups. Don't jump to ecosystem features while any of those remain
+unbuilt; they're what actually differentiate the product for the customers ANYQ already has.

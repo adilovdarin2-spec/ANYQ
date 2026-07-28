@@ -24,6 +24,12 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
               <span>{formatMoney(line.price * line.qty)}</span>
             </div>
           ))}
+          {sale.discount && (
+            <div className="receipt-line">
+              <span>Скидка ({sale.discount.type === 'percent' ? `${sale.discount.value}%` : formatMoney(sale.discount.value)})</span>
+              <span>−{formatMoney(sale.discountAmount)}</span>
+            </div>
+          )}
           <div className="receipt-divider"></div>
           <div className="receipt-total"><span>Итого</span><span>{formatMoney(sale.total)}</span></div>
           <div className="receipt-line" style={{ marginTop: 6 }}>

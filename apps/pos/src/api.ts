@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, Order, PaymentMethod, Product, Receipt, Report, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, DiscountType, Order, PaymentMethod, Product, Receipt, Report, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -36,9 +36,11 @@ export interface SubmitSalePayload {
   locationId: string;
   paymentMethod: PaymentMethod;
   items: { productId: string; quantity: number; price: number }[];
+  discountType?: DiscountType;
+  discountValue?: number;
 }
 
-export function submitSale(token: string, payload: SubmitSalePayload): Promise<{ id: string; createdAt: string }> {
+export function submitSale(token: string, payload: SubmitSalePayload): Promise<{ id: string; createdAt: string; discountAmount: number }> {
   return request('/pos/sales', { method: 'POST', body: JSON.stringify(payload) }, token);
 }
 
