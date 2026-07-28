@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Order, PaymentMethod, Product, Report } from './types';
+import type { Batch, CompanyLocation, Order, PaymentMethod, Product, Report, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -90,4 +90,17 @@ export function receiveBatch(token: string, payload: ReceiveBatchPayload): Promi
 
 export function setStopListed(token: string, productId: string, stopListed: boolean): Promise<{ id: string; stopListed: boolean }> {
   return request(`/pos/products/${productId}/stop-list`, { method: 'PATCH', body: JSON.stringify({ stopListed }) }, token);
+}
+
+export function fetchTransfers(token: string): Promise<Transfer[]> {
+  return request('/pos/transfers', { method: 'GET' }, token);
+}
+
+export interface CreateTransferPayload {
+  toLocationId: string;
+  items: { productId: string; quantity: number }[];
+}
+
+export function createTransfer(token: string, payload: CreateTransferPayload): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/transfers', { method: 'POST', body: JSON.stringify(payload) }, token);
 }

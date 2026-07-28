@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Order, PaymentMethod, Product, ProductModifierOption, Report, Sale, Shift } from './types';
+import type { Batch, CartLine, Order, PaymentMethod, Product, ProductModifierOption, Report, Sale, Shift, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -15,6 +15,8 @@ import {
   fetchBatches,
   receiveBatch,
   setStopListed,
+  fetchTransfers,
+  createTransfer,
   ApiError,
 } from './api';
 import type { PosSession } from './api';
@@ -34,8 +36,9 @@ import { OrdersScreen } from './components/OrdersScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { BatchesScreen } from './components/BatchesScreen';
 import { ModifierPicker } from './components/ModifierPicker';
+import { TransfersScreen } from './components/TransfersScreen';
 
-type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders' | 'reports' | 'batches';
+type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders' | 'reports' | 'batches' | 'transfers';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -57,6 +60,10 @@ export default function App() {
   const [batchesError, setBatchesError] = useState<string | null>(null);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [transfersLoading, setTransfersLoading] = useState(false);
+  const [transfersError, setTransfersError] = useState<string | null>(null);
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -64,6 +71,7 @@ export default function App() {
   const hasTerminal = session?.modules?.includes('terminal') ?? false;
   const hasPharmacy = session?.modules?.includes('pharmacy') ?? false;
   const hasRestaurant = session?.modules?.includes('restaurant') ?? false;
+  const hasWarehouse = session?.modules?.includes('warehouse') ?? false;
   const isDesktop = useIsDesktop();
 
   function handleLogin(newSession: PosSession) {
@@ -204,6 +212,41 @@ export default function App() {
       setSession(updatedSession);
     } catch {
       // offline or server unavailable — leave the product as-is, try again next time
+    }
+  }
+
+  async function loadTransfers() {
+    if (!session) return;
+    setTransfersLoading(true);
+    setTransfersError(null);
+    try {
+      const data = await fetchTransfers(session.token);
+      setTransfers(data);
+    } catch (err) {
+      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось загрузить перемещения');
+    } finally {
+      setTransfersLoading(false);
+    }
+  }
+
+  function handleShowTransfers() {
+    setView('transfers');
+    void loadTransfers();
+  }
+
+  async function handleCreateTransfer(payload: { toLocationId: string; items: { productId: string; quantity: number }[] }) {
+    if (!session) return false;
+    setTransferSubmitting(true);
+    setTransfersError(null);
+    try {
+      await createTransfer(session.token, payload);
+      await loadTransfers();
+      return true;
+    } catch (err) {
+      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось отправить перемещение');
+      return false;
+    } finally {
+      setTransferSubmitting(false);
     }
   }
 
@@ -366,6 +409,7 @@ export default function App() {
         onShowReports={hasTerminal ? handleShowReports : undefined}
         onShowBatches={hasPharmacy ? handleShowBatches : undefined}
         expiringBatchesCount={batches.filter((b) => b.status !== 'ok').length}
+        onShowTransfers={hasWarehouse ? handleShowTransfers : undefined}
       />
 
       {view === 'sale' && isDesktop && (
@@ -390,7 +434,7 @@ export default function App() {
           <ProductGrid
             products={filteredProducts}
             cartQtyByProduct={cartQtyByProduct}
-            onPick={addToCart}
+            onPick={handleProductClick}
             canManageStopList={hasRestaurant}
             onToggleStopList={handleToggleStopList}
           />
@@ -461,6 +505,20 @@ export default function App() {
           onBack={() => setView('sale')}
           onRefresh={loadBatches}
           onReceive={handleReceiveBatch}
+        />
+      )}
+
+      {view === 'transfers' && (
+        <TransfersScreen
+          transfers={transfers}
+          products={session.products}
+          otherLocations={session.locations.filter((l) => l.id !== session.locations[0]?.id)}
+          loading={transfersLoading}
+          error={transfersError}
+          submitting={transferSubmitting}
+          onBack={() => setView('sale')}
+          onRefresh={loadTransfers}
+          onSubmit={handleCreateTransfer}
         />
       )}
 

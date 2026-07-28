@@ -67,11 +67,12 @@ model Location {
   type      String
   address   String?
 
-  stocks        Stock[]
-  batches       ProductBatch[]
-  documents     Document[]
-  prescriptions Prescription[]
-  shifts        Shift[]
+  stocks           Stock[]
+  batches          ProductBatch[]
+  documents        Document[] @relation("SourceLocation")
+  transfersIn      Document[] @relation("DestinationLocation")
+  prescriptions    Prescription[]
+  shifts           Shift[]
 
   @@map("locations")
 }
@@ -205,8 +206,10 @@ model Document {
   id            String        @id @default(cuid())
   company       Company       @relation(fields: [companyId], references: [id])
   companyId     String
-  location      Location      @relation(fields: [locationId], references: [id])
+  location      Location      @relation("SourceLocation", fields: [locationId], references: [id])
   locationId    String
+  toLocation    Location?     @relation("DestinationLocation", fields: [toLocationId], references: [id])
+  toLocationId  String?
   type          String
   status        String        @default("draft")
   paymentMethod String?

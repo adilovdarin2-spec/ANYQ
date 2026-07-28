@@ -137,3 +137,17 @@ export interface Batch {
   quantity: number;
   status: ExpiryStatus;
 }
+
+export interface TransferItem {
+  productId: string;
+  name: string;
+  quantity: number;
+}
+
+export interface Transfer {
+  id: string;
+  createdAt: string;
+  fromLocationName: string;
+  toLocationName: string;
+  items: TransferItem[];
+}

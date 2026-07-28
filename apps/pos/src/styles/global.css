@@ -298,6 +298,18 @@ button { cursor: pointer; }
 .margin-pct { font-size: 0.74rem; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--status-active-bg); color: var(--status-active); }
 .margin-pct.low { background: var(--status-overdue-bg); color: var(--status-overdue); }
 
+/* transfers (warehouse tariff) */
+.transfer-add-row { display: flex; gap: 8px; margin-top: 14px; }
+.transfer-add-row select {
+  flex: 2; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  font-size: 0.9rem; background: var(--surface); color: var(--ink);
+}
+.transfer-add-row input {
+  flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  font-size: 0.9rem; background: var(--surface); color: var(--ink);
+}
+.transfer-add-row .btn { flex-shrink: 0; padding: 10px 14px; font-size: 0.86rem; }
+
 /* printable receipt (terminal tariff) */
 @media print {
   body * { visibility: hidden; }
