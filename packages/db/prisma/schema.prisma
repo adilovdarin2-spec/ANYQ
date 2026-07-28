@@ -68,6 +68,7 @@ model Location {
   address   String?
 
   stocks        Stock[]
+  batches       ProductBatch[]
   documents     Document[]
   prescriptions Prescription[]
   shifts        Shift[]
@@ -144,13 +145,17 @@ model ProductBatch {
   id          String   @id @default(cuid())
   product     Product  @relation(fields: [productId], references: [id])
   productId   String
+  location    Location @relation(fields: [locationId], references: [id])
+  locationId  String
   batchNumber String
   expiryDate  DateTime
   quantity    Int
+  createdAt   DateTime @default(now())
 
   documentItems DocumentItem[]
   ledgerEntries ControlledSubstanceLedger[]
 
+  @@index([productId, locationId])
   @@map("product_batches")
 }
 

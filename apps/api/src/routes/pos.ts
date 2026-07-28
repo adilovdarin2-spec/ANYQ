@@ -8,6 +8,8 @@ import { findStockShortages } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock } from '../reports';
 import type { SaleRecord } from '../reports';
+import { allocateFefo, classifyExpiry } from '../batches';
+import type { BatchStock } from '../batches';
 
 export const posRouter = Router();
 
@@ -74,21 +76,66 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
 
   try {
     const document = await prisma.$transaction(async (tx) => {
-      const stockRows = await tx.stock.findMany({
-        where: { locationId: b.locationId, productId: { in: items.map((it) => it.productId) } },
-      });
+      const now = new Date();
+
+      const [stockRows, batchRows] = await Promise.all([
+        tx.stock.findMany({ where: { locationId: b.locationId, productId: { in: items.map((it) => it.productId) } } }),
+        tx.productBatch.findMany({
+          where: { locationId: b.locationId, productId: { in: items.map((it) => it.productId) }, quantity: { gt: 0 } },
+        }),
+      ]);
       const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
-      const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+      const batchesByProduct = new Map<string, typeof batchRows>();
+      for (const batch of batchRows) {
+        const list = batchesByProduct.get(batch.productId) ?? [];
+        list.push(batch);
+        batchesByProduct.set(batch.productId, list);
+      }
+
+      // For batch-tracked products, only non-expired batches count as sellable —
+      // expired stock must never be auto-sold, it has to be written off explicitly.
+      const quantityByProduct = new Map<string, number>();
+      for (const item of items) {
+        const productBatches = batchesByProduct.get(item.productId);
+        if (productBatches && productBatches.length > 0) {
+          const sellable = productBatches
+            .filter((batch) => batch.expiryDate > now)
+            .reduce((sum, batch) => sum + batch.quantity, 0);
+          quantityByProduct.set(item.productId, sellable);
+        } else {
+          quantityByProduct.set(item.productId, stockByProduct.get(item.productId)?.quantity ?? 0);
+        }
+      }
 
       const shortages = findStockShortages(items, quantityByProduct);
       if (shortages.length > 0) {
         throw new StockError(shortages);
       }
 
+      const documentItemsData: { productId: string; batchId: string | null; quantity: number; price: number }[] = [];
+      const updates: Promise<unknown>[] = [];
+
       for (const item of items) {
         const stock = stockByProduct.get(item.productId)!;
-        await tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } });
+        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } }));
+
+        const productBatches = batchesByProduct.get(item.productId);
+        if (productBatches && productBatches.length > 0) {
+          const sellableBatches: BatchStock[] = productBatches
+            .filter((batch) => batch.expiryDate > now)
+            .map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: batch.quantity }));
+          const { allocations } = allocateFefo(item.quantity, sellableBatches);
+          for (const alloc of allocations) {
+            const batch = productBatches.find((batchRow) => batchRow.id === alloc.batchId)!;
+            updates.push(tx.productBatch.update({ where: { id: batch.id }, data: { quantity: batch.quantity - alloc.quantity } }));
+            documentItemsData.push({ productId: item.productId, batchId: alloc.batchId, quantity: alloc.quantity, price: item.price });
+          }
+        } else {
+          documentItemsData.push({ productId: item.productId, batchId: null, quantity: item.quantity, price: item.price });
+        }
       }
+
+      await Promise.all(updates);
 
       return tx.document.create({
         data: {
@@ -98,17 +145,11 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           status: 'confirmed',
           paymentMethod: b.paymentMethod,
           createdBy: req.posUserId!,
-          items: {
-            create: items.map((it) => ({
-              productId: it.productId,
-              quantity: it.quantity,
-              price: it.price,
-            })),
-          },
+          items: { create: documentItemsData },
         },
         include: { items: true },
       });
-    });
+    }, { timeout: 15000 });
 
     res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
   } catch (err) {
@@ -235,6 +276,103 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   });
 });
 
+posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('pharmacy')) {
+    res.status(403).json({ error: 'Партии недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const location = company?.locations[0];
+  const batches = location
+    ? await prisma.productBatch.findMany({
+        where: { locationId: location.id },
+        include: { product: true },
+        orderBy: { expiryDate: 'asc' },
+      })
+    : [];
+
+  const now = new Date();
+  res.json(
+    batches.map((batch) => ({
+      id: batch.id,
+      productId: batch.productId,
+      productName: batch.product.name,
+      unit: batch.product.unit,
+      batchNumber: batch.batchNumber,
+      expiryDate: batch.expiryDate.toISOString(),
+      quantity: batch.quantity,
+      status: classifyExpiry(batch.expiryDate, now),
+    })),
+  );
+});
+
+posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const quantity = Number(b.quantity);
+  const batchNumber = typeof b.batchNumber === 'string' ? b.batchNumber.trim() : '';
+  const expiryDate = b.expiryDate ? new Date(b.expiryDate) : null;
+
+  if (!b.productId || !batchNumber || !Number.isFinite(quantity) || quantity <= 0 || !expiryDate || Number.isNaN(expiryDate.getTime())) {
+    res.status(400).json({ error: 'Некорректные данные партии' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('pharmacy')) {
+    res.status(403).json({ error: 'Партии недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const product = await prisma.product.findFirst({ where: { id: b.productId, companyId: req.posCompanyId } });
+  if (!product) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const location = company?.locations[0];
+  if (!location) {
+    res.status(400).json({ error: 'У компании не настроена точка' });
+    return;
+  }
+
+  const batch = await prisma.$transaction(async (tx) => {
+    const created = await tx.productBatch.create({
+      data: { productId: product.id, locationId: location.id, batchNumber, expiryDate, quantity },
+    });
+
+    const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId: location.id, binLocation: null } });
+    if (stock) {
+      await tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity + quantity } });
+    } else {
+      await tx.stock.create({ data: { productId: product.id, locationId: location.id, quantity, binLocation: null } });
+    }
+
+    return created;
+  });
+
+  res.status(201).json({ id: batch.id, createdAt: batch.createdAt.toISOString() });
+});
+
 posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const orders = await prisma.document.findMany({
     where: { companyId: req.posCompanyId, type: 'order' },
@@ -292,16 +430,18 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
         throw new StockError(shortages);
       }
 
-      for (const item of order.items) {
-        const stock = stockByProduct.get(item.productId)!;
-        await tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } });
-      }
+      await Promise.all(
+        order.items.map((item) => {
+          const stock = stockByProduct.get(item.productId)!;
+          return tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } });
+        }),
+      );
 
       await tx.document.update({
         where: { id: order.id },
         data: { status: 'confirmed', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
       });
-    });
+    }, { timeout: 15000 });
 
     res.json({ id: order.id, status: 'confirmed' });
   } catch (err) {

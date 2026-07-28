@@ -167,6 +167,7 @@ async function main() {
 
   await seedPosDemoData();
   await seedSupplyDemoData();
+  await seedPharmacyDemoData();
 }
 
 const posProducts = [
@@ -312,6 +313,164 @@ async function seedSupplyDemoData() {
       console.log(`Seeded stock for ${toCreate.length} products at ${location.name}`);
     }
   }
+}
+
+function daysFromNow(days: number): Date {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+}
+
+interface SeedBatch {
+  batchNumber: string;
+  days: number; // relative to seed run time — negative means already expired
+  quantity: number;
+}
+
+const pharmacyProducts: { name: string; price: number; unit: string; category: string; batches: SeedBatch[] }[] = [
+  {
+    name: 'Парацетамол 500мг №20',
+    price: 450,
+    unit: 'уп',
+    category: 'Обезболивающие',
+    batches: [
+      { batchNumber: 'PCM-2601', days: 12, quantity: 15 },
+      { batchNumber: 'PCM-2612', days: 220, quantity: 60 },
+    ],
+  },
+  {
+    name: 'Ибупрофен 400мг №20',
+    price: 680,
+    unit: 'уп',
+    category: 'Обезболивающие',
+    batches: [
+      { batchNumber: 'IBU-2598', days: -40, quantity: 8 },
+      { batchNumber: 'IBU-2650', days: 300, quantity: 40 },
+    ],
+  },
+  {
+    name: 'Аспирин 500мг №10',
+    price: 320,
+    unit: 'уп',
+    category: 'Обезболивающие',
+    batches: [{ batchNumber: 'ASP-2605', days: 200, quantity: 50 }],
+  },
+  {
+    name: 'Но-шпа 40мг №24',
+    price: 1450,
+    unit: 'уп',
+    category: 'Спазмолитики',
+    batches: [{ batchNumber: 'NSP-2590', days: 20, quantity: 10 }],
+  },
+  {
+    name: 'Витамин C 500мг №30',
+    price: 890,
+    unit: 'уп',
+    category: 'Витамины',
+    batches: [{ batchNumber: 'VTC-2611', days: 400, quantity: 80 }],
+  },
+  {
+    name: 'Активированный уголь №10',
+    price: 280,
+    unit: 'уп',
+    category: 'ЖКТ',
+    batches: [{ batchNumber: 'AKT-2555', days: -5, quantity: 12 }],
+  },
+  { name: 'Антисептик для рук 100мл', price: 590, unit: 'шт', category: 'Гигиена', batches: [] },
+  { name: 'Термометр электронный', price: 3200, unit: 'шт', category: 'Приборы', batches: [] },
+  {
+    name: 'Маска медицинская №50',
+    price: 1200,
+    unit: 'уп',
+    category: 'Гигиена',
+    batches: [{ batchNumber: 'MSK-2620', days: 500, quantity: 100 }],
+  },
+];
+
+async function seedPharmacyDemoData() {
+  const pharmacy = await prisma.company.findFirst({
+    where: { name: 'Аптека «Денсаулық»' },
+    include: { users: true, products: true, locations: true, tariff: true },
+  });
+  if (!pharmacy) {
+    console.log('Demo pharmacy not found, skipping pharmacy demo data');
+    return;
+  }
+
+  // The seeded tariff intentionally starts expired (to demo the admin "expired" state) —
+  // extend it here so the pharmacy demo account is actually usable for testing.
+  if (pharmacy.tariff && pharmacy.tariff.validUntil < new Date()) {
+    await prisma.tariff.update({ where: { id: pharmacy.tariff.id }, data: { validUntil: daysFromNow(180) } });
+    console.log('Extended Аптека «Денсаулық» tariff validUntil for demo purposes');
+  }
+
+  const owner = pharmacy.users.find((u) => u.role === 'owner');
+  if (owner && !owner.posPin) {
+    await prisma.user.update({ where: { id: owner.id }, data: { posPin: '2222' } });
+    console.log(`Set POS PIN 2222 for owner ${owner.name}`);
+  }
+  const pharmacist = pharmacy.users.find((u) => u.role === 'pharmacist');
+  if (pharmacist && !pharmacist.posPin) {
+    await prisma.user.update({ where: { id: pharmacist.id }, data: { posPin: '2223' } });
+    console.log(`Set POS PIN 2223 for pharmacist ${pharmacist.name}`);
+  }
+
+  if (pharmacy.products.length === 0) {
+    await prisma.product.createMany({
+      data: pharmacyProducts.map((p) => ({
+        companyId: pharmacy.id,
+        name: p.name,
+        category: p.category,
+        unit: p.unit,
+        purchasePrice: Math.round(p.price * 0.6),
+        salePrice: p.price,
+      })),
+    });
+    console.log(`Seeded ${pharmacyProducts.length} products for Аптека «Денсаулық»`);
+  }
+
+  const location = pharmacy.locations[0];
+  if (!location) return;
+
+  const products = await prisma.product.findMany({ where: { companyId: pharmacy.id } });
+  const productByName = new Map(products.map((p) => [p.name, p]));
+  const existingBatches = await prisma.productBatch.findMany({ where: { locationId: location.id } });
+  const existingBatchNumbers = new Set(existingBatches.map((batch) => batch.batchNumber));
+  const existingStock = await prisma.stock.findMany({ where: { locationId: location.id } });
+  const stockByProductId = new Map(existingStock.map((s) => [s.productId, s]));
+
+  for (const p of pharmacyProducts) {
+    const product = productByName.get(p.name);
+    if (!product) continue;
+
+    if (p.batches.length === 0) {
+      if (!stockByProductId.has(product.id)) {
+        await prisma.stock.create({ data: { productId: product.id, locationId: location.id, quantity: 20 } });
+      }
+      continue;
+    }
+
+    for (const batch of p.batches) {
+      if (existingBatchNumbers.has(batch.batchNumber)) continue;
+      await prisma.productBatch.create({
+        data: {
+          productId: product.id,
+          locationId: location.id,
+          batchNumber: batch.batchNumber,
+          expiryDate: daysFromNow(batch.days),
+          quantity: batch.quantity,
+        },
+      });
+
+      const stock = stockByProductId.get(product.id);
+      if (stock) {
+        const updated = await prisma.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity + batch.quantity } });
+        stockByProductId.set(product.id, updated);
+      } else {
+        const created = await prisma.stock.create({ data: { productId: product.id, locationId: location.id, quantity: batch.quantity } });
+        stockByProductId.set(product.id, created);
+      }
+    }
+  }
+  console.log('Seeded pharmacy batches for Аптека «Денсаулық»');
 }
 
 main()
