@@ -4,10 +4,11 @@ import { CompaniesTable } from './components/CompaniesTable';
 import { CreateCompanyDrawer } from './components/CreateCompanyDrawer';
 import { CompanyDetailDrawer } from './components/CompanyDetailDrawer';
 import { ProductsDrawer } from './components/ProductsDrawer';
+import { UsersDrawer } from './components/UsersDrawer';
 import { LoginScreen } from './components/LoginScreen';
 import { pluralizeRu } from './utils';
-import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct } from './api';
-import type { CreateCompanyPayload, TariffPayload } from './api';
+import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct, createUser, updateUser } from './api';
+import type { CreateCompanyPayload, TariffPayload, UserPayload } from './api';
 import type { Company } from './types';
 
 const TOKEN_KEY = 'anyq_admin_token';
@@ -22,6 +23,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [productsCompanyId, setProductsCompanyId] = useState<string | null>(null);
+  const [usersCompanyId, setUsersCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -87,8 +89,23 @@ export default function App() {
     return updateProduct(token, companyId, productId, payload);
   }
 
+  async function handleCreateUser(companyId: string, payload: UserPayload) {
+    if (!token) throw new Error('Не авторизован');
+    const user = await createUser(token, companyId, payload);
+    setCompanies((prev) => prev.map((c) => (c.id === companyId ? { ...c, users: [...c.users, user] } : c)));
+    return user;
+  }
+
+  async function handleUpdateUser(companyId: string, userId: string, payload: UserPayload) {
+    if (!token) throw new Error('Не авторизован');
+    const user = await updateUser(token, companyId, userId, payload);
+    setCompanies((prev) => prev.map((c) => (c.id === companyId ? { ...c, users: c.users.map((u) => (u.id === userId ? user : u)) } : c)));
+    return user;
+  }
+
   const selected = companies.find((c) => c.id === selectedId) ?? null;
   const productsCompany = companies.find((c) => c.id === productsCompanyId) ?? null;
+  const usersCompany = companies.find((c) => c.id === usersCompanyId) ?? null;
 
   if (!token) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -121,6 +138,7 @@ export default function App() {
           onUpdateTariff={handleUpdateTariff}
           onLoadShifts={handleLoadShifts}
           onManageProducts={() => setProductsCompanyId(selected.id)}
+          onManageUsers={() => setUsersCompanyId(selected.id)}
         />
       )}
       {productsCompany && (
@@ -132,6 +150,17 @@ export default function App() {
           onLoad={handleLoadProducts}
           onCreate={handleCreateProduct}
           onUpdate={handleUpdateProduct}
+        />
+      )}
+      {usersCompany && (
+        <UsersDrawer
+          key={usersCompany.id}
+          companyId={usersCompany.id}
+          companyName={usersCompany.name}
+          users={usersCompany.users}
+          onClose={() => setUsersCompanyId(null)}
+          onCreate={handleCreateUser}
+          onUpdate={handleUpdateUser}
         />
       )}
     </div>
