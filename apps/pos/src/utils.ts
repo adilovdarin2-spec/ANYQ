@@ -6,6 +6,10 @@ export function formatMoney(n: number): string {
   return `${n.toLocaleString('ru-RU')} ₸`;
 }
 
+export function formatWeight(kg: number): string {
+  return `${kg.toLocaleString('ru-RU', { maximumFractionDigits: 3 })} кг`;
+}
+
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }

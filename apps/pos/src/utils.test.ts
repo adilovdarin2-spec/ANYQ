@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genId, formatMoney, hoursSince } from './utils';
+import { genId, formatMoney, formatWeight, hoursSince } from './utils';
 
 describe('genId', () => {
   it('includes the given prefix and generates unique ids', () => {
@@ -15,6 +15,14 @@ describe('formatMoney', () => {
     const result = formatMoney(2500);
     expect(result.endsWith('₸')).toBe(true);
     expect(result.replace(/\s/g, '')).toBe('2500₸');
+  });
+});
+
+describe('formatWeight', () => {
+  it('includes the kg suffix and trims to at most 3 decimals', () => {
+    expect(formatWeight(0.35)).toBe('0,35 кг');
+    expect(formatWeight(15.5)).toBe('15,5 кг');
+    expect(formatWeight(2)).toBe('2 кг');
   });
 });
 

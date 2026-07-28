@@ -121,6 +121,7 @@ model Product {
   taxMode         String?
   stopListed      Boolean @default(false)
   sellable        Boolean @default(true)
+  saleUnit        String  @default("piece")
   parentProduct   Product?  @relation("ProductVariants", fields: [parentProductId], references: [id])
   parentProductId String?
   variantLabel    String?
@@ -181,7 +182,14 @@ model Stock {
   productId   String
   location    Location @relation(fields: [locationId], references: [id])
   locationId  String
-  quantity    Int
+  // Float, not Int — the one place this schema departs from its own
+  // whole-numbers convention (see note above Recipe), specifically so
+  // weight-based sale (kg) works: price * quantity keeps computing the
+  // right revenue everywhere with zero call-site changes, since JS/TS
+  // numbers don't distinguish int from float. DocumentItem.quantity is
+  // widened the same way for the same reason; RecipeIngredient and
+  // ProductBatch stay Int since they're untouched by retail weight-sale.
+  quantity    Float
   binLocation String?
 
   @@unique([productId, locationId, binLocation])
@@ -241,7 +249,7 @@ model DocumentItem {
   productId  String
   batch      ProductBatch? @relation(fields: [batchId], references: [id])
   batchId    String?
-  quantity   Int
+  quantity   Float
   price      Int
 
   @@map("document_items")

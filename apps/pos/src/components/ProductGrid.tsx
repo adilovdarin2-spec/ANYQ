@@ -1,5 +1,5 @@
 import type { Product } from '../types';
-import { formatMoney } from '../utils';
+import { formatMoney, formatWeight } from '../utils';
 
 interface Props {
   products: Product[];
@@ -24,11 +24,13 @@ export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopL
             <button className={`product-tile${out ? ' out' : ''}`} disabled={out} onClick={() => onPick(p)}>
               <span className="p-name">{p.name}</span>
               <span className="p-footer">
-                <span className="p-price">{formatMoney(p.price)}</span>
+                <span className="p-price">{formatMoney(p.price)}{p.saleUnit === 'weight' ? '/кг' : ''}</span>
                 {p.stopListed ? (
                   <span className="p-stock low">стоп-лист</span>
                 ) : (
-                  <span className={`p-stock${remaining <= 5 ? ' low' : ''}`}>{out ? 'нет в наличии' : `ост. ${remaining}`}</span>
+                  <span className={`p-stock${remaining <= 5 ? ' low' : ''}`}>
+                    {out ? 'нет в наличии' : p.saleUnit === 'weight' ? `ост. ${formatWeight(remaining)}` : `ост. ${remaining}`}
+                  </span>
                 )}
               </span>
             </button>

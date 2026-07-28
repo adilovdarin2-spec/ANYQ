@@ -1,6 +1,6 @@
 import type { Sale } from '../types';
 import { PAYMENT_LABELS } from '../types';
-import { formatMoney, formatDateTime } from '../utils';
+import { formatMoney, formatDateTime, formatWeight } from '../utils';
 
 interface Props {
   sale: Sale;
@@ -20,8 +20,8 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
           <div className="r-sub">{formatDateTime(sale.createdAt)}{!sale.synced ? ' · не синхронизирован' : ''}</div>
           {sale.items.map((line) => (
             <div key={line.id} className="receipt-line">
-              <span>{line.name} × {line.qty}</span>
-              <span>{formatMoney(line.price * line.qty)}</span>
+              <span>{line.name} × {line.saleUnit === 'weight' ? formatWeight(line.qty) : line.qty}</span>
+              <span>{formatMoney(Math.round(line.price * line.qty))}</span>
             </div>
           ))}
           {sale.discount && (

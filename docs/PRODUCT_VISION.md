@@ -16,7 +16,7 @@ database per vertical.
 | Layer | What it is | ANYQ status |
 |---|---|---|
 | Core domain | Organizations, locations, users/roles, products, stock, sales, documents | Built |
-| Retail Pack | Variants, discounts, loyalty, weight-based sale | **Partially built** (2026-07-28) — per-sale discount (percent/fixed), a loyalty points program (earn on net paid, 1pt=1₸ redemption, phone-identified customers reusing `Counterparty`), and product variants (size/color — each variant is just another `Product` row grouped under a parent via `parentProductId`, so Stock/DocumentItem/sales math needed zero changes), all gated by `retail` module. Weight-based sale still not built — the one remaining item, deliberately deferred since it would require rethinking the Int-quantity assumption baked into Stock/DocumentItem/price math everywhere else in the schema |
+| Retail Pack | Variants, discounts, loyalty, weight-based sale | **Built** (2026-07-28) — per-sale discount, loyalty points, product variants, and weight-based sale, all gated by `retail` module. Weight-based sale widened `Stock.quantity`/`DocumentItem.quantity` from `Int` to `Float` (a safe, lossless Postgres column-type change) rather than a grams-as-Int workaround — `price * quantity` keeps computing correct revenue everywhere (reports, discounts, loyalty, cart totals) with the results rounded to whole tenge at each aggregation point, since KZT has no practical sub-unit |
 | Pharmacy Pack | Batch/expiry FEFO dispensing | **Built** — batches, expiry-aware sale allocation, receiving screen. `Prescription`/`ControlledSubstanceLedger` schema still has zero wiring (compliance/marking scope, deliberately deferred) |
 | Warehouse Pro Pack | Multi-warehouse transfers, receiving, cycle counts, production/BOM | **Built** (2026-07-28) — `Document.type='transfer'/'receipt'/'adjustment'/'production'`, all gated by `warehouse` module. Production reuses the same `Recipe`/`RecipeIngredient` models the Restaurant Pack already had (they were never restaurant-specific), so a company can define a BOM for any product, not just dishes |
 | Distribution Pack (B2B) | Personal pricing, credit limits, order portal, linked buyer/seller documents | **Built** — this is the `supply` module (`apps/orders` + `/pos/orders`) |
@@ -90,18 +90,14 @@ built, which is a good sign the existing sequencing wasn't wrong:
    Production runs reuse `Recipe`/`RecipeIngredient` (generalized off the Restaurant Pack) plus
    `Document.type='production'`, with signed-quantity items (ingredients negative, finished good
    positive) — zero schema migration needed beyond what Restaurant Pack already added
-9. Retail Pack MVP slice (per-sale discounts, loyalty points, product variants) — done
-   (2026-07-28); weight-based sale is the one remaining item, still not started
+9. Retail Pack (per-sale discounts, loyalty points, product variants, weight-based sale) — done
+   (2026-07-28), all four items
 10. Ecosystem (integrations marketplace, AI layer, fraud detection) — not started, and shouldn't
     be attempted before real paying usage justifies the investment
 
 Every near-term vertical pack from the original brief is now built to at least MVP scope. What's
-left before ecosystem-level features: KDS/table management for restaurants, prescription/marking
-compliance for pharmacies, and weight-based sale for Retail Pack — all deliberately scoped out of
-their respective MVPs as bigger, separate follow-ups. Weight-based sale in particular needs a real
-design decision first (all quantities in this schema are `Int`,
-by deliberate choice — see `Recipe`'s comment in `schema.prisma` — so fractional-kg sale either
-means grams-as-Int with per-line revenue math no longer being a simple `price * quantity`
-everywhere, or a schema-wide move to decimal quantities; don't bolt this on opportunistically).
-Don't jump to ecosystem features while any of those remain unbuilt; they're what actually
-differentiate the product for the customers ANYQ already has.
+left before ecosystem-level features: KDS/table management for restaurants and prescription/
+marking compliance for pharmacies — both deliberately scoped out of their MVPs as bigger, separate
+follow-ups (the KDS one needs a real-time architecture decision; pharmacy compliance needs actual
+Kazakhstan regulatory detail, not a guess). Don't jump to ecosystem features while either remains
+unbuilt; they're what actually differentiate the product for the customers ANYQ already has.
