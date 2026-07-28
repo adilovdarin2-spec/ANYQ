@@ -101,3 +101,12 @@ marking compliance for pharmacies — both deliberately scoped out of their MVPs
 follow-ups (the KDS one needs a real-time architecture decision; pharmacy compliance needs actual
 Kazakhstan regulatory detail, not a guess). Don't jump to ecosystem features while either remains
 unbuilt; they're what actually differentiate the product for the customers ANYQ already has.
+
+## Admin back-office CRUD (2026-07-28)
+
+Every company-scoped resource superadmin needs to manage day-to-day — products, staff/PINs, and
+locations — now has proper create/edit UI in `apps/admin`, not just the disposable seed script.
+None of the three have a delete route: products and staff deletion is judged too risky for MVP
+(no confirmed need yet), and locations have real FK protection (`Stock`/`Document`/`Shift`/
+`ProductBatch` all reference `locationId` with no cascade), so a delete route would be rejected by
+Postgres the moment any activity happens at that location anyway.

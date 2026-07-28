@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { Company, ModuleKey, SupportLevel, Tariff } from '../types';
+import type { Company, CompanyLocation, LocationType, ModuleKey, SupportLevel, Tariff } from '../types';
 import { MODULE_LABELS, SUPPORT_LABELS, ROLE_LABELS } from '../types';
 import { StatusChip } from './StatusChip';
 import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS } from '../utils';
 import type { DurationPreset } from '../utils';
-import type { ShiftSummary, TariffPayload } from '../api';
+import type { ShiftSummary, TariffPayload, LocationPayload } from '../api';
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: 'Наличные',
@@ -19,10 +19,14 @@ interface Props {
   onLoadShifts: (companyId: string) => Promise<ShiftSummary[]>;
   onManageProducts: () => void;
   onManageUsers: () => void;
+  onCreateLocation: (companyId: string, payload: LocationPayload) => Promise<CompanyLocation>;
+  onUpdateLocation: (companyId: string, locationId: string, payload: LocationPayload) => Promise<CompanyLocation>;
 }
 
 const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal', 'restaurant', 'retail'];
 const ALL_DURATIONS: DurationPreset[] = ['1m', '3m', '6m', '1y'];
+const LOCATION_TYPES: LocationType[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'restaurant'];
+const emptyLocationForm: LocationPayload = { name: '', type: 'shop', address: '' };
 
 function parseLimit(v: string): number | null {
   if (v.trim() === '') return null;
@@ -43,12 +47,27 @@ function toPayload(t: Tariff): TariffPayload {
   };
 }
 
-export function CompanyDetailDrawer({ company, onClose, onUpdateTariff, onLoadShifts, onManageProducts, onManageUsers }: Props) {
+export function CompanyDetailDrawer({
+  company,
+  onClose,
+  onUpdateTariff,
+  onLoadShifts,
+  onManageProducts,
+  onManageUsers,
+  onCreateLocation,
+  onUpdateLocation,
+}: Props) {
   const [tariff, setTariff] = useState<Tariff>(company.tariff);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shifts, setShifts] = useState<ShiftSummary[] | null>(null);
   const [shiftsError, setShiftsError] = useState<string | null>(null);
+  const [creatingLocation, setCreatingLocation] = useState(false);
+  const [locationForm, setLocationForm] = useState<LocationPayload>(emptyLocationForm);
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
+  const [editLocationForm, setEditLocationForm] = useState<LocationPayload>(emptyLocationForm);
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const state = getTariffState(tariff);
 
   useEffect(() => {
@@ -89,6 +108,41 @@ export function CompanyDetailDrawer({ company, onClose, onUpdateTariff, onLoadSh
     persist({ ...tariff, blocked: !tariff.blocked });
   }
 
+  async function handleCreateLocation() {
+    if (!locationForm.name.trim()) return;
+    setLocationError(null);
+    setLocationBusy(true);
+    try {
+      await onCreateLocation(company.id, { ...locationForm, name: locationForm.name.trim(), address: locationForm.address.trim() });
+      setLocationForm(emptyLocationForm);
+      setCreatingLocation(false);
+    } catch (err) {
+      setLocationError(err instanceof Error ? err.message : 'Не удалось добавить точку');
+    } finally {
+      setLocationBusy(false);
+    }
+  }
+
+  function startEditLocation(l: CompanyLocation) {
+    setLocationError(null);
+    setEditingLocationId(l.id);
+    setEditLocationForm({ name: l.name, type: l.type, address: l.address });
+  }
+
+  async function handleSaveLocationEdit() {
+    if (!editingLocationId || !editLocationForm.name.trim()) return;
+    setLocationError(null);
+    setLocationBusy(true);
+    try {
+      await onUpdateLocation(company.id, editingLocationId, { ...editLocationForm, name: editLocationForm.name.trim(), address: editLocationForm.address.trim() });
+      setEditingLocationId(null);
+    } catch (err) {
+      setLocationError(err instanceof Error ? err.message : 'Не удалось сохранить точку');
+    } finally {
+      setLocationBusy(false);
+    }
+  }
+
   return (
     <div className="drawer-overlay" onClick={onClose}>
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
@@ -127,12 +181,78 @@ export function CompanyDetailDrawer({ company, onClose, onUpdateTariff, onLoadSh
           </div>
 
           <div className="section-title">Точки ({company.locations.length})</div>
-          {company.locations.map((l) => (
-            <div key={l.id} className="mini-card">
-              <span>{l.name}</span>
-              <span className="module-badge">{MODULE_LABELS[l.type]}</span>
-            </div>
-          ))}
+          {locationError && <div className="login-error">{locationError}</div>}
+
+          {!creatingLocation && (
+            <button className="btn btn-secondary" onClick={() => setCreatingLocation(true)}>+ Добавить точку</button>
+          )}
+
+          {creatingLocation && (
+            <>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="loc-name">Название</label>
+                  <input id="loc-name" type="text" value={locationForm.name} onChange={(e) => setLocationForm({ ...locationForm, name: e.target.value })} placeholder="Магазин на Абая" />
+                </div>
+                <div className="field">
+                  <label htmlFor="loc-type">Тип</label>
+                  <select id="loc-type" value={locationForm.type} onChange={(e) => setLocationForm({ ...locationForm, type: e.target.value })}>
+                    {LOCATION_TYPES.map((t) => <option key={t} value={t}>{MODULE_LABELS[t]}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="loc-addr">Адрес</label>
+                <input id="loc-addr" type="text" value={locationForm.address} onChange={(e) => setLocationForm({ ...locationForm, address: e.target.value })} placeholder="Необязательно" />
+              </div>
+              <div className="quick-actions">
+                <button className="btn btn-secondary" onClick={() => { setCreatingLocation(false); setLocationForm(emptyLocationForm); }}>Отмена</button>
+                <button className="btn btn-primary" disabled={!locationForm.name.trim() || locationBusy} onClick={handleCreateLocation}>
+                  {locationBusy ? 'Сохраняем…' : 'Добавить'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {company.locations.map((l) =>
+            editingLocationId === l.id ? (
+              <div key={l.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor={`e-locname-${l.id}`}>Название</label>
+                    <input id={`e-locname-${l.id}`} type="text" value={editLocationForm.name} onChange={(e) => setEditLocationForm({ ...editLocationForm, name: e.target.value })} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`e-loctype-${l.id}`}>Тип</label>
+                    <select id={`e-loctype-${l.id}`} value={editLocationForm.type} onChange={(e) => setEditLocationForm({ ...editLocationForm, type: e.target.value })}>
+                      {LOCATION_TYPES.map((t) => <option key={t} value={t}>{MODULE_LABELS[t]}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor={`e-locaddr-${l.id}`}>Адрес</label>
+                  <input id={`e-locaddr-${l.id}`} type="text" value={editLocationForm.address} onChange={(e) => setEditLocationForm({ ...editLocationForm, address: e.target.value })} />
+                </div>
+                <div className="quick-actions">
+                  <button className="btn btn-secondary" onClick={() => setEditingLocationId(null)}>Отмена</button>
+                  <button className="btn btn-primary" disabled={!editLocationForm.name.trim() || locationBusy} onClick={handleSaveLocationEdit}>
+                    {locationBusy ? 'Сохраняем…' : 'Сохранить'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                key={l.id}
+                type="button"
+                className="mini-card"
+                onClick={() => startEditLocation(l)}
+                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--surface)', color: 'inherit' }}
+              >
+                <span>{l.name}</span>
+                <span className="module-badge">{MODULE_LABELS[l.type]}</span>
+              </button>
+            ),
+          )}
 
           <div className="section-title">Пользователи ({company.users.length})</div>
           {company.users.map((u) => (

@@ -7,8 +7,8 @@ import { ProductsDrawer } from './components/ProductsDrawer';
 import { UsersDrawer } from './components/UsersDrawer';
 import { LoginScreen } from './components/LoginScreen';
 import { pluralizeRu } from './utils';
-import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct, createUser, updateUser } from './api';
-import type { CreateCompanyPayload, TariffPayload, UserPayload } from './api';
+import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct, createUser, updateUser, createLocation, updateLocation } from './api';
+import type { CreateCompanyPayload, TariffPayload, UserPayload, LocationPayload } from './api';
 import type { Company } from './types';
 
 const TOKEN_KEY = 'anyq_admin_token';
@@ -103,6 +103,20 @@ export default function App() {
     return user;
   }
 
+  async function handleCreateLocation(companyId: string, payload: LocationPayload) {
+    if (!token) throw new Error('Не авторизован');
+    const location = await createLocation(token, companyId, payload);
+    setCompanies((prev) => prev.map((c) => (c.id === companyId ? { ...c, locations: [...c.locations, location] } : c)));
+    return location;
+  }
+
+  async function handleUpdateLocation(companyId: string, locationId: string, payload: LocationPayload) {
+    if (!token) throw new Error('Не авторизован');
+    const location = await updateLocation(token, companyId, locationId, payload);
+    setCompanies((prev) => prev.map((c) => (c.id === companyId ? { ...c, locations: c.locations.map((l) => (l.id === locationId ? location : l)) } : c)));
+    return location;
+  }
+
   const selected = companies.find((c) => c.id === selectedId) ?? null;
   const productsCompany = companies.find((c) => c.id === productsCompanyId) ?? null;
   const usersCompany = companies.find((c) => c.id === usersCompanyId) ?? null;
@@ -139,6 +153,8 @@ export default function App() {
           onLoadShifts={handleLoadShifts}
           onManageProducts={() => setProductsCompanyId(selected.id)}
           onManageUsers={() => setUsersCompanyId(selected.id)}
+          onCreateLocation={handleCreateLocation}
+          onUpdateLocation={handleUpdateLocation}
         />
       )}
       {productsCompany && (
