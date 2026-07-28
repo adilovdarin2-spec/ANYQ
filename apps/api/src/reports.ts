@@ -12,6 +12,8 @@ export interface SaleRecord {
   createdBy: string | null;
   items: SaleItem[];
   discountAmount?: number;
+  pointsRedeemed?: number;
+  pointsEarned?: number;
 }
 
 export interface ReportSummary {
@@ -20,23 +22,30 @@ export interface ReportSummary {
   averageCheck: number;
   byPaymentMethod: Record<string, number>;
   totalDiscount: number;
+  totalPointsRedeemed: number;
+  totalPointsEarned: number;
 }
 
-// Net of any applied discount — the actual amount collected, not the list-price sum.
+// Net of any applied discount and loyalty-point redemption — the actual amount
+// collected, not the list-price sum.
 function saleTotal(sale: SaleRecord): number {
   const gross = sale.items.reduce((sum, it) => sum + it.price * it.quantity, 0);
-  return gross - (sale.discountAmount ?? 0);
+  return gross - (sale.discountAmount ?? 0) - (sale.pointsRedeemed ?? 0);
 }
 
 export function buildSummary(sales: SaleRecord[]): ReportSummary {
   let revenue = 0;
   let totalDiscount = 0;
+  let totalPointsRedeemed = 0;
+  let totalPointsEarned = 0;
   const byPaymentMethod: Record<string, number> = {};
 
   for (const sale of sales) {
     const total = saleTotal(sale);
     revenue += total;
     totalDiscount += sale.discountAmount ?? 0;
+    totalPointsRedeemed += sale.pointsRedeemed ?? 0;
+    totalPointsEarned += sale.pointsEarned ?? 0;
     const method = sale.paymentMethod ?? 'unknown';
     byPaymentMethod[method] = (byPaymentMethod[method] ?? 0) + total;
   }
@@ -47,6 +56,8 @@ export function buildSummary(sales: SaleRecord[]): ReportSummary {
     averageCheck: sales.length > 0 ? Math.round(revenue / sales.length) : 0,
     byPaymentMethod,
     totalDiscount,
+    totalPointsRedeemed,
+    totalPointsEarned,
   };
 }
 

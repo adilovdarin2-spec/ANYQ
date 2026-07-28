@@ -38,10 +38,33 @@ export interface SubmitSalePayload {
   items: { productId: string; quantity: number; price: number }[];
   discountType?: DiscountType;
   discountValue?: number;
+  customerPhone?: string;
+  customerName?: string;
+  pointsToRedeem?: number;
 }
 
-export function submitSale(token: string, payload: SubmitSalePayload): Promise<{ id: string; createdAt: string; discountAmount: number }> {
+export interface SubmitSaleResult {
+  id: string;
+  createdAt: string;
+  discountAmount: number;
+  pointsRedeemed: number;
+  pointsEarned: number;
+  total: number;
+  customerPoints: number | null;
+}
+
+export function submitSale(token: string, payload: SubmitSalePayload): Promise<SubmitSaleResult> {
   return request('/pos/sales', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export interface CustomerLookupResult {
+  found: boolean;
+  name: string | null;
+  loyaltyPoints: number;
+}
+
+export function fetchCustomerPoints(token: string, phone: string): Promise<CustomerLookupResult> {
+  return request(`/pos/customers?phone=${encodeURIComponent(phone)}`, { method: 'GET' }, token);
 }
 
 export function createRemoteShift(

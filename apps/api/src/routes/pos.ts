@@ -14,6 +14,11 @@ import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments } from '../counts';
 import { computeDiscount } from '../discounts';
 import type { DiscountType } from '../discounts';
+import { computeLoyalty } from '../loyalty';
+
+// 1 point = 1 tenge earned/redeemed. Not yet configurable per company — a fixed
+// MVP rate, same simplification as the rest of the Retail Pack slice so far.
+const LOYALTY_EARN_RATE_PERCENT = 5;
 
 export const posRouter = Router();
 
@@ -113,6 +118,30 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const discount = discountType && discountValue !== undefined ? { type: discountType, value: discountValue } : null;
   const subtotal = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
   const { discountAmount } = computeDiscount(subtotal, discount);
+
+  const customerPhone = typeof b.customerPhone === 'string' ? b.customerPhone.trim() : '';
+  const pointsToRedeem = Number.isFinite(b.pointsToRedeem) ? Number(b.pointsToRedeem) : 0;
+  if ((customerPhone || pointsToRedeem > 0) && !modules.includes('retail')) {
+    res.status(403).json({ error: 'Программа лояльности недоступна на вашем тарифе' });
+    return;
+  }
+
+  let customer = customerPhone
+    ? await prisma.counterparty.findFirst({ where: { companyId: req.posCompanyId, phone: customerPhone, type: 'customer' } })
+    : null;
+  if (!customer && customerPhone) {
+    const customerName = typeof b.customerName === 'string' && b.customerName.trim() ? b.customerName.trim() : customerPhone;
+    customer = await prisma.counterparty.create({
+      data: { companyId: req.posCompanyId!, name: customerName, phone: customerPhone, type: 'customer' },
+    });
+  }
+
+  const { redemptionAmount, finalTotal, pointsEarned } = computeLoyalty({
+    netAfterDiscount: subtotal - discountAmount,
+    availablePoints: customer?.loyaltyPoints ?? 0,
+    pointsToRedeem,
+    earnRatePercent: LOYALTY_EARN_RATE_PERCENT,
+  });
 
   try {
     const document = await prisma.$transaction(async (tx) => {
@@ -214,6 +243,11 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - consumption.quantity } }));
       }
 
+      if (customer) {
+        const newBalance = customer.loyaltyPoints - redemptionAmount + pointsEarned;
+        updates.push(tx.counterparty.update({ where: { id: customer.id }, data: { loyaltyPoints: newBalance } }));
+      }
+
       await Promise.all(updates);
 
       return tx.document.create({
@@ -225,6 +259,9 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           paymentMethod: b.paymentMethod,
           discountType: discount?.type,
           discountValue: discount?.value,
+          counterpartyId: customer?.id,
+          pointsEarned: customer ? pointsEarned : undefined,
+          pointsRedeemed: customer ? redemptionAmount : undefined,
           createdBy: req.posUserId!,
           items: { create: documentItemsData },
         },
@@ -232,7 +269,15 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       });
     }, { timeout: 15000 });
 
-    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString(), discountAmount });
+    res.status(201).json({
+      id: document.id,
+      createdAt: document.createdAt.toISOString(),
+      discountAmount,
+      pointsRedeemed: redemptionAmount,
+      pointsEarned,
+      total: finalTotal,
+      customerPoints: customer ? customer.loyaltyPoints - redemptionAmount + pointsEarned : null,
+    });
   } catch (err) {
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
@@ -240,6 +285,29 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     }
     throw err;
   }
+});
+
+posRouter.get('/customers', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : '';
+  if (!phone) {
+    res.status(400).json({ error: 'Укажите телефон клиента' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('retail')) {
+    res.status(403).json({ error: 'Программа лояльности недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const customer = await prisma.counterparty.findFirst({ where: { companyId: req.posCompanyId, phone, type: 'customer' } });
+  res.json({ found: !!customer, name: customer?.name ?? null, loyaltyPoints: customer?.loyaltyPoints ?? 0 });
 });
 
 posRouter.post('/shifts', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -338,6 +406,8 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
       paymentMethod: d.paymentMethod,
       createdBy: d.createdBy,
       discountAmount: computeDiscount(subtotal, discount).discountAmount,
+      pointsRedeemed: d.pointsRedeemed ?? undefined,
+      pointsEarned: d.pointsEarned ?? undefined,
       items: d.items.map((it) => ({
         productId: it.productId,
         name: it.product.name,

@@ -16,7 +16,7 @@ database per vertical.
 | Layer | What it is | ANYQ status |
 |---|---|---|
 | Core domain | Organizations, locations, users/roles, products, stock, sales, documents | Built |
-| Retail Pack | Variants, discounts, loyalty, weight-based sale | **Partially built** (2026-07-28) — per-sale discount (percent/fixed, gated by `retail` module) shipped and net-of-discount reporting. Variants, loyalty, and weight-based sale still not built — deliberately scoped as a bigger, separate follow-up |
+| Retail Pack | Variants, discounts, loyalty, weight-based sale | **Partially built** (2026-07-28) — per-sale discount (percent/fixed) and a loyalty points program (earn on net paid, 1pt=1₸ redemption, phone-identified customers reusing `Counterparty`), both gated by `retail` module, both netted out of reported revenue. Variants and weight-based sale still not built — deliberately scoped as a bigger, separate follow-up |
 | Pharmacy Pack | Batch/expiry FEFO dispensing | **Built** — batches, expiry-aware sale allocation, receiving screen. `Prescription`/`ControlledSubstanceLedger` schema still has zero wiring (compliance/marking scope, deliberately deferred) |
 | Warehouse Pro Pack | Multi-warehouse transfers, receiving, cycle counts | **Built** (2026-07-28) — `Document.type='transfer'/'receipt'/'adjustment'`, all gated by `warehouse` module |
 | Distribution Pack (B2B) | Personal pricing, credit limits, order portal, linked buyer/seller documents | **Built** — this is the `supply` module (`apps/orders` + `/pos/orders`) |
@@ -89,7 +89,7 @@ built, which is a good sign the existing sequencing wasn't wrong:
 8. Advanced WMS (receiving documents, cycle counts) / manufacturing — receiving + cycle counts
    done (2026-07-28); manufacturing (BOM-driven production orders beyond restaurant recipes) not
    started
-9. Retail Pack MVP slice (per-sale discounts) — done (2026-07-28); variants, loyalty, and
+9. Retail Pack MVP slice (per-sale discounts, loyalty points) — done (2026-07-28); variants and
    weight-based sale still not started
 10. Ecosystem (integrations marketplace, AI layer, fraud detection) — not started, and shouldn't
     be attempted before real paying usage justifies the investment
@@ -97,6 +97,6 @@ built, which is a good sign the existing sequencing wasn't wrong:
 Every near-term vertical pack from the original brief is now built to at least MVP scope. What's
 left before ecosystem-level features: KDS/table management for restaurants, prescription/marking
 compliance for pharmacies, manufacturing/BOM beyond recipes, and the rest of Retail Pack (product
-variants, loyalty/points, weight-based sale) — all deliberately scoped out of their respective
+variants, weight-based sale) — all deliberately scoped out of their respective
 MVPs as bigger, separate follow-ups. Don't jump to ecosystem features while any of those remain
 unbuilt; they're what actually differentiate the product for the customers ANYQ already has.

@@ -30,11 +30,27 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
               <span>−{formatMoney(sale.discountAmount)}</span>
             </div>
           )}
+          {!!sale.pointsRedeemed && (
+            <div className="receipt-line">
+              <span>Списано баллов</span>
+              <span>−{formatMoney(sale.pointsRedeemed)}</span>
+            </div>
+          )}
           <div className="receipt-divider"></div>
           <div className="receipt-total"><span>Итого</span><span>{formatMoney(sale.total)}</span></div>
           <div className="receipt-line" style={{ marginTop: 6 }}>
             <span>Оплата</span><span>{PAYMENT_LABELS[sale.paymentMethod]}</span>
           </div>
+          {sale.customerName && (
+            <div className="receipt-line">
+              <span>Клиент</span><span>{sale.customerName}</span>
+            </div>
+          )}
+          {!!sale.pointsEarned && (
+            <div className="receipt-line">
+              <span>Начислено баллов</span><span>+{sale.pointsEarned}</span>
+            </div>
+          )}
         </div>
       </div>
       <div className="screen-footer">

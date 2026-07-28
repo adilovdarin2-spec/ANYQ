@@ -215,6 +215,8 @@ model Document {
   paymentMethod String?
   discountType  String?
   discountValue Int?
+  pointsEarned  Int?
+  pointsRedeemed Int?
   counterparty  Counterparty? @relation(fields: [counterpartyId], references: [id])
   counterpartyId String?
   createdBy     String?
@@ -242,13 +244,14 @@ model DocumentItem {
 }
 
 model Counterparty {
-  id        String  @id @default(cuid())
-  company   Company @relation(fields: [companyId], references: [id])
-  companyId String
-  name      String
-  phone     String?
-  type      String
-  binIin    String?
+  id            String  @id @default(cuid())
+  company       Company @relation(fields: [companyId], references: [id])
+  companyId     String
+  name          String
+  phone         String?
+  type          String
+  binIin        String?
+  loyaltyPoints Int     @default(0)
 
   documents Document[]
 
