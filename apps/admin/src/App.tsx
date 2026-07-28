@@ -3,9 +3,10 @@ import { Sidebar } from './components/Sidebar';
 import { CompaniesTable } from './components/CompaniesTable';
 import { CreateCompanyDrawer } from './components/CreateCompanyDrawer';
 import { CompanyDetailDrawer } from './components/CompanyDetailDrawer';
+import { ProductsDrawer } from './components/ProductsDrawer';
 import { LoginScreen } from './components/LoginScreen';
 import { pluralizeRu } from './utils';
-import { getCompanies, createCompany, updateTariff, getShifts } from './api';
+import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct } from './api';
 import type { CreateCompanyPayload, TariffPayload } from './api';
 import type { Company } from './types';
 
@@ -20,6 +21,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [productsCompanyId, setProductsCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -70,7 +72,23 @@ export default function App() {
     return getShifts(token, companyId);
   }
 
+  function handleLoadProducts(companyId: string) {
+    if (!token) return Promise.resolve([]);
+    return getProducts(token, companyId);
+  }
+
+  function handleCreateProduct(companyId: string, payload: Parameters<typeof createProduct>[2]) {
+    if (!token) throw new Error('Не авторизован');
+    return createProduct(token, companyId, payload);
+  }
+
+  function handleUpdateProduct(companyId: string, productId: string, payload: Parameters<typeof updateProduct>[3]) {
+    if (!token) throw new Error('Не авторизован');
+    return updateProduct(token, companyId, productId, payload);
+  }
+
   const selected = companies.find((c) => c.id === selectedId) ?? null;
+  const productsCompany = companies.find((c) => c.id === productsCompanyId) ?? null;
 
   if (!token) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -102,6 +120,18 @@ export default function App() {
           onClose={() => setSelectedId(null)}
           onUpdateTariff={handleUpdateTariff}
           onLoadShifts={handleLoadShifts}
+          onManageProducts={() => setProductsCompanyId(selected.id)}
+        />
+      )}
+      {productsCompany && (
+        <ProductsDrawer
+          key={productsCompany.id}
+          companyId={productsCompany.id}
+          companyName={productsCompany.name}
+          onClose={() => setProductsCompanyId(null)}
+          onLoad={handleLoadProducts}
+          onCreate={handleCreateProduct}
+          onUpdate={handleUpdateProduct}
         />
       )}
     </div>

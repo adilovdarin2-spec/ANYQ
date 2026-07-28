@@ -1,4 +1,4 @@
-import type { Company } from './types';
+import type { Company, Product } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -81,4 +81,26 @@ export interface ShiftSummary {
 
 export function getShifts(token: string, companyId: string): Promise<ShiftSummary[]> {
   return request(`/companies/${companyId}/shifts`, {}, token);
+}
+
+export function getProducts(token: string, companyId: string): Promise<Product[]> {
+  return request(`/companies/${companyId}/products`, {}, token);
+}
+
+export interface ProductPayload {
+  name: string;
+  category: string;
+  unit: string;
+  barcode: string;
+  purchasePrice: number;
+  salePrice: number;
+  sellable: boolean;
+}
+
+export function createProduct(token: string, companyId: string, payload: ProductPayload): Promise<Product> {
+  return request(`/companies/${companyId}/products`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function updateProduct(token: string, companyId: string, productId: string, payload: ProductPayload): Promise<Product> {
+  return request(`/companies/${companyId}/products/${productId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
 }

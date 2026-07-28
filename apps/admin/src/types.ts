@@ -72,3 +72,15 @@ export interface Company {
   users: CompanyUser[];
   tariff: Tariff;
 }
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  barcode: string;
+  purchasePrice: number;
+  salePrice: number;
+  sellable: boolean;
+  stopListed: boolean;
+}
