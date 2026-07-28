@@ -765,7 +765,66 @@ async function seedWarehouseTransferDemoData() {
   }
 }
 
+const variantSizes = [
+  { label: 'S', barcode: '4870000000255', stock: 8 },
+  { label: 'M', barcode: '4870000000262', stock: 14 },
+  { label: 'L', barcode: '4870000000279', stock: 6 },
+];
+
+async function seedVariantDemoData() {
+  const network = await prisma.company.findFirst({
+    where: { name: 'Сеть магазинов «Алма Маркет»' },
+    include: { locations: true },
+  });
+  if (!network) {
+    console.log('Demo network not found, skipping variant demo data');
+    return;
+  }
+
+  const existing = await prisma.product.findFirst({ where: { companyId: network.id, name: 'Футболка базовая' } });
+  if (existing) {
+    console.log('Variant demo product already seeded, skipping');
+    return;
+  }
+
+  const location = network.locations.find((l) => l.name.includes('Бостандык'));
+  if (!location) {
+    console.log('Бостандык location not found, skipping variant demo data');
+    return;
+  }
+
+  const parent = await prisma.product.create({
+    data: {
+      companyId: network.id,
+      name: 'Футболка базовая',
+      category: 'Одежда',
+      unit: 'шт',
+      purchasePrice: 2500,
+      salePrice: 4900,
+    },
+  });
+
+  for (const size of variantSizes) {
+    const variant = await prisma.product.create({
+      data: {
+        companyId: network.id,
+        name: `Футболка базовая — ${size.label}`,
+        category: 'Одежда',
+        unit: 'шт',
+        barcode: size.barcode,
+        purchasePrice: 2500,
+        salePrice: 4900,
+        parentProductId: parent.id,
+        variantLabel: size.label,
+      },
+    });
+    await prisma.stock.create({ data: { productId: variant.id, locationId: location.id, quantity: size.stock } });
+  }
+  console.log(`Seeded variant product "Футболка базовая" with ${variantSizes.length} sizes at ${location.name}`);
+}
+
 main()
+  .then(() => seedVariantDemoData())
   .catch((err) => {
     console.error(err);
     process.exit(1);
