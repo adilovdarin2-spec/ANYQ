@@ -110,6 +110,101 @@ companiesRouter.get('/:id/shifts', async (req, res) => {
   res.json(result);
 });
 
+function serializeProduct(p: {
+  id: string;
+  name: string;
+  category: string | null;
+  unit: string;
+  barcode: string | null;
+  purchasePrice: number;
+  salePrice: number;
+  sellable: boolean;
+  stopListed: boolean;
+}) {
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category ?? '',
+    unit: p.unit,
+    barcode: p.barcode ?? '',
+    purchasePrice: p.purchasePrice,
+    salePrice: p.salePrice,
+    sellable: p.sellable,
+    stopListed: p.stopListed,
+  };
+}
+
+// Variant children (parentProductId set) are managed alongside their parent
+// product's own catalog entry today, not here — this list is the top-level
+// catalog only.
+companiesRouter.get('/:id/products', async (req, res) => {
+  const products = await prisma.product.findMany({
+    where: { companyId: req.params.id, parentProductId: null },
+    orderBy: { name: 'asc' },
+  });
+  res.json(products.map(serializeProduct));
+});
+
+companiesRouter.post('/:id/products', async (req, res) => {
+  const b = req.body ?? {};
+  const purchasePrice = Number(b.purchasePrice);
+  const salePrice = Number(b.salePrice);
+  if (!b.name || !b.unit || !Number.isFinite(purchasePrice) || !Number.isFinite(salePrice) || purchasePrice < 0 || salePrice < 0) {
+    res.status(400).json({ error: 'Заполните название, единицу измерения и цены' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!company) {
+    res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  const product = await prisma.product.create({
+    data: {
+      companyId: company.id,
+      name: b.name,
+      category: b.category || null,
+      unit: b.unit,
+      barcode: b.barcode || null,
+      purchasePrice,
+      salePrice,
+      sellable: b.sellable !== false,
+    },
+  });
+  res.status(201).json(serializeProduct(product));
+});
+
+companiesRouter.patch('/:id/products/:productId', async (req, res) => {
+  const b = req.body ?? {};
+  const existing = await prisma.product.findFirst({ where: { id: req.params.productId, companyId: req.params.id } });
+  if (!existing) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const purchasePrice = Number(b.purchasePrice);
+  const salePrice = Number(b.salePrice);
+  if (!b.name || !b.unit || !Number.isFinite(purchasePrice) || !Number.isFinite(salePrice) || purchasePrice < 0 || salePrice < 0) {
+    res.status(400).json({ error: 'Заполните название, единицу измерения и цены' });
+    return;
+  }
+
+  const product = await prisma.product.update({
+    where: { id: existing.id },
+    data: {
+      name: b.name,
+      category: b.category || null,
+      unit: b.unit,
+      barcode: b.barcode || null,
+      purchasePrice,
+      salePrice,
+      sellable: !!b.sellable,
+    },
+  });
+  res.json(serializeProduct(product));
+});
+
 companiesRouter.patch('/:id/tariff', async (req, res) => {
   const b = req.body ?? {};
   const exists = await prisma.company.findUnique({ where: { id: req.params.id } });
