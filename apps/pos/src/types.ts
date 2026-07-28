@@ -104,3 +104,16 @@ export interface Report {
   byCashier: CashierBreakdown[];
   lowStock: LowStockItem[];
 }
+
+export type ExpiryStatus = 'expired' | 'expiring_soon' | 'ok';
+
+export interface Batch {
+  id: string;
+  productId: string;
+  productName: string;
+  unit: string;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+  status: ExpiryStatus;
+}

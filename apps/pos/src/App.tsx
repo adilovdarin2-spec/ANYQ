@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react';
-import type { CartLine, Order, PaymentMethod, Product, Report, Sale, Shift } from './types';
+import type { Batch, CartLine, Order, PaymentMethod, Product, Report, Sale, Shift } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
-import { createRemoteShift, closeRemoteShift, fetchOrders, fulfillOrder, rejectOrder, fetchReports, ApiError } from './api';
+import {
+  createRemoteShift,
+  closeRemoteShift,
+  fetchOrders,
+  fulfillOrder,
+  rejectOrder,
+  fetchReports,
+  fetchBatches,
+  receiveBatch,
+  ApiError,
+} from './api';
 import type { PosSession } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
@@ -21,8 +31,9 @@ import { PaymentModal } from './components/PaymentModal';
 import { ReceiptScreen } from './components/ReceiptScreen';
 import { OrdersScreen } from './components/OrdersScreen';
 import { ReportsScreen } from './components/ReportsScreen';
+import { BatchesScreen } from './components/BatchesScreen';
 
-type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders' | 'reports';
+type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders' | 'reports' | 'batches';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -39,11 +50,16 @@ export default function App() {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [reportRangeDays, setReportRangeDays] = useState(7);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [batchesLoading, setBatchesLoading] = useState(false);
+  const [batchesError, setBatchesError] = useState<string | null>(null);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
   const hasSupply = session?.modules?.includes('supply') ?? false;
   const hasTerminal = session?.modules?.includes('terminal') ?? false;
+  const hasPharmacy = session?.modules?.includes('pharmacy') ?? false;
   const isDesktop = useIsDesktop();
 
   function handleLogin(newSession: PosSession) {
@@ -77,6 +93,12 @@ export default function App() {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.token, hasSupply]);
+
+  useEffect(() => {
+    if (!session || !hasPharmacy) return;
+    loadBatches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.token, hasPharmacy]);
 
   async function handleFulfillOrder(id: string) {
     if (!session) return;
@@ -128,6 +150,41 @@ export default function App() {
   function handleRangeChange(days: number) {
     setReportRangeDays(days);
     void loadReport(days);
+  }
+
+  async function loadBatches() {
+    if (!session) return;
+    setBatchesLoading(true);
+    setBatchesError(null);
+    try {
+      const data = await fetchBatches(session.token);
+      setBatches(data);
+    } catch (err) {
+      setBatchesError(err instanceof ApiError ? err.message : 'Не удалось загрузить партии');
+    } finally {
+      setBatchesLoading(false);
+    }
+  }
+
+  function handleShowBatches() {
+    setView('batches');
+    void loadBatches();
+  }
+
+  async function handleReceiveBatch(payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number }) {
+    if (!session) return false;
+    setBatchSubmitting(true);
+    setBatchesError(null);
+    try {
+      await receiveBatch(session.token, payload);
+      await loadBatches();
+      return true;
+    } catch (err) {
+      setBatchesError(err instanceof ApiError ? err.message : 'Не удалось принять партию');
+      return false;
+    } finally {
+      setBatchSubmitting(false);
+    }
   }
 
   async function openShift(openingCash: number) {
@@ -266,6 +323,8 @@ export default function App() {
         onShowOrders={hasSupply ? () => setView('orders') : undefined}
         pendingOrdersCount={orders.filter((o) => o.status === 'pending').length}
         onShowReports={hasTerminal ? handleShowReports : undefined}
+        onShowBatches={hasPharmacy ? handleShowBatches : undefined}
+        expiringBatchesCount={batches.filter((b) => b.status !== 'ok').length}
       />
 
       {view === 'sale' && isDesktop && (
@@ -336,6 +395,19 @@ export default function App() {
           onRangeChange={handleRangeChange}
           onBack={() => setView('sale')}
           onRefresh={() => loadReport(reportRangeDays)}
+        />
+      )}
+
+      {view === 'batches' && (
+        <BatchesScreen
+          batches={batches}
+          products={session.products}
+          loading={batchesLoading}
+          error={batchesError}
+          submitting={batchSubmitting}
+          onBack={() => setView('sale')}
+          onRefresh={loadBatches}
+          onReceive={handleReceiveBatch}
         />
       )}
 

@@ -12,6 +12,8 @@ interface Props {
   onShowOrders?: () => void;
   pendingOrdersCount?: number;
   onShowReports?: () => void;
+  onShowBatches?: () => void;
+  expiringBatchesCount?: number;
 }
 
 export function ShiftBar({
@@ -25,6 +27,8 @@ export function ShiftBar({
   onShowOrders,
   pendingOrdersCount = 0,
   onShowReports,
+  onShowBatches,
+  expiringBatchesCount = 0,
 }: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
@@ -49,6 +53,12 @@ export function ShiftBar({
             <button className="icon-btn" onClick={onShowOrders} aria-label="Заказы с сайта">
               📦
               {pendingOrdersCount > 0 && <span className="icon-btn-badge">{pendingOrdersCount}</span>}
+            </button>
+          )}
+          {onShowBatches && (
+            <button className="icon-btn" onClick={onShowBatches} aria-label="Партии">
+              💊
+              {expiringBatchesCount > 0 && <span className="icon-btn-badge">{expiringBatchesCount}</span>}
             </button>
           )}
           {onShowReports && (

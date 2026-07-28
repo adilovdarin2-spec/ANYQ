@@ -1,4 +1,4 @@
-import type { CompanyLocation, Order, PaymentMethod, Product, Report } from './types';
+import type { Batch, CompanyLocation, Order, PaymentMethod, Product, Report } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -71,4 +71,19 @@ export function rejectOrder(token: string, id: string): Promise<{ id: string; st
 
 export function fetchReports(token: string, from: string, to: string): Promise<Report> {
   return request(`/pos/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { method: 'GET' }, token);
+}
+
+export function fetchBatches(token: string): Promise<Batch[]> {
+  return request('/pos/batches', { method: 'GET' }, token);
+}
+
+export interface ReceiveBatchPayload {
+  productId: string;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+}
+
+export function receiveBatch(token: string, payload: ReceiveBatchPayload): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/batches', { method: 'POST', body: JSON.stringify(payload) }, token);
 }
