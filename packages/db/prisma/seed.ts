@@ -916,10 +916,42 @@ async function seedWeightProductDemoData() {
   console.log(`Seeded weight-based product "${cheese.name}" (3500₸/кг, 12.5кг stock at ${location.name})`);
 }
 
+const cafeTables = [
+  { name: 'Стол 1', seats: 2 },
+  { name: 'Стол 2', seats: 2 },
+  { name: 'Стол 3', seats: 4 },
+  { name: 'Стол 4', seats: 4 },
+  { name: 'Стол 5', seats: 6 },
+];
+
+async function seedTableDemoData() {
+  const cafe = await prisma.company.findFirst({
+    where: { name: 'Кафе «Тандыр»' },
+    include: { locations: true, tables: true },
+  });
+  if (!cafe) {
+    console.log('Demo cafe not found, skipping table demo data');
+    return;
+  }
+  if (cafe.tables.length > 0) {
+    console.log('Table demo data already seeded, skipping');
+    return;
+  }
+
+  const location = cafe.locations[0];
+  if (!location) return;
+
+  await prisma.table.createMany({
+    data: cafeTables.map((t) => ({ companyId: cafe.id, locationId: location.id, name: t.name, seats: t.seats })),
+  });
+  console.log(`Seeded ${cafeTables.length} demo tables for Кафе «Тандыр»`);
+}
+
 main()
   .then(() => seedVariantDemoData())
   .then(() => seedProductionDemoData())
   .then(() => seedWeightProductDemoData())
+  .then(() => seedTableDemoData())
   .catch((err) => {
     console.error(err);
     process.exit(1);

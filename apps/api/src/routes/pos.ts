@@ -17,6 +17,7 @@ import type { DiscountType } from '../discounts';
 import { computeLoyalty } from '../loyalty';
 import { groupProductVariants } from '../variants';
 import { computeProduction } from '../production';
+import { buildKdsTickets } from '../kds';
 
 // 1 point = 1 tenge earned/redeemed. Not yet configurable per company — a fixed
 // MVP rate, same simplification as the rest of the Retail Pack slice so far.
@@ -1191,6 +1192,349 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
     }
     throw err;
   }
+});
+
+// Restaurant Pack: floor plan + KDS. A table's occupied/free state mirrors
+// whether it has an open (type='sale', status='open') Document — items are
+// deducted from stock/ingredients as soon as they're sent to the kitchen, not
+// when the table finally pays, since the kitchen has to cook them regardless
+// of payment timing. Split bills and per-item pricing overrides are out of
+// scope for this first cut — one table, one open document, one payment.
+posRouter.get('/tables', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Столики недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const tables = await prisma.table.findMany({
+    where: { companyId: req.posCompanyId },
+    include: { documents: { where: { type: 'sale', status: 'open' }, include: { items: true } } },
+    orderBy: { name: 'asc' },
+  });
+
+  res.json(
+    tables.map((t) => {
+      const openOrder = t.documents[0];
+      const total = openOrder ? openOrder.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0) : 0;
+      return {
+        id: t.id,
+        name: t.name,
+        seats: t.seats,
+        status: t.status,
+        orderId: openOrder?.id ?? null,
+        itemCount: openOrder ? openOrder.items.length : 0,
+        total,
+      };
+    }),
+  );
+});
+
+posRouter.post('/tables', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const name = typeof b.name === 'string' ? b.name.trim() : '';
+  const seats = Number(b.seats);
+  if (!name || !Number.isFinite(seats) || seats <= 0) {
+    res.status(400).json({ error: 'Укажите название и число мест' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true, locations: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Столики недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+  const location = company?.locations[0];
+  if (!location) {
+    res.status(400).json({ error: 'У компании не настроена точка' });
+    return;
+  }
+
+  const table = await prisma.table.create({
+    data: { companyId: req.posCompanyId!, locationId: location.id, name, seats },
+  });
+  res.status(201).json({ id: table.id, name: table.name, seats: table.seats, status: table.status, orderId: null, itemCount: 0, total: 0 });
+});
+
+posRouter.get('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Столики недоступны на вашем тарифе' });
+    return;
+  }
+
+  const table = await prisma.table.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!table) {
+    res.status(404).json({ error: 'Стол не найден' });
+    return;
+  }
+
+  const document = await prisma.document.findFirst({
+    where: { tableId: table.id, type: 'sale', status: 'open' },
+    include: { items: { include: { product: true } } },
+  });
+
+  if (!document) {
+    res.json({ id: null, items: [], total: 0 });
+    return;
+  }
+
+  res.json({
+    id: document.id,
+    items: document.items.map((it) => ({
+      id: it.id,
+      productId: it.productId,
+      name: it.product.name,
+      quantity: it.quantity,
+      price: it.price,
+      kitchenStatus: it.kitchenStatus,
+    })),
+    total: document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
+  });
+});
+
+posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const items: SaleItemInput[] = Array.isArray(b.items) ? b.items : [];
+  if (items.length === 0) {
+    res.status(400).json({ error: 'Добавьте блюда в заказ' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true, locations: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Столики недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const table = await prisma.table.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!table) {
+    res.status(404).json({ error: 'Стол не найден' });
+    return;
+  }
+  const location = company?.locations[0];
+  if (!location) {
+    res.status(400).json({ error: 'У компании не настроена точка' });
+    return;
+  }
+
+  try {
+    const document = await prisma.$transaction(async (tx) => {
+      // Dishes (recipe-tracked products) consume ingredients; everything else
+      // consumes its own stock — same split as /pos/sales, minus FEFO/batch
+      // handling, which restaurant menus don't use.
+      const recipes = await tx.recipe.findMany({
+        where: { productId: { in: items.map((it) => it.productId) } },
+        include: { ingredients: true },
+      });
+      const recipeIngredientsByProductId = new Map(
+        recipes.map((r) => [r.productId, r.ingredients.map((ing) => ({ ingredientId: ing.ingredientId, quantity: ing.quantity }))]),
+      );
+      const dishProductIds = new Set(recipeIngredientsByProductId.keys());
+      const plainItems = items.filter((it) => !dishProductIds.has(it.productId));
+      const dishItems = items.filter((it) => dishProductIds.has(it.productId));
+
+      const ingredientConsumption = computeIngredientConsumption(
+        dishItems.map((it) => ({ productId: it.productId, quantity: it.quantity })),
+        recipeIngredientsByProductId,
+      );
+      const ingredientIds = ingredientConsumption.map((c) => c.ingredientId);
+
+      const [stockRows, ingredientStockRows] = await Promise.all([
+        tx.stock.findMany({ where: { locationId: location.id, productId: { in: plainItems.map((it) => it.productId) } } }),
+        tx.stock.findMany({ where: { locationId: location.id, productId: { in: ingredientIds } } }),
+      ]);
+      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+      const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
+      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
+
+      const shortages = [
+        ...findStockShortages(plainItems, quantityByProduct),
+        ...findStockShortages(
+          ingredientConsumption.map((c) => ({ productId: c.ingredientId, quantity: c.quantity, price: 0 })),
+          ingredientQuantityByProduct,
+        ),
+      ];
+      if (shortages.length > 0) {
+        throw new StockError(shortages);
+      }
+
+      const updates: Promise<unknown>[] = [];
+      for (const item of plainItems) {
+        const stock = stockByProduct.get(item.productId)!;
+        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } }));
+      }
+      for (const consumption of ingredientConsumption) {
+        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
+        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - consumption.quantity } }));
+      }
+      await Promise.all(updates);
+
+      const itemsData = items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price, kitchenStatus: 'pending' }));
+
+      let openDocument = await tx.document.findFirst({ where: { tableId: table.id, type: 'sale', status: 'open' } });
+      if (openDocument) {
+        await tx.documentItem.createMany({ data: itemsData.map((d) => ({ ...d, documentId: openDocument!.id })) });
+      } else {
+        openDocument = await tx.document.create({
+          data: {
+            companyId: req.posCompanyId!,
+            locationId: location.id,
+            type: 'sale',
+            status: 'open',
+            tableId: table.id,
+            createdBy: req.posUserId!,
+            items: { create: itemsData },
+          },
+        });
+        await tx.table.update({ where: { id: table.id }, data: { status: 'occupied' } });
+      }
+
+      return tx.document.findUniqueOrThrow({ where: { id: openDocument.id }, include: { items: { include: { product: true } } } });
+    }, { timeout: 15000 });
+
+    res.status(201).json({
+      id: document.id,
+      items: document.items.map((it) => ({
+        id: it.id,
+        productId: it.productId,
+        name: it.product.name,
+        quantity: it.quantity,
+        price: it.price,
+        kitchenStatus: it.kitchenStatus,
+      })),
+      total: document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
+    });
+  } catch (err) {
+    if (err instanceof StockError) {
+      res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
+      return;
+    }
+    throw err;
+  }
+});
+
+posRouter.post('/tables/:id/pay', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  if (!b.paymentMethod) {
+    res.status(400).json({ error: 'Укажите способ оплаты' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Столики недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const table = await prisma.table.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!table) {
+    res.status(404).json({ error: 'Стол не найден' });
+    return;
+  }
+
+  const document = await prisma.document.findFirst({
+    where: { tableId: table.id, type: 'sale', status: 'open' },
+    include: { items: true },
+  });
+  if (!document) {
+    res.status(409).json({ error: 'На этом столе нет открытого заказа' });
+    return;
+  }
+
+  const total = document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
+
+  await prisma.$transaction([
+    prisma.document.update({ where: { id: document.id }, data: { status: 'confirmed', paymentMethod: b.paymentMethod } }),
+    prisma.table.update({ where: { id: table.id }, data: { status: 'free' } }),
+  ]);
+
+  res.json({ id: document.id, total, paymentMethod: b.paymentMethod });
+});
+
+posRouter.get('/kds', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Кухонный экран недоступен на вашем тарифе' });
+    return;
+  }
+
+  const documents = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'sale', status: 'open' },
+    include: { items: { include: { product: true } }, table: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const tickets = buildKdsTickets(
+    documents.map((d) => ({
+      documentId: d.id,
+      tableName: d.table?.name ?? '—',
+      createdAt: d.createdAt,
+      items: d.items.map((it) => ({
+        id: it.id,
+        productId: it.productId,
+        name: it.product.name,
+        quantity: it.quantity,
+        kitchenStatus: it.kitchenStatus === 'ready' ? 'ready' : 'pending',
+      })),
+    })),
+  );
+
+  res.json(tickets.map((t) => ({ ...t, createdAt: t.createdAt.toISOString() })));
+});
+
+posRouter.patch('/kds/items/:id', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const kitchenStatus = b.kitchenStatus === 'ready' || b.kitchenStatus === 'pending' ? b.kitchenStatus : null;
+  if (!kitchenStatus) {
+    res.status(400).json({ error: 'Некорректный статус' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Кухонный экран недоступен на вашем тарифе' });
+    return;
+  }
+
+  const item = await prisma.documentItem.findFirst({
+    where: { id: req.params.id, document: { companyId: req.posCompanyId, type: 'sale', status: 'open' } },
+  });
+  if (!item) {
+    res.status(404).json({ error: 'Позиция не найдена' });
+    return;
+  }
+
+  const updated = await prisma.documentItem.update({ where: { id: item.id }, data: { kitchenStatus } });
+  res.json({ id: updated.id, kitchenStatus: updated.kitchenStatus });
 });
 
 class StockError extends Error {

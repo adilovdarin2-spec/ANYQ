@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, DiscountType, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -174,4 +174,40 @@ export function createProduction(
   payload: CreateProductionPayload,
 ): Promise<{ id: string; createdAt: string; batches: number; yieldQuantity: number }> {
   return request('/pos/production', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function fetchTables(token: string): Promise<RestaurantTable[]> {
+  return request('/pos/tables', { method: 'GET' }, token);
+}
+
+export function createTable(token: string, payload: { name: string; seats: number }): Promise<RestaurantTable> {
+  return request('/pos/tables', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function fetchTableOrder(token: string, tableId: string): Promise<TableOrder> {
+  return request(`/pos/tables/${tableId}/order`, { method: 'GET' }, token);
+}
+
+export interface SendToKitchenPayload {
+  items: { productId: string; quantity: number; price: number }[];
+}
+
+export function sendToKitchen(token: string, tableId: string, payload: SendToKitchenPayload): Promise<TableOrder & { id: string }> {
+  return request(`/pos/tables/${tableId}/order`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function payTable(
+  token: string,
+  tableId: string,
+  paymentMethod: PaymentMethod,
+): Promise<{ id: string; total: number; paymentMethod: PaymentMethod }> {
+  return request(`/pos/tables/${tableId}/pay`, { method: 'POST', body: JSON.stringify({ paymentMethod }) }, token);
+}
+
+export function fetchKdsTickets(token: string): Promise<KdsTicket[]> {
+  return request('/pos/kds', { method: 'GET' }, token);
+}
+
+export function updateKitchenItemStatus(token: string, itemId: string, kitchenStatus: KitchenStatus): Promise<{ id: string; kitchenStatus: KitchenStatus }> {
+  return request(`/pos/kds/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ kitchenStatus }) }, token);
 }

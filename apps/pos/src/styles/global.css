@@ -342,6 +342,23 @@ button { cursor: pointer; }
   font-size: 0.9rem; background: var(--surface); color: var(--ink); text-align: right;
 }
 
+/* floor plan + KDS (restaurant tariff) */
+.table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 4px; }
+.table-tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-height: 80px;
+}
+.table-tile.free { border-color: var(--status-active); }
+.table-tile.occupied { background: var(--status-overdue-bg); border-color: var(--status-overdue); }
+.table-tile .t-name { font-weight: 700; font-size: 0.95rem; }
+.table-tile .t-seats { font-size: 0.72rem; color: var(--ink-muted); }
+.table-tile .t-total { font-size: 0.85rem; font-weight: 700; color: var(--status-overdue); margin-top: 4px; }
+.kds-item-row {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  font-size: 0.86rem; padding: 6px 0; color: var(--ink);
+}
+.kds-item-row:active { color: var(--accent); }
+
 /* printable receipt (terminal tariff) */
 @media print {
   body * { visibility: hidden; }
