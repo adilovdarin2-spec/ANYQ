@@ -4,8 +4,8 @@ import { formatMoney } from '../utils';
 interface Props {
   cart: CartLine[];
   total: number;
-  onChangeQty: (productId: string, delta: number) => void;
-  onRemove: (productId: string) => void;
+  onChangeQty: (lineId: string, delta: number) => void;
+  onRemove: (lineId: string) => void;
   onCheckout: () => void;
 }
 
@@ -16,16 +16,16 @@ export function CartPanel({ cart, total, onChangeQty, onRemove, onCheckout }: Pr
       <div className="cart-panel-body">
         {cart.length === 0 && <div className="empty-state">Корзина пуста</div>}
         {cart.map((line) => (
-          <div key={line.productId} className="line-item">
+          <div key={line.id} className="line-item">
             <div style={{ flex: 1 }}>
               <div className="li-name">{line.name}</div>
               <div className="li-price">{formatMoney(line.price)} за шт.</div>
-              <button className="li-remove" onClick={() => onRemove(line.productId)}>Удалить</button>
+              <button className="li-remove" onClick={() => onRemove(line.id)}>Удалить</button>
             </div>
             <div className="qty-stepper">
-              <button onClick={() => onChangeQty(line.productId, -1)} aria-label="Меньше">–</button>
+              <button onClick={() => onChangeQty(line.id, -1)} aria-label="Меньше">–</button>
               <span>{line.qty}</span>
-              <button onClick={() => onChangeQty(line.productId, 1)} aria-label="Больше">+</button>
+              <button onClick={() => onChangeQty(line.id, 1)} aria-label="Больше">+</button>
             </div>
             <div className="li-total">{formatMoney(line.price * line.qty)}</div>
           </div>

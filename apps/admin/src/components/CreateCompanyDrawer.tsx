@@ -11,8 +11,8 @@ interface Props {
   onCreate: (payload: CreateCompanyPayload) => Promise<void>;
 }
 
-const LOCATION_TYPES: LocationType[] = ['shop', 'warehouse', 'pharmacy', 'supply'];
-const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal'];
+const LOCATION_TYPES: LocationType[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'restaurant'];
+const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal', 'restaurant'];
 const ALL_DURATIONS: DurationPreset[] = ['1m', '3m', '6m', '1y'];
 
 function parseLimit(v: string): number | null {

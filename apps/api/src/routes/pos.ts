@@ -6,10 +6,11 @@ import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage } from '../tariff';
 import { findStockShortages } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
-import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock } from '../reports';
+import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
 import type { BatchStock } from '../batches';
+import { computeIngredientConsumption, computeDishCost } from '../recipes';
 
 export const posRouter = Router();
 
@@ -35,18 +36,40 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     return;
   }
 
-  const products = await prisma.product.findMany({ where: { companyId: user.companyId } });
+  const modules: string[] = user.company.tariff ? JSON.parse(user.company.tariff.modules) : [];
+  const products = await prisma.product.findMany({ where: { companyId: user.companyId, sellable: true } });
   const primaryLocationId = user.company.locations[0]?.id;
   const stockRows = primaryLocationId
     ? await prisma.stock.findMany({ where: { locationId: primaryLocationId } })
     : [];
   const stockByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
 
+  // Dishes (recipe-tracked products) don't carry their own stock row — their real
+  // availability is checked against ingredient stock at sale time — so the client
+  // just gets a large sentinel here instead of a false "out of stock".
+  const dishProductIds = modules.includes('restaurant')
+    ? new Set(
+        (await prisma.recipe.findMany({ where: { productId: { in: products.map((p) => p.id) } }, select: { productId: true } })).map(
+          (r) => r.productId,
+        ),
+      )
+    : new Set<string>();
+
+  const modifierRows = modules.includes('restaurant')
+    ? await prisma.productModifier.findMany({ where: { productId: { in: products.map((p) => p.id) } } })
+    : [];
+  const modifiersByProduct = new Map<string, { id: string; name: string; priceDelta: number }[]>();
+  for (const m of modifierRows) {
+    const list = modifiersByProduct.get(m.productId) ?? [];
+    list.push({ id: m.id, name: m.name, priceDelta: m.priceDelta });
+    modifiersByProduct.set(m.productId, list);
+  }
+
   res.json({
     token: signPosToken(user.id, user.companyId),
     user: { id: user.id, name: user.name, role: user.role },
     company: { id: user.company.id, name: user.company.name },
-    modules: user.company.tariff ? (JSON.parse(user.company.tariff.modules) as string[]) : [],
+    modules,
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
     products: products.map((p) => ({
       id: p.id,
@@ -54,7 +77,9 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
       price: p.salePrice,
       barcode: p.barcode ?? '',
       category: p.category ?? '',
-      stock: stockByProduct.get(p.id) ?? 0,
+      stock: dishProductIds.has(p.id) ? 9999 : (stockByProduct.get(p.id) ?? 0),
+      stopListed: p.stopListed,
+      modifiers: modifiersByProduct.get(p.id) ?? [],
     })),
   });
 });
@@ -73,16 +98,40 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     res.status(403).json({ error: tariffDenialMessage(state) });
     return;
   }
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  const hasRestaurant = modules.includes('restaurant');
 
   try {
     const document = await prisma.$transaction(async (tx) => {
       const now = new Date();
 
-      const [stockRows, batchRows] = await Promise.all([
-        tx.stock.findMany({ where: { locationId: b.locationId, productId: { in: items.map((it) => it.productId) } } }),
+      // Dishes (products with a recipe, on restaurant-tariff companies) don't carry
+      // their own stock — selling one consumes its recipe's ingredients instead.
+      const recipes = hasRestaurant
+        ? await tx.recipe.findMany({
+            where: { productId: { in: items.map((it) => it.productId) } },
+            include: { ingredients: true },
+          })
+        : [];
+      const recipeIngredientsByProductId = new Map(
+        recipes.map((r) => [r.productId, r.ingredients.map((ing) => ({ ingredientId: ing.ingredientId, quantity: ing.quantity }))]),
+      );
+      const dishProductIds = new Set(recipeIngredientsByProductId.keys());
+      const plainItems = items.filter((it) => !dishProductIds.has(it.productId));
+      const dishItems = items.filter((it) => dishProductIds.has(it.productId));
+
+      const ingredientConsumption = computeIngredientConsumption(
+        dishItems.map((it) => ({ productId: it.productId, quantity: it.quantity })),
+        recipeIngredientsByProductId,
+      );
+      const ingredientIds = ingredientConsumption.map((c) => c.ingredientId);
+
+      const [stockRows, batchRows, ingredientStockRows] = await Promise.all([
+        tx.stock.findMany({ where: { locationId: b.locationId, productId: { in: plainItems.map((it) => it.productId) } } }),
         tx.productBatch.findMany({
-          where: { locationId: b.locationId, productId: { in: items.map((it) => it.productId) }, quantity: { gt: 0 } },
+          where: { locationId: b.locationId, productId: { in: plainItems.map((it) => it.productId) }, quantity: { gt: 0 } },
         }),
+        tx.stock.findMany({ where: { locationId: b.locationId, productId: { in: ingredientIds } } }),
       ]);
       const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
       const batchesByProduct = new Map<string, typeof batchRows>();
@@ -95,7 +144,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       // For batch-tracked products, only non-expired batches count as sellable —
       // expired stock must never be auto-sold, it has to be written off explicitly.
       const quantityByProduct = new Map<string, number>();
-      for (const item of items) {
+      for (const item of plainItems) {
         const productBatches = batchesByProduct.get(item.productId);
         if (productBatches && productBatches.length > 0) {
           const sellable = productBatches
@@ -107,7 +156,16 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         }
       }
 
-      const shortages = findStockShortages(items, quantityByProduct);
+      const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
+      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
+
+      const shortages = [
+        ...findStockShortages(plainItems, quantityByProduct),
+        ...findStockShortages(
+          ingredientConsumption.map((c) => ({ productId: c.ingredientId, quantity: c.quantity, price: 0 })),
+          ingredientQuantityByProduct,
+        ),
+      ];
       if (shortages.length > 0) {
         throw new StockError(shortages);
       }
@@ -115,7 +173,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       const documentItemsData: { productId: string; batchId: string | null; quantity: number; price: number }[] = [];
       const updates: Promise<unknown>[] = [];
 
-      for (const item of items) {
+      for (const item of plainItems) {
         const stock = stockByProduct.get(item.productId)!;
         updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } }));
 
@@ -133,6 +191,14 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         } else {
           documentItemsData.push({ productId: item.productId, batchId: null, quantity: item.quantity, price: item.price });
         }
+      }
+
+      for (const item of dishItems) {
+        documentItemsData.push({ productId: item.productId, batchId: null, quantity: item.quantity, price: item.price });
+      }
+      for (const consumption of ingredientConsumption) {
+        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
+        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - consumption.quantity } }));
       }
 
       await Promise.all(updates);
@@ -266,14 +332,63 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
     : [];
   const stockForLowCheck = stockRows.map((s) => ({ productId: s.productId, name: s.product.name, quantity: s.quantity }));
 
+  const dishCostByProductId = new Map<string, number>();
+  if (modules.includes('restaurant')) {
+    const soldProductIds = [...new Set(documents.flatMap((d) => d.items.map((it) => it.productId)))];
+    const recipes = await prisma.recipe.findMany({
+      where: { productId: { in: soldProductIds } },
+      include: { ingredients: true },
+    });
+    const ingredientIds = [...new Set(recipes.flatMap((r) => r.ingredients.map((i) => i.ingredientId)))];
+    const ingredientProducts = await prisma.product.findMany({ where: { id: { in: ingredientIds } } });
+    const purchasePriceByIngredientId = new Map(ingredientProducts.map((p) => [p.id, p.purchasePrice]));
+    for (const recipe of recipes) {
+      const cost = computeDishCost(
+        recipe.ingredients.map((i) => ({ ingredientId: i.ingredientId, quantity: i.quantity })),
+        purchasePriceByIngredientId,
+      );
+      dishCostByProductId.set(recipe.productId, cost);
+    }
+  }
+
   res.json({
     from: from.toISOString(),
     to: to.toISOString(),
+    foodCost: buildFoodCost(sales, dishCostByProductId),
     summary: buildSummary(sales),
     topProducts: buildTopProducts(sales, 10),
     byCashier: buildCashierBreakdown(sales, nameByUserId),
     lowStock: findLowStock(stockForLowCheck, 10),
   });
+});
+
+posRouter.patch('/products/:id/stop-list', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  if (typeof b.stopListed !== 'boolean') {
+    res.status(400).json({ error: 'Некорректные данные' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('restaurant')) {
+    res.status(403).json({ error: 'Стоп-лист недоступен на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!product) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const updated = await prisma.product.update({ where: { id: product.id }, data: { stopListed: b.stopListed } });
+  res.json({ id: updated.id, stopListed: updated.stopListed });
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

@@ -1,4 +1,4 @@
-export type ModuleKey = 'shop' | 'warehouse' | 'pharmacy' | 'supply' | 'terminal';
+export type ModuleKey = 'shop' | 'warehouse' | 'pharmacy' | 'supply' | 'terminal' | 'restaurant';
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   shop: 'Магазин',
@@ -6,6 +6,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   pharmacy: 'Аптека',
   supply: 'Склад для HoReCa',
   terminal: 'ПК/Терминал (отчёты и печать)',
+  restaurant: 'Кафе/Ресторан',
 };
 
 export type SupportLevel = 'basic' | 'priority' | 'dedicated';
@@ -35,7 +36,7 @@ export interface Tariff {
   notes: string;
 }
 
-export type LocationType = 'shop' | 'warehouse' | 'pharmacy' | 'supply';
+export type LocationType = 'shop' | 'warehouse' | 'pharmacy' | 'supply' | 'restaurant';
 
 export interface CompanyLocation {
   id: string;

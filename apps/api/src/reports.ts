@@ -112,3 +112,51 @@ export function findLowStock(stock: StockRow[], threshold = 10): LowStockItem[] 
     .sort((a, b) => a.quantity - b.quantity)
     .map((s) => ({ productId: s.productId, name: s.name, quantity: s.quantity }));
 }
+
+export interface DishMargin {
+  productId: string;
+  name: string;
+  quantitySold: number;
+  revenue: number;
+  theoreticalCost: number;
+  margin: number;
+  marginPercent: number;
+}
+
+// Only products present in dishCostByProductId (i.e. products with a recipe)
+// are included — plain, non-dish sale items are ignored here.
+export function buildFoodCost(sales: SaleRecord[], dishCostByProductId: Map<string, number>): DishMargin[] {
+  const byProduct = new Map<string, { name: string; quantitySold: number; revenue: number }>();
+
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      if (!dishCostByProductId.has(item.productId)) continue;
+      const revenue = item.price * item.quantity;
+      const existing = byProduct.get(item.productId);
+      if (existing) {
+        existing.quantitySold += item.quantity;
+        existing.revenue += revenue;
+      } else {
+        byProduct.set(item.productId, { name: item.name, quantitySold: item.quantity, revenue });
+      }
+    }
+  }
+
+  return [...byProduct.entries()]
+    .map(([productId, data]) => {
+      const unitCost = dishCostByProductId.get(productId) ?? 0;
+      const theoreticalCost = unitCost * data.quantitySold;
+      const margin = data.revenue - theoreticalCost;
+      const marginPercent = data.revenue > 0 ? Math.round((margin / data.revenue) * 100) : 0;
+      return {
+        productId,
+        name: data.name,
+        quantitySold: data.quantitySold,
+        revenue: data.revenue,
+        theoreticalCost,
+        margin,
+        marginPercent,
+      };
+    })
+    .sort((a, b) => b.margin - a.margin);
+}

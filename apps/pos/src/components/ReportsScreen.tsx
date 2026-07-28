@@ -86,6 +86,21 @@ export function ReportsScreen({ report, loading, error, rangeDays, onRangeChange
               </div>
             ))}
 
+            {report.foodCost.length > 0 && (
+              <>
+                <div className="orders-section-title">Маржа по блюдам</div>
+                {report.foodCost.map((d) => (
+                  <div key={d.productId} className="report-row food-cost">
+                    <span>{d.name} × {d.quantitySold}</span>
+                    <span className="food-cost-figures">
+                      <span>{formatMoney(d.margin)}</span>
+                      <span className={`margin-pct ${d.marginPercent < 30 ? 'low' : ''}`}>{d.marginPercent}%</span>
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+
             <div className="orders-section-title">По кассирам</div>
             {report.byCashier.length === 0 && <div className="empty-state">Продаж за период нет</div>}
             {report.byCashier.map((c) => (

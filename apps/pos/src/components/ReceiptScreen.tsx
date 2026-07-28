@@ -19,7 +19,7 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
           <div className="r-title">ANYQ Касса</div>
           <div className="r-sub">{formatDateTime(sale.createdAt)}{!sale.synced ? ' · не синхронизирован' : ''}</div>
           {sale.items.map((line) => (
-            <div key={line.productId} className="receipt-line">
+            <div key={line.id} className="receipt-line">
               <span>{line.name} × {line.qty}</span>
               <span>{formatMoney(line.price * line.qty)}</span>
             </div>
