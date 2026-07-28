@@ -14,7 +14,7 @@ function sale(overrides: Partial<SaleRecord> & { items: SaleRecord['items'] }): 
 
 describe('buildSummary', () => {
   it('returns zeroed summary for no sales', () => {
-    expect(buildSummary([])).toEqual({ revenue: 0, salesCount: 0, averageCheck: 0, byPaymentMethod: {} });
+    expect(buildSummary([])).toEqual({ revenue: 0, salesCount: 0, averageCheck: 0, byPaymentMethod: {}, totalDiscount: 0 });
   });
 
   it('sums revenue and groups totals by payment method', () => {
@@ -27,6 +27,7 @@ describe('buildSummary', () => {
       salesCount: 2,
       averageCheck: 250,
       byPaymentMethod: { cash: 200, kaspi: 300 },
+      totalDiscount: 0,
     });
   });
 
@@ -41,6 +42,19 @@ describe('buildSummary', () => {
       sale({ items: [{ productId: 'p1', name: 'A', quantity: 1, price: 101 }] }),
     ];
     expect(buildSummary(sales).averageCheck).toBe(101); // 201/2 = 100.5 -> rounds to 101
+  });
+
+  it('nets revenue and payment-method totals against the applied discount', () => {
+    const sales = [
+      sale({ paymentMethod: 'cash', items: [{ productId: 'p1', name: 'A', quantity: 1, price: 1000 }], discountAmount: 100 }),
+    ];
+    expect(buildSummary(sales)).toEqual({
+      revenue: 900,
+      salesCount: 1,
+      averageCheck: 900,
+      byPaymentMethod: { cash: 900 },
+      totalDiscount: 100,
+    });
   });
 });
 

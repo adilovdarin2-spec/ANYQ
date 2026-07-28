@@ -38,12 +38,21 @@ export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   card: 'Карта',
 };
 
+export type DiscountType = 'percent' | 'fixed';
+
+export interface Discount {
+  type: DiscountType;
+  value: number;
+}
+
 export interface Sale {
   id: string;
   shiftId: string;
   locationId: string;
   items: CartLine[];
   total: number;
+  discount: Discount | null;
+  discountAmount: number;
   paymentMethod: PaymentMethod;
   createdAt: string;
   synced: boolean;
@@ -83,6 +92,7 @@ export interface ReportSummary {
   salesCount: number;
   averageCheck: number;
   byPaymentMethod: Record<string, number>;
+  totalDiscount: number;
 }
 
 export interface TopProduct {

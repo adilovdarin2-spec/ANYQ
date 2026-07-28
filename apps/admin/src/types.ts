@@ -1,4 +1,4 @@
-export type ModuleKey = 'shop' | 'warehouse' | 'pharmacy' | 'supply' | 'terminal' | 'restaurant';
+export type ModuleKey = 'shop' | 'warehouse' | 'pharmacy' | 'supply' | 'terminal' | 'restaurant' | 'retail';
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   shop: 'Магазин',
@@ -7,6 +7,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   supply: 'Склад для HoReCa',
   terminal: 'ПК/Терминал (отчёты и печать)',
   restaurant: 'Кафе/Ресторан',
+  retail: 'Розница (скидки, лояльность)',
 };
 
 export type SupportLevel = 'basic' | 'priority' | 'dedicated';

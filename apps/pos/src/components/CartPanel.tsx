@@ -1,15 +1,32 @@
-import type { CartLine } from '../types';
+import type { CartLine, Discount } from '../types';
 import { formatMoney } from '../utils';
+import { DiscountEditor } from './DiscountEditor';
 
 interface Props {
   cart: CartLine[];
+  subtotal: number;
   total: number;
+  discount: Discount | null;
+  discountAmount: number;
+  canDiscount: boolean;
+  onChangeDiscount: (discount: Discount | null) => void;
   onChangeQty: (lineId: string, delta: number) => void;
   onRemove: (lineId: string) => void;
   onCheckout: () => void;
 }
 
-export function CartPanel({ cart, total, onChangeQty, onRemove, onCheckout }: Props) {
+export function CartPanel({
+  cart,
+  subtotal,
+  total,
+  discount,
+  discountAmount,
+  canDiscount,
+  onChangeDiscount,
+  onChangeQty,
+  onRemove,
+  onCheckout,
+}: Props) {
   return (
     <div className="cart-panel">
       <div className="cart-panel-title">Корзина</div>
@@ -33,6 +50,12 @@ export function CartPanel({ cart, total, onChangeQty, onRemove, onCheckout }: Pr
       </div>
       {cart.length > 0 && (
         <div className="cart-panel-footer">
+          {canDiscount && (
+            <>
+              <div className="summary-row"><span>Подытог</span><span>{formatMoney(subtotal)}</span></div>
+              <DiscountEditor discount={discount} discountAmount={discountAmount} onChange={onChangeDiscount} />
+            </>
+          )}
           <div className="summary-row total"><span>Итого</span><span>{formatMoney(total)}</span></div>
           <button className="btn btn-primary btn-block" onClick={onCheckout}>
             Оплатить {formatMoney(total)}

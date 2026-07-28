@@ -1,16 +1,34 @@
-import type { CartLine } from '../types';
+import type { CartLine, Discount } from '../types';
 import { formatMoney } from '../utils';
+import { DiscountEditor } from './DiscountEditor';
 
 interface Props {
   cart: CartLine[];
+  subtotal: number;
   total: number;
+  discount: Discount | null;
+  discountAmount: number;
+  canDiscount: boolean;
+  onChangeDiscount: (discount: Discount | null) => void;
   onChangeQty: (lineId: string, delta: number) => void;
   onRemove: (lineId: string) => void;
   onBack: () => void;
   onCheckout: () => void;
 }
 
-export function CartSheet({ cart, total, onChangeQty, onRemove, onBack, onCheckout }: Props) {
+export function CartSheet({
+  cart,
+  subtotal,
+  total,
+  discount,
+  discountAmount,
+  canDiscount,
+  onChangeDiscount,
+  onChangeQty,
+  onRemove,
+  onBack,
+  onCheckout,
+}: Props) {
   return (
     <div className="screen">
       <div className="screen-header">
@@ -35,7 +53,15 @@ export function CartSheet({ cart, total, onChangeQty, onRemove, onBack, onChecko
           </div>
         ))}
         {cart.length > 0 && (
-          <div className="summary-row total"><span>Итого</span><span>{formatMoney(total)}</span></div>
+          <>
+            {canDiscount && (
+              <>
+                <div className="summary-row"><span>Подытог</span><span>{formatMoney(subtotal)}</span></div>
+                <DiscountEditor discount={discount} discountAmount={discountAmount} onChange={onChangeDiscount} />
+              </>
+            )}
+            <div className="summary-row total"><span>Итого</span><span>{formatMoney(total)}</span></div>
+          </>
         )}
       </div>
       <div className="screen-footer">

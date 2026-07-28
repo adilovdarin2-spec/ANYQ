@@ -95,7 +95,7 @@ const companies: SeedCompany[] = [
       { name: 'Нурлан Абдиев', role: 'warehouse_staff', phone: '+7 727 250 60 62' },
     ],
     tariff: {
-      modules: ['shop', 'warehouse'],
+      modules: ['shop', 'warehouse', 'retail'],
       locationLimit: null,
       userLimit: null,
       skuLimit: null,

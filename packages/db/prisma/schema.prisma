@@ -213,6 +213,8 @@ model Document {
   type          String
   status        String        @default("draft")
   paymentMethod String?
+  discountType  String?
+  discountValue Int?
   counterparty  Counterparty? @relation(fields: [counterpartyId], references: [id])
   counterpartyId String?
   createdBy     String?

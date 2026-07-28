@@ -24,6 +24,7 @@ export function useSalesSync(token: string | null) {
             locationId: sale.locationId,
             paymentMethod: sale.paymentMethod,
             items: sale.items.map((i) => ({ productId: i.productId, quantity: i.qty, price: i.price })),
+            ...(sale.discount ? { discountType: sale.discount.type, discountValue: sale.discount.value } : {}),
           });
           const updated = getSales().map((s) => (s.id === sale.id ? { ...s, synced: true } : s));
           saveSales(updated);
