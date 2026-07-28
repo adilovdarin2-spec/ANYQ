@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Count, Discount, Order, PaymentMethod, Product, ProductModifierOption, Receipt, Report, Sale, Shift, Transfer } from './types';
+import type { Batch, CartLine, Count, Discount, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, Receipt, Report, Sale, Shift, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -21,9 +21,10 @@ import {
   createReceipt,
   fetchCounts,
   createCount,
+  fetchCustomerPoints,
   ApiError,
 } from './api';
-import type { PosSession } from './api';
+import type { PosSession, CustomerLookupResult } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
 import { ShiftBar } from './components/ShiftBar';
@@ -90,6 +91,7 @@ export default function App() {
   const [countsError, setCountsError] = useState<string | null>(null);
   const [countSubmitting, setCountSubmitting] = useState(false);
   const [discount, setDiscount] = useState<Discount | null>(null);
+  const [loyalty, setLoyalty] = useState<LoyaltySelection | null>(null);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -449,7 +451,11 @@ export default function App() {
       ? Math.round((cartSubtotal * Math.min(Math.max(discount.value, 0), 100)) / 100)
       : Math.min(Math.max(discount.value, 0), cartSubtotal)
     : 0;
-  const cartTotal = cartSubtotal - cartDiscountAmount;
+  const cartNetAfterDiscount = cartSubtotal - cartDiscountAmount;
+  const cartPointsRedeemed = loyalty
+    ? Math.min(Math.max(loyalty.pointsToRedeem, 0), loyalty.pointsAvailable, cartNetAfterDiscount)
+    : 0;
+  const cartTotal = cartNetAfterDiscount - cartPointsRedeemed;
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
   const cartQtyByProduct = cart.reduce<Record<string, number>>((acc, l) => {
     acc[l.productId] = (acc[l.productId] ?? 0) + l.qty;
@@ -458,7 +464,13 @@ export default function App() {
 
   useEffect(() => {
     if (cart.length === 0 && discount) setDiscount(null);
-  }, [cart.length, discount]);
+    if (cart.length === 0 && loyalty) setLoyalty(null);
+  }, [cart.length, discount, loyalty]);
+
+  function lookupCustomer(phone: string): Promise<CustomerLookupResult> {
+    if (!session) return Promise.reject(new Error('no session'));
+    return fetchCustomerPoints(session.token, phone);
+  }
 
   function completeSale(method: PaymentMethod) {
     if (!shift || !session) return;
@@ -470,6 +482,10 @@ export default function App() {
       total: cartTotal,
       discount,
       discountAmount: cartDiscountAmount,
+      customerPhone: loyalty?.phone,
+      customerName: loyalty?.name,
+      pointsRedeemed: cartPointsRedeemed || undefined,
+      pointsEarned: loyalty ? Math.floor((cartTotal * 5) / 100) : undefined,
       paymentMethod: method,
       createdAt: new Date().toISOString(),
       synced: false,
@@ -480,6 +496,7 @@ export default function App() {
     setLastSale(sale);
     setCart([]);
     setDiscount(null);
+    setLoyalty(null);
     setView('receipt');
   }
 
@@ -543,11 +560,15 @@ export default function App() {
           <CartPanel
             cart={cart}
             subtotal={cartSubtotal}
+            netAfterDiscount={cartNetAfterDiscount}
             total={cartTotal}
             discount={discount}
             discountAmount={cartDiscountAmount}
-            canDiscount={hasRetail}
+            loyalty={loyalty}
+            hasRetail={hasRetail}
             onChangeDiscount={setDiscount}
+            onChangeLoyalty={setLoyalty}
+            onLookupCustomer={lookupCustomer}
             onChangeQty={changeQty}
             onRemove={removeLine}
             onCheckout={() => setView('payment')}
@@ -573,11 +594,15 @@ export default function App() {
         <CartSheet
           cart={cart}
           subtotal={cartSubtotal}
+          netAfterDiscount={cartNetAfterDiscount}
           total={cartTotal}
           discount={discount}
           discountAmount={cartDiscountAmount}
-          canDiscount={hasRetail}
+          loyalty={loyalty}
+          hasRetail={hasRetail}
           onChangeDiscount={setDiscount}
+          onChangeLoyalty={setLoyalty}
+          onLookupCustomer={lookupCustomer}
           onChangeQty={changeQty}
           onRemove={removeLine}
           onBack={() => setView('sale')}

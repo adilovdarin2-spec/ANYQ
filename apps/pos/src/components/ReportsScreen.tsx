@@ -69,6 +69,18 @@ export function ReportsScreen({ report, loading, error, rangeDays, onRangeChange
                   <span className="label">Скидки</span>
                 </div>
               )}
+              {report.summary.totalPointsRedeemed > 0 && (
+                <div className="report-card">
+                  <span className="value">{formatMoney(report.summary.totalPointsRedeemed)}</span>
+                  <span className="label">Списано баллов</span>
+                </div>
+              )}
+              {report.summary.totalPointsEarned > 0 && (
+                <div className="report-card">
+                  <span className="value">{report.summary.totalPointsEarned}</span>
+                  <span className="label">Начислено баллов</span>
+                </div>
+              )}
             </div>
 
             {Object.keys(report.summary.byPaymentMethod).length > 0 && (

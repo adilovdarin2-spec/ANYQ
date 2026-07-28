@@ -14,7 +14,15 @@ function sale(overrides: Partial<SaleRecord> & { items: SaleRecord['items'] }): 
 
 describe('buildSummary', () => {
   it('returns zeroed summary for no sales', () => {
-    expect(buildSummary([])).toEqual({ revenue: 0, salesCount: 0, averageCheck: 0, byPaymentMethod: {}, totalDiscount: 0 });
+    expect(buildSummary([])).toEqual({
+      revenue: 0,
+      salesCount: 0,
+      averageCheck: 0,
+      byPaymentMethod: {},
+      totalDiscount: 0,
+      totalPointsRedeemed: 0,
+      totalPointsEarned: 0,
+    });
   });
 
   it('sums revenue and groups totals by payment method', () => {
@@ -28,6 +36,8 @@ describe('buildSummary', () => {
       averageCheck: 250,
       byPaymentMethod: { cash: 200, kaspi: 300 },
       totalDiscount: 0,
+      totalPointsRedeemed: 0,
+      totalPointsEarned: 0,
     });
   });
 
@@ -54,6 +64,28 @@ describe('buildSummary', () => {
       averageCheck: 900,
       byPaymentMethod: { cash: 900 },
       totalDiscount: 100,
+      totalPointsRedeemed: 0,
+      totalPointsEarned: 0,
+    });
+  });
+
+  it('nets revenue against redeemed loyalty points and tracks points earned separately', () => {
+    const sales = [
+      sale({
+        paymentMethod: 'cash',
+        items: [{ productId: 'p1', name: 'A', quantity: 1, price: 1000 }],
+        pointsRedeemed: 200,
+        pointsEarned: 40,
+      }),
+    ];
+    expect(buildSummary(sales)).toEqual({
+      revenue: 800,
+      salesCount: 1,
+      averageCheck: 800,
+      byPaymentMethod: { cash: 800 },
+      totalDiscount: 0,
+      totalPointsRedeemed: 200,
+      totalPointsEarned: 40,
     });
   });
 });

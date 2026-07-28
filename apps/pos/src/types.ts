@@ -53,9 +53,20 @@ export interface Sale {
   total: number;
   discount: Discount | null;
   discountAmount: number;
+  customerPhone?: string;
+  customerName?: string;
+  pointsRedeemed?: number;
+  pointsEarned?: number;
   paymentMethod: PaymentMethod;
   createdAt: string;
   synced: boolean;
+}
+
+export interface LoyaltySelection {
+  phone: string;
+  name: string;
+  pointsAvailable: number;
+  pointsToRedeem: number;
 }
 
 export interface Shift {
@@ -93,6 +104,8 @@ export interface ReportSummary {
   averageCheck: number;
   byPaymentMethod: Record<string, number>;
   totalDiscount: number;
+  totalPointsRedeemed: number;
+  totalPointsEarned: number;
 }
 
 export interface TopProduct {

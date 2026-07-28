@@ -1,15 +1,21 @@
-import type { CartLine, Discount } from '../types';
+import type { CartLine, Discount, LoyaltySelection } from '../types';
+import type { CustomerLookupResult } from '../api';
 import { formatMoney } from '../utils';
 import { DiscountEditor } from './DiscountEditor';
+import { LoyaltyEditor } from './LoyaltyEditor';
 
 interface Props {
   cart: CartLine[];
   subtotal: number;
+  netAfterDiscount: number;
   total: number;
   discount: Discount | null;
   discountAmount: number;
-  canDiscount: boolean;
+  loyalty: LoyaltySelection | null;
+  hasRetail: boolean;
   onChangeDiscount: (discount: Discount | null) => void;
+  onChangeLoyalty: (selection: LoyaltySelection | null) => void;
+  onLookupCustomer: (phone: string) => Promise<CustomerLookupResult>;
   onChangeQty: (lineId: string, delta: number) => void;
   onRemove: (lineId: string) => void;
   onCheckout: () => void;
@@ -18,11 +24,15 @@ interface Props {
 export function CartPanel({
   cart,
   subtotal,
+  netAfterDiscount,
   total,
   discount,
   discountAmount,
-  canDiscount,
+  loyalty,
+  hasRetail,
   onChangeDiscount,
+  onChangeLoyalty,
+  onLookupCustomer,
   onChangeQty,
   onRemove,
   onCheckout,
@@ -50,10 +60,11 @@ export function CartPanel({
       </div>
       {cart.length > 0 && (
         <div className="cart-panel-footer">
-          {canDiscount && (
+          {hasRetail && (
             <>
               <div className="summary-row"><span>Подытог</span><span>{formatMoney(subtotal)}</span></div>
               <DiscountEditor discount={discount} discountAmount={discountAmount} onChange={onChangeDiscount} />
+              <LoyaltyEditor netAfterDiscount={netAfterDiscount} selection={loyalty} onChange={onChangeLoyalty} onLookup={onLookupCustomer} />
             </>
           )}
           <div className="summary-row total"><span>Итого</span><span>{formatMoney(total)}</span></div>
