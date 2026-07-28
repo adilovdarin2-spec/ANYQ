@@ -587,6 +587,133 @@ posRouter.post('/orders/:id/reject', requirePosAuth, async (req: PosAuthedReques
   res.json({ id: order.id, status: 'cancelled' });
 });
 
+posRouter.get('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Перемещения недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const transfers = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'transfer' },
+    include: { items: { include: { product: true } }, location: true, toLocation: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    transfers.map((t) => ({
+      id: t.id,
+      createdAt: t.createdAt.toISOString(),
+      fromLocationName: t.location.name,
+      toLocationName: t.toLocation?.name ?? '—',
+      items: t.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity })),
+    })),
+  );
+});
+
+posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const items: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  if (items.length === 0 || !b.toLocationId) {
+    res.status(400).json({ error: 'Некорректные данные перемещения' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Перемещения недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const fromLocation = company?.locations[0];
+  if (!fromLocation) {
+    res.status(400).json({ error: 'У компании не настроена точка' });
+    return;
+  }
+  if (b.toLocationId === fromLocation.id) {
+    res.status(400).json({ error: 'Точка назначения совпадает с текущей точкой' });
+    return;
+  }
+  const toLocation = company?.locations.find((l) => l.id === b.toLocationId);
+  if (!toLocation) {
+    res.status(404).json({ error: 'Точка назначения не найдена' });
+    return;
+  }
+
+  try {
+    const document = await prisma.$transaction(async (tx) => {
+      const [sourceStockRows, destStockRows] = await Promise.all([
+        tx.stock.findMany({ where: { locationId: fromLocation.id, productId: { in: items.map((it) => it.productId) } } }),
+        tx.stock.findMany({ where: { locationId: toLocation.id, productId: { in: items.map((it) => it.productId) } } }),
+      ]);
+      const sourceStockByProduct = new Map(sourceStockRows.map((s) => [s.productId, s]));
+      const destStockByProduct = new Map(destStockRows.map((s) => [s.productId, s]));
+      const quantityByProduct = new Map(sourceStockRows.map((s) => [s.productId, s.quantity]));
+
+      const shortages = findStockShortages(
+        items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: 0 })),
+        quantityByProduct,
+      );
+      if (shortages.length > 0) {
+        throw new StockError(shortages);
+      }
+
+      const updates: Promise<unknown>[] = [];
+      for (const item of items) {
+        const source = sourceStockByProduct.get(item.productId)!;
+        updates.push(tx.stock.update({ where: { id: source.id }, data: { quantity: source.quantity - item.quantity } }));
+
+        const dest = destStockByProduct.get(item.productId);
+        if (dest) {
+          updates.push(tx.stock.update({ where: { id: dest.id }, data: { quantity: dest.quantity + item.quantity } }));
+        } else {
+          updates.push(
+            tx.stock.create({ data: { productId: item.productId, locationId: toLocation.id, quantity: item.quantity } }),
+          );
+        }
+      }
+      await Promise.all(updates);
+
+      return tx.document.create({
+        data: {
+          companyId: req.posCompanyId!,
+          locationId: fromLocation.id,
+          toLocationId: toLocation.id,
+          type: 'transfer',
+          status: 'confirmed',
+          createdBy: req.posUserId!,
+          items: { create: items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: 0 })) },
+        },
+        include: { items: true },
+      });
+    }, { timeout: 15000 });
+
+    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+  } catch (err) {
+    if (err instanceof StockError) {
+      res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
+      return;
+    }
+    throw err;
+  }
+});
+
 class StockError extends Error {
   shortages: StockShortage[];
   constructor(shortages: StockShortage[]) {

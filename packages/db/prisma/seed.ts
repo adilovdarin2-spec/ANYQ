@@ -188,6 +188,7 @@ async function main() {
   await seedSupplyDemoData();
   await seedPharmacyDemoData();
   await seedRestaurantDemoData();
+  await seedWarehouseTransferDemoData();
 }
 
 const posProducts = [
@@ -693,6 +694,73 @@ async function seedRestaurantDemoData() {
         });
         console.log(`Created ${dish.modifiers.length} modifiers for ${dish.name}`);
       }
+    }
+  }
+}
+
+const networkProducts = [
+  { name: 'Хлеб «Бородинский»', price: 280, barcode: '4870000000200', category: 'Хлеб', warehouseStock: 500, shopStock: 25 },
+  { name: 'Молоко 1л «Радуга»', price: 620, barcode: '4870000000217', category: 'Молочка', warehouseStock: 500, shopStock: 20 },
+  { name: 'Вода 1.5л', price: 220, barcode: '4870000000224', category: 'Напитки', warehouseStock: 800, shopStock: 40 },
+  { name: 'Сахар 1кг', price: 540, barcode: '4870000000231', category: 'Бакалея', warehouseStock: 500, shopStock: 15 },
+  { name: 'Масло растительное 1л', price: 890, barcode: '4870000000248', category: 'Бакалея', warehouseStock: 400, shopStock: 12 },
+];
+
+async function seedWarehouseTransferDemoData() {
+  const network = await prisma.company.findFirst({
+    where: { name: 'Сеть магазинов «Алма Маркет»' },
+    include: { users: true, products: true, locations: true },
+  });
+  if (!network) {
+    console.log('Demo network not found, skipping warehouse transfer demo data');
+    return;
+  }
+
+  const manager = network.users.find((u) => u.role === 'manager');
+  if (manager && !manager.posPin) {
+    await prisma.user.update({ where: { id: manager.id }, data: { posPin: '4444' } });
+    console.log(`Set POS PIN 4444 for manager ${manager.name}`);
+  }
+  const warehouseStaff = network.users.find((u) => u.role === 'warehouse_staff');
+  if (warehouseStaff && !warehouseStaff.posPin) {
+    await prisma.user.update({ where: { id: warehouseStaff.id }, data: { posPin: '4445' } });
+    console.log(`Set POS PIN 4445 for warehouse staff ${warehouseStaff.name}`);
+  }
+
+  if (network.products.length === 0) {
+    await prisma.product.createMany({
+      data: networkProducts.map((p) => ({
+        companyId: network.id,
+        name: p.name,
+        category: p.category,
+        unit: 'шт',
+        barcode: p.barcode,
+        purchasePrice: Math.round(p.price * 0.65),
+        salePrice: p.price,
+      })),
+    });
+    console.log(`Seeded ${networkProducts.length} products for Сеть магазинов «Алма Маркет»`);
+  }
+
+  const products = await prisma.product.findMany({ where: { companyId: network.id } });
+  const productByBarcode = new Map(networkProducts.map((p) => [p.barcode, p]));
+  const warehouse = network.locations.find((l) => l.type === 'warehouse');
+
+  for (const location of network.locations) {
+    const existingStock = await prisma.stock.findMany({ where: { locationId: location.id } });
+    const stockedProductIds = new Set(existingStock.map((s) => s.productId));
+    const isWarehouse = location.id === warehouse?.id;
+
+    const toCreate = products
+      .filter((p) => p.barcode && productByBarcode.has(p.barcode) && !stockedProductIds.has(p.id))
+      .map((p) => {
+        const seed = productByBarcode.get(p.barcode!)!;
+        return { productId: p.id, locationId: location.id, quantity: isWarehouse ? seed.warehouseStock : seed.shopStock };
+      });
+
+    if (toCreate.length > 0) {
+      await prisma.stock.createMany({ data: toCreate });
+      console.log(`Seeded stock for ${toCreate.length} products at ${location.name}`);
     }
   }
 }
