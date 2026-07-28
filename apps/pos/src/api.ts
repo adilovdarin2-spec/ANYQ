@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, DiscountType, Order, PaymentMethod, Product, Receipt, Report, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, DiscountType, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -154,4 +154,24 @@ export interface CreateCountPayload {
 
 export function createCount(token: string, payload: CreateCountPayload): Promise<{ id: string; createdAt: string }> {
   return request('/pos/counts', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function fetchProductionRecipes(token: string): Promise<ProductionRecipe[]> {
+  return request('/pos/production/recipes', { method: 'GET' }, token);
+}
+
+export function fetchProductionRuns(token: string): Promise<ProductionRun[]> {
+  return request('/pos/production', { method: 'GET' }, token);
+}
+
+export interface CreateProductionPayload {
+  productId: string;
+  quantity: number;
+}
+
+export function createProduction(
+  token: string,
+  payload: CreateProductionPayload,
+): Promise<{ id: string; createdAt: string; batches: number; yieldQuantity: number }> {
+  return request('/pos/production', { method: 'POST', body: JSON.stringify(payload) }, token);
 }

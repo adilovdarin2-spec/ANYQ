@@ -16,6 +16,7 @@ import { computeDiscount } from '../discounts';
 import type { DiscountType } from '../discounts';
 import { computeLoyalty } from '../loyalty';
 import { groupProductVariants } from '../variants';
+import { computeProduction } from '../production';
 
 // 1 point = 1 tenge earned/redeemed. Not yet configurable per company — a fixed
 // MVP rate, same simplification as the rest of the Retail Pack slice so far.
@@ -1022,6 +1023,170 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
   }, { timeout: 15000 });
 
   res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+});
+
+posRouter.get('/production/recipes', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Производство недоступно на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const recipes = await prisma.recipe.findMany({
+    where: { product: { companyId: req.posCompanyId } },
+    include: { product: true, ingredients: { include: { ingredient: true } } },
+  });
+
+  res.json(
+    recipes.map((r) => ({
+      productId: r.productId,
+      productName: r.product.name,
+      portionYield: r.portionYield,
+      ingredients: r.ingredients.map((i) => ({ ingredientId: i.ingredientId, name: i.ingredient.name, quantity: i.quantity })),
+    })),
+  );
+});
+
+posRouter.get('/production', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Производство недоступно на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const runs = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'production' },
+    include: { items: { include: { product: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    runs.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      items: r.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity })),
+    })),
+  );
+});
+
+posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const quantity = Number(b.quantity);
+  if (!b.productId || !Number.isFinite(quantity) || quantity <= 0) {
+    res.status(400).json({ error: 'Некорректные данные производства' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Производство недоступно на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const location = company?.locations[0];
+  if (!location) {
+    res.status(400).json({ error: 'У компании не настроена точка' });
+    return;
+  }
+
+  const recipe = await prisma.recipe.findFirst({
+    where: { productId: b.productId, product: { companyId: req.posCompanyId } },
+    include: { ingredients: true },
+  });
+  if (!recipe) {
+    res.status(404).json({ error: 'Спецификация не найдена для этого товара' });
+    return;
+  }
+
+  const { batches, yieldQuantity, ingredients } = computeProduction(
+    quantity,
+    recipe.portionYield,
+    recipe.ingredients.map((i) => ({ ingredientId: i.ingredientId, quantity: i.quantity })),
+  );
+  if (batches === 0) {
+    res.status(400).json({ error: 'Некорректное количество для производства' });
+    return;
+  }
+
+  try {
+    const document = await prisma.$transaction(async (tx) => {
+      const [ingredientStockRows, finishedStockRows] = await Promise.all([
+        tx.stock.findMany({ where: { locationId: location.id, productId: { in: ingredients.map((i) => i.ingredientId) } } }),
+        tx.stock.findMany({ where: { locationId: location.id, productId: recipe.productId } }),
+      ]);
+      const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
+      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
+
+      const shortages = findStockShortages(
+        ingredients.map((i) => ({ productId: i.ingredientId, quantity: i.quantity, price: 0 })),
+        ingredientQuantityByProduct,
+      );
+      if (shortages.length > 0) {
+        throw new StockError(shortages);
+      }
+
+      const updates: Promise<unknown>[] = [];
+      for (const ing of ingredients) {
+        const stock = ingredientStockByProduct.get(ing.ingredientId)!;
+        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - ing.quantity } }));
+      }
+
+      const finishedStock = finishedStockRows[0];
+      if (finishedStock) {
+        updates.push(tx.stock.update({ where: { id: finishedStock.id }, data: { quantity: finishedStock.quantity + yieldQuantity } }));
+      } else {
+        updates.push(tx.stock.create({ data: { productId: recipe.productId, locationId: location.id, quantity: yieldQuantity } }));
+      }
+      await Promise.all(updates);
+
+      return tx.document.create({
+        data: {
+          companyId: req.posCompanyId!,
+          locationId: location.id,
+          type: 'production',
+          status: 'confirmed',
+          createdBy: req.posUserId!,
+          items: {
+            create: [
+              { productId: recipe.productId, quantity: yieldQuantity, price: 0 },
+              ...ingredients.map((i) => ({ productId: i.ingredientId, quantity: -i.quantity, price: 0 })),
+            ],
+          },
+        },
+        include: { items: true },
+      });
+    }, { timeout: 15000 });
+
+    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString(), batches, yieldQuantity });
+  } catch (err) {
+    if (err instanceof StockError) {
+      res.status(409).json({ error: 'Недостаточно сырья на складе', shortages: err.shortages });
+      return;
+    }
+    throw err;
+  }
 });
 
 class StockError extends Error {
