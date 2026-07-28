@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Count, Discount, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductVariantOption, Receipt, Report, Sale, Shift, Transfer } from './types';
+import type { Batch, CartLine, Count, Discount, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, Sale, Shift, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -22,6 +22,9 @@ import {
   fetchCounts,
   createCount,
   fetchCustomerPoints,
+  fetchProductionRecipes,
+  fetchProductionRuns,
+  createProduction,
   ApiError,
 } from './api';
 import type { PosSession, CustomerLookupResult } from './api';
@@ -45,6 +48,7 @@ import { VariantPicker } from './components/VariantPicker';
 import { TransfersScreen } from './components/TransfersScreen';
 import { IncomingScreen } from './components/IncomingScreen';
 import { CycleCountScreen } from './components/CycleCountScreen';
+import { ProductionScreen } from './components/ProductionScreen';
 
 type View =
   | 'sale'
@@ -57,7 +61,8 @@ type View =
   | 'batches'
   | 'transfers'
   | 'incoming'
-  | 'counts';
+  | 'counts'
+  | 'production';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -94,6 +99,11 @@ export default function App() {
   const [countSubmitting, setCountSubmitting] = useState(false);
   const [discount, setDiscount] = useState<Discount | null>(null);
   const [loyalty, setLoyalty] = useState<LoyaltySelection | null>(null);
+  const [productionRuns, setProductionRuns] = useState<ProductionRun[]>([]);
+  const [productionRecipes, setProductionRecipes] = useState<ProductionRecipe[]>([]);
+  const [productionLoading, setProductionLoading] = useState(false);
+  const [productionError, setProductionError] = useState<string | null>(null);
+  const [productionSubmitting, setProductionSubmitting] = useState(false);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -355,6 +365,42 @@ export default function App() {
     }
   }
 
+  async function loadProduction() {
+    if (!session) return;
+    setProductionLoading(true);
+    setProductionError(null);
+    try {
+      const [runs, recipes] = await Promise.all([fetchProductionRuns(session.token), fetchProductionRecipes(session.token)]);
+      setProductionRuns(runs);
+      setProductionRecipes(recipes);
+    } catch (err) {
+      setProductionError(err instanceof ApiError ? err.message : 'Не удалось загрузить производство');
+    } finally {
+      setProductionLoading(false);
+    }
+  }
+
+  function handleShowProduction() {
+    setView('production');
+    void loadProduction();
+  }
+
+  async function handleCreateProduction(payload: { productId: string; quantity: number }) {
+    if (!session) return false;
+    setProductionSubmitting(true);
+    setProductionError(null);
+    try {
+      await createProduction(session.token, payload);
+      await loadProduction();
+      return true;
+    } catch (err) {
+      setProductionError(err instanceof ApiError ? err.message : 'Не удалось запустить производство');
+      return false;
+    } finally {
+      setProductionSubmitting(false);
+    }
+  }
+
   async function openShift(openingCash: number) {
     let s: Shift = {
       id: genId('shift'),
@@ -564,6 +610,7 @@ export default function App() {
         onShowTransfers={hasWarehouse ? handleShowTransfers : undefined}
         onShowIncoming={hasWarehouse ? handleShowIncoming : undefined}
         onShowCounts={hasWarehouse ? handleShowCounts : undefined}
+        onShowProduction={hasWarehouse ? handleShowProduction : undefined}
       />
 
       {view === 'sale' && isDesktop && (
@@ -723,6 +770,19 @@ export default function App() {
           onBack={() => setView('sale')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'production' && (
+        <ProductionScreen
+          runs={productionRuns}
+          recipes={productionRecipes}
+          loading={productionLoading}
+          error={productionError}
+          submitting={productionSubmitting}
+          onBack={() => setView('sale')}
+          onRefresh={loadProduction}
+          onSubmit={handleCreateProduction}
         />
       )}
 

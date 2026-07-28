@@ -207,3 +207,28 @@ export interface Count {
   createdAt: string;
   items: CountItem[];
 }
+
+export interface ProductionIngredient {
+  ingredientId: string;
+  name: string;
+  quantity: number;
+}
+
+export interface ProductionRecipe {
+  productId: string;
+  productName: string;
+  portionYield: number;
+  ingredients: ProductionIngredient[];
+}
+
+export interface ProductionRunItem {
+  productId: string;
+  name: string;
+  quantity: number;
+}
+
+export interface ProductionRun {
+  id: string;
+  createdAt: string;
+  items: ProductionRunItem[];
+}

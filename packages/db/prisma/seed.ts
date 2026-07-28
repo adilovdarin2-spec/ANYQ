@@ -823,8 +823,64 @@ async function seedVariantDemoData() {
   console.log(`Seeded variant product "Футболка базовая" with ${variantSizes.length} sizes at ${location.name}`);
 }
 
+// A simple repackaging BOM: splitting a bulk 50kg sack of sugar into the
+// existing "Сахар 1кг" retail product, 1kg of bulk consumed per retail unit
+// produced (portionYield=1). The bulk ingredient is never sold directly.
+async function seedProductionDemoData() {
+  const network = await prisma.company.findFirst({
+    where: { name: 'Сеть магазинов «Алма Маркет»' },
+    include: { locations: true, products: true },
+  });
+  if (!network) {
+    console.log('Demo network not found, skipping production demo data');
+    return;
+  }
+
+  const retailSugar = network.products.find((p) => p.name === 'Сахар 1кг');
+  if (!retailSugar) {
+    console.log('Retail "Сахар 1кг" product not found, skipping production demo data');
+    return;
+  }
+
+  const existingRecipe = await prisma.recipe.findUnique({ where: { productId: retailSugar.id } });
+  if (existingRecipe) {
+    console.log('Production demo BOM already seeded, skipping');
+    return;
+  }
+
+  const location = network.locations.find((l) => l.name.includes('Бостандык'));
+  if (!location) {
+    console.log('Бостандык location not found, skipping production demo data');
+    return;
+  }
+
+  const bulkSugar = await prisma.product.create({
+    data: {
+      companyId: network.id,
+      name: 'Сахар мешок 50кг (опт)',
+      category: 'Бакалея',
+      unit: 'кг',
+      purchasePrice: 300,
+      salePrice: 300,
+      sellable: false,
+    },
+  });
+  await prisma.stock.create({ data: { productId: bulkSugar.id, locationId: location.id, quantity: 200 } });
+
+  await prisma.recipe.create({
+    data: {
+      productId: retailSugar.id,
+      portionYield: 1,
+      ingredients: { create: [{ ingredientId: bulkSugar.id, quantity: 1 }] },
+    },
+  });
+
+  console.log(`Seeded production BOM: "Сахар 1кг" from "${bulkSugar.name}" (200kg bulk stock at ${location.name})`);
+}
+
 main()
   .then(() => seedVariantDemoData())
+  .then(() => seedProductionDemoData())
   .catch((err) => {
     console.error(err);
     process.exit(1);
