@@ -19,7 +19,7 @@ interface Props {
   onLoadShifts: (companyId: string) => Promise<ShiftSummary[]>;
 }
 
-const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal'];
+const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal', 'restaurant'];
 const ALL_DURATIONS: DurationPreset[] = ['1m', '3m', '6m', '1y'];
 
 function parseLimit(v: string): number | null {

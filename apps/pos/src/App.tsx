@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Order, PaymentMethod, Product, Report, Sale, Shift } from './types';
+import type { Batch, CartLine, Order, PaymentMethod, Product, ProductModifierOption, Report, Sale, Shift } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -14,6 +14,7 @@ import {
   fetchReports,
   fetchBatches,
   receiveBatch,
+  setStopListed,
   ApiError,
 } from './api';
 import type { PosSession } from './api';
@@ -32,6 +33,7 @@ import { ReceiptScreen } from './components/ReceiptScreen';
 import { OrdersScreen } from './components/OrdersScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { BatchesScreen } from './components/BatchesScreen';
+import { ModifierPicker } from './components/ModifierPicker';
 
 type View = 'sale' | 'cart' | 'payment' | 'receipt' | 'close-shift' | 'orders' | 'reports' | 'batches';
 
@@ -54,12 +56,14 @@ export default function App() {
   const [batchesLoading, setBatchesLoading] = useState(false);
   const [batchesError, setBatchesError] = useState<string | null>(null);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
   const hasSupply = session?.modules?.includes('supply') ?? false;
   const hasTerminal = session?.modules?.includes('terminal') ?? false;
   const hasPharmacy = session?.modules?.includes('pharmacy') ?? false;
+  const hasRestaurant = session?.modules?.includes('restaurant') ?? false;
   const isDesktop = useIsDesktop();
 
   function handleLogin(newSession: PosSession) {
@@ -187,6 +191,22 @@ export default function App() {
     }
   }
 
+  async function handleToggleStopList(product: Product) {
+    if (!session) return;
+    const nextValue = !product.stopListed;
+    try {
+      await setStopListed(session.token, product.id, nextValue);
+      const updatedSession: PosSession = {
+        ...session,
+        products: session.products.map((p) => (p.id === product.id ? { ...p, stopListed: nextValue } : p)),
+      };
+      saveSession(updatedSession);
+      setSession(updatedSession);
+    } catch {
+      // offline or server unavailable — leave the product as-is, try again next time
+    }
+  }
+
   async function openShift(openingCash: number) {
     let s: Shift = {
       id: genId('shift'),
@@ -228,28 +248,46 @@ export default function App() {
     setView('sale');
   }
 
-  function addToCart(product: Product) {
+  function addToCart(product: Product, modifier?: ProductModifierOption) {
+    const lineId = modifier ? `${product.id}:${modifier.id}` : product.id;
+    const displayName = modifier ? `${product.name} (${modifier.name})` : product.name;
+    const price = product.price + (modifier?.priceDelta ?? 0);
     setCart((prev) => {
-      const existing = prev.find((l) => l.productId === product.id);
+      const existing = prev.find((l) => l.id === lineId);
       const currentQty = existing?.qty ?? 0;
       if (currentQty + 1 > product.stock) return prev;
       if (existing) {
-        return prev.map((l) => (l.productId === product.id ? { ...l, qty: l.qty + 1 } : l));
+        return prev.map((l) => (l.id === lineId ? { ...l, qty: l.qty + 1 } : l));
       }
-      return [...prev, { productId: product.id, name: product.name, price: product.price, qty: 1 }];
+      return [...prev, { id: lineId, productId: product.id, name: displayName, price, qty: 1 }];
     });
   }
 
-  function changeQty(productId: string, delta: number) {
+  function handleProductClick(product: Product) {
+    if (product.modifiers.length > 0) {
+      setModifierProduct(product);
+    } else {
+      addToCart(product);
+    }
+  }
+
+  function handlePickModifier(modifier: ProductModifierOption | null) {
+    if (modifierProduct) {
+      addToCart(modifierProduct, modifier ?? undefined);
+    }
+    setModifierProduct(null);
+  }
+
+  function changeQty(lineId: string, delta: number) {
     setCart((prev) =>
       prev
-        .map((l) => (l.productId === productId ? { ...l, qty: l.qty + delta } : l))
+        .map((l) => (l.id === lineId ? { ...l, qty: l.qty + delta } : l))
         .filter((l) => l.qty > 0),
     );
   }
 
-  function removeLine(productId: string) {
-    setCart((prev) => prev.filter((l) => l.productId !== productId));
+  function removeLine(lineId: string) {
+    setCart((prev) => prev.filter((l) => l.id !== lineId));
   }
 
   function handleSearchEnter() {
@@ -263,7 +301,10 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, l) => sum + l.price * l.qty, 0);
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
-  const cartQtyByProduct = Object.fromEntries(cart.map((l) => [l.productId, l.qty]));
+  const cartQtyByProduct = cart.reduce<Record<string, number>>((acc, l) => {
+    acc[l.productId] = (acc[l.productId] ?? 0) + l.qty;
+    return acc;
+  }, {});
 
   function completeSale(method: PaymentMethod) {
     if (!shift || !session) return;
@@ -331,7 +372,13 @@ export default function App() {
         <div className="pos-main">
           <div>
             <SearchBar query={query} onQueryChange={setQuery} onEnter={handleSearchEnter} />
-            <ProductGrid products={filteredProducts} cartQtyByProduct={cartQtyByProduct} onPick={addToCart} />
+            <ProductGrid
+              products={filteredProducts}
+              cartQtyByProduct={cartQtyByProduct}
+              onPick={handleProductClick}
+              canManageStopList={hasRestaurant}
+              onToggleStopList={handleToggleStopList}
+            />
           </div>
           <CartPanel cart={cart} total={cartTotal} onChangeQty={changeQty} onRemove={removeLine} onCheckout={() => setView('payment')} />
         </div>
@@ -340,7 +387,13 @@ export default function App() {
       {view === 'sale' && !isDesktop && (
         <>
           <SearchBar query={query} onQueryChange={setQuery} onEnter={handleSearchEnter} />
-          <ProductGrid products={filteredProducts} cartQtyByProduct={cartQtyByProduct} onPick={addToCart} />
+          <ProductGrid
+            products={filteredProducts}
+            cartQtyByProduct={cartQtyByProduct}
+            onPick={addToCart}
+            canManageStopList={hasRestaurant}
+            onToggleStopList={handleToggleStopList}
+          />
           {cartCount > 0 && <CartBar count={cartCount} total={cartTotal} onOpen={() => setView('cart')} />}
         </>
       )}
@@ -409,6 +462,10 @@ export default function App() {
           onRefresh={loadBatches}
           onReceive={handleReceiveBatch}
         />
+      )}
+
+      {modifierProduct && (
+        <ModifierPicker product={modifierProduct} onPick={handlePickModifier} onCancel={() => setModifierProduct(null)} />
       )}
 
       <InstallPrompt {...install} />

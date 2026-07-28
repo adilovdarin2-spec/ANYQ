@@ -124,6 +124,25 @@ const companies: SeedCompany[] = [
       notes: 'Тариф для поставок кафе и ресторанам — заказы принимаются через публичный сайт заказов.',
     },
   },
+  {
+    name: 'Кафе «Тандыр»',
+    phone: '+7 707 890 12 34',
+    locations: [{ name: 'Кафе «Тандыр» на Достык', type: 'restaurant', address: 'г. Алматы, пр. Достык 200' }],
+    users: [
+      { name: 'Ерлан Сагитов', role: 'owner', phone: '+7 707 890 12 34' },
+      { name: 'Жанна Токтарова', role: 'cashier', phone: '+7 707 890 12 35' },
+    ],
+    tariff: {
+      modules: ['restaurant', 'terminal'],
+      locationLimit: 1,
+      userLimit: 5,
+      skuLimit: null,
+      supportLevel: 'basic',
+      validUntil: '2026-12-31',
+      blocked: false,
+      notes: 'Кафе с открытой кухней — Restaurant Pack (рецептуры, food cost) + ПК/Терминал.',
+    },
+  },
 ];
 
 async function main() {
@@ -168,6 +187,7 @@ async function main() {
   await seedPosDemoData();
   await seedSupplyDemoData();
   await seedPharmacyDemoData();
+  await seedRestaurantDemoData();
 }
 
 const posProducts = [
@@ -471,6 +491,210 @@ async function seedPharmacyDemoData() {
     }
   }
   console.log('Seeded pharmacy batches for Аптека «Денсаулық»');
+}
+
+const restaurantIngredients: { name: string; unit: string; price: number }[] = [
+  { name: 'Тесто для пиццы', unit: 'г', price: 2 },
+  { name: 'Соус томатный', unit: 'г', price: 3 },
+  { name: 'Сыр моцарелла', unit: 'г', price: 8 },
+  { name: 'Пепперони', unit: 'г', price: 12 },
+  { name: 'Спагетти', unit: 'г', price: 2 },
+  { name: 'Сливки', unit: 'мл', price: 4 },
+  { name: 'Бекон', unit: 'г', price: 10 },
+  { name: 'Салат айсберг', unit: 'г', price: 3 },
+  { name: 'Куриное филе', unit: 'г', price: 5 },
+  { name: 'Помидоры черри', unit: 'г', price: 4 },
+];
+
+interface DishSeed {
+  name: string;
+  price: number;
+  category: string;
+  ingredients: { ingredientName: string; quantity: number }[];
+  modifiers?: { name: string; priceDelta: number }[];
+}
+
+const restaurantDishes: DishSeed[] = [
+  {
+    name: 'Пицца Маргарита',
+    price: 3200,
+    category: 'Пицца',
+    ingredients: [
+      { ingredientName: 'Тесто для пиццы', quantity: 250 },
+      { ingredientName: 'Соус томатный', quantity: 80 },
+      { ingredientName: 'Сыр моцарелла', quantity: 150 },
+    ],
+    modifiers: [
+      { name: 'Двойной сыр', priceDelta: 300 },
+      { name: 'Острая (перец чили)', priceDelta: 0 },
+    ],
+  },
+  {
+    name: 'Пицца Пепперони',
+    price: 3600,
+    category: 'Пицца',
+    ingredients: [
+      { ingredientName: 'Тесто для пиццы', quantity: 250 },
+      { ingredientName: 'Соус томатный', quantity: 80 },
+      { ingredientName: 'Сыр моцарелла', quantity: 120 },
+      { ingredientName: 'Пепперони', quantity: 100 },
+    ],
+  },
+  {
+    name: 'Паста Карбонара',
+    price: 2800,
+    category: 'Паста',
+    ingredients: [
+      { ingredientName: 'Спагетти', quantity: 200 },
+      { ingredientName: 'Сливки', quantity: 100 },
+      { ingredientName: 'Бекон', quantity: 80 },
+      { ingredientName: 'Сыр моцарелла', quantity: 30 },
+    ],
+  },
+  {
+    name: 'Салат Цезарь',
+    price: 2200,
+    category: 'Салаты',
+    ingredients: [
+      { ingredientName: 'Салат айсберг', quantity: 100 },
+      { ingredientName: 'Куриное филе', quantity: 120 },
+      { ingredientName: 'Помидоры черри', quantity: 50 },
+      { ingredientName: 'Сыр моцарелла', quantity: 20 },
+    ],
+  },
+];
+
+const restaurantPlainProducts = [{ name: 'Кола 0.5л', price: 600, unit: 'шт', category: 'Напитки', stock: 50 }];
+
+async function seedRestaurantDemoData() {
+  const cafe = await prisma.company.findFirst({
+    where: { name: 'Кафе «Тандыр»' },
+    include: { users: true, products: true, locations: true },
+  });
+  if (!cafe) {
+    console.log('Demo cafe not found, skipping restaurant demo data');
+    return;
+  }
+
+  const owner = cafe.users.find((u) => u.role === 'owner');
+  if (owner && !owner.posPin) {
+    await prisma.user.update({ where: { id: owner.id }, data: { posPin: '3333' } });
+    console.log(`Set POS PIN 3333 for owner ${owner.name}`);
+  }
+  const cashier = cafe.users.find((u) => u.role === 'cashier');
+  if (cashier && !cashier.posPin) {
+    await prisma.user.update({ where: { id: cashier.id }, data: { posPin: '3334' } });
+    console.log(`Set POS PIN 3334 for cashier ${cashier.name}`);
+  }
+
+  const location = cafe.locations[0];
+  if (!location) return;
+
+  const existingNames = new Set(cafe.products.map((p) => p.name));
+
+  const ingredientsToCreate = restaurantIngredients.filter((i) => !existingNames.has(i.name));
+  if (ingredientsToCreate.length > 0) {
+    await prisma.product.createMany({
+      data: ingredientsToCreate.map((i) => ({
+        companyId: cafe.id,
+        name: i.name,
+        category: 'Ингредиенты',
+        unit: i.unit,
+        purchasePrice: i.price,
+        salePrice: i.price,
+        sellable: false,
+      })),
+    });
+    console.log(`Seeded ${ingredientsToCreate.length} ingredients for Кафе «Тандыр»`);
+  }
+  await prisma.product.updateMany({
+    where: { companyId: cafe.id, name: { in: restaurantIngredients.map((i) => i.name) }, sellable: true },
+    data: { sellable: false },
+  });
+
+  const dishesToCreate = restaurantDishes.filter((d) => !existingNames.has(d.name));
+  if (dishesToCreate.length > 0) {
+    await prisma.product.createMany({
+      data: dishesToCreate.map((d) => ({
+        companyId: cafe.id,
+        name: d.name,
+        category: d.category,
+        unit: 'порция',
+        purchasePrice: 0,
+        salePrice: d.price,
+      })),
+    });
+    console.log(`Seeded ${dishesToCreate.length} dishes for Кафе «Тандыр»`);
+  }
+
+  const plainToCreate = restaurantPlainProducts.filter((p) => !existingNames.has(p.name));
+  if (plainToCreate.length > 0) {
+    await prisma.product.createMany({
+      data: plainToCreate.map((p) => ({
+        companyId: cafe.id,
+        name: p.name,
+        category: p.category,
+        unit: p.unit,
+        purchasePrice: Math.round(p.price * 0.6),
+        salePrice: p.price,
+      })),
+    });
+    console.log(`Seeded ${plainToCreate.length} plain products for Кафе «Тандыр»`);
+  }
+
+  const products = await prisma.product.findMany({ where: { companyId: cafe.id } });
+  const productByName = new Map(products.map((p) => [p.name, p]));
+
+  const existingStock = await prisma.stock.findMany({ where: { locationId: location.id } });
+  const stockedProductIds = new Set(existingStock.map((s) => s.productId));
+
+  const ingredientStockToCreate = restaurantIngredients
+    .map((i) => productByName.get(i.name))
+    .filter((p): p is NonNullable<typeof p> => !!p && !stockedProductIds.has(p.id))
+    .map((p) => ({ productId: p.id, locationId: location.id, quantity: 20000 }));
+  if (ingredientStockToCreate.length > 0) {
+    await prisma.stock.createMany({ data: ingredientStockToCreate });
+    console.log(`Seeded prep stock for ${ingredientStockToCreate.length} ingredients`);
+  }
+
+  for (const p of restaurantPlainProducts) {
+    const product = productByName.get(p.name);
+    if (product && !stockedProductIds.has(product.id)) {
+      await prisma.stock.create({ data: { productId: product.id, locationId: location.id, quantity: p.stock } });
+    }
+  }
+
+  for (const dish of restaurantDishes) {
+    const dishProduct = productByName.get(dish.name);
+    if (!dishProduct) continue;
+
+    const existingRecipe = await prisma.recipe.findUnique({ where: { productId: dishProduct.id } });
+    if (!existingRecipe) {
+      await prisma.recipe.create({
+        data: {
+          productId: dishProduct.id,
+          ingredients: {
+            create: dish.ingredients.map((ing) => {
+              const ingredientProduct = productByName.get(ing.ingredientName);
+              if (!ingredientProduct) throw new Error(`Missing ingredient product: ${ing.ingredientName}`);
+              return { ingredientId: ingredientProduct.id, quantity: ing.quantity };
+            }),
+          },
+        },
+      });
+      console.log(`Created recipe for ${dish.name}`);
+    }
+
+    if (dish.modifiers && dish.modifiers.length > 0) {
+      const existingModifiers = await prisma.productModifier.findMany({ where: { productId: dishProduct.id } });
+      if (existingModifiers.length === 0) {
+        await prisma.productModifier.createMany({
+          data: dish.modifiers.map((m) => ({ productId: dishProduct.id, name: m.name, priceDelta: m.priceDelta })),
+        });
+        console.log(`Created ${dish.modifiers.length} modifiers for ${dish.name}`);
+      }
+    }
+  }
 }
 
 main()

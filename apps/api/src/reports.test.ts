@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock } from './reports';
+import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from './reports';
 import type { SaleRecord } from './reports';
 
 function sale(overrides: Partial<SaleRecord> & { items: SaleRecord['items'] }): SaleRecord {
@@ -102,5 +102,45 @@ describe('findLowStock', () => {
 
   it('returns nothing when everything is above the threshold', () => {
     expect(findLowStock([{ productId: 'p1', name: 'A', quantity: 50 }], 10)).toEqual([]);
+  });
+});
+
+describe('buildFoodCost', () => {
+  it('computes margin from revenue minus theoretical cost, sorted by margin descending', () => {
+    const sales = [
+      sale({
+        items: [
+          { productId: 'pizza', name: 'Пицца', quantity: 2, price: 3000 },
+          { productId: 'pasta', name: 'Паста', quantity: 1, price: 2000 },
+        ],
+      }),
+    ];
+    const costs = new Map([['pizza', 800], ['pasta', 1500]]);
+    expect(buildFoodCost(sales, costs)).toEqual([
+      { productId: 'pizza', name: 'Пицца', quantitySold: 2, revenue: 6000, theoreticalCost: 1600, margin: 4400, marginPercent: 73 },
+      { productId: 'pasta', name: 'Паста', quantitySold: 1, revenue: 2000, theoreticalCost: 1500, margin: 500, marginPercent: 25 },
+    ]);
+  });
+
+  it('ignores sale items that are not recipe-costed dishes', () => {
+    const sales = [sale({ items: [{ productId: 'cola', name: 'Кола', quantity: 3, price: 500 }] })];
+    expect(buildFoodCost(sales, new Map())).toEqual([]);
+  });
+
+  it('aggregates the same dish sold across multiple sales', () => {
+    const sales = [
+      sale({ items: [{ productId: 'pizza', name: 'Пицца', quantity: 1, price: 3000 }] }),
+      sale({ items: [{ productId: 'pizza', name: 'Пицца', quantity: 1, price: 3000 }] }),
+    ];
+    const costs = new Map([['pizza', 800]]);
+    expect(buildFoodCost(sales, costs)).toEqual([
+      { productId: 'pizza', name: 'Пицца', quantitySold: 2, revenue: 6000, theoreticalCost: 1600, margin: 4400, marginPercent: 73 },
+    ]);
+  });
+
+  it('treats an unpriced dish (0 known cost) as 100% margin rather than throwing', () => {
+    const sales = [sale({ items: [{ productId: 'mystery', name: 'Блюдо', quantity: 1, price: 1000 }] })];
+    const costs = new Map([['mystery', 0]]);
+    expect(buildFoodCost(sales, costs)[0]).toMatchObject({ theoreticalCost: 0, margin: 1000, marginPercent: 100 });
   });
 });

@@ -87,3 +87,7 @@ export interface ReceiveBatchPayload {
 export function receiveBatch(token: string, payload: ReceiveBatchPayload): Promise<{ id: string; createdAt: string }> {
   return request('/pos/batches', { method: 'POST', body: JSON.stringify(payload) }, token);
 }
+
+export function setStopListed(token: string, productId: string, stopListed: boolean): Promise<{ id: string; stopListed: boolean }> {
+  return request(`/pos/products/${productId}/stop-list`, { method: 'PATCH', body: JSON.stringify({ stopListed }) }, token);
+}

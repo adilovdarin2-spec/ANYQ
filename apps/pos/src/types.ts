@@ -1,3 +1,9 @@
+export interface ProductModifierOption {
+  id: string;
+  name: string;
+  priceDelta: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -5,6 +11,8 @@ export interface Product {
   barcode: string;
   category: string;
   stock: number;
+  stopListed: boolean;
+  modifiers: ProductModifierOption[];
 }
 
 export interface CompanyLocation {
@@ -15,6 +23,7 @@ export interface CompanyLocation {
 }
 
 export interface CartLine {
+  id: string;
   productId: string;
   name: string;
   price: number;
@@ -96,6 +105,16 @@ export interface LowStockItem {
   quantity: number;
 }
 
+export interface DishMargin {
+  productId: string;
+  name: string;
+  quantitySold: number;
+  revenue: number;
+  theoreticalCost: number;
+  margin: number;
+  marginPercent: number;
+}
+
 export interface Report {
   from: string;
   to: string;
@@ -103,6 +122,7 @@ export interface Report {
   topProducts: TopProduct[];
   byCashier: CashierBreakdown[];
   lowStock: LowStockItem[];
+  foodCost: DishMargin[];
 }
 
 export type ExpiryStatus = 'expired' | 'expiring_soon' | 'ok';

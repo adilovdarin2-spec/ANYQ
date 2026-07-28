@@ -118,14 +118,56 @@ model Product {
   purchasePrice Int
   salePrice     Int
   taxMode       String?
+  stopListed    Boolean @default(false)
+  sellable      Boolean @default(true)
 
-  stocks        Stock[]
-  batches       ProductBatch[]
-  documentItems DocumentItem[]
-  prescriptions Prescription[]
-  ledgerEntries ControlledSubstanceLedger[]
+  stocks         Stock[]
+  batches        ProductBatch[]
+  documentItems  DocumentItem[]
+  prescriptions  Prescription[]
+  ledgerEntries  ControlledSubstanceLedger[]
+  recipe         Recipe?             @relation("DishRecipe")
+  usedInRecipes  RecipeIngredient[]  @relation("IngredientUsage")
+  modifiers      ProductModifier[]
 
   @@map("products")
+}
+
+// A dish (sellable Product) has at most one Recipe — its bill of materials.
+// Ingredient quantities are plain Int, same as every other quantity field in
+// this schema (see note above) — recipes should use fine-grained ingredient
+// units (grams, ml) rather than coarse ones (kg, l) so whole numbers stay
+// meaningful, instead of introducing fractional quantities schema-wide.
+model Recipe {
+  id           String  @id @default(cuid())
+  product      Product @relation("DishRecipe", fields: [productId], references: [id])
+  productId    String  @unique
+  portionYield Int     @default(1)
+
+  ingredients RecipeIngredient[]
+
+  @@map("recipes")
+}
+
+model RecipeIngredient {
+  id           String  @id @default(cuid())
+  recipe       Recipe  @relation(fields: [recipeId], references: [id])
+  recipeId     String
+  ingredient   Product @relation("IngredientUsage", fields: [ingredientId], references: [id])
+  ingredientId String
+  quantity     Int
+
+  @@map("recipe_ingredients")
+}
+
+model ProductModifier {
+  id         String  @id @default(cuid())
+  product    Product @relation(fields: [productId], references: [id])
+  productId  String
+  name       String
+  priceDelta Int
+
+  @@map("product_modifiers")
 }
 
 model Stock {
