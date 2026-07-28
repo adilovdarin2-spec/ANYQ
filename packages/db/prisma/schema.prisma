@@ -36,6 +36,7 @@ model Company {
   documents      Document[]
   counterparties Counterparty[]
   shifts         Shift[]
+  tables         Table[]
 
   @@map("companies")
 }
@@ -73,8 +74,28 @@ model Location {
   transfersIn      Document[] @relation("DestinationLocation")
   prescriptions    Prescription[]
   shifts           Shift[]
+  tables           Table[]
 
   @@map("locations")
+}
+
+// Restaurant Pack: floor plan + KDS. A table's occupied/free state is derived
+// from whether it has an open (status='open') sale Document, not tracked as a
+// separate field — status here just mirrors that for cheap list queries.
+model Table {
+  id         String   @id @default(cuid())
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  String
+  location   Location @relation(fields: [locationId], references: [id])
+  locationId String
+  name       String
+  seats      Int      @default(2)
+  status     String   @default("free")
+  createdAt  DateTime @default(now())
+
+  documents Document[]
+
+  @@map("tables")
 }
 
 model User {
@@ -231,6 +252,8 @@ model Document {
   pointsRedeemed Int?
   counterparty  Counterparty? @relation(fields: [counterpartyId], references: [id])
   counterpartyId String?
+  table         Table?        @relation(fields: [tableId], references: [id])
+  tableId       String?
   createdBy     String?
   createdAt     DateTime      @default(now())
   fulfilledBy   String?
@@ -242,15 +265,18 @@ model Document {
 }
 
 model DocumentItem {
-  id         String        @id @default(cuid())
-  document   Document      @relation(fields: [documentId], references: [id])
-  documentId String
-  product    Product       @relation(fields: [productId], references: [id])
-  productId  String
-  batch      ProductBatch? @relation(fields: [batchId], references: [id])
-  batchId    String?
-  quantity   Float
-  price      Int
+  id            String        @id @default(cuid())
+  document      Document      @relation(fields: [documentId], references: [id])
+  documentId    String
+  product       Product       @relation(fields: [productId], references: [id])
+  productId     String
+  batch         ProductBatch? @relation(fields: [batchId], references: [id])
+  batchId       String?
+  quantity      Float
+  price         Int
+  // Restaurant Pack KDS status. Only meaningful for dine-in table orders
+  // (type='sale', tableId set) — every other document type ignores it.
+  kitchenStatus String        @default("pending")
 
   @@map("document_items")
 }

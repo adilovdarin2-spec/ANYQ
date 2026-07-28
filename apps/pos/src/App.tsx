@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Count, Discount, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, Sale, Shift, Transfer } from './types';
+import type { Batch, CartLine, Count, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -25,6 +25,13 @@ import {
   fetchProductionRecipes,
   fetchProductionRuns,
   createProduction,
+  fetchTables,
+  createTable,
+  fetchTableOrder,
+  sendToKitchen,
+  payTable,
+  fetchKdsTickets,
+  updateKitchenItemStatus,
   ApiError,
 } from './api';
 import type { PosSession, CustomerLookupResult } from './api';
@@ -50,6 +57,9 @@ import { IncomingScreen } from './components/IncomingScreen';
 import { CycleCountScreen } from './components/CycleCountScreen';
 import { ProductionScreen } from './components/ProductionScreen';
 import { WeightEntryModal } from './components/WeightEntryModal';
+import { FloorPlanScreen } from './components/FloorPlanScreen';
+import { TableOrderScreen } from './components/TableOrderScreen';
+import { KdsScreen } from './components/KdsScreen';
 
 type View =
   | 'sale'
@@ -63,7 +73,10 @@ type View =
   | 'transfers'
   | 'incoming'
   | 'counts'
-  | 'production';
+  | 'production'
+  | 'floorplan'
+  | 'table-order'
+  | 'kds';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -106,6 +119,16 @@ export default function App() {
   const [productionLoading, setProductionLoading] = useState(false);
   const [productionError, setProductionError] = useState<string | null>(null);
   const [productionSubmitting, setProductionSubmitting] = useState(false);
+  const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [tablesError, setTablesError] = useState<string | null>(null);
+  const [tableSubmitting, setTableSubmitting] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
+  const [tableOrder, setTableOrder] = useState<TableOrder>({ id: null, items: [], total: 0 });
+  const [tableOrderLoading, setTableOrderLoading] = useState(false);
+  const [kdsTickets, setKdsTickets] = useState<KdsTicket[]>([]);
+  const [kdsLoading, setKdsLoading] = useState(false);
+  const [kdsError, setKdsError] = useState<string | null>(null);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -403,6 +426,132 @@ export default function App() {
     }
   }
 
+  async function loadTables() {
+    if (!session) return;
+    setTablesLoading(true);
+    setTablesError(null);
+    try {
+      const data = await fetchTables(session.token);
+      setTables(data);
+    } catch (err) {
+      setTablesError(err instanceof ApiError ? err.message : 'Не удалось загрузить столики');
+    } finally {
+      setTablesLoading(false);
+    }
+  }
+
+  function handleShowFloorPlan() {
+    setView('floorplan');
+    void loadTables();
+  }
+
+  useEffect(() => {
+    if (view !== 'floorplan' || !session) return;
+    const interval = setInterval(loadTables, 15000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, session?.token]);
+
+  async function handleCreateTable(name: string, seats: number) {
+    if (!session) return;
+    setTableSubmitting(true);
+    setTablesError(null);
+    try {
+      await createTable(session.token, { name, seats });
+      await loadTables();
+    } catch (err) {
+      setTablesError(err instanceof ApiError ? err.message : 'Не удалось добавить стол');
+    } finally {
+      setTableSubmitting(false);
+    }
+  }
+
+  async function loadTableOrder(tableId: string) {
+    if (!session) return;
+    setTableOrderLoading(true);
+    try {
+      const data = await fetchTableOrder(session.token, tableId);
+      setTableOrder(data);
+    } catch {
+      // offline or server unavailable — keep whatever order data we already have
+    } finally {
+      setTableOrderLoading(false);
+    }
+  }
+
+  function handleSelectTable(table: RestaurantTable) {
+    setSelectedTable(table);
+    setTableOrder({ id: null, items: [], total: 0 });
+    setView('table-order');
+    void loadTableOrder(table.id);
+  }
+
+  async function handleSendToKitchen(items: { productId: string; quantity: number; price: number }[]) {
+    if (!session || !selectedTable) return;
+    setTableSubmitting(true);
+    setTablesError(null);
+    try {
+      const order = await sendToKitchen(session.token, selectedTable.id, { items });
+      setTableOrder(order);
+    } catch (err) {
+      setTablesError(err instanceof ApiError ? err.message : 'Не удалось отправить заказ на кухню');
+    } finally {
+      setTableSubmitting(false);
+    }
+  }
+
+  async function handlePayTable(method: PaymentMethod) {
+    if (!session || !selectedTable) return;
+    setTableSubmitting(true);
+    try {
+      await payTable(session.token, selectedTable.id, method);
+      setSelectedTable(null);
+      setTableOrder({ id: null, items: [], total: 0 });
+      setView('floorplan');
+      void loadTables();
+    } catch (err) {
+      setTablesError(err instanceof ApiError ? err.message : 'Не удалось провести оплату');
+    } finally {
+      setTableSubmitting(false);
+    }
+  }
+
+  async function loadKds() {
+    if (!session) return;
+    setKdsLoading(true);
+    setKdsError(null);
+    try {
+      const data = await fetchKdsTickets(session.token);
+      setKdsTickets(data);
+    } catch (err) {
+      setKdsError(err instanceof ApiError ? err.message : 'Не удалось загрузить кухонный экран');
+    } finally {
+      setKdsLoading(false);
+    }
+  }
+
+  function handleShowKds() {
+    setView('kds');
+    void loadKds();
+  }
+
+  useEffect(() => {
+    if (view !== 'kds' || !session) return;
+    const interval = setInterval(loadKds, 8000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, session?.token]);
+
+  async function handleToggleKitchenItem(itemId: string, ready: boolean) {
+    if (!session) return;
+    try {
+      await updateKitchenItemStatus(session.token, itemId, ready ? 'ready' : 'pending');
+      await loadKds();
+    } catch {
+      // transient failure — next poll resyncs
+    }
+  }
+
   async function openShift(openingCash: number) {
     let s: Shift = {
       id: genId('shift'),
@@ -638,6 +787,8 @@ export default function App() {
         onShowIncoming={hasWarehouse ? handleShowIncoming : undefined}
         onShowCounts={hasWarehouse ? handleShowCounts : undefined}
         onShowProduction={hasWarehouse ? handleShowProduction : undefined}
+        onShowFloorPlan={hasRestaurant ? handleShowFloorPlan : undefined}
+        onShowKds={hasRestaurant ? handleShowKds : undefined}
       />
 
       {view === 'sale' && isDesktop && (
@@ -812,6 +963,47 @@ export default function App() {
           onBack={() => setView('sale')}
           onRefresh={loadProduction}
           onSubmit={handleCreateProduction}
+        />
+      )}
+
+      {view === 'floorplan' && (
+        <FloorPlanScreen
+          tables={tables}
+          loading={tablesLoading}
+          error={tablesError}
+          submitting={tableSubmitting}
+          onBack={() => setView('sale')}
+          onRefresh={loadTables}
+          onSelectTable={handleSelectTable}
+          onCreateTable={handleCreateTable}
+        />
+      )}
+
+      {view === 'table-order' && selectedTable && (
+        <TableOrderScreen
+          table={selectedTable}
+          order={tableOrder}
+          products={session.products}
+          loading={tableOrderLoading}
+          error={tablesError}
+          submitting={tableSubmitting}
+          onBack={() => {
+            setView('floorplan');
+            void loadTables();
+          }}
+          onSendToKitchen={handleSendToKitchen}
+          onPay={handlePayTable}
+        />
+      )}
+
+      {view === 'kds' && (
+        <KdsScreen
+          tickets={kdsTickets}
+          loading={kdsLoading}
+          error={kdsError}
+          onBack={() => setView('sale')}
+          onRefresh={loadKds}
+          onToggleItem={handleToggleKitchenItem}
         />
       )}
 

@@ -236,3 +236,48 @@ export interface ProductionRun {
   createdAt: string;
   items: ProductionRunItem[];
 }
+
+export type TableStatus = 'free' | 'occupied';
+
+export interface RestaurantTable {
+  id: string;
+  name: string;
+  seats: number;
+  status: TableStatus;
+  orderId: string | null;
+  itemCount: number;
+  total: number;
+}
+
+export type KitchenStatus = 'pending' | 'ready';
+
+export interface TableOrderItem {
+  id: string;
+  productId: string;
+  name: string;
+  quantity: number;
+  price: number;
+  kitchenStatus: KitchenStatus;
+}
+
+export interface TableOrder {
+  id: string | null;
+  items: TableOrderItem[];
+  total: number;
+}
+
+export interface KdsTicketItem {
+  id: string;
+  productId: string;
+  name: string;
+  quantity: number;
+  kitchenStatus: KitchenStatus;
+}
+
+export interface KdsTicket {
+  documentId: string;
+  tableName: string;
+  createdAt: string;
+  items: KdsTicketItem[];
+  allReady: boolean;
+}

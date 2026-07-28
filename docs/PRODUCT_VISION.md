@@ -20,7 +20,7 @@ database per vertical.
 | Pharmacy Pack | Batch/expiry FEFO dispensing | **Built** — batches, expiry-aware sale allocation, receiving screen. `Prescription`/`ControlledSubstanceLedger` schema still has zero wiring (compliance/marking scope, deliberately deferred) |
 | Warehouse Pro Pack | Multi-warehouse transfers, receiving, cycle counts, production/BOM | **Built** (2026-07-28) — `Document.type='transfer'/'receipt'/'adjustment'/'production'`, all gated by `warehouse` module. Production reuses the same `Recipe`/`RecipeIngredient` models the Restaurant Pack already had (they were never restaurant-specific), so a company can define a BOM for any product, not just dishes |
 | Distribution Pack (B2B) | Personal pricing, credit limits, order portal, linked buyer/seller documents | **Built** — this is the `supply` module (`apps/orders` + `/pos/orders`) |
-| Restaurant Pack | Recipes, ingredient deduction, food cost, stop-list, modifiers | **Built** (2026-07-28). KDS, table/floor plan, split bills still not built — scoped out as a deliberately separate, larger follow-up |
+| Restaurant Pack | Recipes, ingredient deduction, food cost, stop-list, modifiers, table/floor plan, KDS | **Built** (2026-07-29) — floor plan + kitchen display, gated by `restaurant` module. Split bills (per-guest/per-item payment splitting) still not built — one table has exactly one open order and one payment, deliberately deferred as a separate, larger follow-up |
 | Terminal/reports | Desktop layout, sales analytics, receipt printing | Built (2026-07-28, MVP scope) |
 
 Keep this table honest going forward — a module only "counts" once it has real routes and UI,
@@ -83,7 +83,8 @@ built, which is a good sign the existing sequencing wasn't wrong:
 2. Shop/warehouse POS — done
 3. Distributor ↔ B2B buyer (the `supply` module) — done
 4. Terminal/reports — done (MVP scope, 2026-07-28)
-5. Restaurant Pack (recipes, ingredient deduction, food cost, stop-list, modifiers) — done (2026-07-28)
+5. Restaurant Pack (recipes, ingredient deduction, food cost, stop-list, modifiers, table/floor
+   plan, KDS) — done (2026-07-28, extended with floor plan + KDS 2026-07-29)
 6. Pharmacy Pack (batch/expiry FEFO dispensing) — done (2026-07-28)
 7. Multi-warehouse transfers — done (2026-07-28)
 8. Advanced WMS (receiving documents, cycle counts) / manufacturing — done (2026-07-28).
@@ -96,11 +97,23 @@ built, which is a good sign the existing sequencing wasn't wrong:
     be attempted before real paying usage justifies the investment
 
 Every near-term vertical pack from the original brief is now built to at least MVP scope. What's
-left before ecosystem-level features: KDS/table management for restaurants and prescription/
-marking compliance for pharmacies — both deliberately scoped out of their MVPs as bigger, separate
-follow-ups (the KDS one needs a real-time architecture decision; pharmacy compliance needs actual
-Kazakhstan regulatory detail, not a guess). Don't jump to ecosystem features while either remains
-unbuilt; they're what actually differentiate the product for the customers ANYQ already has.
+left before ecosystem-level features: prescription/marking compliance for pharmacies — pharmacy
+compliance needs actual Kazakhstan regulatory detail, not a guess, so it stays deliberately
+deferred until that detail is available. Don't jump to ecosystem features while it remains
+unbuilt; it's what actually differentiates the product for the pharmacy customers ANYQ already has.
+
+## Restaurant floor plan + KDS (2026-07-29) — architecture notes
+
+The "real-time architecture decision" flagged as the blocker for KDS turned out not to need
+anything exotic: the kitchen display polls `GET /pos/kds` every 8s while open, and the floor plan
+polls `GET /pos/tables` every 15s while open — consistent with the offline-first, no-WebSocket
+posture used everywhere else in ANYQ (the `Заказы` HoReCa-fulfillment screen already polled this
+way). A table's occupied/free state mirrors whether it has an open (`type='sale', status='open'`)
+`Document` — the same universal-transaction-record pattern used for every other document type,
+extended with `Document.tableId` and `DocumentItem.kitchenStatus`. Stock and recipe ingredients
+are deducted when items are sent to the kitchen, not when the table finally pays, since the
+kitchen has to cook them regardless of payment timing — this is the one place dine-in service
+diverges from the rest of POS, where a sale is always a single instant transaction.
 
 ## Admin back-office CRUD (2026-07-28)
 
