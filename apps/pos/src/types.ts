@@ -151,3 +151,29 @@ export interface Transfer {
   toLocationName: string;
   items: TransferItem[];
 }
+
+export interface ReceiptItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  price: number;
+}
+
+export interface Receipt {
+  id: string;
+  createdAt: string;
+  supplierName: string | null;
+  items: ReceiptItem[];
+}
+
+export interface CountItem {
+  productId: string;
+  name: string;
+  delta: number;
+}
+
+export interface Count {
+  id: string;
+  createdAt: string;
+  items: CountItem[];
+}

@@ -11,6 +11,7 @@ import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
+import { computeCountAdjustments } from '../counts';
 
 export const posRouter = Router();
 
@@ -712,6 +713,211 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
     }
     throw err;
   }
+});
+
+posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Приёмка недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const receipts = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'receipt' },
+    include: { items: { include: { product: true } }, counterparty: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    receipts.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      supplierName: r.counterparty?.name ?? null,
+      items: r.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity, price: it.price })),
+    })),
+  );
+});
+
+posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const items: { productId: string; quantity: number; price: number }[] = Array.isArray(b.items) ? b.items : [];
+  if (items.length === 0) {
+    res.status(400).json({ error: 'Некорректные данные приёмки' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Приёмка недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const location = company?.locations[0];
+  if (!location) {
+    res.status(400).json({ error: 'У компании не настроена точка' });
+    return;
+  }
+
+  const supplierName = typeof b.supplierName === 'string' ? b.supplierName.trim() : '';
+  const supplierPhone = typeof b.supplierPhone === 'string' ? b.supplierPhone.trim() : '';
+
+  let counterpartyId: string | undefined;
+  if (supplierName) {
+    let counterparty = supplierPhone
+      ? await prisma.counterparty.findFirst({ where: { companyId: req.posCompanyId, phone: supplierPhone, type: 'supplier' } })
+      : null;
+    if (!counterparty) {
+      counterparty = await prisma.counterparty.create({
+        data: { companyId: req.posCompanyId!, name: supplierName, phone: supplierPhone || null, type: 'supplier' },
+      });
+    }
+    counterpartyId = counterparty.id;
+  }
+
+  const document = await prisma.$transaction(async (tx) => {
+    const stockRows = await tx.stock.findMany({
+      where: { locationId: location.id, productId: { in: items.map((it) => it.productId) } },
+    });
+    const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+
+    const updates: Promise<unknown>[] = [];
+    for (const item of items) {
+      const existing = stockByProduct.get(item.productId);
+      if (existing) {
+        updates.push(tx.stock.update({ where: { id: existing.id }, data: { quantity: existing.quantity + item.quantity } }));
+      } else {
+        updates.push(tx.stock.create({ data: { productId: item.productId, locationId: location.id, quantity: item.quantity } }));
+      }
+    }
+    await Promise.all(updates);
+
+    return tx.document.create({
+      data: {
+        companyId: req.posCompanyId!,
+        locationId: location.id,
+        type: 'receipt',
+        status: 'confirmed',
+        counterpartyId,
+        createdBy: req.posUserId!,
+        items: { create: items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price ?? 0 })) },
+      },
+      include: { items: true },
+    });
+  }, { timeout: 15000 });
+
+  res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+});
+
+posRouter.get('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const counts = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'adjustment' },
+    include: { items: { include: { product: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    counts.map((c) => ({
+      id: c.id,
+      createdAt: c.createdAt.toISOString(),
+      items: c.items.map((it) => ({ productId: it.productId, name: it.product.name, delta: it.quantity })),
+    })),
+  );
+});
+
+posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const items: { productId: string; countedQuantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  if (items.length === 0) {
+    res.status(400).json({ error: 'Некорректные данные инвентаризации' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const location = company?.locations[0];
+  if (!location) {
+    res.status(400).json({ error: 'У компании не настроена точка' });
+    return;
+  }
+
+  const document = await prisma.$transaction(async (tx) => {
+    const stockRows = await tx.stock.findMany({
+      where: { locationId: location.id, productId: { in: items.map((it) => it.productId) } },
+    });
+    const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+    const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+
+    const adjustments = computeCountAdjustments(items, quantityByProduct);
+
+    const updates: Promise<unknown>[] = [];
+    for (const adj of adjustments) {
+      const existing = stockByProduct.get(adj.productId);
+      if (existing) {
+        updates.push(tx.stock.update({ where: { id: existing.id }, data: { quantity: adj.countedQuantity } }));
+      } else if (adj.countedQuantity > 0) {
+        updates.push(
+          tx.stock.create({ data: { productId: adj.productId, locationId: location.id, quantity: adj.countedQuantity } }),
+        );
+      }
+    }
+    await Promise.all(updates);
+
+    return tx.document.create({
+      data: {
+        companyId: req.posCompanyId!,
+        locationId: location.id,
+        type: 'adjustment',
+        status: 'confirmed',
+        createdBy: req.posUserId!,
+        items: { create: adjustments.map((a) => ({ productId: a.productId, quantity: a.delta, price: 0 })) },
+      },
+      include: { items: true },
+    });
+  }, { timeout: 15000 });
+
+  res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
 });
 
 class StockError extends Error {

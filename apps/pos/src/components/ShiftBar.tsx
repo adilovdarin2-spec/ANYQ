@@ -15,6 +15,8 @@ interface Props {
   onShowBatches?: () => void;
   expiringBatchesCount?: number;
   onShowTransfers?: () => void;
+  onShowIncoming?: () => void;
+  onShowCounts?: () => void;
 }
 
 export function ShiftBar({
@@ -31,6 +33,8 @@ export function ShiftBar({
   onShowBatches,
   expiringBatchesCount = 0,
   onShowTransfers,
+  onShowIncoming,
+  onShowCounts,
 }: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
@@ -65,6 +69,12 @@ export function ShiftBar({
           )}
           {onShowTransfers && (
             <button className="icon-btn" onClick={onShowTransfers} aria-label="Перемещения">🔄</button>
+          )}
+          {onShowIncoming && (
+            <button className="icon-btn" onClick={onShowIncoming} aria-label="Приёмка">📥</button>
+          )}
+          {onShowCounts && (
+            <button className="icon-btn" onClick={onShowCounts} aria-label="Инвентаризация">📋</button>
           )}
           {onShowReports && (
             <button className="icon-btn" onClick={onShowReports} aria-label="Отчёты">📊</button>

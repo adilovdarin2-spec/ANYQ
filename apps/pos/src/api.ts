@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Order, PaymentMethod, Product, Report, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, Order, PaymentMethod, Product, Receipt, Report, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -103,4 +103,30 @@ export interface CreateTransferPayload {
 
 export function createTransfer(token: string, payload: CreateTransferPayload): Promise<{ id: string; createdAt: string }> {
   return request('/pos/transfers', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function fetchReceipts(token: string): Promise<Receipt[]> {
+  return request('/pos/receipts', { method: 'GET' }, token);
+}
+
+export interface CreateReceiptPayload {
+  supplierName: string;
+  supplierPhone: string;
+  items: { productId: string; quantity: number; price: number }[];
+}
+
+export function createReceipt(token: string, payload: CreateReceiptPayload): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/receipts', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function fetchCounts(token: string): Promise<Count[]> {
+  return request('/pos/counts', { method: 'GET' }, token);
+}
+
+export interface CreateCountPayload {
+  items: { productId: string; countedQuantity: number }[];
+}
+
+export function createCount(token: string, payload: CreateCountPayload): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/counts', { method: 'POST', body: JSON.stringify(payload) }, token);
 }
