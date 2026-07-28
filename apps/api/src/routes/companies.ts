@@ -278,6 +278,51 @@ companiesRouter.patch('/:id/users/:userId', async (req, res) => {
   res.json(serializeUser(user));
 });
 
+function serializeLocation(l: { id: string; name: string; type: string; address: string | null }) {
+  return { id: l.id, name: l.name, type: l.type, address: l.address ?? '' };
+}
+
+// No delete route — Location is referenced by Stock/Document/Shift/ProductBatch
+// FKs with no cascade, so Postgres would reject it anyway once any activity
+// has happened at that location. Matches the no-delete precedent for products/users.
+companiesRouter.post('/:id/locations', async (req, res) => {
+  const b = req.body ?? {};
+  if (!b.name || !b.type) {
+    res.status(400).json({ error: 'Заполните название и тип точки' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!company) {
+    res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  const location = await prisma.location.create({
+    data: { companyId: company.id, name: b.name, type: b.type, address: b.address || null },
+  });
+  res.status(201).json(serializeLocation(location));
+});
+
+companiesRouter.patch('/:id/locations/:locationId', async (req, res) => {
+  const b = req.body ?? {};
+  const existing = await prisma.location.findFirst({ where: { id: req.params.locationId, companyId: req.params.id } });
+  if (!existing) {
+    res.status(404).json({ error: 'Точка не найдена' });
+    return;
+  }
+  if (!b.name || !b.type) {
+    res.status(400).json({ error: 'Заполните название и тип точки' });
+    return;
+  }
+
+  const location = await prisma.location.update({
+    where: { id: existing.id },
+    data: { name: b.name, type: b.type, address: b.address || null },
+  });
+  res.json(serializeLocation(location));
+});
+
 companiesRouter.patch('/:id/tariff', async (req, res) => {
   const b = req.body ?? {};
   const exists = await prisma.company.findUnique({ where: { id: req.params.id } });
