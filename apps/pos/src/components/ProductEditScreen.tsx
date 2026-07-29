@@ -71,6 +71,13 @@ export function ProductEditScreen({ product, submitting, error, onBack, onSave }
             <input id="p-sale" type="number" min="0" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
           </div>
         </div>
+        {product?.isIngredient && (
+          <p className="field-hint">
+            Это ингредиент рецепта — он списывается со склада автоматически при продаже блюда.
+            Включайте показ в кассе, только если хотите продавать его и отдельно (например, «сыр
+            дополнительно»).
+          </p>
+        )}
         {product && (
           <label className="checkbox-row">
             <input type="checkbox" checked={sellable} onChange={(e) => setSellable(e.target.checked)} />

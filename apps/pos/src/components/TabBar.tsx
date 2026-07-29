@@ -24,20 +24,22 @@ export function TabBar({ active, onChange, showProducts, showOperations, operati
 
   return (
     <nav className="tab-bar">
-      {visible.map((t) => (
-        <button
-          key={t.key}
-          type="button"
-          className={`tab-bar-item${active === t.key ? ' active' : ''}`}
-          onClick={() => onChange(t.key)}
-        >
-          <span className="tab-bar-icon">
-            {t.icon}
-            {t.key === 'operations' && operationsBadge > 0 && <span className="tab-bar-badge">{operationsBadge}</span>}
-          </span>
-          <span className="tab-bar-label">{t.label}</span>
-        </button>
-      ))}
+      <div className="tab-bar-inner">
+        {visible.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={`tab-bar-item${active === t.key ? ' active' : ''}`}
+            onClick={() => onChange(t.key)}
+          >
+            <span className="tab-bar-icon">
+              {t.icon}
+              {t.key === 'operations' && operationsBadge > 0 && <span className="tab-bar-badge">{operationsBadge}</span>}
+            </span>
+            <span className="tab-bar-label">{t.label}</span>
+          </button>
+        ))}
+      </div>
     </nav>
   );
 }

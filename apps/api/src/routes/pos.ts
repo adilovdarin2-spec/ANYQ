@@ -598,17 +598,20 @@ async function requireOwnerOrManager(userId: string | undefined): Promise<boolea
   return user?.role === 'owner' || user?.role === 'manager';
 }
 
-function serializePosProduct(p: {
-  id: string;
-  name: string;
-  category: string | null;
-  unit: string;
-  barcode: string | null;
-  purchasePrice: number;
-  salePrice: number;
-  sellable: boolean;
-  stopListed: boolean;
-}) {
+function serializePosProduct(
+  p: {
+    id: string;
+    name: string;
+    category: string | null;
+    unit: string;
+    barcode: string | null;
+    purchasePrice: number;
+    salePrice: number;
+    sellable: boolean;
+    stopListed: boolean;
+  },
+  isIngredient = false,
+) {
   return {
     id: p.id,
     name: p.name,
@@ -619,6 +622,7 @@ function serializePosProduct(p: {
     salePrice: p.salePrice,
     sellable: p.sellable,
     stopListed: p.stopListed,
+    isIngredient,
   };
 }
 
@@ -628,11 +632,23 @@ posRouter.get('/products', requirePosAuth, async (req: PosAuthedRequest, res) =>
     return;
   }
 
-  const products = await prisma.product.findMany({
-    where: { companyId: req.posCompanyId, parentProductId: null },
-    orderBy: { name: 'asc' },
-  });
-  res.json(products.map(serializePosProduct));
+  // Recipe ingredients (e.g. "Сыр моцарелла" used inside a pizza recipe)
+  // live in the same Product table as sellable dishes, with sellable=false
+  // by design. Flag them so the UI can label them "Ингредиент" instead of
+  // the ambiguous "Скрыт", which otherwise reads as if an owner accidentally
+  // hid a menu item.
+  const [products, ingredientLinks] = await Promise.all([
+    prisma.product.findMany({
+      where: { companyId: req.posCompanyId, parentProductId: null },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.recipeIngredient.findMany({
+      where: { ingredient: { companyId: req.posCompanyId } },
+      select: { ingredientId: true },
+    }),
+  ]);
+  const ingredientIds = new Set(ingredientLinks.map((l) => l.ingredientId));
+  res.json(products.map((p) => serializePosProduct(p, ingredientIds.has(p.id))));
 });
 
 posRouter.post('/products', requirePosAuth, async (req: PosAuthedRequest, res) => {
