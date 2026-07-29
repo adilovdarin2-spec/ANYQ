@@ -374,3 +374,81 @@ button { cursor: pointer; }
   .receipt-card, .receipt-card * { visibility: visible; }
   .receipt-card { position: absolute; top: 0; left: 0; width: 100%; border: none; }
 }
+
+/* bottom tab navigation */
+.tab-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 26;
+  max-width: 520px; margin: 0 auto;
+  display: flex; background: var(--surface); border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab-bar-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 4px 7px; background: none; border: none; color: var(--ink-muted); font-size: 0.68rem; font-weight: 600;
+}
+.tab-bar-item.active { color: var(--accent); }
+.tab-bar-icon { font-size: 1.3rem; position: relative; line-height: 1; }
+.tab-bar-badge {
+  position: absolute; top: -6px; right: -10px;
+  background: var(--status-overdue); color: #fff;
+  font-size: 0.6rem; font-weight: 800; line-height: 1;
+  min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* tab home content (Товары / Операции / Профиль) */
+.tab-content { padding: 16px 14px 100px; flex: 1; }
+.tab-header { font-size: 1.15rem; font-weight: 700; margin-bottom: 14px; }
+.tab-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.tab-header-row .tab-header { margin-bottom: 0; }
+
+/* Профиль */
+.profile-card { display: flex; align-items: center; gap: 12px; padding: 4px 0 18px; }
+.profile-avatar {
+  width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.2rem; flex-shrink: 0;
+}
+.profile-name { font-weight: 700; font-size: 1.02rem; }
+.profile-role { font-size: 0.8rem; color: var(--ink-muted); }
+.profile-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.profile-action {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  padding: 14px 2px; border: none; border-bottom: 1px solid var(--border); background: none;
+  font-size: 0.92rem; font-weight: 600; color: var(--ink); text-align: left;
+}
+.profile-action:disabled { opacity: 0.6; }
+.profile-section { margin-top: 18px; }
+
+/* Операции */
+.operations-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 14px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); text-align: left;
+}
+.operations-icon { font-size: 1.3rem; flex-shrink: 0; }
+.operations-label { flex: 1; font-size: 0.92rem; font-weight: 600; }
+.operations-badge {
+  background: var(--status-overdue); color: #fff; font-size: 0.7rem; font-weight: 800;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+}
+.operations-chevron { color: var(--ink-muted); font-size: 1.1rem; }
+
+/* Товары management */
+.product-manage-row {
+  display: block; width: 100%; text-align: left; padding: 12px 0; border: none;
+  border-bottom: 1px solid var(--border); background: none;
+}
+.product-manage-main { display: flex; justify-content: space-between; gap: 10px; }
+.product-manage-name { font-size: 0.92rem; font-weight: 600; }
+.product-manage-price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.product-manage-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; font-size: 0.76rem; color: var(--ink-muted); }
+.product-manage-meta .chip-status { margin-top: 0; }
+
+/* shared form field-row (product edit) */
+.field-row { display: flex; gap: 10px; }
+.field-row .field { flex: 1; display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.field-row .field label { font-size: 0.82rem; font-weight: 600; color: var(--ink-muted); }
+.field-row .field input { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 0.95rem; background: var(--bg); color: var(--ink); }
+.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--ink-muted); margin: 4px 0 18px; }
+.checkbox-row input { width: 18px; height: 18px; }

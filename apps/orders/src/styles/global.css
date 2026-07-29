@@ -165,3 +165,34 @@ button { cursor: pointer; }
 .install-steps { margin: 8px 0 0; padding-left: 1.2em; font-size: 0.82rem; color: var(--ink-muted); }
 .install-steps li { margin: 3px 0; }
 .share-glyph { display: inline-block; border: 1.5px solid var(--ink-muted); border-radius: 4px; padding: 0 5px; font-size: 0.75em; }
+
+/* public pricing page */
+.pricing-content { padding-bottom: 60px; }
+.pricing-hero { margin-bottom: 26px; }
+.pricing-hero h1 { font-family: Georgia, serif; font-size: 1.5rem; margin: 0 0 10px; }
+.pricing-hero p { color: var(--ink-muted); font-size: 0.94rem; line-height: 1.55; margin: 0; }
+
+.pricing-plan {
+  border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
+  padding: 20px; margin-bottom: 16px;
+}
+.pricing-plan-addon { border-color: var(--accent); }
+.pricing-plan-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.pricing-plan-name { font-family: Georgia, serif; font-weight: 700; font-size: 1.15rem; }
+.pricing-plan-tag { font-size: 0.76rem; font-weight: 600; color: var(--ink-muted); background: var(--surface-2); padding: 3px 9px; border-radius: 20px; }
+.pricing-price { font-size: 1.7rem; font-weight: 700; color: var(--accent-strong); font-variant-numeric: tabular-nums; margin-bottom: 10px; }
+.pricing-price span { font-size: 0.85rem; font-weight: 600; color: var(--ink-muted); }
+.pricing-plan-desc { font-size: 0.88rem; color: var(--ink-muted); line-height: 1.5; margin: 0 0 14px; }
+.pricing-feature-list { margin: 0; padding-left: 1.2em; font-size: 0.88rem; line-height: 1.7; }
+
+.pricing-support-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+.pricing-support-row:last-child { border-bottom: none; }
+
+.pricing-example { background: var(--surface-2); border-radius: 14px; padding: 16px 18px; margin: 24px 0; }
+.pricing-example-title { font-family: Georgia, serif; font-weight: 700; margin-bottom: 8px; }
+.pricing-example p { margin: 0 0 4px; font-size: 0.88rem; color: var(--ink-muted); }
+.pricing-example-sum { color: var(--ink) !important; font-size: 0.95rem !important; }
+
+.pricing-cta { text-align: center; margin-top: 20px; }
+.pricing-cta p { color: var(--ink-muted); font-size: 0.88rem; line-height: 1.55; margin: 0 0 14px; }
+.pricing-cta .btn { display: block; text-decoration: none; text-align: center; }

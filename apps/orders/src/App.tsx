@@ -7,6 +7,7 @@ import { CartBar } from './components/CartBar';
 import { CheckoutSheet } from './components/CheckoutSheet';
 import { SuccessScreen } from './components/SuccessScreen';
 import { StateScreen } from './components/StateScreen';
+import { PricingScreen } from './components/PricingScreen';
 import { InstallPrompt } from './components/InstallPrompt';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 
@@ -81,10 +82,9 @@ export default function App() {
   if (!companyId) {
     return (
       <div className="app-shell">
-        <StateScreen
-          title="Ссылка на заказ"
-          message="Чтобы сделать заказ, перейдите по ссылке, которую вам прислал ваш поставщик — она ведёт на страницу конкретного склада."
-        />
+        <Header companyName="ANYQ" subtitle="Тарифы и подключение" />
+        <PricingScreen />
+        <InstallPrompt {...install} />
       </div>
     );
   }

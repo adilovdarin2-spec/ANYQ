@@ -10,8 +10,9 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 
 const RANGE_OPTIONS = [
   { days: 1, label: 'Сегодня' },
-  { days: 7, label: '7 дней' },
-  { days: 30, label: '30 дней' },
+  { days: 7, label: 'Неделя' },
+  { days: 30, label: 'Месяц' },
+  { days: 3650, label: 'Всё время' },
 ];
 
 interface Props {
