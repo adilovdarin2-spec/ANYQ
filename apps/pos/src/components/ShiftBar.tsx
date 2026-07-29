@@ -6,52 +6,9 @@ interface Props {
   cashierName: string;
   online: boolean;
   pendingCount: number;
-  onCloseShift: () => void;
-  onShowInstall: () => void;
-  onLogout: () => void;
-  onShowOrders?: () => void;
-  pendingOrdersCount?: number;
-  pushSupported?: boolean;
-  pushEnabled?: boolean;
-  pushBusy?: boolean;
-  onTogglePush?: () => void;
-  onShowReports?: () => void;
-  onShowBatches?: () => void;
-  expiringBatchesCount?: number;
-  onShowTransfers?: () => void;
-  onShowIncoming?: () => void;
-  onShowCounts?: () => void;
-  onShowProduction?: () => void;
-  onShowFloorPlan?: () => void;
-  onShowKds?: () => void;
-  onShowStockHistory?: () => void;
 }
 
-export function ShiftBar({
-  shift,
-  cashierName,
-  online,
-  pendingCount,
-  onCloseShift,
-  onShowInstall,
-  onLogout,
-  onShowOrders,
-  pendingOrdersCount = 0,
-  pushSupported,
-  pushEnabled,
-  pushBusy,
-  onTogglePush,
-  onShowReports,
-  onShowBatches,
-  expiringBatchesCount = 0,
-  onShowTransfers,
-  onShowIncoming,
-  onShowCounts,
-  onShowProduction,
-  onShowFloorPlan,
-  onShowKds,
-  onShowStockHistory,
-}: Props) {
+export function ShiftBar({ shift, cashierName, online, pendingCount }: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
 
@@ -71,55 +28,6 @@ export function ShiftBar({
             <span className={`dot ${online ? 'online' : 'offline'}`}></span>
             {online ? 'Онлайн' : 'Офлайн'}
           </span>
-          {onShowOrders && (
-            <button className="icon-btn" onClick={onShowOrders} aria-label="Заказы с сайта">
-              📦
-              {pendingOrdersCount > 0 && <span className="icon-btn-badge">{pendingOrdersCount}</span>}
-            </button>
-          )}
-          {pushSupported && onTogglePush && (
-            <button
-              className="icon-btn"
-              onClick={onTogglePush}
-              disabled={pushBusy}
-              aria-label={pushEnabled ? 'Уведомления о заказах включены' : 'Включить уведомления о заказах'}
-            >
-              {pushEnabled ? '🔔' : '🔕'}
-            </button>
-          )}
-          {onShowBatches && (
-            <button className="icon-btn" onClick={onShowBatches} aria-label="Партии">
-              💊
-              {expiringBatchesCount > 0 && <span className="icon-btn-badge">{expiringBatchesCount}</span>}
-            </button>
-          )}
-          {onShowTransfers && (
-            <button className="icon-btn" onClick={onShowTransfers} aria-label="Перемещения">🔄</button>
-          )}
-          {onShowIncoming && (
-            <button className="icon-btn" onClick={onShowIncoming} aria-label="Приёмка">📥</button>
-          )}
-          {onShowCounts && (
-            <button className="icon-btn" onClick={onShowCounts} aria-label="Инвентаризация">📋</button>
-          )}
-          {onShowProduction && (
-            <button className="icon-btn" onClick={onShowProduction} aria-label="Производство">🏭</button>
-          )}
-          {onShowFloorPlan && (
-            <button className="icon-btn" onClick={onShowFloorPlan} aria-label="Столики">🍽️</button>
-          )}
-          {onShowKds && (
-            <button className="icon-btn" onClick={onShowKds} aria-label="Кухня">🔥</button>
-          )}
-          {onShowReports && (
-            <button className="icon-btn" onClick={onShowReports} aria-label="Отчёты">📊</button>
-          )}
-          {onShowStockHistory && (
-            <button className="icon-btn" onClick={onShowStockHistory} aria-label="История склада">📜</button>
-          )}
-          <button className="icon-btn" onClick={onShowInstall} aria-label="Установить приложение">⬇</button>
-          <button className="icon-btn" onClick={onCloseShift} aria-label="Закрыть смену">⏻</button>
-          <button className="icon-btn" onClick={onLogout} aria-label="Сменить кассира">↪</button>
         </div>
       </div>
       {nearLimit && (

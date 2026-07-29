@@ -1,6 +1,7 @@
 import type { Batch, CompanyLocation, Count, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
 
 export class ApiError extends Error {}
 
@@ -22,7 +23,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 export interface PosSession {
   token: string;
   user: { id: string; name: string; role: string };
-  company: { id: string; name: string };
+  company: { id: string; name: string; slug: string | null };
   modules: string[];
   locations: CompanyLocation[];
   products: Product[];
@@ -214,6 +215,40 @@ export function updateKitchenItemStatus(token: string, itemId: string, kitchenSt
 
 export function fetchStockMovements(token: string): Promise<StockMovementRecord[]> {
   return request('/pos/stock-movements', { method: 'GET' }, token);
+}
+
+export interface ManagedProduct {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  barcode: string;
+  purchasePrice: number;
+  salePrice: number;
+  sellable: boolean;
+  stopListed: boolean;
+}
+
+export interface ManagedProductPayload {
+  name: string;
+  category: string;
+  unit: string;
+  barcode: string;
+  purchasePrice: number;
+  salePrice: number;
+  sellable: boolean;
+}
+
+export function fetchManagedProducts(token: string): Promise<ManagedProduct[]> {
+  return request('/pos/products', { method: 'GET' }, token);
+}
+
+export function createManagedProduct(token: string, payload: ManagedProductPayload): Promise<ManagedProduct> {
+  return request('/pos/products', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function updateManagedProduct(token: string, productId: string, payload: ManagedProductPayload): Promise<ManagedProduct> {
+  return request(`/pos/products/${productId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
 }
 
 export function fetchVapidPublicKey(token: string): Promise<{ publicKey: string }> {

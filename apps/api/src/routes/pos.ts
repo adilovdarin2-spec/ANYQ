@@ -104,7 +104,7 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   res.json({
     token: signPosToken(user.id, user.companyId),
     user: { id: user.id, name: user.name, role: user.role },
-    company: { id: user.company.id, name: user.company.name },
+    company: { id: user.company.id, name: user.company.name, slug: user.company.slug },
     modules,
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
     products: groupedProducts,
@@ -584,6 +584,119 @@ posRouter.patch('/products/:id/stop-list', requirePosAuth, async (req: PosAuthed
 
   const updated = await prisma.product.update({ where: { id: product.id }, data: { stopListed: b.stopListed } });
   res.json({ id: updated.id, stopListed: updated.stopListed });
+});
+
+// Owner-facing self-service product management — separate from the
+// superadmin CRUD in apps/admin (companies.ts). Only 'owner'/'manager' can
+// touch it; a cashier PIN gets 403. "Delete" in the UI is a soft hide via
+// sellable=false, the same flag /pos/login already filters the sale grid on
+// — nothing else references it, so hiding a product never breaks a
+// historical Stock/DocumentItem row the way a real delete could.
+async function requireOwnerOrManager(userId: string | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  return user?.role === 'owner' || user?.role === 'manager';
+}
+
+function serializePosProduct(p: {
+  id: string;
+  name: string;
+  category: string | null;
+  unit: string;
+  barcode: string | null;
+  purchasePrice: number;
+  salePrice: number;
+  sellable: boolean;
+  stopListed: boolean;
+}) {
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category ?? '',
+    unit: p.unit,
+    barcode: p.barcode ?? '',
+    purchasePrice: p.purchasePrice,
+    salePrice: p.salePrice,
+    sellable: p.sellable,
+    stopListed: p.stopListed,
+  };
+}
+
+posRouter.get('/products', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Доступно только владельцу и менеджеру' });
+    return;
+  }
+
+  const products = await prisma.product.findMany({
+    where: { companyId: req.posCompanyId, parentProductId: null },
+    orderBy: { name: 'asc' },
+  });
+  res.json(products.map(serializePosProduct));
+});
+
+posRouter.post('/products', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Доступно только владельцу и менеджеру' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const purchasePrice = Number(b.purchasePrice);
+  const salePrice = Number(b.salePrice);
+  if (!b.name || !b.unit || !Number.isFinite(purchasePrice) || !Number.isFinite(salePrice) || purchasePrice < 0 || salePrice < 0) {
+    res.status(400).json({ error: 'Заполните название, единицу измерения и цены' });
+    return;
+  }
+
+  const product = await prisma.product.create({
+    data: {
+      companyId: req.posCompanyId!,
+      name: b.name,
+      category: b.category || null,
+      unit: b.unit,
+      barcode: b.barcode || null,
+      purchasePrice,
+      salePrice,
+      sellable: b.sellable !== false,
+    },
+  });
+  res.status(201).json(serializePosProduct(product));
+});
+
+posRouter.patch('/products/:id', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Доступно только владельцу и менеджеру' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const existing = await prisma.product.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!existing) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const purchasePrice = Number(b.purchasePrice);
+  const salePrice = Number(b.salePrice);
+  if (!b.name || !b.unit || !Number.isFinite(purchasePrice) || !Number.isFinite(salePrice) || purchasePrice < 0 || salePrice < 0) {
+    res.status(400).json({ error: 'Заполните название, единицу измерения и цены' });
+    return;
+  }
+
+  const product = await prisma.product.update({
+    where: { id: existing.id },
+    data: {
+      name: b.name,
+      category: b.category || null,
+      unit: b.unit,
+      barcode: b.barcode || null,
+      purchasePrice,
+      salePrice,
+      sellable: !!b.sellable,
+    },
+  });
+  res.json(serializePosProduct(product));
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

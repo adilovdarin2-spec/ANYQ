@@ -33,13 +33,20 @@ import {
   fetchKdsTickets,
   updateKitchenItemStatus,
   fetchStockMovements,
+  fetchManagedProducts,
+  createManagedProduct,
+  updateManagedProduct,
+  ORDERS_BASE,
   ApiError,
 } from './api';
+import type { ManagedProduct, ManagedProductPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
 import type { PosSession, CustomerLookupResult } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
 import { ShiftBar } from './components/ShiftBar';
+import { TabBar } from './components/TabBar';
+import type { MainTab } from './components/TabBar';
 import { OpenShiftScreen } from './components/OpenShiftScreen';
 import { CloseShiftScreen } from './components/CloseShiftScreen';
 import { SearchBar } from './components/SearchBar';
@@ -63,6 +70,11 @@ import { FloorPlanScreen } from './components/FloorPlanScreen';
 import { TableOrderScreen } from './components/TableOrderScreen';
 import { KdsScreen } from './components/KdsScreen';
 import { StockHistoryScreen } from './components/StockHistoryScreen';
+import { ProfileScreen } from './components/ProfileScreen';
+import { OperationsScreen } from './components/OperationsScreen';
+import type { OperationItem } from './components/OperationsScreen';
+import { ProductsManageScreen } from './components/ProductsManageScreen';
+import { ProductEditScreen } from './components/ProductEditScreen';
 
 type View =
   | 'sale'
@@ -70,6 +82,10 @@ type View =
   | 'payment'
   | 'receipt'
   | 'close-shift'
+  | 'products'
+  | 'product-edit'
+  | 'operations'
+  | 'profile'
   | 'orders'
   | 'reports'
   | 'batches'
@@ -81,6 +97,10 @@ type View =
   | 'table-order'
   | 'kds'
   | 'stock-history';
+
+const OPERATIONS_VIEWS = new Set<View>([
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+]);
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -138,6 +158,12 @@ export default function App() {
   const [stockMovements, setStockMovements] = useState<StockMovementRecord[]>([]);
   const [stockMovementsLoading, setStockMovementsLoading] = useState(false);
   const [stockMovementsError, setStockMovementsError] = useState<string | null>(null);
+  const [managedProducts, setManagedProducts] = useState<ManagedProduct[]>([]);
+  const [managedProductsLoading, setManagedProductsLoading] = useState(false);
+  const [managedProductsError, setManagedProductsError] = useState<string | null>(null);
+  const [editingProduct, setEditingProduct] = useState<ManagedProduct | null>(null);
+  const [productSaveSubmitting, setProductSaveSubmitting] = useState(false);
+  const [productSaveError, setProductSaveError] = useState<string | null>(null);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -148,6 +174,43 @@ export default function App() {
   const hasWarehouse = session?.modules?.includes('warehouse') ?? false;
   const hasRetail = session?.modules?.includes('retail') ?? false;
   const isDesktop = useIsDesktop();
+  const canManageProducts = session?.user.role === 'owner' || session?.user.role === 'manager';
+  const storefrontUrl = hasSupply && session?.company.slug ? `${ORDERS_BASE}/${session.company.slug}` : null;
+
+  const pendingOrdersCount = orders.filter((o) => o.status === 'pending').length;
+  const expiringBatchesCount = batches.filter((b) => b.status !== 'ok').length;
+
+  const operationsItems: OperationItem[] = [];
+  if (hasSupply) {
+    operationsItems.push({ key: 'orders', icon: '📦', label: 'Заказы с сайта', badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
+  }
+  if (hasPharmacy) {
+    operationsItems.push({ key: 'batches', icon: '💊', label: 'Партии', badge: expiringBatchesCount, onClick: handleShowBatches });
+  }
+  if (hasWarehouse) {
+    operationsItems.push(
+      { key: 'transfers', icon: '🔄', label: 'Перемещения', onClick: handleShowTransfers },
+      { key: 'incoming', icon: '📥', label: 'Приёмка', onClick: handleShowIncoming },
+      { key: 'counts', icon: '📋', label: 'Инвентаризация', onClick: handleShowCounts },
+      { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
+    );
+  }
+  if (hasRestaurant) {
+    operationsItems.push(
+      { key: 'floorplan', icon: '🍽️', label: 'Столики', onClick: handleShowFloorPlan },
+      { key: 'kds', icon: '🔥', label: 'Кухня', onClick: handleShowKds },
+    );
+  }
+  if (hasTerminal) {
+    operationsItems.push({ key: 'stock-history', icon: '📜', label: 'История склада', onClick: handleShowStockHistory });
+  }
+  const operationsBadge = pendingOrdersCount + expiringBatchesCount;
+
+  const activeTab: MainTab =
+    view === 'products' || view === 'product-edit' ? 'products' :
+    OPERATIONS_VIEWS.has(view) ? 'operations' :
+    view === 'profile' || view === 'reports' ? 'profile' :
+    'sale';
 
   function handleLogin(newSession: PosSession) {
     saveSession(newSession);
@@ -476,6 +539,73 @@ export default function App() {
   function handleShowStockHistory() {
     setView('stock-history');
     void loadStockMovements();
+  }
+
+  async function loadManagedProducts() {
+    if (!session) return;
+    setManagedProductsLoading(true);
+    setManagedProductsError(null);
+    try {
+      const data = await fetchManagedProducts(session.token);
+      setManagedProducts(data);
+    } catch (err) {
+      setManagedProductsError(err instanceof ApiError ? err.message : 'Не удалось загрузить товары');
+    } finally {
+      setManagedProductsLoading(false);
+    }
+  }
+
+  function handleShowProducts() {
+    setView('products');
+    void loadManagedProducts();
+  }
+
+  function handleAddProduct() {
+    setEditingProduct(null);
+    setProductSaveError(null);
+    setView('product-edit');
+  }
+
+  function handleEditProduct(product: ManagedProduct) {
+    setEditingProduct(product);
+    setProductSaveError(null);
+    setView('product-edit');
+  }
+
+  async function handleSaveProduct(payload: ManagedProductPayload) {
+    if (!session) return;
+    setProductSaveSubmitting(true);
+    setProductSaveError(null);
+    try {
+      const saved = editingProduct
+        ? await updateManagedProduct(session.token, editingProduct.id, payload)
+        : await createManagedProduct(session.token, payload);
+      await loadManagedProducts();
+
+      // Best-effort sync into the live sale grid so an edit to a product
+      // already visible in Касса shows up without re-logging in. A brand
+      // new product (no stock yet) or one being un-hidden only appears
+      // after the next PIN login, when the server rebuilds the full
+      // catalog with stock.
+      if (session.products.some((p) => p.id === saved.id)) {
+        const updatedSession: PosSession = {
+          ...session,
+          products: saved.sellable
+            ? session.products.map((p) =>
+                p.id === saved.id ? { ...p, name: saved.name, category: saved.category, price: saved.salePrice, barcode: saved.barcode } : p,
+              )
+            : session.products.filter((p) => p.id !== saved.id),
+        };
+        saveSession(updatedSession);
+        setSession(updatedSession);
+      }
+
+      setView('products');
+    } catch (err) {
+      setProductSaveError(err instanceof ApiError ? err.message : 'Не удалось сохранить товар');
+    } finally {
+      setProductSaveSubmitting(false);
+    }
   }
 
   async function loadTables() {
@@ -822,31 +952,7 @@ export default function App() {
 
   return (
     <div className={isDesktop ? 'pos-shell desktop' : 'pos-shell'}>
-      <ShiftBar
-        shift={shift}
-        cashierName={session.user.name}
-        online={online}
-        pendingCount={pendingCount}
-        onCloseShift={() => setView('close-shift')}
-        onShowInstall={install.reopen}
-        onLogout={handleLogout}
-        onShowOrders={hasSupply ? () => setView('orders') : undefined}
-        pendingOrdersCount={orders.filter((o) => o.status === 'pending').length}
-        pushSupported={hasSupply && pushSupported()}
-        pushEnabled={pushEnabled}
-        pushBusy={pushBusy}
-        onTogglePush={handleTogglePush}
-        onShowReports={hasTerminal ? handleShowReports : undefined}
-        onShowBatches={hasPharmacy ? handleShowBatches : undefined}
-        expiringBatchesCount={batches.filter((b) => b.status !== 'ok').length}
-        onShowTransfers={hasWarehouse ? handleShowTransfers : undefined}
-        onShowIncoming={hasWarehouse ? handleShowIncoming : undefined}
-        onShowCounts={hasWarehouse ? handleShowCounts : undefined}
-        onShowProduction={hasWarehouse ? handleShowProduction : undefined}
-        onShowFloorPlan={hasRestaurant ? handleShowFloorPlan : undefined}
-        onShowKds={hasRestaurant ? handleShowKds : undefined}
-        onShowStockHistory={hasTerminal ? handleShowStockHistory : undefined}
-      />
+      <ShiftBar shift={shift} cashierName={session.user.name} online={online} pendingCount={pendingCount} />
 
       {view === 'sale' && isDesktop && (
         <div className="pos-main">
@@ -938,7 +1044,7 @@ export default function App() {
           loading={ordersLoading}
           error={ordersError}
           busyId={busyOrderId}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadOrders}
           onFulfill={handleFulfillOrder}
           onReject={handleRejectOrder}
@@ -952,7 +1058,7 @@ export default function App() {
           error={reportsError}
           rangeDays={reportRangeDays}
           onRangeChange={handleRangeChange}
-          onBack={() => setView('sale')}
+          onBack={() => setView('profile')}
           onRefresh={() => loadReport(reportRangeDays)}
         />
       )}
@@ -964,7 +1070,7 @@ export default function App() {
           loading={batchesLoading}
           error={batchesError}
           submitting={batchSubmitting}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadBatches}
           onReceive={handleReceiveBatch}
         />
@@ -978,7 +1084,7 @@ export default function App() {
           loading={transfersLoading}
           error={transfersError}
           submitting={transferSubmitting}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadTransfers}
           onSubmit={handleCreateTransfer}
         />
@@ -991,7 +1097,7 @@ export default function App() {
           loading={receiptsLoading}
           error={receiptsError}
           submitting={receiptSubmitting}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadReceipts}
           onSubmit={handleCreateReceipt}
         />
@@ -1004,7 +1110,7 @@ export default function App() {
           loading={countsLoading}
           error={countsError}
           submitting={countSubmitting}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
         />
@@ -1017,7 +1123,7 @@ export default function App() {
           loading={productionLoading}
           error={productionError}
           submitting={productionSubmitting}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadProduction}
           onSubmit={handleCreateProduction}
         />
@@ -1029,7 +1135,7 @@ export default function App() {
           loading={tablesLoading}
           error={tablesError}
           submitting={tableSubmitting}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadTables}
           onSelectTable={handleSelectTable}
           onCreateTable={handleCreateTable}
@@ -1058,7 +1164,7 @@ export default function App() {
           tickets={kdsTickets}
           loading={kdsLoading}
           error={kdsError}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadKds}
           onToggleItem={handleToggleKitchenItem}
         />
@@ -1069,8 +1175,64 @@ export default function App() {
           movements={stockMovements}
           loading={stockMovementsLoading}
           error={stockMovementsError}
-          onBack={() => setView('sale')}
+          onBack={() => setView('operations')}
           onRefresh={loadStockMovements}
+        />
+      )}
+
+      {view === 'products' && (
+        <ProductsManageScreen
+          products={managedProducts}
+          loading={managedProductsLoading}
+          error={managedProductsError}
+          onRefresh={loadManagedProducts}
+          onAdd={handleAddProduct}
+          onEdit={handleEditProduct}
+        />
+      )}
+
+      {view === 'product-edit' && (
+        <ProductEditScreen
+          product={editingProduct}
+          submitting={productSaveSubmitting}
+          error={productSaveError}
+          onBack={() => setView('products')}
+          onSave={handleSaveProduct}
+        />
+      )}
+
+      {view === 'operations' && <OperationsScreen items={operationsItems} />}
+
+      {view === 'profile' && (
+        <ProfileScreen
+          cashierName={session.user.name}
+          role={session.user.role}
+          shift={shift}
+          online={online}
+          pendingCount={pendingCount}
+          storefrontUrl={storefrontUrl}
+          pushSupported={hasSupply && pushSupported()}
+          pushEnabled={pushEnabled}
+          pushBusy={pushBusy}
+          onTogglePush={handleTogglePush}
+          onShowReports={hasTerminal ? handleShowReports : undefined}
+          onShowInstall={install.reopen}
+          onCloseShift={() => setView('close-shift')}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {(view === 'sale' || view === 'products' || view === 'operations' || view === 'profile') && (
+        <TabBar
+          active={activeTab}
+          onChange={(tab) => {
+            if (tab === 'products') handleShowProducts();
+            else if (tab === 'profile') setView('profile');
+            else setView(tab);
+          }}
+          showProducts={canManageProducts}
+          showOperations={operationsItems.length > 0}
+          operationsBadge={operationsBadge}
         />
       )}
 
