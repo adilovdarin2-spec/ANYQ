@@ -35,6 +35,7 @@ import {
   fetchStockMovements,
   ApiError,
 } from './api';
+import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
 import type { PosSession, CustomerLookupResult } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
@@ -89,6 +90,8 @@ export default function App() {
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [query, setQuery] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
@@ -177,6 +180,30 @@ export default function App() {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.token, hasSupply]);
+
+  useEffect(() => {
+    if (!session || !hasSupply || !pushSupported()) return;
+    getExistingSubscription().then((sub) => setPushEnabled(!!sub));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.token, hasSupply]);
+
+  async function handleTogglePush() {
+    if (!session) return;
+    setPushBusy(true);
+    try {
+      if (pushEnabled) {
+        await disablePush(session.token);
+        setPushEnabled(false);
+      } else {
+        const ok = await enablePush(session.token);
+        setPushEnabled(ok);
+      }
+    } catch {
+      // permission denied or subscribe failed — leave state as-is, user can retry
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!session || !hasPharmacy) return;
@@ -805,6 +832,10 @@ export default function App() {
         onLogout={handleLogout}
         onShowOrders={hasSupply ? () => setView('orders') : undefined}
         pendingOrdersCount={orders.filter((o) => o.status === 'pending').length}
+        pushSupported={hasSupply && pushSupported()}
+        pushEnabled={pushEnabled}
+        pushBusy={pushBusy}
+        onTogglePush={handleTogglePush}
         onShowReports={hasTerminal ? handleShowReports : undefined}
         onShowBatches={hasPharmacy ? handleShowBatches : undefined}
         expiringBatchesCount={batches.filter((b) => b.status !== 'ok').length}

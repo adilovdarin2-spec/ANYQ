@@ -68,6 +68,7 @@ export interface Company {
   id: string;
   name: string;
   phone: string;
+  slug: string | null;
   createdAt: string;
   locations: CompanyLocation[];
   users: CompanyUser[];

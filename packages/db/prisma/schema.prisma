@@ -27,16 +27,21 @@ model Company {
   id        String   @id @default(cuid())
   name      String
   phone     String
+  // Friendly, unique URL segment for the public /supply storefront —
+  // e.g. anyq-orders.up.railway.app/dastarkhan-opt instead of a raw cuid.
+  // Nullable: only companies with the supply module actually need one.
+  slug      String?  @unique
   createdAt DateTime @default(now())
 
-  tariff         Tariff?
-  locations      Location[]
-  users          User[]
-  products       Product[]
-  documents      Document[]
-  counterparties Counterparty[]
-  shifts         Shift[]
-  tables         Table[]
+  tariff            Tariff?
+  locations         Location[]
+  users             User[]
+  products          Product[]
+  documents         Document[]
+  counterparties    Counterparty[]
+  shifts            Shift[]
+  tables            Table[]
+  pushSubscriptions PushSubscription[]
 
   @@map("companies")
 }
@@ -110,7 +115,25 @@ model User {
   posPin    String?
   createdAt DateTime @default(now())
 
+  pushSubscriptions PushSubscription[]
+
   @@map("users")
+}
+
+// One row per subscribed browser/device. A POS user can enable notifications
+// on more than one device; each gets its own row and its own endpoint.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  company   Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@map("push_subscriptions")
 }
 
 model Shift {
@@ -256,6 +279,9 @@ model Document {
   counterpartyId String?
   table         Table?        @relation(fields: [tableId], references: [id])
   tableId       String?
+  // Only set for type='order' placed through the public /supply storefront —
+  // where the customer wants this delivered, in their own words.
+  deliveryAddress String?
   createdBy     String?
   createdAt     DateTime      @default(now())
   fulfilledBy   String?

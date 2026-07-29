@@ -2,14 +2,22 @@ import { Router } from 'express';
 import { prisma } from '@anyq/db';
 import { tariffState, tariffDenialMessage } from '../tariff';
 import { loginRateLimit } from '../rateLimit';
+import { sendPushToCompany } from '../push';
 
 export const supplyRouter = Router();
 
-supplyRouter.get('/:companyId/catalog', async (req, res) => {
-  const company = await prisma.company.findUnique({
-    where: { id: req.params.companyId },
+// Storefront links use a friendly slug when the company has one, but every
+// old link (raw cuid, already shared with someone's customers) keeps working
+// forever — never break a link once it's been handed out.
+function findCompanyBySlugOrId(param: string) {
+  return prisma.company.findFirst({
+    where: { OR: [{ slug: param }, { id: param }] },
     include: { tariff: true, locations: true },
   });
+}
+
+supplyRouter.get('/:companyId/catalog', async (req, res) => {
+  const company = await findCompanyBySlugOrId(req.params.companyId);
   if (!company) {
     res.status(404).json({ error: 'Склад не найден' });
     return;
@@ -55,16 +63,14 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
   const items: OrderItemInput[] = Array.isArray(b.items) ? b.items : [];
   const customerName = typeof b.customerName === 'string' ? b.customerName.trim() : '';
   const customerPhone = typeof b.customerPhone === 'string' ? b.customerPhone.trim() : '';
+  const deliveryAddress = typeof b.deliveryAddress === 'string' ? b.deliveryAddress.trim() : '';
 
-  if (!customerName || !customerPhone || items.length === 0) {
-    res.status(400).json({ error: 'Укажите имя, телефон и хотя бы один товар' });
+  if (!customerName || !customerPhone || !deliveryAddress || items.length === 0) {
+    res.status(400).json({ error: 'Укажите имя, телефон, адрес и хотя бы один товар' });
     return;
   }
 
-  const company = await prisma.company.findUnique({
-    where: { id: req.params.companyId },
-    include: { tariff: true, locations: true },
-  });
+  const company = await findCompanyBySlugOrId(req.params.companyId);
   if (!company) {
     res.status(404).json({ error: 'Склад не найден' });
     return;
@@ -111,6 +117,7 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
       type: 'order',
       status: 'pending',
       counterpartyId: counterparty.id,
+      deliveryAddress,
       items: {
         create: validItems.map((it) => ({
           productId: it.productId,
@@ -120,6 +127,13 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
       },
     },
   });
+
+  const total = validItems.reduce((sum, it) => sum + productById.get(it.productId)!.salePrice * it.quantity, 0);
+  sendPushToCompany(company.id, {
+    title: 'Новый заказ',
+    body: `${customerName} · ${total.toLocaleString('ru-RU')} ₸`,
+    url: '/',
+  }).catch(() => {});
 
   res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
 });

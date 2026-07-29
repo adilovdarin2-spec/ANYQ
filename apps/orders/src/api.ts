@@ -23,6 +23,7 @@ export function fetchCatalog(companyId: string): Promise<Catalog> {
 export interface PlaceOrderPayload {
   customerName: string;
   customerPhone: string;
+  deliveryAddress: string;
   items: { productId: string; quantity: number }[];
 }
 

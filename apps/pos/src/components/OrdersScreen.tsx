@@ -37,6 +37,7 @@ export function OrdersScreen({ orders, loading, error, busyId, onBack, onRefresh
                   <div>
                     <div className="order-customer">{o.customerName}</div>
                     <div className="order-meta">{o.customerPhone} · {formatTime(o.createdAt)}</div>
+                    {o.deliveryAddress && <div className="order-meta">📍 {o.deliveryAddress}</div>}
                   </div>
                   <div className="order-total">{formatMoney(o.total)}</div>
                 </div>

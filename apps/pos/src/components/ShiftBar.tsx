@@ -11,6 +11,10 @@ interface Props {
   onLogout: () => void;
   onShowOrders?: () => void;
   pendingOrdersCount?: number;
+  pushSupported?: boolean;
+  pushEnabled?: boolean;
+  pushBusy?: boolean;
+  onTogglePush?: () => void;
   onShowReports?: () => void;
   onShowBatches?: () => void;
   expiringBatchesCount?: number;
@@ -33,6 +37,10 @@ export function ShiftBar({
   onLogout,
   onShowOrders,
   pendingOrdersCount = 0,
+  pushSupported,
+  pushEnabled,
+  pushBusy,
+  onTogglePush,
   onShowReports,
   onShowBatches,
   expiringBatchesCount = 0,
@@ -67,6 +75,16 @@ export function ShiftBar({
             <button className="icon-btn" onClick={onShowOrders} aria-label="Заказы с сайта">
               📦
               {pendingOrdersCount > 0 && <span className="icon-btn-badge">{pendingOrdersCount}</span>}
+            </button>
+          )}
+          {pushSupported && onTogglePush && (
+            <button
+              className="icon-btn"
+              onClick={onTogglePush}
+              disabled={pushBusy}
+              aria-label={pushEnabled ? 'Уведомления о заказах включены' : 'Включить уведомления о заказах'}
+            >
+              {pushEnabled ? '🔔' : '🔕'}
             </button>
           )}
           {onShowBatches && (

@@ -5,6 +5,7 @@ import { StatusChip } from './StatusChip';
 import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS } from '../utils';
 import type { DurationPreset } from '../utils';
 import type { ShiftSummary, TariffPayload, LocationPayload } from '../api';
+import { ORDERS_BASE } from '../api';
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: 'Наличные',
@@ -58,6 +59,7 @@ export function CompanyDetailDrawer({
   onUpdateLocation,
 }: Props) {
   const [tariff, setTariff] = useState<Tariff>(company.tariff);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shifts, setShifts] = useState<ShiftSummary[] | null>(null);
@@ -296,6 +298,28 @@ export function CompanyDetailDrawer({
               </div>
             );
           })}
+
+          {company.slug && tariff.modules.includes('supply') && (
+            <>
+              <div className="section-title">Витрина для клиентов</div>
+              <div className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                <div style={{ fontSize: '0.85rem', wordBreak: 'break-all', color: 'var(--ink-muted)' }}>
+                  {ORDERS_BASE}/{company.slug}
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${ORDERS_BASE}/${company.slug}`).then(() => {
+                      setLinkCopied(true);
+                      setTimeout(() => setLinkCopied(false), 2000);
+                    });
+                  }}
+                >
+                  {linkCopied ? 'Скопировано ✓' : 'Скопировать ссылку'}
+                </button>
+              </div>
+            </>
+          )}
 
           <div className="section-title">Тариф</div>
           <div className="field">

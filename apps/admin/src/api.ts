@@ -1,6 +1,7 @@
 import type { Company, CompanyLocation, CompanyUser, Product } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
 
 export class ApiError extends Error {}
 
