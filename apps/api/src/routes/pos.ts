@@ -4,7 +4,7 @@ import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage } from '../tariff';
-import { findStockShortages } from '../stock';
+import { findStockShortages, applyStockDelta, createStockWithMovement } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -231,12 +231,9 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       }
 
       const documentItemsData: { productId: string; batchId: string | null; quantity: number; price: number }[] = [];
-      const updates: Promise<unknown>[] = [];
+      const otherUpdates: Promise<unknown>[] = [];
 
       for (const item of plainItems) {
-        const stock = stockByProduct.get(item.productId)!;
-        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } }));
-
         const productBatches = batchesByProduct.get(item.productId);
         if (productBatches && productBatches.length > 0) {
           const sellableBatches: BatchStock[] = productBatches
@@ -245,7 +242,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           const { allocations } = allocateFefo(item.quantity, sellableBatches);
           for (const alloc of allocations) {
             const batch = productBatches.find((batchRow) => batchRow.id === alloc.batchId)!;
-            updates.push(tx.productBatch.update({ where: { id: batch.id }, data: { quantity: batch.quantity - alloc.quantity } }));
+            otherUpdates.push(tx.productBatch.update({ where: { id: batch.id }, data: { quantity: batch.quantity - alloc.quantity } }));
             documentItemsData.push({ productId: item.productId, batchId: alloc.batchId, quantity: alloc.quantity, price: item.price });
           }
         } else {
@@ -256,19 +253,16 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       for (const item of dishItems) {
         documentItemsData.push({ productId: item.productId, batchId: null, quantity: item.quantity, price: item.price });
       }
-      for (const consumption of ingredientConsumption) {
-        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
-        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - consumption.quantity } }));
-      }
 
       if (customer) {
         const newBalance = customer.loyaltyPoints - redemptionAmount + pointsEarned;
-        updates.push(tx.counterparty.update({ where: { id: customer.id }, data: { loyaltyPoints: newBalance } }));
+        otherUpdates.push(tx.counterparty.update({ where: { id: customer.id }, data: { loyaltyPoints: newBalance } }));
       }
 
-      await Promise.all(updates);
-
-      return tx.document.create({
+      // Document is created before the stock movements so each ledger row can
+      // reference it — if a shortage were found it would have thrown already,
+      // so by this point the transaction is committing regardless.
+      const document = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
           locationId: b.locationId,
@@ -285,6 +279,19 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         },
         include: { items: true },
       });
+
+      const stockMovements: Promise<unknown>[] = [...otherUpdates];
+      for (const item of plainItems) {
+        const stock = stockByProduct.get(item.productId)!;
+        stockMovements.push(applyStockDelta(tx, stock, -item.quantity, 'sale', document.id));
+      }
+      for (const consumption of ingredientConsumption) {
+        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
+        stockMovements.push(applyStockDelta(tx, stock, -consumption.quantity, 'sale', document.id));
+      }
+      await Promise.all(stockMovements);
+
+      return document;
     }, { timeout: 15000 });
 
     res.status(201).json({
@@ -588,9 +595,9 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
 
     const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId: location.id, binLocation: null } });
     if (stock) {
-      await tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity + quantity } });
+      await applyStockDelta(tx, stock, quantity, 'batch_receipt');
     } else {
-      await tx.stock.create({ data: { productId: product.id, locationId: location.id, quantity, binLocation: null } });
+      await createStockWithMovement(tx, { productId: product.id, locationId: location.id, quantity, reason: 'batch_receipt' });
     }
 
     return created;
@@ -659,7 +666,7 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
       await Promise.all(
         order.items.map((item) => {
           const stock = stockByProduct.get(item.productId)!;
-          return tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } });
+          return applyStockDelta(tx, stock, -item.quantity, 'order_fulfill', order.id);
         }),
       );
 
@@ -785,23 +792,7 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
         throw new StockError(shortages);
       }
 
-      const updates: Promise<unknown>[] = [];
-      for (const item of items) {
-        const source = sourceStockByProduct.get(item.productId)!;
-        updates.push(tx.stock.update({ where: { id: source.id }, data: { quantity: source.quantity - item.quantity } }));
-
-        const dest = destStockByProduct.get(item.productId);
-        if (dest) {
-          updates.push(tx.stock.update({ where: { id: dest.id }, data: { quantity: dest.quantity + item.quantity } }));
-        } else {
-          updates.push(
-            tx.stock.create({ data: { productId: item.productId, locationId: toLocation.id, quantity: item.quantity } }),
-          );
-        }
-      }
-      await Promise.all(updates);
-
-      return tx.document.create({
+      const document = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
           locationId: fromLocation.id,
@@ -813,6 +804,30 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
         },
         include: { items: true },
       });
+
+      const updates: Promise<unknown>[] = [];
+      for (const item of items) {
+        const source = sourceStockByProduct.get(item.productId)!;
+        updates.push(applyStockDelta(tx, source, -item.quantity, 'transfer_out', document.id));
+
+        const dest = destStockByProduct.get(item.productId);
+        if (dest) {
+          updates.push(applyStockDelta(tx, dest, item.quantity, 'transfer_in', document.id));
+        } else {
+          updates.push(
+            createStockWithMovement(tx, {
+              productId: item.productId,
+              locationId: toLocation.id,
+              quantity: item.quantity,
+              reason: 'transfer_in',
+              documentId: document.id,
+            }),
+          );
+        }
+      }
+      await Promise.all(updates);
+
+      return document;
     }, { timeout: 15000 });
 
     res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
@@ -906,18 +921,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     });
     const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
 
-    const updates: Promise<unknown>[] = [];
-    for (const item of items) {
-      const existing = stockByProduct.get(item.productId);
-      if (existing) {
-        updates.push(tx.stock.update({ where: { id: existing.id }, data: { quantity: existing.quantity + item.quantity } }));
-      } else {
-        updates.push(tx.stock.create({ data: { productId: item.productId, locationId: location.id, quantity: item.quantity } }));
-      }
-    }
-    await Promise.all(updates);
-
-    return tx.document.create({
+    const document = await tx.document.create({
       data: {
         companyId: req.posCompanyId!,
         locationId: location.id,
@@ -929,6 +933,27 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
       },
       include: { items: true },
     });
+
+    const updates: Promise<unknown>[] = [];
+    for (const item of items) {
+      const existing = stockByProduct.get(item.productId);
+      if (existing) {
+        updates.push(applyStockDelta(tx, existing, item.quantity, 'receipt', document.id));
+      } else {
+        updates.push(
+          createStockWithMovement(tx, {
+            productId: item.productId,
+            locationId: location.id,
+            quantity: item.quantity,
+            reason: 'receipt',
+            documentId: document.id,
+          }),
+        );
+      }
+    }
+    await Promise.all(updates);
+
+    return document;
   }, { timeout: 15000 });
 
   res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
@@ -1001,20 +1026,7 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
 
     const adjustments = computeCountAdjustments(items, quantityByProduct);
 
-    const updates: Promise<unknown>[] = [];
-    for (const adj of adjustments) {
-      const existing = stockByProduct.get(adj.productId);
-      if (existing) {
-        updates.push(tx.stock.update({ where: { id: existing.id }, data: { quantity: adj.countedQuantity } }));
-      } else if (adj.countedQuantity > 0) {
-        updates.push(
-          tx.stock.create({ data: { productId: adj.productId, locationId: location.id, quantity: adj.countedQuantity } }),
-        );
-      }
-    }
-    await Promise.all(updates);
-
-    return tx.document.create({
+    const document = await tx.document.create({
       data: {
         companyId: req.posCompanyId!,
         locationId: location.id,
@@ -1025,6 +1037,27 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
       },
       include: { items: true },
     });
+
+    const updates: Promise<unknown>[] = [];
+    for (const adj of adjustments) {
+      const existing = stockByProduct.get(adj.productId);
+      if (existing) {
+        updates.push(applyStockDelta(tx, existing, adj.delta, 'adjustment', document.id));
+      } else if (adj.countedQuantity > 0) {
+        updates.push(
+          createStockWithMovement(tx, {
+            productId: adj.productId,
+            locationId: location.id,
+            quantity: adj.countedQuantity,
+            reason: 'adjustment',
+            documentId: document.id,
+          }),
+        );
+      }
+    }
+    await Promise.all(updates);
+
+    return document;
   }, { timeout: 15000 });
 
   res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
@@ -1152,21 +1185,7 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
         throw new StockError(shortages);
       }
 
-      const updates: Promise<unknown>[] = [];
-      for (const ing of ingredients) {
-        const stock = ingredientStockByProduct.get(ing.ingredientId)!;
-        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - ing.quantity } }));
-      }
-
-      const finishedStock = finishedStockRows[0];
-      if (finishedStock) {
-        updates.push(tx.stock.update({ where: { id: finishedStock.id }, data: { quantity: finishedStock.quantity + yieldQuantity } }));
-      } else {
-        updates.push(tx.stock.create({ data: { productId: recipe.productId, locationId: location.id, quantity: yieldQuantity } }));
-      }
-      await Promise.all(updates);
-
-      return tx.document.create({
+      const document = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
           locationId: location.id,
@@ -1182,6 +1201,30 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
         },
         include: { items: true },
       });
+
+      const updates: Promise<unknown>[] = [];
+      for (const ing of ingredients) {
+        const stock = ingredientStockByProduct.get(ing.ingredientId)!;
+        updates.push(applyStockDelta(tx, stock, -ing.quantity, 'production_out', document.id));
+      }
+
+      const finishedStock = finishedStockRows[0];
+      if (finishedStock) {
+        updates.push(applyStockDelta(tx, finishedStock, yieldQuantity, 'production_in', document.id));
+      } else {
+        updates.push(
+          createStockWithMovement(tx, {
+            productId: recipe.productId,
+            locationId: location.id,
+            quantity: yieldQuantity,
+            reason: 'production_in',
+            documentId: document.id,
+          }),
+        );
+      }
+      await Promise.all(updates);
+
+      return document;
     }, { timeout: 15000 });
 
     res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString(), batches, yieldQuantity });
@@ -1379,17 +1422,6 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
         throw new StockError(shortages);
       }
 
-      const updates: Promise<unknown>[] = [];
-      for (const item of plainItems) {
-        const stock = stockByProduct.get(item.productId)!;
-        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - item.quantity } }));
-      }
-      for (const consumption of ingredientConsumption) {
-        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
-        updates.push(tx.stock.update({ where: { id: stock.id }, data: { quantity: stock.quantity - consumption.quantity } }));
-      }
-      await Promise.all(updates);
-
       const itemsData = items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price, kitchenStatus: 'pending' }));
 
       let openDocument = await tx.document.findFirst({ where: { tableId: table.id, type: 'sale', status: 'open' } });
@@ -1409,6 +1441,17 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
         });
         await tx.table.update({ where: { id: table.id }, data: { status: 'occupied' } });
       }
+
+      const updates: Promise<unknown>[] = [];
+      for (const item of plainItems) {
+        const stock = stockByProduct.get(item.productId)!;
+        updates.push(applyStockDelta(tx, stock, -item.quantity, 'table_order', openDocument.id));
+      }
+      for (const consumption of ingredientConsumption) {
+        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
+        updates.push(applyStockDelta(tx, stock, -consumption.quantity, 'table_order', openDocument.id));
+      }
+      await Promise.all(updates);
 
       return tx.document.findUniqueOrThrow({ where: { id: openDocument.id }, include: { items: { include: { product: true } } } });
     }, { timeout: 15000 });
