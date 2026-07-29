@@ -1,5 +1,6 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #root { height: 100%; }
+html { scroll-behavior: smooth; }
 body {
   margin: 0;
   background: var(--bg);
@@ -9,6 +10,19 @@ body {
 }
 button, input { font-family: inherit; }
 button { cursor: pointer; }
+
+/* one shared, snappy easing curve for every interactive element below —
+   buttons press down, cards lift on hover, chips glide between states */
+button, .product-row, .pricing-plan, .support-option, .category-chip, .install-banner {
+  transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.btn:active:not(:disabled), .add-btn:active:not(:disabled), .qty-stepper button:active:not(:disabled), .category-chip:active, .support-option:active, .icon-btn:active {
+  transform: scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  button, .product-row, .pricing-plan, .support-option, .category-chip, .install-banner { transition: none; }
+}
 
 .app-shell {
   min-height: 100vh;
@@ -78,6 +92,7 @@ button { cursor: pointer; }
 .add-btn:disabled { background: var(--border); color: var(--ink-muted); }
 
 .empty-state { padding: 60px 20px; text-align: center; color: var(--ink-muted); font-size: 0.92rem; }
+.empty-state-icon { display: block; font-size: 2rem; margin-bottom: 10px; opacity: 0.5; }
 
 /* cart bar */
 .order-cart-bar {
@@ -138,6 +153,8 @@ button { cursor: pointer; }
 .btn-primary:disabled { background: var(--border); color: var(--ink-muted); }
 .btn-secondary { background: var(--surface-2); color: var(--ink); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-icon-row { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 100%; }
+.btn-icon-row svg { flex-shrink: 0; }
 
 .form-error { margin-top: 4px; padding: 10px 12px; border-radius: 8px; background: var(--status-overdue-bg); color: var(--status-overdue); font-size: 0.85rem; }
 
@@ -149,9 +166,21 @@ button { cursor: pointer; }
 .state-card p { color: var(--ink-muted); font-size: 0.92rem; line-height: 1.55; margin: 0; }
 
 /* success */
-.success-icon { width: 64px; height: 64px; border-radius: 50%; background: var(--status-active-bg); color: var(--status-active); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin: 12px auto 20px; }
-.success-title { font-family: Georgia, serif; font-size: 1.3rem; font-weight: 700; text-align: center; margin-bottom: 8px; }
+@keyframes successPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  65% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.success-icon {
+  width: 72px; height: 72px; border-radius: 50%; background: var(--status-active-bg); color: var(--status-active);
+  display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 12px auto 20px;
+  animation: successPop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.success-title { font-family: Georgia, serif; font-size: 1.4rem; font-weight: 700; text-align: center; margin-bottom: 8px; }
 .success-sub { text-align: center; color: var(--ink-muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 28px; }
+@media (prefers-reduced-motion: reduce) {
+  .success-icon { animation: none; }
+}
 
 /* install banner (PWA) — docked above where the cart bar appears so an
    in-progress order is never covered by the banner */
@@ -174,6 +203,14 @@ button { cursor: pointer; }
 .pricing-hero { margin-bottom: 26px; }
 .pricing-hero h1 { font-family: Georgia, serif; font-size: 1.5rem; margin: 0 0 10px; }
 .pricing-hero p { color: var(--ink-muted); font-size: 0.94rem; line-height: 1.55; margin: 0; }
+
+.trust-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.trust-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+  padding: 7px 13px; font-size: 0.8rem; font-weight: 600; color: var(--ink-muted);
+}
+.trust-pill-icon { font-size: 0.95em; }
 
 .pricing-plan {
   border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
@@ -204,14 +241,22 @@ button { cursor: pointer; }
 
 .support-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
 .support-option {
+  position: relative;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
   background: var(--bg); text-align: left;
 }
 .support-option.on { border-color: var(--accent); background: var(--status-active-bg); }
+.support-option.has-badge { margin-top: 6px; }
 .support-option-label { font-size: 0.9rem; font-weight: 600; }
 .support-option-sub { font-size: 0.78rem; color: var(--ink-muted); }
 .support-option.on .support-option-sub { color: var(--accent-strong); }
+.support-option-badge {
+  position: absolute; top: -9px; right: 14px; white-space: nowrap;
+  background: var(--accent); color: #fff; font-size: 0.62rem; font-weight: 800;
+  padding: 2px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.03em;
+  box-shadow: var(--shadow-sm);
+}
 
 .calc-total-row {
   display: flex; align-items: baseline; justify-content: space-between;
@@ -284,16 +329,20 @@ button { cursor: pointer; }
   .pricing-layout-side { display: flex; flex-direction: column; gap: 16px; }
   .pricing-layout-side .pricing-plan { margin-bottom: 0; }
   .pricing-cta { margin-top: 4px; }
+}
 
-  /* mouse-hover affordances — skipped on touch devices via (hover: hover) */
-  @media (hover: hover) {
-    .product-row:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
-    .add-btn:hover:not(:disabled) { background: var(--accent-strong); }
-    .category-chip:hover { border-color: var(--accent); color: var(--ink); }
-    .support-option:hover { border-color: var(--accent); }
-    .pricing-plan:hover { box-shadow: var(--shadow-sm); }
-    .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
-    .btn-secondary:hover { background: var(--border); }
-    .order-cart-bar-inner:hover { box-shadow: var(--shadow-md), 0 0 0 2px var(--accent-strong) inset; }
-  }
+/* mouse-hover affordances — gated on (hover: hover) so touch devices never
+   get a "stuck" hover state, independent of viewport width (a mouse user
+   in a narrow window still gets these) */
+@media (hover: hover) {
+  .product-row:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+  .add-btn:hover:not(:disabled) { background: var(--accent-strong); }
+  .category-chip:hover { border-color: var(--accent); color: var(--ink); }
+  .support-option:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .pricing-plan:hover { box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
+  .btn-secondary:hover { background: var(--border); }
+  .order-cart-bar-inner:hover { box-shadow: var(--shadow-md), 0 0 0 2px var(--accent-strong) inset; }
+  .qty-stepper button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .icon-btn:hover { background: var(--border); }
 }

@@ -13,12 +13,20 @@ const SUPPLY_FIRST_WAREHOUSE = 99900;
 const SUPPLY_EXTRA_WAREHOUSE = 34900;
 
 const SUPPORT_TIERS = [
-  { key: 'basic', label: 'Базовая', price: 0, sub: 'включено' },
-  { key: 'priority', label: 'Приоритетная', price: 19900, sub: `+${formatMoney(19900)}/мес` },
-  { key: 'dedicated', label: 'Личный менеджер', price: 49900, sub: `от ${formatMoney(49900)}/мес` },
+  { key: 'basic', label: 'Базовая', price: 0, sub: 'включено', badge: null },
+  { key: 'priority', label: 'Приоритетная', price: 19900, sub: `+${formatMoney(19900)}/мес`, badge: 'Популярный выбор' },
+  { key: 'dedicated', label: 'Личный менеджер', price: 49900, sub: `от ${formatMoney(49900)}/мес`, badge: null },
 ] as const;
 
 type SupportKey = (typeof SUPPORT_TIERS)[number]['key'];
+
+function WhatsAppIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.08c-.24.68-1.4 1.33-1.93 1.4-.5.07-1.06.1-1.7-.11-.4-.13-.9-.29-1.55-.57-2.73-1.18-4.51-3.94-4.65-4.13-.14-.18-1.11-1.48-1.11-2.83s.7-2 .95-2.28c.24-.27.53-.34.71-.34l.5.01c.16.01.38-.06.6.46.24.57.8 1.97.87 2.11.07.14.11.31.02.5-.09.18-.14.3-.27.46-.14.16-.29.36-.41.48-.14.14-.28.29-.12.56.16.28.71 1.18 1.53 1.91 1.05.94 1.94 1.24 2.21 1.38.28.14.44.12.6-.07.16-.19.68-.79.87-1.06.18-.27.36-.22.6-.13.24.09 1.55.73 1.82.86.27.14.44.2.51.31.07.12.07.66-.17 1.35Z" />
+    </svg>
+  );
+}
 
 interface StepperProps {
   label: string;
@@ -85,6 +93,12 @@ export function PricingScreen() {
           Касса, склад и заказы для магазинов, кафе, складов и HoReCa-поставщиков в Казахстане.
           Один PWA-планшет вместо кассового терминала, офлайн-режим, живые остатки.
         </p>
+        <div className="trust-pills">
+          <span className="trust-pill"><span className="trust-pill-icon">📴</span> Работает офлайн</span>
+          <span className="trust-pill"><span className="trust-pill-icon">📈</span> Живые остатки по точкам</span>
+          <span className="trust-pill"><span className="trust-pill-icon">📱</span> PWA — без App Store</span>
+          <span className="trust-pill"><span className="trust-pill-icon">🔔</span> Push-уведомления о заказах</span>
+        </div>
       </div>
 
       <div className="pricing-layout">
@@ -134,9 +148,10 @@ export function PricingScreen() {
               <button
                 key={t.key}
                 type="button"
-                className={`support-option${support === t.key ? ' on' : ''}`}
+                className={`support-option${support === t.key ? ' on' : ''}${t.badge ? ' has-badge' : ''}`}
                 onClick={() => setSupport(t.key)}
               >
+                {t.badge && <span className="support-option-badge">{t.badge}</span>}
                 <span className="support-option-label">{t.label}</span>
                 <span className="support-option-sub">{t.sub}</span>
               </button>
@@ -149,7 +164,10 @@ export function PricingScreen() {
           </div>
 
           <a className="btn btn-primary btn-block calc-cta" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-            Написать в WhatsApp — {formatMoney(calc.total)}/мес
+            <span className="btn-icon-row">
+              <WhatsAppIcon />
+              Написать в WhatsApp — {formatMoney(calc.total)}/мес
+            </span>
           </a>
         </div>
 
@@ -189,7 +207,10 @@ export function PricingScreen() {
           <div className="pricing-cta">
             <p>Тариф подключается вручную — напишите нам расчёт из калькулятора, обсудим детали под ваш бизнес.</p>
             <a className="btn btn-primary btn-block" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-              Написать в WhatsApp — {formatMoney(calc.total)}/мес
+              <span className="btn-icon-row">
+                <WhatsAppIcon />
+                Написать в WhatsApp — {formatMoney(calc.total)}/мес
+              </span>
             </a>
           </div>
         </div>
