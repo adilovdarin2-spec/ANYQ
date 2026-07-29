@@ -65,17 +65,19 @@ export function CatalogView({
       {filtered.length === 0 && <div className="empty-state">Ничего не найдено</div>}
 
       {[...grouped.entries()].map(([category, items]) => (
-        <div key={category}>
+        <div key={category} className="category-group">
           {activeCategory === 'Все' && <div className="category-title">{category}</div>}
-          {items.map((p) => (
-            <ProductRow
-              key={p.id}
-              product={p}
-              qty={cartQtyByProduct[p.id] ?? 0}
-              onAdd={() => onAdd(p)}
-              onChangeQty={(delta) => onChangeQty(p.id, delta)}
-            />
-          ))}
+          <div className="product-list">
+            {items.map((p) => (
+              <ProductRow
+                key={p.id}
+                product={p}
+                qty={cartQtyByProduct[p.id] ?? 0}
+                onAdd={() => onAdd(p)}
+                onChangeQty={(delta) => onChangeQty(p.id, delta)}
+              />
+            ))}
+          </div>
         </div>
       ))}
     </div>

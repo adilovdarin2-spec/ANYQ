@@ -22,8 +22,9 @@ button { cursor: pointer; }
   position: sticky; top: 0; z-index: 20;
   background: var(--surface); border-bottom: 1px solid var(--border);
   padding: 16px 20px;
+  box-shadow: var(--shadow-sm);
 }
-.order-header-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+.order-header-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
 .order-brand-mark {
   width: 40px; height: 40px; border-radius: 12px; background: var(--accent); color: #fff;
   display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem;
@@ -218,3 +219,81 @@ button { cursor: pointer; }
   font-size: 0.95rem; font-weight: 600;
 }
 .calc-total-value { font-size: 1.4rem; font-weight: 700; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
+.calc-cta { margin-top: 16px; text-decoration: none; text-align: center; display: block; }
+
+/* cart sidebar (desktop storefront) */
+.cart-sidebar { display: none; }
+.cart-sidebar-title { font-family: Georgia, serif; font-weight: 700; font-size: 1.05rem; margin-bottom: 14px; }
+.cart-sidebar-body { flex: 1; overflow-y: auto; }
+.cart-sidebar-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.cart-sidebar-line-name { font-weight: 600; font-size: 0.86rem; }
+.cart-sidebar-line-sub { font-size: 0.74rem; color: var(--ink-muted); margin-top: 2px; }
+.cart-sidebar-footer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 4px; }
+
+/* storefront layout (catalog + cart sidebar) */
+.storefront-layout { flex: 1; width: 100%; }
+
+/* ============================================================
+   Desktop (>=900px): wider shell, side-by-side layouts, grids,
+   sticky panels, mouse-hover affordances. Below 900px every rule
+   above already produces the full mobile experience unchanged.
+   ============================================================ */
+@media (min-width: 900px) {
+  .order-header { padding: 20px 24px; }
+
+  /* corner toast instead of a bottom-center banner, so it never covers the
+     product grid or cart sidebar */
+  .install-banner { left: auto; right: 24px; bottom: 24px; max-width: 360px; }
+
+  .storefront-layout {
+    display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start;
+    max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px;
+  }
+  .storefront-layout .order-content { max-width: none; margin: 0; padding: 0; }
+
+  .cart-sidebar {
+    display: flex; flex-direction: column;
+    position: sticky; top: 96px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px; max-height: calc(100vh - 120px);
+  }
+
+  .order-cart-bar { display: none; }
+
+  .category-bar { flex-wrap: wrap; overflow-x: visible; padding-bottom: 4px; }
+
+  .product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .product-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; height: 100%; }
+  .product-row-info { flex: none; }
+  .product-row .add-btn { width: 100%; padding: 10px; }
+  .product-row .qty-stepper { width: 100%; justify-content: space-between; }
+  .product-row .qty-stepper button { width: 36px; height: 36px; }
+
+  .screen-header { padding: 20px 24px; }
+  .screen-body { max-width: 900px; padding: 32px; }
+  .screen-footer { padding: 20px 24px; }
+  .screen-footer-inner { max-width: 900px; }
+  .checkout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: start; }
+  .screen-body-center { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; text-align: center; max-width: 480px; }
+
+  .pricing-content { max-width: 1200px; }
+  .pricing-hero h1 { font-size: 2.1rem; }
+  .pricing-hero p { font-size: 1.05rem; max-width: 620px; }
+  .pricing-layout { display: grid; grid-template-columns: 380px 1fr; gap: 32px; align-items: start; }
+  .pricing-layout .calc-card { position: sticky; top: 96px; margin-bottom: 0; }
+  .pricing-layout-side { display: flex; flex-direction: column; gap: 16px; }
+  .pricing-layout-side .pricing-plan { margin-bottom: 0; }
+  .pricing-cta { margin-top: 4px; }
+
+  /* mouse-hover affordances — skipped on touch devices via (hover: hover) */
+  @media (hover: hover) {
+    .product-row:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+    .add-btn:hover:not(:disabled) { background: var(--accent-strong); }
+    .category-chip:hover { border-color: var(--accent); color: var(--ink); }
+    .support-option:hover { border-color: var(--accent); }
+    .pricing-plan:hover { box-shadow: var(--shadow-sm); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
+    .btn-secondary:hover { background: var(--border); }
+    .order-cart-bar-inner:hover { box-shadow: var(--shadow-md), 0 0 0 2px var(--accent-strong) inset; }
+  }
+}
