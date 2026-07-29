@@ -1,4 +1,6 @@
-const CONTACT_EMAIL = 'support@anyq.kz';
+const WHATSAPP_NUMBER = '77784175136';
+const WHATSAPP_MESSAGE = 'Здравствуйте! Хочу подключить тариф ANYQ.';
+const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}`;
 
 export function PricingScreen() {
   return (
@@ -73,8 +75,8 @@ export function PricingScreen() {
           Тариф подключается вручную — напишите нам, обсудим точки, пользователей и модули под
           ваш бизнес.
         </p>
-        <a className="btn btn-primary btn-block" href={`mailto:${CONTACT_EMAIL}`}>
-          Написать нам
+        <a className="btn btn-primary btn-block" href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
+          Написать в WhatsApp
         </a>
       </div>
     </div>
