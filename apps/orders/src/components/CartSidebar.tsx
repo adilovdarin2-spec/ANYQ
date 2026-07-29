@@ -13,7 +13,10 @@ export function CartSidebar({ cart, total, onChangeQty, onCheckout }: Props) {
     <div className="cart-sidebar">
       <div className="cart-sidebar-title">Корзина</div>
       {cart.length === 0 ? (
-        <div className="empty-state">Корзина пуста</div>
+        <div className="empty-state">
+          <span className="empty-state-icon">🛒</span>
+          Корзина пуста
+        </div>
       ) : (
         <>
           <div className="cart-sidebar-body">
