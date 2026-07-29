@@ -480,6 +480,47 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   });
 });
 
+posRouter.get('/stock-movements', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('terminal')) {
+    res.status(403).json({ error: 'История склада недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationIds = (company?.locations ?? []).map((l) => l.id);
+  const productId = typeof req.query.productId === 'string' ? req.query.productId : undefined;
+
+  const movements = await prisma.stockMovement.findMany({
+    where: { locationId: { in: locationIds }, ...(productId ? { productId } : {}) },
+    include: { product: true, location: true },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+
+  res.json(
+    movements.map((m) => ({
+      id: m.id,
+      productId: m.productId,
+      productName: m.product.name,
+      locationName: m.location.name,
+      quantity: m.quantity,
+      reason: m.reason,
+      documentId: m.documentId,
+      createdAt: m.createdAt.toISOString(),
+    })),
+  );
+});
+
 posRouter.patch('/products/:id/stop-list', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   if (typeof b.stopListed !== 'boolean') {

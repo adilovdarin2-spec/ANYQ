@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Batch, CartLine, Count, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -32,6 +32,7 @@ import {
   payTable,
   fetchKdsTickets,
   updateKitchenItemStatus,
+  fetchStockMovements,
   ApiError,
 } from './api';
 import type { PosSession, CustomerLookupResult } from './api';
@@ -60,6 +61,7 @@ import { WeightEntryModal } from './components/WeightEntryModal';
 import { FloorPlanScreen } from './components/FloorPlanScreen';
 import { TableOrderScreen } from './components/TableOrderScreen';
 import { KdsScreen } from './components/KdsScreen';
+import { StockHistoryScreen } from './components/StockHistoryScreen';
 
 type View =
   | 'sale'
@@ -76,7 +78,8 @@ type View =
   | 'production'
   | 'floorplan'
   | 'table-order'
-  | 'kds';
+  | 'kds'
+  | 'stock-history';
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -129,6 +132,9 @@ export default function App() {
   const [kdsTickets, setKdsTickets] = useState<KdsTicket[]>([]);
   const [kdsLoading, setKdsLoading] = useState(false);
   const [kdsError, setKdsError] = useState<string | null>(null);
+  const [stockMovements, setStockMovements] = useState<StockMovementRecord[]>([]);
+  const [stockMovementsLoading, setStockMovementsLoading] = useState(false);
+  const [stockMovementsError, setStockMovementsError] = useState<string | null>(null);
 
   const install = useInstallPrompt();
   const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
@@ -424,6 +430,25 @@ export default function App() {
     } finally {
       setProductionSubmitting(false);
     }
+  }
+
+  async function loadStockMovements() {
+    if (!session) return;
+    setStockMovementsLoading(true);
+    setStockMovementsError(null);
+    try {
+      const data = await fetchStockMovements(session.token);
+      setStockMovements(data);
+    } catch (err) {
+      setStockMovementsError(err instanceof ApiError ? err.message : 'Не удалось загрузить историю склада');
+    } finally {
+      setStockMovementsLoading(false);
+    }
+  }
+
+  function handleShowStockHistory() {
+    setView('stock-history');
+    void loadStockMovements();
   }
 
   async function loadTables() {
@@ -789,6 +814,7 @@ export default function App() {
         onShowProduction={hasWarehouse ? handleShowProduction : undefined}
         onShowFloorPlan={hasRestaurant ? handleShowFloorPlan : undefined}
         onShowKds={hasRestaurant ? handleShowKds : undefined}
+        onShowStockHistory={hasTerminal ? handleShowStockHistory : undefined}
       />
 
       {view === 'sale' && isDesktop && (
@@ -1004,6 +1030,16 @@ export default function App() {
           onBack={() => setView('sale')}
           onRefresh={loadKds}
           onToggleItem={handleToggleKitchenItem}
+        />
+      )}
+
+      {view === 'stock-history' && (
+        <StockHistoryScreen
+          movements={stockMovements}
+          loading={stockMovementsLoading}
+          error={stockMovementsError}
+          onBack={() => setView('sale')}
+          onRefresh={loadStockMovements}
         />
       )}
 

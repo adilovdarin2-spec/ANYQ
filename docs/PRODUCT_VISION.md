@@ -52,7 +52,10 @@ Carried forward from the brief, because violating any of these is expensive to u
   couldn't: an audit trail (who/what moved stock and why) and reconciliation (the cache can always
   be rebuilt from `SUM(StockMovement.quantity)` per product+location). `ProductBatch.quantity`
   (pharmacy FEFO) is a separate, deliberately untouched concern — this rule was always about
-  `Stock`, not batch-level tracking.
+  `Stock`, not batch-level tracking. The audit trail is now surfaced too — "История склада" in
+  `apps/pos` (`GET /pos/stock-movements`, gated by `terminal` module like the other reporting
+  screens) lists recent movements with a Russian reason label, product/location name, signed
+  quantity, and timestamp.
 - Never store the whole business in one flat table per vertical — one core schema, feature
   flags per module, industry-specific fields live behind their own pack tables (matches the
   `ProductBatch`/`Prescription` split already in `schema.prisma`).

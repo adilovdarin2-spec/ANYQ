@@ -20,6 +20,7 @@ interface Props {
   onShowProduction?: () => void;
   onShowFloorPlan?: () => void;
   onShowKds?: () => void;
+  onShowStockHistory?: () => void;
 }
 
 export function ShiftBar({
@@ -41,6 +42,7 @@ export function ShiftBar({
   onShowProduction,
   onShowFloorPlan,
   onShowKds,
+  onShowStockHistory,
 }: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
@@ -93,6 +95,9 @@ export function ShiftBar({
           )}
           {onShowReports && (
             <button className="icon-btn" onClick={onShowReports} aria-label="Отчёты">📊</button>
+          )}
+          {onShowStockHistory && (
+            <button className="icon-btn" onClick={onShowStockHistory} aria-label="История склада">📜</button>
           )}
           <button className="icon-btn" onClick={onShowInstall} aria-label="Установить приложение">⬇</button>
           <button className="icon-btn" onClick={onCloseShift} aria-label="Закрыть смену">⏻</button>

@@ -281,3 +281,39 @@ export interface KdsTicket {
   items: KdsTicketItem[];
   allReady: boolean;
 }
+
+export type StockMovementReason =
+  | 'sale'
+  | 'order_fulfill'
+  | 'transfer_out'
+  | 'transfer_in'
+  | 'receipt'
+  | 'adjustment'
+  | 'production_in'
+  | 'production_out'
+  | 'table_order'
+  | 'batch_receipt';
+
+export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
+  sale: 'Продажа',
+  order_fulfill: 'Выдача заказа',
+  transfer_out: 'Перемещение (откуда)',
+  transfer_in: 'Перемещение (куда)',
+  receipt: 'Приёмка товара',
+  adjustment: 'Инвентаризация',
+  production_in: 'Производство (выпуск)',
+  production_out: 'Производство (расход)',
+  table_order: 'Заказ на стол',
+  batch_receipt: 'Приёмка партии',
+};
+
+export interface StockMovementRecord {
+  id: string;
+  productId: string;
+  productName: string;
+  locationName: string;
+  quantity: number;
+  reason: StockMovementReason;
+  documentId: string | null;
+  createdAt: string;
+}
