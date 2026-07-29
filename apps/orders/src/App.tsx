@@ -4,6 +4,7 @@ import { fetchCatalog, placeOrder, ApiError } from './api';
 import { Header } from './components/Header';
 import { CatalogView } from './components/CatalogView';
 import { CartBar } from './components/CartBar';
+import { CartSidebar } from './components/CartSidebar';
 import { CheckoutSheet } from './components/CheckoutSheet';
 import { SuccessScreen } from './components/SuccessScreen';
 import { StateScreen } from './components/StateScreen';
@@ -113,17 +114,20 @@ export default function App() {
   return (
     <div className="app-shell">
       <Header companyName={catalog.company.name} />
-      <CatalogView
-        products={catalog.products}
-        categories={categories}
-        activeCategory={activeCategory}
-        onCategoryChange={setActiveCategory}
-        query={query}
-        onQueryChange={setQuery}
-        cartQtyByProduct={cartQtyByProduct}
-        onAdd={addToCart}
-        onChangeQty={changeQty}
-      />
+      <div className="storefront-layout">
+        <CatalogView
+          products={catalog.products}
+          categories={categories}
+          activeCategory={activeCategory}
+          onCategoryChange={setActiveCategory}
+          query={query}
+          onQueryChange={setQuery}
+          cartQtyByProduct={cartQtyByProduct}
+          onAdd={addToCart}
+          onChangeQty={changeQty}
+        />
+        <CartSidebar cart={cart} total={cartTotal} onChangeQty={changeQty} onCheckout={() => setView('checkout')} />
+      </div>
       {cartCount > 0 && view === 'catalog' && <CartBar count={cartCount} total={cartTotal} onOpen={() => setView('checkout')} />}
 
       {view === 'checkout' && (
