@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
+import { WHATSAPP_NUMBER } from '../api';
 import { formatMoney } from '../utils';
-
-const WHATSAPP_NUMBER = '77784175136';
+import { IconArrowRight, IconCheck, WhatsAppIcon } from './Icons';
 
 const CORE_BASE = 59900;
 const CORE_INCLUDED_LOCATIONS = 1;
@@ -19,14 +19,6 @@ const SUPPORT_TIERS = [
 ] as const;
 
 type SupportKey = (typeof SUPPORT_TIERS)[number]['key'];
-
-function WhatsAppIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.08c-.24.68-1.4 1.33-1.93 1.4-.5.07-1.06.1-1.7-.11-.4-.13-.9-.29-1.55-.57-2.73-1.18-4.51-3.94-4.65-4.13-.14-.18-1.11-1.48-1.11-2.83s.7-2 .95-2.28c.24-.27.53-.34.71-.34l.5.01c.16.01.38-.06.6.46.24.57.8 1.97.87 2.11.07.14.11.31.02.5-.09.18-.14.3-.27.46-.14.16-.29.36-.41.48-.14.14-.28.29-.12.56.16.28.71 1.18 1.53 1.91 1.05.94 1.94 1.24 2.21 1.38.28.14.44.12.6-.07.16-.19.68-.79.87-1.06.18-.27.36-.22.6-.13.24.09 1.55.73 1.82.86.27.14.44.2.51.31.07.12.07.66-.17 1.35Z" />
-    </svg>
-  );
-}
 
 interface StepperProps {
   label: string;
@@ -85,136 +77,156 @@ export function PricingScreen() {
     .join('\n');
   const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 
+  function toggleSupply() {
+    setSupplyEnabled((v) => !v);
+  }
+
   return (
-    <div className="order-content pricing-content">
-      <div className="pricing-hero">
-        <h1>Тарифы ANYQ</h1>
-        <p>
-          Касса, склад и заказы для магазинов, кафе, складов и HoReCa-поставщиков в Казахстане.
-          Один PWA-планшет вместо кассового терминала, офлайн-режим, живые остатки.
-        </p>
-        <div className="trust-pills">
-          <span className="trust-pill"><span className="trust-pill-icon">📴</span> Работает офлайн</span>
-          <span className="trust-pill"><span className="trust-pill-icon">📈</span> Живые остатки по точкам</span>
-          <span className="trust-pill"><span className="trust-pill-icon">📱</span> PWA — без App Store</span>
-          <span className="trust-pill"><span className="trust-pill-icon">🔔</span> Push-уведомления о заказах</span>
+    <section id="pricing" className="section section-alt">
+      <div className="section-inner">
+        <div className="section-head">
+          <span className="section-eyebrow">Тарифы</span>
+          <h2 className="section-heading">Соберите тариф под свой бизнес</h2>
+          <p className="section-sub">
+            Платите за точки, пользователей и модули, которыми реально пользуетесь — без переплаты
+            за лишний функционал.
+          </p>
         </div>
-      </div>
 
-      <div className="pricing-layout">
-        <div className="calc-card">
-          <div className="calc-card-title">Соберите тариф под свой бизнес</div>
+        <div className="pricing-layout">
+          <div className="calc-card">
+            <div className="calc-card-title">Калькулятор тарифа</div>
 
-          <Stepper
-            label="Точки продаж"
-            hint="1 точка включена в базовый пакет"
-            value={locations}
-            min={1}
-            onIncrement={() => setLocations((v) => v + 1)}
-            onDecrement={() => setLocations((v) => Math.max(1, v - 1))}
-          />
-          <Stepper
-            label="Пользователи"
-            hint="3 пользователя включены в базовый пакет"
-            value={users}
-            min={3}
-            onIncrement={() => setUsers((v) => v + 1)}
-            onDecrement={() => setUsers((v) => Math.max(3, v - 1))}
-          />
-
-          <label className="calc-toggle-row">
-            <span>
-              <span className="calc-row-label">Модуль Supply</span>
-              <span className="calc-row-hint">B2B-витрина для HoReCa-поставщиков и складов</span>
-            </span>
-            <input type="checkbox" checked={supplyEnabled} onChange={(e) => setSupplyEnabled(e.target.checked)} />
-          </label>
-
-          {supplyEnabled && (
             <Stepper
-              label="Склады с витриной"
-              value={warehouses}
+              label="Точки продаж"
+              hint="1 точка включена в базовый пакет"
+              value={locations}
               min={1}
-              onIncrement={() => setWarehouses((v) => v + 1)}
-              onDecrement={() => setWarehouses((v) => Math.max(1, v - 1))}
+              onIncrement={() => setLocations((v) => v + 1)}
+              onDecrement={() => setLocations((v) => Math.max(1, v - 1))}
             />
-          )}
+            <Stepper
+              label="Пользователи"
+              hint="3 пользователя включены в базовый пакет"
+              value={users}
+              min={3}
+              onIncrement={() => setUsers((v) => v + 1)}
+              onDecrement={() => setUsers((v) => Math.max(3, v - 1))}
+            />
 
-          <div className="calc-row-label" style={{ margin: '18px 0 10px' }}>
-            Уровень поддержки
-          </div>
-          <div className="support-options">
-            {SUPPORT_TIERS.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                className={`support-option${support === t.key ? ' on' : ''}${t.badge ? ' has-badge' : ''}`}
-                onClick={() => setSupport(t.key)}
-              >
-                {t.badge && <span className="support-option-badge">{t.badge}</span>}
-                <span className="support-option-label">{t.label}</span>
-                <span className="support-option-sub">{t.sub}</span>
-              </button>
-            ))}
-          </div>
+            <label className="calc-toggle-row">
+              <span>
+                <span className="calc-row-label">Модуль Supply</span>
+                <span className="calc-row-hint">B2B-витрина для HoReCa-поставщиков и складов</span>
+              </span>
+              <input type="checkbox" checked={supplyEnabled} onChange={toggleSupply} />
+            </label>
 
-          <div className="calc-total-row">
-            <span>Итого</span>
-            <span className="calc-total-value">{formatMoney(calc.total)}/мес</span>
-          </div>
+            {supplyEnabled && (
+              <Stepper
+                label="Склады с витриной"
+                value={warehouses}
+                min={1}
+                onIncrement={() => setWarehouses((v) => v + 1)}
+                onDecrement={() => setWarehouses((v) => Math.max(1, v - 1))}
+              />
+            )}
 
-          <a className="btn btn-primary btn-block calc-cta" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-            <span className="btn-icon-row">
-              <WhatsAppIcon />
-              Написать в WhatsApp — {formatMoney(calc.total)}/мес
-            </span>
-          </a>
-        </div>
-
-        <div className="pricing-layout-side">
-          <div className="pricing-plan">
-            <div className="pricing-plan-header">
-              <span className="pricing-plan-name">Core</span>
-              <span className="pricing-plan-tag">касса и склад</span>
+            <div className="calc-row-label" style={{ margin: '18px 0 10px' }}>
+              Уровень поддержки
             </div>
-            <p className="pricing-plan-desc">
-              PWA-касса, остатки по точкам, смены со сверкой кассы, офлайн-режим с очередью
-              синхронизации. Для магазина, склада, аптеки, кафе или ресторана.
-            </p>
-            <ul className="pricing-feature-list">
-              <li>Базовый пакет — {formatMoney(CORE_BASE)}/мес (1 точка, 3 пользователя, товары без лимита)</li>
-              <li>Каждая доп. точка — +{formatMoney(CORE_EXTRA_LOCATION)}/мес</li>
-              <li>Каждый пользователь сверх включённых — +{formatMoney(CORE_EXTRA_USER)}/мес</li>
-            </ul>
-          </div>
-
-          <div className="pricing-plan pricing-plan-addon">
-            <div className="pricing-plan-header">
-              <span className="pricing-plan-name">Supply</span>
-              <span className="pricing-plan-tag">надстройка к Core</span>
+            <div className="support-options">
+              {SUPPORT_TIERS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={`support-option${support === t.key ? ' on' : ''}${t.badge ? ' has-badge' : ''}`}
+                  onClick={() => setSupport(t.key)}
+                >
+                  {t.badge && <span className="support-option-badge">{t.badge}</span>}
+                  <span className="support-option-label">{t.label}</span>
+                  <span className="support-option-sub">{t.sub}</span>
+                </button>
+              ))}
             </div>
-            <p className="pricing-plan-desc">
-              Публичный сайт заказов со своим адресом, push-уведомление в момент заказа,
-              PWA-приложение, списание товара по факту выдачи — дешевле отдельного B2B-портала,
-              но с полноценной кассой в комплекте.
-            </p>
-            <ul className="pricing-feature-list">
-              <li>Первый склад — {formatMoney(SUPPLY_FIRST_WAREHOUSE)}/мес</li>
-              <li>Каждый доп. склад — +{formatMoney(SUPPLY_EXTRA_WAREHOUSE)}/мес</li>
-            </ul>
-          </div>
 
-          <div className="pricing-cta">
-            <p>Тариф подключается вручную — напишите нам расчёт из калькулятора, обсудим детали под ваш бизнес.</p>
-            <a className="btn btn-primary btn-block" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+            <div className="calc-total-row">
+              <span>Итого</span>
+              <span className="calc-total-value">{formatMoney(calc.total)}/мес</span>
+            </div>
+
+            <a className="btn btn-primary btn-block calc-cta" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
               <span className="btn-icon-row">
                 <WhatsAppIcon />
                 Написать в WhatsApp — {formatMoney(calc.total)}/мес
               </span>
             </a>
           </div>
+
+          <div className="pricing-layout-side">
+            <div className="pricing-plan pricing-plan-static">
+              <div className="pricing-plan-header">
+                <span className="pricing-plan-name">Core</span>
+                <span className="pricing-plan-tag">касса и склад</span>
+              </div>
+              <p className="pricing-plan-desc">
+                PWA-касса, остатки по точкам, смены со сверкой кассы, офлайн-режим с очередью
+                синхронизации. Для магазина, склада, аптеки, кафе или ресторана.
+              </p>
+              <ul className="pricing-feature-list">
+                <li>Базовый пакет — {formatMoney(CORE_BASE)}/мес (1 точка, 3 пользователя, товары без лимита)</li>
+                <li>Каждая доп. точка — +{formatMoney(CORE_EXTRA_LOCATION)}/мес</li>
+                <li>Каждый пользователь сверх включённых — +{formatMoney(CORE_EXTRA_USER)}/мес</li>
+              </ul>
+              <div className="pricing-plan-note">
+                <IconCheck className="icon-16" /> Входит в любой тариф ANYQ
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className={`pricing-plan pricing-plan-addon pricing-plan-toggle${supplyEnabled ? ' on' : ''}`}
+              onClick={toggleSupply}
+              aria-pressed={supplyEnabled}
+            >
+              <div className="pricing-plan-header">
+                <span className="pricing-plan-name">Supply</span>
+                <span className="pricing-plan-tag">надстройка к Core</span>
+              </div>
+              <p className="pricing-plan-desc">
+                Публичный сайт заказов со своим адресом, push-уведомление в момент заказа,
+                PWA-приложение, списание товара по факту выдачи — дешевле отдельного B2B-портала,
+                но с полноценной кассой в комплекте.
+              </p>
+              <ul className="pricing-feature-list">
+                <li>Первый склад — {formatMoney(SUPPLY_FIRST_WAREHOUSE)}/мес</li>
+                <li>Каждый доп. склад — +{formatMoney(SUPPLY_EXTRA_WAREHOUSE)}/мес</li>
+              </ul>
+              <div className="pricing-plan-note pricing-plan-cta">
+                {supplyEnabled ? (
+                  <>
+                    <IconCheck className="icon-16" /> Добавлено в расчёт слева
+                  </>
+                ) : (
+                  <>
+                    Добавить в расчёт <IconArrowRight className="icon-16" />
+                  </>
+                )}
+              </div>
+            </button>
+
+            <div className="pricing-cta">
+              <p>Тариф подключается вручную — напишите нам расчёт из калькулятора, обсудим детали под ваш бизнес.</p>
+              <a className="btn btn-primary btn-block" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                <span className="btn-icon-row">
+                  <WhatsAppIcon />
+                  Написать в WhatsApp — {formatMoney(calc.total)}/мес
+                </span>
+              </a>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
