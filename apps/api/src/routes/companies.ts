@@ -8,11 +8,43 @@ companiesRouter.use(requireAuth);
 const include = { locations: true, users: true, tariff: true } satisfies Prisma.CompanyInclude;
 type CompanyWithRelations = Prisma.CompanyGetPayload<{ include: typeof include }>;
 
+// Cyrillic (Russian + Kazakh) transliteration — company names on this
+// platform are almost always Cyrillic, and a bare cuid makes for an
+// unshareable storefront link.
+const CYRILLIC_TO_LATIN: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+  х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  қ: 'q', ғ: 'g', ң: 'ng', ү: 'u', ұ: 'u', һ: 'h', і: 'i', ә: 'a', ө: 'o',
+};
+
+function slugify(name: string): string {
+  let out = '';
+  for (const ch of name.toLowerCase()) {
+    if (CYRILLIC_TO_LATIN[ch] !== undefined) out += CYRILLIC_TO_LATIN[ch];
+    else if (/[a-z0-9]/.test(ch)) out += ch;
+    else out += '-';
+  }
+  return out.replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'company';
+}
+
+async function generateUniqueSlug(name: string): Promise<string> {
+  const base = slugify(name);
+  let candidate = base;
+  let i = 2;
+  while (await prisma.company.findUnique({ where: { slug: candidate } })) {
+    candidate = `${base}-${i}`;
+    i++;
+  }
+  return candidate;
+}
+
 function serializeCompany(company: CompanyWithRelations) {
   return {
     id: company.id,
     name: company.name,
     phone: company.phone,
+    slug: company.slug,
     createdAt: company.createdAt.toISOString().slice(0, 10),
     locations: company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
     users: company.users.map((u) => ({ id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', posPin: u.posPin ?? '' })),
@@ -41,10 +73,13 @@ companiesRouter.post('/', async (req, res) => {
     return;
   }
 
+  const slug = await generateUniqueSlug(b.name);
+
   const company = await prisma.company.create({
     data: {
       name: b.name,
       phone: b.phone,
+      slug,
       locations: { create: [{ name: b.location.name, type: b.location.type, address: b.location.address ?? '' }] },
       users: { create: [{ name: b.owner.name, role: 'owner', phone: b.owner.phone ?? '' }] },
       tariff: {

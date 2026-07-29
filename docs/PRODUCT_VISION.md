@@ -19,7 +19,7 @@ database per vertical.
 | Retail Pack | Variants, discounts, loyalty, weight-based sale | **Built** (2026-07-28) — per-sale discount, loyalty points, product variants, and weight-based sale, all gated by `retail` module. Weight-based sale widened `Stock.quantity`/`DocumentItem.quantity` from `Int` to `Float` (a safe, lossless Postgres column-type change) rather than a grams-as-Int workaround — `price * quantity` keeps computing correct revenue everywhere (reports, discounts, loyalty, cart totals) with the results rounded to whole tenge at each aggregation point, since KZT has no practical sub-unit |
 | Pharmacy Pack | Batch/expiry FEFO dispensing | **Built** — batches, expiry-aware sale allocation, receiving screen. `Prescription`/`ControlledSubstanceLedger` schema still has zero wiring (compliance/marking scope, deliberately deferred) |
 | Warehouse Pro Pack | Multi-warehouse transfers, receiving, cycle counts, production/BOM | **Built** (2026-07-28) — `Document.type='transfer'/'receipt'/'adjustment'/'production'`, all gated by `warehouse` module. Production reuses the same `Recipe`/`RecipeIngredient` models the Restaurant Pack already had (they were never restaurant-specific), so a company can define a BOM for any product, not just dishes |
-| Distribution Pack (B2B) | Personal pricing, credit limits, order portal, linked buyer/seller documents | **Built** — this is the `supply` module (`apps/orders` + `/pos/orders`) |
+| Distribution Pack (B2B) | Personal pricing, credit limits, order portal, linked buyer/seller documents | **Built**, extended to a full marketplace storefront (2026-07-29) — this is the `supply` module (`apps/orders` + `/pos/orders`). Category browsing, live stock, a friendly per-supplier link (`Company.slug`, falls back to the cuid so old links never break), a delivery-address field on every order, a full installable PWA (manifest/icons/service worker), and Web Push so the owner is notified the moment an order lands — not just the 20s poll. Personal/negotiated pricing and credit limits are still not built |
 | Restaurant Pack | Recipes, ingredient deduction, food cost, stop-list, modifiers, table/floor plan, KDS | **Built** (2026-07-29) — floor plan + kitchen display, gated by `restaurant` module. Split bills (per-guest/per-item payment splitting) still not built — one table has exactly one open order and one payment, deliberately deferred as a separate, larger follow-up |
 | Terminal/reports | Desktop layout, sales analytics, receipt printing | Built (2026-07-28, MVP scope) |
 
@@ -35,6 +35,24 @@ on each side. This is the platform's actual moat — a POS clone is trivial to c
 network of suppliers and buyers who'd lose their order history by leaving is not. When extending
 `supply`, prefer generalizing toward "any company can order from any other company on the
 platform" over building one-off HoReCa-specific logic.
+
+## Supply storefront + Web Push (2026-07-29) — architecture notes
+
+`Company.slug` is generated once at creation (Cyrillic/Kazakh transliterated, deduplicated with a
+`-2`/`-3` suffix on collision) and is purely cosmetic — `/supply/:companyId/catalog` and
+`/supply/:companyId/orders` resolve by slug OR raw id (`findCompanyBySlugOrId`), so a link handed
+out before a company had a slug, or copy-pasted with the id instead, never breaks. `apps/orders`
+is genuinely multi-tenant on one deployment (`/company-slug` path), so its PWA manifest can't be a
+static file — `main.tsx` injects a Blob-based `<link rel="manifest">` at runtime with `start_url`
+set to the current path, so installing from a supplier's link launches back into that supplier's
+storefront, not a blank root.
+
+Push notifications use real Web Push (VAPID + the `web-push` npm package), not a home-grown
+scheme — `PushSubscription` stores one row per subscribed browser/device, `apps/api/src/push.ts`
+sends best-effort (a failed send never blocks order creation) and prunes subscriptions the
+browser has dropped (404/410 responses). The subscribe button lives in `apps/pos`'s `ShiftBar`
+(gated by the `supply` module) since the owner receives these, not the customer — `apps/orders`
+customers don't need push, they're told to wait for a call.
 
 ## Non-negotiable engineering rules
 

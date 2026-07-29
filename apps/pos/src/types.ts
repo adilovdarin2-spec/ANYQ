@@ -105,6 +105,7 @@ export interface Order {
   fulfilledAt: string | null;
   customerName: string;
   customerPhone: string;
+  deliveryAddress: string;
   items: OrderItem[];
   total: number;
 }

@@ -8,14 +8,15 @@ interface Props {
   submitting: boolean;
   error: string | null;
   onBack: () => void;
-  onSubmit: (name: string, phone: string) => void;
+  onSubmit: (name: string, phone: string, address: string) => void;
 }
 
 export function CheckoutSheet({ cart, total, submitting, error, onBack, onSubmit }: Props) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
 
-  const valid = name.trim() !== '' && normalizePhone(phone).length >= 10 && cart.length > 0;
+  const valid = name.trim() !== '' && normalizePhone(phone).length >= 10 && address.trim() !== '' && cart.length > 0;
 
   return (
     <div className="screen">
@@ -50,12 +51,20 @@ export function CheckoutSheet({ cart, total, submitting, error, onBack, onSubmit
           <label htmlFor="phone">Телефон</label>
           <input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 700 000 00 00" />
         </div>
+        <div className="form-field">
+          <label htmlFor="address">Адрес доставки</label>
+          <input id="address" type="text" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Город, улица, дом" />
+        </div>
 
         {error && <div className="form-error">{error}</div>}
       </div>
       <div className="screen-footer">
         <div className="screen-footer-inner">
-          <button className="btn btn-primary btn-block" disabled={!valid || submitting} onClick={() => onSubmit(name.trim(), phone.trim())}>
+          <button
+            className="btn btn-primary btn-block"
+            disabled={!valid || submitting}
+            onClick={() => onSubmit(name.trim(), phone.trim(), address.trim())}
+          >
             {submitting ? 'Отправляем…' : `Подтвердить заказ · ${formatMoney(total)}`}
           </button>
         </div>

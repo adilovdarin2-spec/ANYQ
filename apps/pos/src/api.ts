@@ -215,3 +215,20 @@ export function updateKitchenItemStatus(token: string, itemId: string, kitchenSt
 export function fetchStockMovements(token: string): Promise<StockMovementRecord[]> {
   return request('/pos/stock-movements', { method: 'GET' }, token);
 }
+
+export function fetchVapidPublicKey(token: string): Promise<{ publicKey: string }> {
+  return request('/pos/push/vapid-public-key', { method: 'GET' }, token);
+}
+
+export interface SubscribePushPayload {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export function subscribePush(token: string, payload: SubscribePushPayload): Promise<{ ok: boolean }> {
+  return request('/pos/push/subscribe', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function unsubscribePush(token: string, endpoint: string): Promise<{ ok: boolean }> {
+  return request('/pos/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }, token);
+}

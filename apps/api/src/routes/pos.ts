@@ -18,6 +18,7 @@ import { computeLoyalty } from '../loyalty';
 import { groupProductVariants } from '../variants';
 import { computeProduction } from '../production';
 import { buildKdsTickets } from '../kds';
+import { getVapidPublicKey } from '../push';
 
 // 1 point = 1 tenge earned/redeemed. Not yet configurable per company — a fixed
 // MVP rate, same simplification as the rest of the Retail Pack slice so far.
@@ -387,6 +388,41 @@ posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedReques
   res.json({ id: closed.id, closedAt: closed.closedAt?.toISOString() });
 });
 
+posRouter.get('/push/vapid-public-key', requirePosAuth, (_req, res) => {
+  res.json({ publicKey: getVapidPublicKey() });
+});
+
+posRouter.post('/push/subscribe', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const endpoint = typeof b.endpoint === 'string' ? b.endpoint : '';
+  const p256dh = typeof b.keys?.p256dh === 'string' ? b.keys.p256dh : '';
+  const auth = typeof b.keys?.auth === 'string' ? b.keys.auth : '';
+  if (!endpoint || !p256dh || !auth) {
+    res.status(400).json({ error: 'Некорректная подписка на уведомления' });
+    return;
+  }
+
+  await prisma.pushSubscription.upsert({
+    where: { endpoint },
+    update: { p256dh, auth, companyId: req.posCompanyId!, userId: req.posUserId },
+    create: { endpoint, p256dh, auth, companyId: req.posCompanyId!, userId: req.posUserId },
+  });
+
+  res.status(201).json({ ok: true });
+});
+
+posRouter.post('/push/unsubscribe', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const endpoint = typeof b.endpoint === 'string' ? b.endpoint : '';
+  if (!endpoint) {
+    res.status(400).json({ error: 'Укажите endpoint подписки' });
+    return;
+  }
+
+  await prisma.pushSubscription.deleteMany({ where: { endpoint, companyId: req.posCompanyId } });
+  res.json({ ok: true });
+});
+
 posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
@@ -663,6 +699,7 @@ posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
       fulfilledAt: o.fulfilledAt ? o.fulfilledAt.toISOString() : null,
       customerName: o.counterparty?.name ?? 'Клиент',
       customerPhone: o.counterparty?.phone ?? '',
+      deliveryAddress: o.deliveryAddress ?? '',
       items: o.items.map((it) => ({
         productId: it.productId,
         name: it.product.name,

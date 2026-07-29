@@ -7,6 +7,8 @@ import { CartBar } from './components/CartBar';
 import { CheckoutSheet } from './components/CheckoutSheet';
 import { SuccessScreen } from './components/SuccessScreen';
 import { StateScreen } from './components/StateScreen';
+import { InstallPrompt } from './components/InstallPrompt';
+import { useInstallPrompt } from './hooks/useInstallPrompt';
 
 type View = 'catalog' | 'checkout' | 'success';
 
@@ -27,6 +29,7 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState('Все');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const install = useInstallPrompt();
 
   useEffect(() => {
     if (!companyId) {
@@ -55,7 +58,7 @@ export default function App() {
     );
   }
 
-  async function handleSubmitOrder(customerName: string, customerPhone: string) {
+  async function handleSubmitOrder(customerName: string, customerPhone: string, deliveryAddress: string) {
     if (!companyId) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -63,6 +66,7 @@ export default function App() {
       await placeOrder(companyId, {
         customerName,
         customerPhone,
+        deliveryAddress,
         items: cart.map((l) => ({ productId: l.productId, quantity: l.qty })),
       });
       setCart([]);
@@ -134,6 +138,8 @@ export default function App() {
       )}
 
       {view === 'success' && <SuccessScreen companyName={catalog.company.name} onNewOrder={() => setView('catalog')} />}
+
+      <InstallPrompt {...install} />
     </div>
   );
 }
