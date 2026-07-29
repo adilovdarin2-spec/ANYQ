@@ -359,6 +359,15 @@ button { cursor: pointer; }
 }
 .kds-item-row:active { color: var(--accent); }
 
+/* stock movement history (terminal tariff) */
+.stock-move-row { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.stock-move-main { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.stock-move-product { font-size: 0.92rem; font-weight: 600; }
+.stock-move-qty { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stock-move-qty.in { color: var(--status-active); }
+.stock-move-qty.out { color: var(--status-overdue); }
+.stock-move-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 0.74rem; color: var(--ink-muted); margin-top: 2px; }
+
 /* printable receipt (terminal tariff) */
 @media print {
   body * { visibility: hidden; }

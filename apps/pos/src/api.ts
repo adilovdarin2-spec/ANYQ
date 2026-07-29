@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -210,4 +210,8 @@ export function fetchKdsTickets(token: string): Promise<KdsTicket[]> {
 
 export function updateKitchenItemStatus(token: string, itemId: string, kitchenStatus: KitchenStatus): Promise<{ id: string; kitchenStatus: KitchenStatus }> {
   return request(`/pos/kds/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ kitchenStatus }) }, token);
+}
+
+export function fetchStockMovements(token: string): Promise<StockMovementRecord[]> {
+  return request('/pos/stock-movements', { method: 'GET' }, token);
 }
