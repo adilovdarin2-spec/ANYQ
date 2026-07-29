@@ -75,6 +75,7 @@ model Location {
   prescriptions    Prescription[]
   shifts           Shift[]
   tables           Table[]
+  stockMovements   StockMovement[]
 
   @@map("locations")
 }
@@ -156,6 +157,7 @@ model Product {
   recipe         Recipe?             @relation("DishRecipe")
   usedInRecipes  RecipeIngredient[]  @relation("IngredientUsage")
   modifiers      ProductModifier[]
+  stockMovements StockMovement[]
 
   @@map("products")
 }
@@ -259,9 +261,33 @@ model Document {
   fulfilledBy   String?
   fulfilledAt   DateTime?
 
-  items DocumentItem[]
+  items          DocumentItem[]
+  stockMovements StockMovement[]
 
   @@map("documents")
+}
+
+// Source of truth for stock: every quantity change is a signed movement row
+// here, and Stock.quantity is a materialized cache kept in lockstep with it
+// (always updated together, inside the same transaction, via the shared
+// applyStockDelta/createStockWithMovement helpers in stock.ts — nothing else
+// is allowed to call prisma.stock.update/create directly). The cache exists
+// purely for fast reads (product list stock, shortage checks); the ledger is
+// what makes reconciliation and audit trail possible.
+model StockMovement {
+  id         String    @id @default(cuid())
+  product    Product   @relation(fields: [productId], references: [id])
+  productId  String
+  location   Location  @relation(fields: [locationId], references: [id])
+  locationId String
+  quantity   Float
+  reason     String
+  document   Document? @relation(fields: [documentId], references: [id])
+  documentId String?
+  createdAt  DateTime  @default(now())
+
+  @@index([productId, locationId])
+  @@map("stock_movements")
 }
 
 model DocumentItem {

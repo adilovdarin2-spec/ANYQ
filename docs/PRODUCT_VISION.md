@@ -41,13 +41,18 @@ platform" over building one-off HoReCa-specific logic.
 Carried forward from the brief, because violating any of these is expensive to undo later:
 
 - **Stock must be a computed projection of a movement ledger, not a mutable number.**
-  This is the one place ANYQ's current implementation already violates the target architecture:
-  `/pos/sales`, `/pos/orders/:id/fulfill`, `/pos/transfers`, `/pos/receipts`, and `/pos/counts` all
-  do `prisma.stock.update({ data: { quantity: ... } })` directly. It works today because there's no
-  reconciliation, no audit trail, and no multi-writer contention story yet — but every new
-  consumer of this pattern makes the eventual migration to a real ledger more work, not less.
-  Flagging as the top architectural debt item, not fixing opportunistically — but don't let the
-  pile keep growing indefinitely either.
+  **Fixed (2026-07-29).** `StockMovement` is now the source of truth — every quantity change is a
+  signed movement row (`reason` + optional `documentId`), and `Stock.quantity` is a materialized
+  cache kept in lockstep with it via two shared helpers in `apps/api/src/stock.ts`:
+  `applyStockDelta` (existing row) and `createStockWithMovement` (first stock at a location).
+  Every route that used to call `prisma.stock.update`/`.create` directly — `/pos/sales`,
+  `/pos/orders/:id/fulfill`, `/pos/transfers`, `/pos/receipts`, `/pos/counts`, `/pos/production`,
+  `/pos/tables/:id/order`, and `/pos/batches` — now goes through one of these two functions, and
+  nothing else is allowed to touch `Stock.quantity`. This unlocks the two things direct mutation
+  couldn't: an audit trail (who/what moved stock and why) and reconciliation (the cache can always
+  be rebuilt from `SUM(StockMovement.quantity)` per product+location). `ProductBatch.quantity`
+  (pharmacy FEFO) is a separate, deliberately untouched concern — this rule was always about
+  `Stock`, not batch-level tracking.
 - Never store the whole business in one flat table per vertical — one core schema, feature
   flags per module, industry-specific fields live behind their own pack tables (matches the
   `ProductBatch`/`Prescription` split already in `schema.prisma`).
