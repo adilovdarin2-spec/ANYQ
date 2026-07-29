@@ -103,14 +103,15 @@ button { cursor: pointer; }
 .product-tile:disabled { cursor: not-allowed; }
 .empty-state { padding: 40px 20px; text-align: center; color: var(--ink-muted); font-size: 0.9rem; }
 
-/* cart bar (docked) */
+/* cart bar (docked above the bottom tab bar, not flush with the screen edge) */
 .cart-bar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+  position: fixed; left: 0; right: 0; z-index: 25;
+  bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 8px);
   max-width: 520px; margin: 0 auto;
-  padding: 12px 14px calc(env(safe-area-inset-bottom) + 12px);
+  padding: 12px 14px;
   background: var(--accent); color: #fff;
   display: flex; align-items: center; justify-content: space-between;
-  border-radius: 14px 14px 0 0;
+  border-radius: 14px;
   box-shadow: var(--shadow-md);
 }
 .cart-bar-count { background: rgba(255,255,255,0.2); border-radius: 20px; padding: 3px 10px; font-size: 0.8rem; font-weight: 700; }
@@ -206,9 +207,12 @@ button { cursor: pointer; }
 .receipt-divider { border-top: 1px dashed var(--border); margin: 10px 0; }
 .receipt-total { display: flex; justify-content: space-between; font-weight: 700; font-size: 1rem; }
 
-/* install banner */
+/* install banner — docked above the tab bar AND clear of the cart bar
+   (both can be visible together: a new cashier hasn't dismissed the banner
+   yet and already has an item in the cart) */
 .install-banner {
-  position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 40;
+  position: fixed; left: 12px; right: 12px; z-index: 40;
+  bottom: calc(var(--tab-bar-h) + 92px + env(safe-area-inset-bottom));
   max-width: 496px; margin: 0 auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
   padding: 14px 16px; box-shadow: var(--shadow-md);
@@ -270,6 +274,7 @@ button { cursor: pointer; }
 .chip-status { display: inline-block; margin-top: 10px; font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
 .chip-status.confirmed { background: var(--status-active-bg); color: var(--status-active); }
 .chip-status.cancelled { background: var(--status-overdue-bg); color: var(--status-overdue); }
+.chip-status.neutral { background: var(--surface-2); color: var(--ink-muted); }
 
 /* desktop / terminal split view (>=900px) */
 @media (min-width: 900px) {
@@ -288,8 +293,16 @@ button { cursor: pointer; }
     padding: 16px 0 10px;
   }
   .pos-shell.desktop .product-grid {
-    padding: 0 0 24px;
+    padding: 0 0 calc(var(--tab-bar-h) + 24px);
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
+  /* Товары / Операции / Профиль render as plain page content (not a .screen
+     overlay), so without this they'd stretch to the full 1200px shell width
+     while every other screen in the app stays capped at 520px. */
+  .pos-shell.desktop .tab-content {
+    max-width: 520px;
+    margin: 0 auto;
+    width: 100%;
   }
 }
 
@@ -302,7 +315,7 @@ button { cursor: pointer; }
   padding: 16px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 96px);
+  max-height: calc(100vh - 96px - var(--tab-bar-h));
 }
 .cart-panel-title { font-weight: 700; font-size: 1rem; margin-bottom: 10px; }
 .cart-panel-body { flex: 1; overflow-y: auto; }
@@ -375,16 +388,20 @@ button { cursor: pointer; }
   .receipt-card { position: absolute; top: 0; left: 0; width: 100%; border: none; }
 }
 
-/* bottom tab navigation */
+/* bottom tab navigation — background spans the full shell width (matters on
+   the >=900px desktop split-view, where the shell is 1200px wide); the item
+   row itself stays capped so touch targets don't stretch into huge gaps */
 .tab-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 26;
-  max-width: 520px; margin: 0 auto;
-  display: flex; background: var(--surface); border-top: 1px solid var(--border);
+  height: var(--tab-bar-h); box-sizing: border-box;
+  display: flex; justify-content: center;
+  background: var(--surface); border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
 }
+.tab-bar-inner { display: flex; width: 100%; max-width: 520px; }
 .tab-bar-item {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 9px 4px 7px; background: none; border: none; color: var(--ink-muted); font-size: 0.68rem; font-weight: 600;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 0 4px; background: none; border: none; color: var(--ink-muted); font-size: 0.68rem; font-weight: 600;
 }
 .tab-bar-item.active { color: var(--accent); }
 .tab-bar-icon { font-size: 1.3rem; position: relative; line-height: 1; }
@@ -452,3 +469,4 @@ button { cursor: pointer; }
 .field-row .field input { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 0.95rem; background: var(--bg); color: var(--ink); }
 .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--ink-muted); margin: 4px 0 18px; }
 .checkbox-row input { width: 18px; height: 18px; }
+.field-hint { font-size: 0.8rem; color: var(--ink-muted); line-height: 1.5; margin: -8px 0 16px; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; }

@@ -42,7 +42,8 @@ export function ProductsManageScreen({ products, loading, error, onRefresh, onAd
           </div>
           <div className="product-manage-meta">
             <span>{p.category || 'Без категории'} · {p.unit}</span>
-            {!p.sellable && <span className="chip-status cancelled">Скрыт</span>}
+            {p.isIngredient && <span className="chip-status neutral">Ингредиент</span>}
+            {!p.sellable && !p.isIngredient && <span className="chip-status cancelled">Скрыт</span>}
             {p.stopListed && <span className="chip-status cancelled">Стоп-лист</span>}
           </div>
         </button>

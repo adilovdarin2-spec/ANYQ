@@ -227,6 +227,7 @@ export interface ManagedProduct {
   salePrice: number;
   sellable: boolean;
   stopListed: boolean;
+  isIngredient: boolean;
 }
 
 export interface ManagedProductPayload {
