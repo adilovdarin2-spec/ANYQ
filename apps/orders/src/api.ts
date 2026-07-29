@@ -1,6 +1,8 @@
 import type { Catalog } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+export const ADMIN_URL = import.meta.env.VITE_ADMIN_URL || 'https://admin-production-ce2b.up.railway.app';
+export const WHATSAPP_NUMBER = '77784175136';
 
 export class ApiError extends Error {}
 

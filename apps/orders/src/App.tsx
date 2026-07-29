@@ -8,7 +8,7 @@ import { CartSidebar } from './components/CartSidebar';
 import { CheckoutSheet } from './components/CheckoutSheet';
 import { SuccessScreen } from './components/SuccessScreen';
 import { StateScreen } from './components/StateScreen';
-import { PricingScreen } from './components/PricingScreen';
+import { LandingPage } from './components/LandingPage';
 import { InstallPrompt } from './components/InstallPrompt';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 
@@ -83,8 +83,7 @@ export default function App() {
   if (!companyId) {
     return (
       <div className="app-shell">
-        <Header companyName="ANYQ" subtitle="Тарифы и подключение" />
-        <PricingScreen />
+        <LandingPage />
         <InstallPrompt {...install} />
       </div>
     );
