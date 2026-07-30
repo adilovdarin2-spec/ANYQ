@@ -90,10 +90,11 @@ export default function App() {
   }
 
   if (!companyId) {
+    // No install prompt here — "put this shop on your home screen" makes no
+    // sense before a visitor has even picked a supplier to order from.
     return (
       <div className="app-shell">
         <LandingPage />
-        <InstallPrompt {...install} />
       </div>
     );
   }
