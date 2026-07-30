@@ -49,7 +49,7 @@ export default function App() {
     document.title = `${catalog.company.name} — заказ поставщику · ANYQ`;
     document.querySelector('meta[name="description"]')?.setAttribute(
       'content',
-      `Закажите товары у «${catalog.company.name}» онлайн — остатки в реальном времени, подтверждение в WhatsApp.`,
+      `Закажите товары у ${catalog.company.name} онлайн — остатки в реальном времени, подтверждение в WhatsApp.`,
     );
   }, [catalog]);
 
