@@ -13,15 +13,15 @@ button { cursor: pointer; }
 
 /* one shared, snappy easing curve for every interactive element below —
    buttons press down, cards lift on hover, chips glide between states */
-button, .product-row, .pricing-plan, .support-option, .category-chip, .install-banner, .feature-card, .whom-card, .faq-item {
+button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card, .whom-card, .faq-item {
   transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
-.btn:active:not(:disabled), .add-btn:active:not(:disabled), .qty-stepper button:active:not(:disabled), .category-chip:active, .support-option:active, .icon-btn:active {
+.btn:active:not(:disabled), .add-btn:active:not(:disabled), .qty-stepper button:active:not(:disabled), .category-chip:active, .icon-btn:active {
   transform: scale(0.96);
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  button, .product-row, .pricing-plan, .support-option, .category-chip, .install-banner { transition: none; }
+  button, .product-row, .tier-card, .category-chip, .install-banner { transition: none; }
 }
 
 .app-shell {
@@ -199,11 +199,6 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 .share-glyph { display: inline-block; border: 1.5px solid var(--ink-muted); border-radius: 4px; padding: 0 5px; font-size: 0.75em; }
 
 /* public pricing page */
-.pricing-content { padding-bottom: 60px; }
-.pricing-hero { margin-bottom: 26px; }
-.pricing-hero h1 { font-family: Georgia, serif; font-size: 1.5rem; margin: 0 0 10px; }
-.pricing-hero p { color: var(--ink-muted); font-size: 0.94rem; line-height: 1.55; margin: 0; }
-
 .trust-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .trust-pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -212,51 +207,51 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 }
 .trust-pill-icon { font-size: 0.95em; }
 
-.pricing-plan {
+/* tier ladder — fixed-price cards above the calculator, for scanning
+   the price in five seconds instead of operating a slider */
+.tier-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 8px; }
+.tier-card {
+  position: relative;
+  display: flex; flex-direction: column;
   border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
-  padding: 20px; margin-bottom: 16px;
+  padding: 22px;
 }
-.pricing-plan-addon { border-color: var(--accent); }
-.pricing-plan-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.pricing-plan-name { font-family: Georgia, serif; font-weight: 700; font-size: 1.15rem; }
-.pricing-plan-tag { font-size: 0.76rem; font-weight: 600; color: var(--ink-muted); background: var(--surface-2); padding: 3px 9px; border-radius: 20px; }
-.pricing-plan-desc { font-size: 0.88rem; color: var(--ink-muted); line-height: 1.5; margin: 0 0 14px; }
-.pricing-feature-list { margin: 0; padding-left: 1.2em; font-size: 0.88rem; line-height: 1.7; }
+.tier-card.popular { border-color: var(--accent); border-width: 2px; padding: 21px; }
+.tier-badge {
+  position: absolute; top: -12px; left: 22px; white-space: nowrap;
+  background: var(--accent); color: #fff; font-size: 0.68rem; font-weight: 800;
+  padding: 4px 11px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.03em;
+  box-shadow: var(--shadow-sm);
+}
+.tier-name { font-family: Georgia, serif; font-weight: 700; font-size: 1.2rem; }
+.tier-tag { font-size: 0.78rem; font-weight: 600; color: var(--ink-muted); margin-top: 2px; }
+.tier-price { margin: 14px 0 4px; font-size: 1.7rem; font-weight: 700; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
+.tier-price-note { font-size: 0.9rem; font-weight: 600; color: var(--ink-muted); margin-right: 4px; }
+.tier-price-period { font-size: 0.95rem; font-weight: 600; color: var(--ink-muted); }
+.tier-desc { font-size: 0.86rem; color: var(--ink-muted); line-height: 1.5; margin: 0 0 16px; flex: none; }
+.tier-features { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 9px; flex: 1; }
+.tier-features li { display: flex; align-items: flex-start; gap: 8px; font-size: 0.86rem; line-height: 1.4; }
+.tier-features li svg { color: var(--accent-strong); flex-shrink: 0; margin-top: 2px; }
+.tier-cta { text-decoration: none; text-align: center; }
 
-.pricing-cta { text-align: center; margin-top: 20px; }
-.pricing-cta p { color: var(--ink-muted); font-size: 0.88rem; line-height: 1.55; margin: 0 0 14px; }
-.pricing-cta .btn { display: block; text-decoration: none; text-align: center; }
+.pricing-divider {
+  display: flex; align-items: center; gap: 14px; margin: 36px 0 24px;
+  color: var(--ink-muted); font-size: 0.84rem; font-weight: 600;
+}
+.pricing-divider::before, .pricing-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
 /* interactive pricing calculator */
 .calc-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
   padding: 20px; margin-bottom: 22px;
 }
+.calc-card-standalone { max-width: 480px; margin-left: auto; margin-right: auto; }
 .calc-card-title { font-family: Georgia, serif; font-weight: 700; font-size: 1.1rem; margin-bottom: 16px; }
 .calc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .calc-row-label { font-size: 0.92rem; font-weight: 600; }
 .calc-row-hint { font-size: 0.76rem; color: var(--ink-muted); margin-top: 2px; }
 .calc-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
 .calc-toggle-row input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
-
-.support-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
-.support-option {
-  position: relative;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
-  background: var(--bg); text-align: left;
-}
-.support-option.on { border-color: var(--accent); background: var(--status-active-bg); }
-.support-option.has-badge { margin-top: 6px; }
-.support-option-label { font-size: 0.9rem; font-weight: 600; }
-.support-option-sub { font-size: 0.78rem; color: var(--ink-muted); }
-.support-option.on .support-option-sub { color: var(--accent-strong); }
-.support-option-badge {
-  position: absolute; top: -9px; right: 14px; white-space: nowrap;
-  background: var(--accent); color: #fff; font-size: 0.62rem; font-weight: 800;
-  padding: 2px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.03em;
-  box-shadow: var(--shadow-sm);
-}
 
 .calc-total-row {
   display: flex; align-items: baseline; justify-content: space-between;
@@ -265,6 +260,11 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 }
 .calc-total-value { font-size: 1.4rem; font-weight: 700; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
 .calc-cta { margin-top: 16px; text-decoration: none; text-align: center; display: block; }
+.calc-footnote {
+  display: flex; align-items: center; gap: 6px; justify-content: center;
+  margin: 14px 0 0; font-size: 0.8rem; color: var(--ink-muted); text-align: center; line-height: 1.5;
+}
+.calc-footnote svg { flex-shrink: 0; }
 
 /* cart sidebar (desktop storefront) */
 .cart-sidebar { display: none; }
@@ -320,14 +320,8 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
   .checkout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: start; }
   .screen-body-center { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; text-align: center; max-width: 480px; }
 
-  .pricing-content { max-width: 1200px; }
-  .pricing-hero h1 { font-size: 2.1rem; }
-  .pricing-hero p { font-size: 1.05rem; max-width: 620px; }
-  .pricing-layout { display: grid; grid-template-columns: 380px 1fr; gap: 32px; align-items: start; }
-  .pricing-layout .calc-card { position: sticky; top: 96px; margin-bottom: 0; }
-  .pricing-layout-side { display: flex; flex-direction: column; gap: 16px; }
-  .pricing-layout-side .pricing-plan { margin-bottom: 0; }
-  .pricing-cta { margin-top: 4px; }
+  .tier-grid { grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .tier-card.popular { transform: translateY(-8px); }
 }
 
 /* mouse-hover affordances — gated on (hover: hover) so touch devices never
@@ -337,8 +331,8 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
   .product-row:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); transform: translateY(-2px); }
   .add-btn:hover:not(:disabled) { background: var(--accent-strong); }
   .category-chip:hover { border-color: var(--accent); color: var(--ink); }
-  .support-option:hover { border-color: var(--accent); transform: translateY(-1px); }
-  .pricing-plan:hover { box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+  .tier-card:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+  .tier-card.popular:hover { transform: translateY(-10px); }
   .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
   .btn-secondary:hover { background: var(--border); }
   .order-cart-bar-inner:hover { box-shadow: var(--shadow-md), 0 0 0 2px var(--accent-strong) inset; }
@@ -348,7 +342,7 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 
 /* ============================================================
    Marketing landing page (apps/orders root, no company slug):
-   header, hero, feature/segment grids, pricing-plan states,
+   header, hero, feature/segment grids, pricing tier cards,
    FAQ accordion, footer. Mobile-first; desktop rules live in
    the dedicated @media (min-width: 900px) block near the end.
    ============================================================ */
@@ -455,21 +449,6 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 .whom-card h3 { font-size: 1rem; font-weight: 700; margin: 0 0 8px; }
 .whom-card p { font-size: 0.86rem; line-height: 1.55; color: var(--ink-muted); margin: 0; }
 
-/* ---- pricing plan interaction states (Core = info, Supply = real toggle) ---- */
-.pricing-plan-static { cursor: default; }
-.pricing-plan-note {
-  display: flex; align-items: center; gap: 7px; margin-top: 14px; padding-top: 14px;
-  border-top: 1px dashed var(--border); font-size: 0.84rem; font-weight: 700; color: var(--accent-strong);
-}
-button.pricing-plan-toggle {
-  display: block; width: 100%; text-align: left; font: inherit; color: inherit;
-  cursor: pointer; -webkit-appearance: none; appearance: none;
-}
-.pricing-plan-toggle .pricing-plan-cta { color: var(--ink-muted); justify-content: space-between; }
-.pricing-plan-toggle.on .pricing-plan-cta { color: var(--accent-strong); }
-.pricing-plan-toggle.on { border-color: var(--accent); background: var(--status-active-bg); }
-.pricing-plan-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
 /* ---- FAQ accordion ---- */
 .faq-list { display: flex; flex-direction: column; gap: 10px; }
 .faq-item { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 4px 18px; }
@@ -537,7 +516,7 @@ button.pricing-plan-toggle {
 /* tablet (640-899px): two columns instead of a single stretched-out column,
    without pulling in the full desktop side-by-side layouts yet */
 @media (min-width: 640px) and (max-width: 899px) {
-  .features-grid, .whom-grid { grid-template-columns: repeat(2, 1fr); }
+  .features-grid, .whom-grid, .tier-grid { grid-template-columns: repeat(2, 1fr); }
   .footer-top { grid-template-columns: 1fr 1fr; }
   .hero h1 { font-size: 2.2rem; }
 }
@@ -548,7 +527,6 @@ button.pricing-plan-toggle {
   .landing-login-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
   .landing-menu-btn:hover { border-color: var(--accent); }
   .feature-card:hover, .whom-card:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); transform: translateY(-2px); }
-  button.pricing-plan-toggle:hover { border-color: var(--accent); }
   .faq-item summary:hover { color: var(--accent-strong); }
   .footer-col button:hover, .footer-col a:hover { color: #fff; }
 }
