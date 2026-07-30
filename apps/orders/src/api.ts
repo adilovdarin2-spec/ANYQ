@@ -1,7 +1,10 @@
 import type { Catalog } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-export const ADMIN_URL = import.meta.env.VITE_ADMIN_URL || 'https://admin-production-ce2b.up.railway.app';
+// Business owners/managers/cashiers log in with a PIN in the POS app — there is
+// no separate customer-facing account portal. admin-production is Astryx's own
+// internal superadmin backoffice and must never be linked from marketing pages.
+export const POS_LOGIN_URL = import.meta.env.VITE_POS_URL || 'https://pos-production-2e42.up.railway.app';
 export const WHATSAPP_NUMBER = '77784175136';
 
 export class ApiError extends Error {}

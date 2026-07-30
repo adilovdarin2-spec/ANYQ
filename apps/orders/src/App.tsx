@@ -44,6 +44,15 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [companyId]);
 
+  useEffect(() => {
+    if (!catalog) return;
+    document.title = `${catalog.company.name} — заказ поставщику · ANYQ`;
+    document.querySelector('meta[name="description"]')?.setAttribute(
+      'content',
+      `Закажите товары у «${catalog.company.name}» онлайн — остатки в реальном времени, подтверждение в WhatsApp.`,
+    );
+  }, [catalog]);
+
   function addToCart(product: CatalogProduct) {
     setCart((prev) => {
       const existing = prev.find((l) => l.productId === product.id);
