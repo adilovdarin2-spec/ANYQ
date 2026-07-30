@@ -1,4 +1,4 @@
-import { ADMIN_URL, WHATSAPP_NUMBER } from '../api';
+import { POS_LOGIN_URL, WHATSAPP_NUMBER } from '../api';
 import { IconUser, WhatsAppIcon } from './Icons';
 
 export function Footer() {
@@ -31,8 +31,8 @@ export function Footer() {
 
           <div className="footer-col">
             <div className="footer-col-title">Аккаунт</div>
-            <a href={ADMIN_URL} target="_blank" rel="noopener noreferrer">
-              <IconUser className="icon-14" /> Войти в аккаунт
+            <a href={POS_LOGIN_URL} target="_blank" rel="noopener noreferrer">
+              <IconUser className="icon-14" /> Войти в кассу
             </a>
           </div>
 
