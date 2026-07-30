@@ -3,6 +3,7 @@ import { Features } from './Features';
 import { Footer } from './Footer';
 import { ForWhom } from './ForWhom';
 import { Hero } from './Hero';
+import { HowItWorks } from './HowItWorks';
 import { LandingHeader } from './LandingHeader';
 import { PricingScreen } from './PricingScreen';
 
@@ -13,6 +14,7 @@ export function LandingPage() {
       <Hero />
       <Features />
       <ForWhom />
+      <HowItWorks />
       <PricingScreen />
       <Faq />
       <Footer />
