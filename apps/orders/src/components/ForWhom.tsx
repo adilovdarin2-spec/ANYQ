@@ -30,7 +30,7 @@ const SEGMENTS = [
 
 export function ForWhom() {
   return (
-    <section id="for-whom" className="section section-alt">
+    <section id="for-whom" className="section">
       <div className="section-inner">
         <div className="section-head">
           <span className="section-eyebrow">Для кого</span>

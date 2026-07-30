@@ -5,9 +5,11 @@ import {
   IconChefHat,
   IconLayers,
   IconPill,
+  IconShield,
   IconSmartphone,
   IconTag,
   IconTruck,
+  IconUsers,
   IconWifiOff,
 } from './Icons';
 
@@ -62,11 +64,21 @@ const FEATURES = [
     title: 'Варианты товара',
     desc: 'Один товар — много вариантов размера, цвета или объёма. На кассе всё выбирается в два касания, без путаницы.',
   },
+  {
+    icon: IconShield,
+    title: 'Смены и контроль кассы',
+    desc: 'Открытие и закрытие смены со сверкой наличных — расхождения видны сразу, а не в конце месяца.',
+  },
+  {
+    icon: IconUsers,
+    title: 'Сотрудники и роли',
+    desc: 'Доступ по ролям — кассир, менеджер, владелец. Каждый видит и меняет только то, что положено.',
+  },
 ];
 
 export function Features() {
   return (
-    <section id="features" className="section">
+    <section id="features" className="section section-alt">
       <div className="section-inner">
         <div className="section-head">
           <span className="section-eyebrow">Возможности</span>

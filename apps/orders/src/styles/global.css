@@ -405,7 +405,7 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 .landing-mobile-nav .btn { margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
 
 /* ---- hero ---- */
-.hero { padding: 44px 20px 8px; }
+.hero { padding: 44px 20px 8px; scroll-margin-top: 76px; }
 .hero-inner { max-width: 1200px; margin: 0 auto; }
 .hero-eyebrow {
   display: inline-block; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
@@ -418,7 +418,7 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 .hero-visual { display: none; }
 
 /* ---- generic section shell ---- */
-.section { padding: 56px 20px; }
+.section { padding: 56px 20px; scroll-margin-top: 76px; }
 .section-alt { background: var(--surface-2); }
 .section-inner { max-width: 1200px; margin: 0 auto; }
 .section-inner-narrow { max-width: 760px; }
@@ -533,6 +533,14 @@ button.pricing-plan-toggle {
   .whom-grid { grid-template-columns: repeat(5, 1fr); gap: 16px; }
 
   .footer-top { grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 24px; }
+}
+
+/* tablet (640-899px): two columns instead of a single stretched-out column,
+   without pulling in the full desktop side-by-side layouts yet */
+@media (min-width: 640px) and (max-width: 899px) {
+  .features-grid, .whom-grid { grid-template-columns: repeat(2, 1fr); }
+  .footer-top { grid-template-columns: 1fr 1fr; }
+  .hero h1 { font-size: 2.2rem; }
 }
 
 /* landing hover affordances */
