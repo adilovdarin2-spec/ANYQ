@@ -48,7 +48,7 @@ button { cursor: pointer; }
 .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; background: var(--surface-2); color: var(--ink-muted); white-space: nowrap; }
 .pill.warn { background: var(--status-overdue-bg); color: var(--status-overdue); }
 
-.icon-btn { position: relative; background: var(--surface-2); border: none; border-radius: 8px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: 1rem; flex-shrink: 0; }
+.icon-btn { position: relative; background: var(--surface-2); border: none; border-radius: 8px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: 1rem; flex-shrink: 0; }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .icon-btn-badge {
   position: absolute; top: -5px; right: -5px;
@@ -67,7 +67,7 @@ button { cursor: pointer; }
 .search-bar { position: sticky; top: 56px; z-index: 15; padding: 10px 14px; background: var(--bg); }
 .search-bar input {
   width: 100%; border: 1px solid var(--border); border-radius: 10px;
-  padding: 12px 14px; font-size: 0.95rem; background: var(--surface); color: var(--ink);
+  padding: 12px 14px; font-size: 1rem; background: var(--surface); color: var(--ink);
 }
 .search-bar input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .search-hint { font-size: 0.72rem; color: var(--ink-muted); padding: 4px 4px 0; }
@@ -139,7 +139,7 @@ button { cursor: pointer; }
 .line-item .li-name { flex: 1; font-size: 0.92rem; font-weight: 600; }
 .line-item .li-price { font-size: 0.8rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .qty-stepper { display: flex; align-items: center; gap: 8px; }
-.qty-stepper button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 1rem; font-weight: 700; color: var(--ink); }
+.qty-stepper button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 1rem; font-weight: 700; color: var(--ink); }
 .qty-stepper span { min-width: 20px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
 .li-total { min-width: 70px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .li-remove { color: var(--status-overdue); background: none; border: none; font-size: 0.78rem; padding: 4px; }
@@ -157,7 +157,7 @@ button { cursor: pointer; }
 }
 .discount-type-toggle button.active { background: var(--accent); color: #fff; }
 .discount-editor input {
-  flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 0.9rem;
+  flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 1rem;
   background: var(--surface); color: var(--ink);
 }
 
@@ -167,7 +167,7 @@ button { cursor: pointer; }
 .loyalty-found { font-size: 0.85rem; color: var(--ink-muted); }
 .loyalty-lookup-row { display: flex; align-items: center; gap: 8px; }
 .loyalty-lookup-row input {
-  flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 0.9rem;
+  flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 1rem;
   background: var(--surface); color: var(--ink);
 }
 
@@ -338,12 +338,12 @@ button { cursor: pointer; }
 /* transfers (warehouse tariff) */
 .transfer-add-row { display: flex; gap: 8px; margin-top: 14px; }
 .transfer-add-row select {
-  flex: 2; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
-  font-size: 0.9rem; background: var(--surface); color: var(--ink);
+  flex: 2; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  font-size: 1rem; background: var(--surface); color: var(--ink);
 }
 .transfer-add-row input {
   flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
-  font-size: 0.9rem; background: var(--surface); color: var(--ink);
+  font-size: 1rem; background: var(--surface); color: var(--ink);
 }
 .transfer-add-row .btn { flex-shrink: 0; padding: 10px 14px; font-size: 0.86rem; }
 
@@ -352,7 +352,7 @@ button { cursor: pointer; }
 .count-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .count-row input {
   width: 90px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
-  font-size: 0.9rem; background: var(--surface); color: var(--ink); text-align: right;
+  font-size: 1rem; background: var(--surface); color: var(--ink); text-align: right;
 }
 
 /* floor plan + KDS (restaurant tariff) */
@@ -466,7 +466,7 @@ button { cursor: pointer; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
 .field-row .field label { font-size: 0.82rem; font-weight: 600; color: var(--ink-muted); }
-.field-row .field input { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 0.95rem; background: var(--bg); color: var(--ink); }
+.field-row .field input { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 1rem; background: var(--bg); color: var(--ink); }
 .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--ink-muted); margin: 4px 0 18px; }
 .checkbox-row input { width: 18px; height: 18px; }
 .field-hint { font-size: 0.8rem; color: var(--ink-muted); line-height: 1.5; margin: -8px 0 16px; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; }
