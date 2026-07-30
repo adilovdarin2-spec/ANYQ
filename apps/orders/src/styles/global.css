@@ -64,7 +64,7 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 .order-search { margin-bottom: 16px; }
 .order-search input {
   width: 100%; border: 1px solid var(--border); border-radius: 10px;
-  padding: 12px 14px; font-size: 0.95rem; background: var(--surface); color: var(--ink);
+  padding: 12px 14px; font-size: 1rem; background: var(--surface); color: var(--ink);
 }
 .order-search input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -125,7 +125,7 @@ button, .product-row, .pricing-plan, .support-option, .category-chip, .install-b
 .screen-footer { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--surface); }
 .screen-footer-inner { max-width: 640px; margin: 0 auto; }
 
-.icon-btn { background: var(--surface-2); border: none; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: 1rem; flex-shrink: 0; }
+.icon-btn { background: var(--surface-2); border: none; border-radius: 8px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: 1rem; flex-shrink: 0; }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .checkout-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
