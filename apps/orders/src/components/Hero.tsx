@@ -1,11 +1,14 @@
 import { WHATSAPP_NUMBER } from '../api';
-import { IconArrowRight, IconBell, IconBox, IconChart, IconWifiOff } from './Icons';
+import { IconArrowRight, IconBell, IconBox, IconWifiOff } from './Icons';
 
-const VISUAL_ITEMS = [
-  { icon: IconWifiOff, label: 'Офлайн-касса' },
-  { icon: IconBox, label: 'Живые остатки' },
-  { icon: IconBell, label: 'Заказы push' },
-  { icon: IconChart, label: 'Отчёты и фудкост' },
+// Decorative — a simplified, honest recreation of the real POS screen
+// (same product-tile shape, same cart bar) rather than an abstract icon
+// grid or a claimed screenshot.
+const MOCK_PRODUCTS = [
+  { name: 'Хлеб белый', price: '250 ₸' },
+  { name: 'Молоко 1л', price: '590 ₸' },
+  { name: 'Вода 0.5л', price: '150 ₸' },
+  { name: 'Кофе 200мл', price: '890 ₸' },
 ];
 
 export function Hero() {
@@ -43,19 +46,32 @@ export function Hero() {
         </div>
 
         <div className="hero-visual" aria-hidden="true">
-          <div className="hero-visual-card">
-            <div className="hero-visual-head">
-              <span className="order-brand-mark">A</span>
-              <span>ANYQ</span>
+          <div className="device-mockup">
+            <div className="device-mockup-screen">
+              <div className="device-mockup-head">
+                <span className="order-brand-mark">A</span>
+                <span>Касса</span>
+                <span className="device-mockup-dot" />
+              </div>
+              <div className="device-mockup-grid">
+                {MOCK_PRODUCTS.map((p) => (
+                  <div className="device-mockup-tile" key={p.name}>
+                    <span className="device-mockup-tile-name">{p.name}</span>
+                    <span className="device-mockup-tile-price">{p.price}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="device-mockup-cart">
+                <span>Корзина · 2 тов.</span>
+                <span>1 730 ₸</span>
+              </div>
             </div>
-            <div className="hero-visual-grid">
-              {VISUAL_ITEMS.map(({ icon: Icon, label }) => (
-                <div className="hero-visual-item" key={label}>
-                  <Icon className="icon-22" />
-                  <span>{label}</span>
-                </div>
-              ))}
-            </div>
+          </div>
+          <div className="hero-visual-badge hero-visual-badge-offline">
+            <IconWifiOff className="icon-16" /> Офлайн-режим
+          </div>
+          <div className="hero-visual-badge hero-visual-badge-push">
+            <IconBell className="icon-16" /> Новый заказ!
           </div>
         </div>
       </div>
