@@ -79,7 +79,7 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header">
           <div>
-            <div className="content-title" style={{ fontSize: '1.15rem' }}>Новая компания</div>
+            <div className="content-title">Новая компания</div>
             <div className="steps">
               <span className={step === 1 ? 'step active' : 'step'}>1. Контакты</span>
               <span>→</span>

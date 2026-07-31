@@ -67,7 +67,7 @@ export function UsersDrawer({ companyId, companyName, users, onClose, onCreate, 
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header">
           <div>
-            <div className="content-title" style={{ fontSize: '1.15rem' }}>Сотрудники — {companyName}</div>
+            <div className="content-title">Сотрудники — {companyName}</div>
             <div className="content-sub">{users.length} сотрудников</div>
           </div>
           <button className="btn btn-ghost" onClick={onClose} aria-label="Закрыть">✕</button>
@@ -115,11 +115,11 @@ export function UsersDrawer({ companyId, companyName, users, onClose, onCreate, 
           )}
 
           <div className="section-title">Сотрудники ({users.length})</div>
-          {users.length === 0 && <div style={{ color: 'var(--ink-muted)', fontSize: '0.87rem' }}>Сотрудников пока нет</div>}
+          {users.length === 0 && <div className="drawer-note">Сотрудников пока нет</div>}
 
           {users.map((u) =>
             editingId === u.id ? (
-              <div key={u.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              <div key={u.id} className="mini-card stack">
                 <div className="field-row">
                   <div className="field">
                     <label htmlFor={`e-uname-${u.id}`}>Имя</label>
@@ -150,18 +150,12 @@ export function UsersDrawer({ companyId, companyName, users, onClose, onCreate, 
                 </div>
               </div>
             ) : (
-              <button
-                key={u.id}
-                type="button"
-                className="mini-card"
-                onClick={() => startEdit(u)}
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--surface)', color: 'inherit' }}
-              >
+              <button key={u.id} type="button" className="mini-card" onClick={() => startEdit(u)}>
                 <span>
                   {u.name}
-                  <span style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}> · {ROLE_LABELS[u.role]}</span>
+                  <span className="meta-text"> · {ROLE_LABELS[u.role]}</span>
                 </span>
-                <span style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>{u.posPin ? `PIN ${u.posPin}` : 'без PIN'}</span>
+                <span className="meta-text">{u.posPin ? `PIN ${u.posPin}` : 'без PIN'}</span>
               </button>
             ),
           )}

@@ -5,6 +5,10 @@ import { ModuleBadges } from './ModuleBadges';
 import { formatDate, getTariffState } from '../utils';
 
 export function CompaniesTable({ companies, onSelect }: { companies: Company[]; onSelect: (id: string) => void }) {
+  if (companies.length === 0) {
+    return <div className="table-card empty-state">Пока нет ни одной компании — создайте первую кнопкой выше</div>;
+  }
+
   return (
     <div className="table-card">
       <table>
