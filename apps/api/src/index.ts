@@ -12,6 +12,11 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   : defaultOrigins;
 
 const app = express();
+// Railway terminates TLS and proxies every request through one internal hop,
+// so req.ip must trust exactly that one hop — otherwise express-rate-limit
+// (below) can't tell real clients apart and keys every login attempt off
+// the same proxy address instead of the actual caller.
+app.set('trust proxy', 1);
 app.use(
   cors({
     origin(origin, callback) {
