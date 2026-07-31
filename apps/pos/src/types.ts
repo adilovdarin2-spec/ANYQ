@@ -71,6 +71,7 @@ export interface Sale {
   paymentMethod: PaymentMethod;
   createdAt: string;
   synced: boolean;
+  syncError?: string;
 }
 
 export interface LoyaltySelection {

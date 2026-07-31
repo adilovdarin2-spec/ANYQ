@@ -6,9 +6,10 @@ interface Props {
   cashierName: string;
   online: boolean;
   pendingCount: number;
+  stuckCount: number;
 }
 
-export function ShiftBar({ shift, cashierName, online, pendingCount }: Props) {
+export function ShiftBar({ shift, cashierName, online, pendingCount, stuckCount }: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
 
@@ -23,6 +24,7 @@ export function ShiftBar({ shift, cashierName, online, pendingCount }: Props) {
           </div>
         </div>
         <div className="shift-bar-right">
+          {stuckCount > 0 && <span className="pill warn">⚠ {stuckCount} требуют внимания</span>}
           {pendingCount > 0 && <span className="pill warn">⏳ {pendingCount} не отправлено</span>}
           <span className="pill">
             <span className={`dot ${online ? 'online' : 'offline'}`}></span>

@@ -167,7 +167,7 @@ export default function App() {
   const [productSaveError, setProductSaveError] = useState<string | null>(null);
 
   const install = useInstallPrompt();
-  const { online, pendingCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
+  const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
   const hasSupply = session?.modules?.includes('supply') ?? false;
   const hasTerminal = session?.modules?.includes('terminal') ?? false;
   const hasPharmacy = session?.modules?.includes('pharmacy') ?? false;
@@ -976,7 +976,7 @@ export default function App() {
 
   return (
     <div className={isDesktop ? 'pos-shell desktop' : 'pos-shell'}>
-      <ShiftBar shift={shift} cashierName={session.user.name} online={online} pendingCount={pendingCount} />
+      <ShiftBar shift={shift} cashierName={session.user.name} online={online} pendingCount={pendingCount} stuckCount={stuckCount} />
 
       {view === 'sale' && isDesktop && (
         <div className="pos-main">
@@ -1248,6 +1248,7 @@ export default function App() {
           shift={shift}
           online={online}
           pendingCount={pendingCount}
+          stuckCount={stuckCount}
           storefrontUrl={storefrontUrl}
           pushSupported={hasSupply && pushSupported()}
           pushEnabled={pushEnabled}
