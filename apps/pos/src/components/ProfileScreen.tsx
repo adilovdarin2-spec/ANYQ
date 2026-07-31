@@ -8,6 +8,7 @@ interface Props {
   shift: Shift;
   online: boolean;
   pendingCount: number;
+  stuckCount: number;
   storefrontUrl: string | null;
   pushSupported: boolean;
   pushEnabled: boolean;
@@ -33,6 +34,7 @@ export function ProfileScreen({
   shift,
   online,
   pendingCount,
+  stuckCount,
   storefrontUrl,
   pushSupported,
   pushEnabled,
@@ -78,6 +80,12 @@ export function ProfileScreen({
           {pendingCount > 0 ? ` · ждут отправки: ${pendingCount}` : ''}
         </span>
       </div>
+      {stuckCount > 0 && (
+        <div className="profile-row">
+          <span>⚠ Требуют внимания</span>
+          <span>{stuckCount} — обратитесь к владельцу, продажа не проведена</span>
+        </div>
+      )}
 
       {onShowReports && (
         <button type="button" className="profile-action" onClick={onShowReports}>
