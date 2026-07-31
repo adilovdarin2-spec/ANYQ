@@ -18,31 +18,67 @@ function waLink(message: string): string {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
+interface CalcConfig {
+  locations: number;
+  users: number;
+  supplyEnabled: boolean;
+  warehouses: number;
+  prioritySupport: boolean;
+}
+
+// Warehouses only matter once Supply is on — ignore it otherwise so
+// e.g. leftover warehouse count from a prior toggle doesn't block a match.
+function configsMatch(a: CalcConfig, b: CalcConfig): boolean {
+  return (
+    a.locations === b.locations &&
+    a.users === b.users &&
+    a.supplyEnabled === b.supplyEnabled &&
+    (!a.supplyEnabled || a.warehouses === b.warehouses) &&
+    a.prioritySupport === b.prioritySupport
+  );
+}
+
 // Fixed-price cards for the visitor who wants to scan prices in five seconds
 // instead of operating the calculator below — same underlying economics,
 // just pre-computed at the configurations most businesses actually land on.
-const TIERS = [
+// Each card's "Настроить" button pushes this config into the calculator
+// below and scrolls to it, so a tier is a starting point you can then
+// adjust rather than a dead end.
+const TIERS: {
+  key: string;
+  name: string;
+  tag: string;
+  price: number;
+  priceNote: string | null;
+  desc: string;
+  features: string[];
+  badge: string | null;
+  message: string;
+  config: CalcConfig;
+}[] = [
   {
     key: 'start',
     name: 'Старт',
     tag: '1 точка',
     price: CORE_BASE,
-    priceNote: null as string | null,
+    priceNote: null,
     desc: 'Всё для одной точки продаж — касса, склад, отчёты и все отраслевые модули без доплат.',
     features: ['1 точка, до 3 пользователей', 'Товары без лимита', 'Офлайн-режим и живые остатки', 'Рецепты, лояльность, FEFO, весовой товар'],
-    badge: null as string | null,
+    badge: null,
     message: `Здравствуйте! Хочу подключить тариф «Старт» ANYQ — ${formatMoney(CORE_BASE)}/мес.`,
+    config: { locations: 1, users: 3, supplyEnabled: false, warehouses: 1, prioritySupport: false },
   },
   {
     key: 'standard',
     name: 'Стандарт',
     tag: '1 точка',
     price: CORE_BASE + PRIORITY_SUPPORT,
-    priceNote: null as string | null,
+    priceNote: null,
     desc: 'Всё из «Старт» плюс приоритетная поддержка — быстрее реакция и отдельный чат с командой.',
     features: ['Всё из тарифа «Старт»', 'Приоритетная поддержка', 'Быстрая реакция на вопросы', 'Помощь с настройкой'],
     badge: 'Популярный выбор',
     message: `Здравствуйте! Хочу подключить тариф «Стандарт» ANYQ — ${formatMoney(CORE_BASE + PRIORITY_SUPPORT)}/мес (с приоритетной поддержкой).`,
+    config: { locations: 1, users: 3, supplyEnabled: false, warehouses: 1, prioritySupport: true },
   },
   {
     key: 'network',
@@ -52,8 +88,9 @@ const TIERS = [
     priceNote: 'от',
     desc: 'Для сети из нескольких точек. Пример ниже — на 2 точки и 5 пользователей, точный расчёт под вашу сеть — в калькуляторе.',
     features: ['Несколько точек продаж', 'Перемещения между точками', 'Сводные отчёты по сети', 'Приоритетная поддержка'],
-    badge: null as string | null,
+    badge: null,
     message: 'Здравствуйте! У меня сеть из нескольких точек, хочу подключить ANYQ — посчитайте точный тариф под мою конфигурацию.',
+    config: { locations: 2, users: 5, supplyEnabled: false, warehouses: 1, prioritySupport: true },
   },
   {
     key: 'enterprise',
@@ -63,8 +100,9 @@ const TIERS = [
     priceNote: 'от',
     desc: 'HoReCa-поставщикам и крупным сетям — модуль Supply (B2B-витрина заказов) и личный менеджер.',
     features: ['Публичная витрина заказов Supply', 'Push-уведомления о заказах', 'Личный менеджер', 'Индивидуальные условия'],
-    badge: null as string | null,
+    badge: null,
     message: 'Здравствуйте! Хочу обсудить индивидуальный тариф ANYQ (Supply / крупная сеть) — подскажите точный расчёт.',
+    config: { locations: 1, users: 3, supplyEnabled: true, warehouses: 1, prioritySupport: false },
   },
 ];
 
@@ -104,6 +142,20 @@ export function PricingScreen() {
   const [warehouses, setWarehouses] = useState(1);
   const [prioritySupport, setPrioritySupport] = useState(false);
 
+  function applyTier(t: (typeof TIERS)[number]) {
+    setLocations(t.config.locations);
+    setUsers(t.config.users);
+    setSupplyEnabled(t.config.supplyEnabled);
+    setWarehouses(t.config.warehouses);
+    setPrioritySupport(t.config.prioritySupport);
+    document.getElementById('calculator')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  const activeTier = useMemo(
+    () => TIERS.find((t) => configsMatch(t.config, { locations, users, supplyEnabled, warehouses, prioritySupport })) ?? null,
+    [locations, users, supplyEnabled, warehouses, prioritySupport],
+  );
+
   const calc = useMemo(() => {
     const extraLocations = Math.max(0, locations - CORE_INCLUDED_LOCATIONS);
     const extraUsers = Math.max(0, users - CORE_INCLUDED_USERS);
@@ -139,7 +191,7 @@ export function PricingScreen() {
 
         <div className="tier-grid">
           {TIERS.map((t) => (
-            <div className={`tier-card${t.badge ? ' popular' : ''}`} key={t.key}>
+            <div className={`tier-card${t.badge ? ' popular' : ''}${activeTier?.key === t.key ? ' selected' : ''}`} key={t.key}>
               {t.badge && <span className="tier-badge">{t.badge}</span>}
               <div className="tier-name">{t.name}</div>
               <div className="tier-tag">{t.tag}</div>
@@ -156,14 +208,21 @@ export function PricingScreen() {
                   </li>
                 ))}
               </ul>
-              <a
-                className={`btn ${t.badge ? 'btn-primary' : 'btn-secondary'} btn-block tier-cta`}
-                href={waLink(t.message)}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Написать в WhatsApp
-              </a>
+              <div className="tier-actions">
+                <a
+                  className={`btn ${t.badge ? 'btn-primary' : 'btn-secondary'} btn-block tier-cta`}
+                  href={waLink(t.message)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Написать в WhatsApp
+                </a>
+                <button type="button" className="tier-customize" onClick={() => applyTier(t)}>
+                  {activeTier?.key === t.key ? <IconCheck className="icon-14" /> : null}
+                  {activeTier?.key === t.key ? 'Настроено в калькуляторе' : 'Настроить тариф'}
+                  {activeTier?.key !== t.key && <IconArrowRight className="icon-14" />}
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -172,8 +231,13 @@ export function PricingScreen() {
           <span>Или соберите точный тариф вручную</span>
         </div>
 
-        <div className="calc-card calc-card-standalone">
+        <div className="calc-card calc-card-standalone" id="calculator">
           <div className="calc-card-title">Калькулятор тарифа</div>
+          <p className="calc-card-hint">
+            {activeTier
+              ? `Настроено под тариф «${activeTier.name}» — можно менять точки, пользователей и модули ниже.`
+              : 'Меняйте точки, пользователей и модули — сумма и сообщение в WhatsApp пересчитаются сами.'}
+          </p>
 
           <Stepper
             label="Точки продаж"
