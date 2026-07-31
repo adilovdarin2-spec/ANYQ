@@ -246,3 +246,18 @@ button.mini-card:focus-visible { outline: 2px solid var(--accent); outline-offse
   .drawer { width: 100vw; }
   .drawer-header .btn-ghost { padding: 11px 13px; }
 }
+
+/* error boundary fallback */
+.error-boundary {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 24px;
+}
+.error-boundary-card {
+  max-width: 360px; width: 100%; text-align: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 32px 24px; box-shadow: var(--shadow-md);
+}
+.error-boundary-icon { font-size: 2.5rem; margin-bottom: 12px; }
+.error-boundary-card h1 { font-size: 1.15rem; margin: 0 0 10px; color: var(--ink); }
+.error-boundary-card p { font-size: 0.9rem; color: var(--ink-muted); line-height: 1.5; margin: 0 0 20px; }
