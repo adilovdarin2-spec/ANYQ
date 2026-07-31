@@ -24,6 +24,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:api"],
       "port": 4000
+    },
+    {
+      "name": "pos-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/pos", "run", "start"],
+      "port": 4174
+    },
+    {
+      "name": "orders-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/orders", "run", "start"],
+      "port": 4175
     }
   ]
 }
