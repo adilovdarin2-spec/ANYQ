@@ -7,7 +7,7 @@ import { ProductsDrawer } from './components/ProductsDrawer';
 import { UsersDrawer } from './components/UsersDrawer';
 import { LoginScreen } from './components/LoginScreen';
 import { pluralizeRu } from './utils';
-import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct, createUser, updateUser, createLocation, updateLocation } from './api';
+import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct, createUser, updateUser, createLocation, updateLocation, ApiError } from './api';
 import type { CreateCompanyPayload, TariffPayload, UserPayload, LocationPayload } from './api';
 import type { Company } from './types';
 
@@ -33,7 +33,7 @@ export default function App() {
       .then(setCompanies)
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Не удалось загрузить компании');
-        if (err instanceof Error && err.message.toLowerCase().includes('автор')) {
+        if (err instanceof ApiError && err.status === 401) {
           handleLogout();
         }
       })

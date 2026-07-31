@@ -3,7 +3,13 @@ import type { Company, CompanyLocation, CompanyUser, Product } from './types';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers: Record<string, string> = {
@@ -15,7 +21,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.error || 'Ошибка запроса');
+    throw new ApiError(data.error || 'Ошибка запроса', res.status);
   }
   return data as T;
 }
