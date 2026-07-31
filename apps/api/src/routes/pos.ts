@@ -13,6 +13,7 @@ import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments } from '../counts';
 import { computeDiscount } from '../discounts';
+import { findPriceMismatches } from '../pricing';
 import type { DiscountType } from '../discounts';
 import { computeLoyalty } from '../loyalty';
 import { groupProductVariants } from '../variants';
@@ -127,6 +128,24 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   }
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
+
+  // A cart line's price always comes from the cashier's cached catalog, fetched
+  // once at login — if a price changed since, or the request was tampered with,
+  // this catches it before any money or stock actually moves.
+  const priceCheckProductIds = [...new Set(items.map((it) => it.productId))];
+  const [priceCheckProducts, modifierRows] = await Promise.all([
+    prisma.product.findMany({ where: { id: { in: priceCheckProductIds }, companyId: req.posCompanyId }, select: { id: true, salePrice: true } }),
+    prisma.productModifier.findMany({ where: { productId: { in: priceCheckProductIds } }, select: { productId: true } }),
+  ]);
+  const priceMismatches = findPriceMismatches(
+    items,
+    new Map(priceCheckProducts.map((p) => [p.id, p.salePrice])),
+    new Set(modifierRows.map((m) => m.productId)),
+  );
+  if (priceMismatches.length > 0) {
+    res.status(409).json({ error: 'Цены изменились — выйдите и войдите в кассу заново', priceMismatches });
+    return;
+  }
 
   const discountType: DiscountType | undefined = b.discountType === 'percent' || b.discountType === 'fixed' ? b.discountType : undefined;
   const discountValue: number | undefined = Number.isFinite(b.discountValue) ? Number(b.discountValue) : undefined;
