@@ -32,7 +32,8 @@ export function ProductsManageScreen({ products, loading, error, onRefresh, onAd
 
       {error && <div className="login-error">{error}</div>}
       {loading && products.length === 0 && <div className="empty-state">Загрузка…</div>}
-      {!loading && filtered.length === 0 && !error && <div className="empty-state">Товары не найдены</div>}
+      {!loading && !error && products.length === 0 && <div className="empty-state">Товаров пока нет — добавьте первый кнопкой ниже</div>}
+      {!loading && !error && products.length > 0 && filtered.length === 0 && <div className="empty-state">Ничего не найдено по запросу «{query.trim()}»</div>}
 
       {filtered.map((p) => (
         <button key={p.id} type="button" className="product-manage-row" onClick={() => onEdit(p)}>
