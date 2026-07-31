@@ -65,6 +65,7 @@ button, input, select, textarea { font-family: inherit; }
 .btn-secondary:hover { background: var(--border); }
 .btn-ghost { background: transparent; color: var(--ink-muted); padding: 6px 8px; }
 .btn-ghost:hover { color: var(--ink); }
+.btn-block { width: 100%; display: block; text-align: center; }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* table */
@@ -87,6 +88,7 @@ tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px;
 .company-name { font-weight: 600; }
 .company-bin { color: var(--ink-muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .date-cell { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.table-card.empty-state { padding: 60px 20px; text-align: center; color: var(--ink-muted); font-size: 0.92rem; }
 
 /* chips & badges */
 .chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
@@ -150,6 +152,7 @@ tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px;
 .module-toggle.on { background: var(--status-active-bg); border-color: var(--accent); color: var(--accent-strong); font-weight: 600; }
 .module-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .module-note-inline { margin-top: 8px; font-size: 0.84rem; color: var(--ink-muted); }
+.checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
 
 .btn-danger { background: var(--status-overdue-bg); color: var(--status-overdue); }
 .btn-danger:hover { background: var(--status-overdue); color: #fff; }
@@ -167,6 +170,20 @@ tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px;
   padding: 10px 12px; font-size: 0.87rem;
   display: flex; align-items: center; justify-content: space-between;
 }
+.mini-card.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+button.mini-card { width: 100%; text-align: left; cursor: pointer; background: var(--surface); color: inherit; font: inherit; }
+button.mini-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.drawer-header .content-title { font-size: 1.15rem; }
+.drawer-note { color: var(--ink-muted); font-size: 0.87rem; }
+.meta-text { color: var(--ink-muted); font-size: 0.82rem; }
+.storefront-link { font-size: 0.85rem; word-break: break-all; }
+
+.shift-row-head { display: flex; justify-content: space-between; }
+.shift-cashier { font-weight: 600; }
+.shift-diff { font-size: 0.82rem; font-weight: 600; }
+.shift-diff.ok { color: var(--status-active); }
+.shift-diff.off { color: var(--status-overdue); }
 
 /* login */
 .login-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }

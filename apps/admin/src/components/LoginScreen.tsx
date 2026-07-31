@@ -43,7 +43,7 @@ export function LoginScreen({ onLogin }: Props) {
           <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         {error && <div className="login-error">{error}</div>}
-        <button className="btn btn-primary" style={{ marginTop: 20, width: '100%' }} disabled={loading} type="submit">
+        <button className="btn btn-primary btn-block" style={{ marginTop: 20 }} disabled={loading} type="submit">
           {loading ? 'Входим…' : 'Войти'}
         </button>
       </form>

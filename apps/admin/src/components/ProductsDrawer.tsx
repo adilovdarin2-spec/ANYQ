@@ -85,7 +85,7 @@ export function ProductsDrawer({ companyId, companyName, onClose, onLoad, onCrea
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header">
           <div>
-            <div className="content-title" style={{ fontSize: '1.15rem' }}>Товары — {companyName}</div>
+            <div className="content-title">Товары — {companyName}</div>
             <div className="content-sub">{products ? `${products.length} товаров` : 'Загрузка…'}</div>
           </div>
           <button className="btn btn-ghost" onClick={onClose} aria-label="Закрыть">✕</button>
@@ -141,12 +141,12 @@ export function ProductsDrawer({ companyId, companyName, onClose, onLoad, onCrea
           )}
 
           <div className="section-title">Товары ({products?.length ?? 0})</div>
-          {products === null && <div style={{ color: 'var(--ink-muted)', fontSize: '0.87rem' }}>Загрузка…</div>}
-          {products?.length === 0 && <div style={{ color: 'var(--ink-muted)', fontSize: '0.87rem' }}>Товаров пока нет</div>}
+          {products === null && <div className="drawer-note">Загрузка…</div>}
+          {products?.length === 0 && <div className="drawer-note">Товаров пока нет</div>}
 
           {products?.map((p) =>
             editingId === p.id ? (
-              <div key={p.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              <div key={p.id} className="mini-card stack">
                 <div className="field-row">
                   <div className="field">
                     <label htmlFor={`e-name-${p.id}`}>Название</label>
@@ -167,7 +167,7 @@ export function ProductsDrawer({ companyId, companyName, onClose, onLoad, onCrea
                     <input id={`e-sale-${p.id}`} type="number" min="0" value={editForm.salePrice} onChange={(e) => setEditForm({ ...editForm, salePrice: Number(e.target.value) })} />
                   </div>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
+                <label className="checkbox-row">
                   <input type="checkbox" checked={editForm.sellable} onChange={(e) => setEditForm({ ...editForm, sellable: e.target.checked })} />
                   Продаётся в кассе
                 </label>
@@ -179,18 +179,12 @@ export function ProductsDrawer({ companyId, companyName, onClose, onLoad, onCrea
                 </div>
               </div>
             ) : (
-              <button
-                key={p.id}
-                type="button"
-                className="mini-card"
-                onClick={() => startEdit(p)}
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--surface)', color: 'inherit' }}
-              >
+              <button key={p.id} type="button" className="mini-card" onClick={() => startEdit(p)}>
                 <span>
                   {p.name}
-                  {!p.sellable && <span style={{ color: 'var(--ink-muted)' }}> (не продаётся)</span>}
+                  {!p.sellable && <span className="meta-text"> (не продаётся)</span>}
                 </span>
-                <span style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>{formatMoney(p.salePrice)}</span>
+                <span className="meta-text">{formatMoney(p.salePrice)}</span>
               </button>
             ),
           )}

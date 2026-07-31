@@ -150,7 +150,7 @@ export function CompanyDetailDrawer({
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header">
           <div>
-            <div className="content-title" style={{ fontSize: '1.15rem' }}>{company.name}</div>
+            <div className="content-title">{company.name}</div>
             <div className="content-sub">{company.phone} · создана {formatDate(company.createdAt)}</div>
           </div>
           <button className="btn btn-ghost" onClick={onClose} aria-label="Закрыть">✕</button>
@@ -218,7 +218,7 @@ export function CompanyDetailDrawer({
 
           {company.locations.map((l) =>
             editingLocationId === l.id ? (
-              <div key={l.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              <div key={l.id} className="mini-card stack">
                 <div className="field-row">
                   <div className="field">
                     <label htmlFor={`e-locname-${l.id}`}>Название</label>
@@ -243,13 +243,7 @@ export function CompanyDetailDrawer({
                 </div>
               </div>
             ) : (
-              <button
-                key={l.id}
-                type="button"
-                className="mini-card"
-                onClick={() => startEditLocation(l)}
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--surface)', color: 'inherit' }}
-              >
+              <button key={l.id} type="button" className="mini-card" onClick={() => startEditLocation(l)}>
                 <span>{l.name}</span>
                 <span className="module-badge">{MODULE_LABELS[l.type]}</span>
               </button>
@@ -260,29 +254,27 @@ export function CompanyDetailDrawer({
           {company.users.map((u) => (
             <div key={u.id} className="mini-card">
               <span>{u.name}</span>
-              <span style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>{ROLE_LABELS[u.role]}</span>
+              <span className="meta-text">{ROLE_LABELS[u.role]}</span>
             </div>
           ))}
 
           <div className="section-title">Смены</div>
           {shiftsError && <div className="login-error">{shiftsError}</div>}
-          {!shiftsError && shifts === null && <div style={{ color: 'var(--ink-muted)', fontSize: '0.87rem' }}>Загрузка…</div>}
-          {shifts !== null && shifts.length === 0 && (
-            <div style={{ color: 'var(--ink-muted)', fontSize: '0.87rem' }}>Смен пока не было</div>
-          )}
+          {!shiftsError && shifts === null && <div className="drawer-note">Загрузка…</div>}
+          {shifts !== null && shifts.length === 0 && <div className="drawer-note">Смен пока не было</div>}
           {shifts?.map((s) => {
             const expectedCash = s.openingCash + (s.totalsByMethod.cash ?? 0);
             const diff = s.closingCashCounted !== null ? s.closingCashCounted - expectedCash : null;
             return (
-              <div key={s.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 600 }}>{s.cashierName}</span>
+              <div key={s.id} className="mini-card stack">
+                <div className="shift-row-head">
+                  <span className="shift-cashier">{s.cashierName}</span>
                   <span className={`chip ${s.closedAt ? 'chip-suspended' : 'chip-active'}`}>{s.closedAt ? 'Закрыта' : 'Открыта'}</span>
                 </div>
-                <div style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>
+                <div className="meta-text">
                   {formatDateTime(s.openedAt)} {s.closedAt ? `— ${formatDateTime(s.closedAt)}` : '— сейчас'}
                 </div>
-                <div style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>
+                <div className="meta-text">
                   {s.salesCount} продаж · {formatMoney(s.totalSales)}
                   {Object.keys(s.totalsByMethod).length > 0 &&
                     ' · ' +
@@ -291,7 +283,7 @@ export function CompanyDetailDrawer({
                         .join(', ')}
                 </div>
                 {diff !== null && (
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: diff === 0 ? 'var(--status-active)' : 'var(--status-overdue)' }}>
+                  <div className={`shift-diff ${diff === 0 ? 'ok' : 'off'}`}>
                     {diff === 0 ? 'Касса сошлась' : diff < 0 ? `Недостача ${formatMoney(Math.abs(diff))}` : `Излишек ${formatMoney(diff)}`}
                   </div>
                 )}
@@ -302,8 +294,8 @@ export function CompanyDetailDrawer({
           {company.slug && tariff.modules.includes('supply') && (
             <>
               <div className="section-title">Витрина для клиентов</div>
-              <div className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-                <div style={{ fontSize: '0.85rem', wordBreak: 'break-all', color: 'var(--ink-muted)' }}>
+              <div className="mini-card stack">
+                <div className="meta-text storefront-link">
                   {ORDERS_BASE}/{company.slug}
                 </div>
                 <button
