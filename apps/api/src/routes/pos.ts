@@ -1606,6 +1606,24 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
     return;
   }
 
+  // Same stale/tampered-price guard as /pos/sales — the waiter's device caches
+  // the menu at login, so a price the owner changes mid-shift keeps ringing
+  // at the old value until the next login.
+  const priceCheckProductIds = [...new Set(items.map((it) => it.productId))];
+  const [priceCheckProducts, modifierRows] = await Promise.all([
+    prisma.product.findMany({ where: { id: { in: priceCheckProductIds }, companyId: req.posCompanyId }, select: { id: true, salePrice: true } }),
+    prisma.productModifier.findMany({ where: { productId: { in: priceCheckProductIds } }, select: { productId: true } }),
+  ]);
+  const priceMismatches = findPriceMismatches(
+    items,
+    new Map(priceCheckProducts.map((p) => [p.id, p.salePrice])),
+    new Set(modifierRows.map((m) => m.productId)),
+  );
+  if (priceMismatches.length > 0) {
+    res.status(409).json({ error: 'Цены изменились — выйдите и войдите в кассу заново', priceMismatches });
+    return;
+  }
+
   try {
     const document = await prisma.$transaction(async (tx) => {
       // Dishes (recipe-tracked products) consume ingredients; everything else
