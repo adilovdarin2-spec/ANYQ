@@ -80,6 +80,7 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
             )}
 
             <div className="orders-section-title">Добавить блюда</div>
+            {orderable.length === 0 && <div className="empty-state">Ничего не найдено</div>}
             <div className="product-grid">
               {orderable.map((p) => {
                 const draftQty = draft.find((d) => d.productId === p.id)?.qty ?? 0;

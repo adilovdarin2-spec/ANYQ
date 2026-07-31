@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ProductionRecipe, ProductionRun } from '../types';
-import { formatDateTime } from '../utils';
+import { formatDateTime, pluralizeRu } from '../utils';
 
 interface Props {
   runs: ProductionRun[];
@@ -107,7 +107,7 @@ export function ProductionScreen({ runs, recipes, loading, error, submitting, on
 
               {valid && recipe && (
                 <div className="count-hint">
-                  {batches} {batches === 1 ? 'партия' : 'партии/партий'} × выход {recipe.portionYield} шт. = получится {yieldQuantity} шт.
+                  {batches} {pluralizeRu(batches, 'партия', 'партии', 'партий')} × выход {recipe.portionYield} шт. = получится {yieldQuantity} шт.
                   <br />
                   Расход сырья:
                   {recipe.ingredients.map((ing) => (

@@ -115,7 +115,7 @@ export default function App() {
   const [pushBusy, setPushBusy] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
-  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  const [busyOrder, setBusyOrder] = useState<{ id: string; action: 'fulfill' | 'reject' } | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
@@ -285,27 +285,27 @@ export default function App() {
 
   async function handleFulfillOrder(id: string) {
     if (!session) return;
-    setBusyOrderId(id);
+    setBusyOrder({ id, action: 'fulfill' });
     try {
       await fulfillOrder(session.token, id);
       await loadOrders();
     } catch (err) {
       setOrdersError(err instanceof ApiError ? err.message : 'Не удалось выдать заказ');
     } finally {
-      setBusyOrderId(null);
+      setBusyOrder(null);
     }
   }
 
   async function handleRejectOrder(id: string) {
     if (!session) return;
-    setBusyOrderId(id);
+    setBusyOrder({ id, action: 'reject' });
     try {
       await rejectOrder(session.token, id);
       await loadOrders();
     } catch (err) {
       setOrdersError(err instanceof ApiError ? err.message : 'Не удалось отклонить заказ');
     } finally {
-      setBusyOrderId(null);
+      setBusyOrder(null);
     }
   }
 
@@ -676,6 +676,16 @@ export default function App() {
     setView('table-order');
     void loadTableOrder(table.id);
   }
+
+  // Kitchen status on this order changes server-side whenever kitchen staff
+  // update it from KdsScreen — poll while this table is open so "Готовится"
+  // flips to "Готово" without the cashier leaving and reselecting the table.
+  useEffect(() => {
+    if (view !== 'table-order' || !session || !selectedTable) return;
+    const interval = setInterval(() => loadTableOrder(selectedTable.id), 8000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, session?.token, selectedTable?.id]);
 
   async function handleSendToKitchen(items: { productId: string; quantity: number; price: number }[]) {
     if (!session || !selectedTable) return;
@@ -1071,7 +1081,7 @@ export default function App() {
           orders={orders}
           loading={ordersLoading}
           error={ordersError}
-          busyId={busyOrderId}
+          busyOrder={busyOrder}
           onBack={() => setView('operations')}
           onRefresh={loadOrders}
           onFulfill={handleFulfillOrder}

@@ -5,14 +5,14 @@ interface Props {
   orders: Order[];
   loading: boolean;
   error: string | null;
-  busyId: string | null;
+  busyOrder: { id: string; action: 'fulfill' | 'reject' } | null;
   onBack: () => void;
   onRefresh: () => void;
   onFulfill: (id: string) => void;
   onReject: (id: string) => void;
 }
 
-export function OrdersScreen({ orders, loading, error, busyId, onBack, onRefresh, onFulfill, onReject }: Props) {
+export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefresh, onFulfill, onReject }: Props) {
   const pending = orders.filter((o) => o.status === 'pending');
   const resolved = orders.filter((o) => o.status !== 'pending');
 
@@ -50,11 +50,11 @@ export function OrdersScreen({ orders, loading, error, busyId, onBack, onRefresh
                   ))}
                 </div>
                 <div className="order-actions">
-                  <button className="btn btn-secondary" disabled={busyId === o.id} onClick={() => onReject(o.id)}>
-                    Отклонить
+                  <button className="btn btn-secondary" disabled={busyOrder?.id === o.id} onClick={() => onReject(o.id)}>
+                    {busyOrder?.id === o.id && busyOrder.action === 'reject' ? 'Отклоняем…' : 'Отклонить'}
                   </button>
-                  <button className="btn btn-primary" disabled={busyId === o.id} onClick={() => onFulfill(o.id)}>
-                    {busyId === o.id ? 'Выдаём…' : 'Выдать'}
+                  <button className="btn btn-primary" disabled={busyOrder?.id === o.id} onClick={() => onFulfill(o.id)}>
+                    {busyOrder?.id === o.id && busyOrder.action === 'fulfill' ? 'Выдаём…' : 'Выдать'}
                   </button>
                 </div>
               </div>

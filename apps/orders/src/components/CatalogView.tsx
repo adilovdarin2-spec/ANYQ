@@ -24,10 +24,14 @@ export function CatalogView({
   onAdd,
   onChangeQty,
 }: Props) {
+  // A typed search always searches the full catalog, ignoring the category
+  // filter — otherwise a customer could search for a real product, land on
+  // "Ничего не найдено", and assume the supplier doesn't carry it, when a
+  // forgotten category chip is the actual reason.
+  const trimmedQuery = query.trim().toLowerCase();
   const filtered = products.filter((p) => {
-    if (activeCategory !== 'Все' && p.category !== activeCategory) return false;
-    if (query.trim() && !p.name.toLowerCase().includes(query.trim().toLowerCase())) return false;
-    return true;
+    if (trimmedQuery) return p.name.toLowerCase().includes(trimmedQuery);
+    return activeCategory === 'Все' || p.category === activeCategory;
   });
 
   const grouped = new Map<string, CatalogProduct[]>();

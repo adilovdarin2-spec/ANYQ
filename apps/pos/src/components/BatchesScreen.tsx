@@ -89,31 +89,37 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
 
       {view === 'receive' && (
         <div className="screen-body">
-          <div className="form-field">
-            <label htmlFor="batch-product">Товар</label>
-            <select id="batch-product" value={productId} onChange={(e) => setProductId(e.target.value)}>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-field">
-            <label htmlFor="batch-number">Номер партии / серии</label>
-            <input id="batch-number" type="text" value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="Например, LOT-2026-0034" />
-          </div>
-          <div className="form-field">
-            <label htmlFor="batch-expiry">Срок годности</label>
-            <input id="batch-expiry" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-          </div>
-          <div className="form-field">
-            <label htmlFor="batch-qty">Количество</label>
-            <input id="batch-qty" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
-          </div>
+          {products.length === 0 ? (
+            <div className="empty-state">Сначала добавьте товары в «Товары»</div>
+          ) : (
+            <>
+              <div className="form-field">
+                <label htmlFor="batch-product">Товар</label>
+                <select id="batch-product" value={productId} onChange={(e) => setProductId(e.target.value)}>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-field">
+                <label htmlFor="batch-number">Номер партии / серии</label>
+                <input id="batch-number" type="text" value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="Например, LOT-2026-0034" />
+              </div>
+              <div className="form-field">
+                <label htmlFor="batch-expiry">Срок годности</label>
+                <input id="batch-expiry" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+              </div>
+              <div className="form-field">
+                <label htmlFor="batch-qty">Количество</label>
+                <input id="batch-qty" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
+              </div>
+            </>
+          )}
           {error && <div className="login-error">{error}</div>}
         </div>
       )}
 
-      {view === 'receive' && (
+      {view === 'receive' && products.length > 0 && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" disabled={!formValid || submitting} onClick={handleSubmit}>
             {submitting ? 'Принимаем…' : 'Принять партию'}
