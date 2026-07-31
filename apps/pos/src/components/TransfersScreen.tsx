@@ -117,23 +117,29 @@ export function TransfersScreen({
               </div>
 
               <div className="section-title">Товары</div>
-              {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
-              {lines.map((l) => (
-                <div key={l.productId} className="report-row">
-                  <span>{l.name} × {l.quantity}</span>
-                  <button className="li-remove" onClick={() => removeLine(l.productId)}>Удалить</button>
-                </div>
-              ))}
-
-              <div className="transfer-add-row">
-                <select value={productId} onChange={(e) => setProductId(e.target.value)}>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+              {products.length === 0 ? (
+                <div className="empty-state">Сначала добавьте товары в «Товары»</div>
+              ) : (
+                <>
+                  {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
+                  {lines.map((l) => (
+                    <div key={l.productId} className="report-row">
+                      <span>{l.name} × {l.quantity}</span>
+                      <button className="li-remove" onClick={() => removeLine(l.productId)}>Удалить</button>
+                    </div>
                   ))}
-                </select>
-                <input type="number" min="1" placeholder="Кол-во" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-                <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
-              </div>
+
+                  <div className="transfer-add-row">
+                    <select value={productId} onChange={(e) => setProductId(e.target.value)}>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <input type="number" min="1" placeholder="Кол-во" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                    <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
+                  </div>
+                </>
+              )}
             </>
           )}
 
