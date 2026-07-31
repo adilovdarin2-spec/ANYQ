@@ -99,9 +99,9 @@ button { cursor: pointer; }
   display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
 }
 .stop-list-toggle {
-  position: absolute; top: 6px; right: 6px; z-index: 2;
-  width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border);
-  background: var(--surface); font-size: 0.72rem; display: flex; align-items: center; justify-content: center;
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface); font-size: 0.82rem; display: flex; align-items: center; justify-content: center;
 }
 .stop-list-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .product-tile:active { background: var(--surface-2); }

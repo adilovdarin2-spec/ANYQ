@@ -53,9 +53,9 @@ button, input, select, textarea { font-family: inherit; }
 
 /* buttons */
 .btn {
-  border: none; border-radius: 7px; padding: 9px 16px;
+  border: none; border-radius: 7px; padding: 9px 16px; min-height: 40px;
   font-size: 0.88rem; font-weight: 600; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   transition: background 0.12s;
 }
 .btn-primary { background: var(--accent); color: #fff; }
@@ -200,7 +200,10 @@ button.mini-card:focus-visible { outline: 2px solid var(--accent); outline-offse
 
 .sidebar-footer { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 0 8px; }
 .sidebar-user { font-size: 0.82rem; color: var(--ink-muted); }
-.sidebar-logout { background: none; border: none; color: var(--ink-muted); font-size: 0.82rem; text-align: left; padding: 4px 0; cursor: pointer; }
+.sidebar-logout {
+  background: none; border: none; color: var(--ink-muted); font-size: 0.82rem; text-align: left; cursor: pointer;
+  display: inline-flex; align-items: center; min-height: 40px;
+}
 .sidebar-logout:hover { color: var(--status-overdue); }
 
 /* companies list — mobile card alternative to the table (toggled below) */
