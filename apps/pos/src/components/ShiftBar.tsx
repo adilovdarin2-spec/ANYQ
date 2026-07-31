@@ -23,7 +23,7 @@ export function ShiftBar({ shift, cashierName, online, pendingCount }: Props) {
           </div>
         </div>
         <div className="shift-bar-right">
-          {pendingCount > 0 && <span className="pill warn">⏳ {pendingCount}</span>}
+          {pendingCount > 0 && <span className="pill warn">⏳ {pendingCount} не отправлено</span>}
           <span className="pill">
             <span className={`dot ${online ? 'online' : 'offline'}`}></span>
             {online ? 'Онлайн' : 'Офлайн'}

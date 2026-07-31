@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Batch, CartLine, Count, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
 import { genId } from './utils';
@@ -109,6 +109,7 @@ export default function App() {
   const [view, setView] = useState<View>('sale');
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [query, setQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -176,6 +177,14 @@ export default function App() {
   const isDesktop = useIsDesktop();
   const canManageProducts = session?.user.role === 'owner' || session?.user.role === 'manager';
   const storefrontUrl = hasSupply && session?.company.slug ? `${ORDERS_BASE}/${session.company.slug}` : null;
+  const categories = useMemo(
+    () => Array.from(new Set((session?.products ?? []).map((p) => p.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru')),
+    [session?.products],
+  );
+  // Self-heals if the selected category doesn't exist in the current catalog
+  // (e.g. a different cashier's session has a different product mix) instead
+  // of silently filtering the grid down to nothing.
+  const effectiveCategoryFilter = categoryFilter && categories.includes(categoryFilter) ? categoryFilter : null;
 
   const pendingOrdersCount = orders.filter((o) => o.status === 'pending').length;
   const expiringBatchesCount = batches.filter((b) => b.status !== 'ok').length;
@@ -934,12 +943,17 @@ export default function App() {
     );
   }
 
+  // A typed search always searches the full catalog, ignoring the category
+  // filter — otherwise a cashier could type the exact product name, see
+  // "Ничего не найдено", and not realize a forgotten category chip is why.
   const filteredProducts =
-    query.trim() === ''
-      ? session.products
-      : session.products.filter(
+    query.trim() !== ''
+      ? session.products.filter(
           (p) => p.name.toLowerCase().includes(query.trim().toLowerCase()) || p.barcode.includes(query.trim()),
-        );
+        )
+      : effectiveCategoryFilter
+        ? session.products.filter((p) => p.category === effectiveCategoryFilter)
+        : session.products;
 
   if (!shift) {
     return (
@@ -957,7 +971,14 @@ export default function App() {
       {view === 'sale' && isDesktop && (
         <div className="pos-main">
           <div>
-            <SearchBar query={query} onQueryChange={setQuery} onEnter={handleSearchEnter} />
+            <SearchBar
+              query={query}
+              onQueryChange={setQuery}
+              onEnter={handleSearchEnter}
+              categories={categories}
+              activeCategory={effectiveCategoryFilter}
+              onCategoryChange={setCategoryFilter}
+            />
             <ProductGrid
               products={filteredProducts}
               cartQtyByProduct={cartQtyByProduct}
@@ -988,7 +1009,14 @@ export default function App() {
 
       {view === 'sale' && !isDesktop && (
         <>
-          <SearchBar query={query} onQueryChange={setQuery} onEnter={handleSearchEnter} />
+          <SearchBar
+            query={query}
+            onQueryChange={setQuery}
+            onEnter={handleSearchEnter}
+            categories={categories}
+            activeCategory={effectiveCategoryFilter}
+            onCategoryChange={setCategoryFilter}
+          />
           <ProductGrid
             products={filteredProducts}
             cartQtyByProduct={cartQtyByProduct}

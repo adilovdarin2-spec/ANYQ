@@ -35,8 +35,10 @@ export function PaymentModal({ total, onCancel, onConfirm }: Props) {
 
         {selected === 'kaspi' && (
           <>
-            <div className="qr-box">QR-код Kaspi для оплаты (заглушка)</div>
-            <p style={{ textAlign: 'center', color: 'var(--ink-muted)', fontSize: '0.88rem' }}>Ожидание оплаты клиентом…</p>
+            <div className="qr-box">▦ Kaspi QR</div>
+            <p style={{ textAlign: 'center', color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
+              Покажите QR клиенту в приложении Kaspi.kz. Когда увидите подтверждение оплаты — нажмите кнопку ниже.
+            </p>
           </>
         )}
 
