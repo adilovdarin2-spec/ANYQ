@@ -4,14 +4,14 @@ import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage } from '../tariff';
-import { findStockShortages, applyStockDelta, createStockWithMovement } from '../stock';
+import { findStockShortages, hasInvalidQuantity, applyStockDelta, createStockWithMovement } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
-import { computeCountAdjustments } from '../counts';
+import { computeCountAdjustments, hasInvalidCountedQuantity } from '../counts';
 import { computeDiscount } from '../discounts';
 import { findPriceMismatches } from '../pricing';
 import type { DiscountType } from '../discounts';
@@ -115,7 +115,7 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
 posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: SaleItemInput[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0 || !b.locationId || !b.paymentMethod) {
+  if (items.length === 0 || !b.locationId || !b.paymentMethod || hasInvalidQuantity(items)) {
     res.status(400).json({ error: 'Некорректные данные продажи' });
     return;
   }
@@ -965,7 +965,7 @@ posRouter.get('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) =
 posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0 || !b.toLocationId) {
+  if (items.length === 0 || !b.toLocationId || hasInvalidQuantity(items)) {
     res.status(400).json({ error: 'Некорректные данные перемещения' });
     return;
   }
@@ -1099,7 +1099,7 @@ posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =>
 posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: { productId: string; quantity: number; price: number }[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0) {
+  if (items.length === 0 || hasInvalidQuantity(items)) {
     res.status(400).json({ error: 'Некорректные данные приёмки' });
     return;
   }
@@ -1217,7 +1217,7 @@ posRouter.get('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {
 posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: { productId: string; countedQuantity: number }[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0) {
+  if (items.length === 0 || hasInvalidCountedQuantity(items)) {
     res.status(400).json({ error: 'Некорректные данные инвентаризации' });
     return;
   }
@@ -1578,7 +1578,7 @@ posRouter.get('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest,
 posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: SaleItemInput[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0) {
+  if (items.length === 0 || hasInvalidQuantity(items)) {
     res.status(400).json({ error: 'Добавьте блюда в заказ' });
     return;
   }

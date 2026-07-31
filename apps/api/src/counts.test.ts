@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCountAdjustments } from './counts';
+import { computeCountAdjustments, hasInvalidCountedQuantity } from './counts';
 
 describe('computeCountAdjustments', () => {
   it('computes a positive delta when the count is higher than system stock', () => {
@@ -31,5 +31,31 @@ describe('computeCountAdjustments', () => {
     const stock = new Map([['p1', 10], ['p2', 20], ['p3', 30]]);
     const result = computeCountAdjustments([{ productId: 'p2', countedQuantity: 18 }], stock);
     expect(result).toEqual([{ productId: 'p2', systemQuantity: 20, countedQuantity: 18, delta: -2 }]);
+  });
+});
+
+describe('hasInvalidCountedQuantity', () => {
+  it('allows a counted quantity of zero — the shelf is legitimately empty', () => {
+    expect(hasInvalidCountedQuantity([{ productId: 'p1', countedQuantity: 0 }])).toBe(false);
+  });
+
+  it('allows an ordinary positive count', () => {
+    expect(hasInvalidCountedQuantity([{ productId: 'p1', countedQuantity: 12 }])).toBe(false);
+  });
+
+  it('flags a negative count', () => {
+    expect(hasInvalidCountedQuantity([{ productId: 'p1', countedQuantity: -1 }])).toBe(true);
+  });
+
+  it('flags a non-finite count', () => {
+    expect(hasInvalidCountedQuantity([{ productId: 'p1', countedQuantity: NaN }])).toBe(true);
+  });
+
+  it('flags the batch if any single line is invalid, even when the rest are fine', () => {
+    const items = [
+      { productId: 'p1', countedQuantity: 5 },
+      { productId: 'p2', countedQuantity: -3 },
+    ];
+    expect(hasInvalidCountedQuantity(items)).toBe(true);
   });
 });

@@ -12,6 +12,15 @@ export interface StockShortage {
   requested: number;
 }
 
+// Every stock-mutating route trusts item quantities are positive. A negative
+// quantity flips the direction of a stock delta — e.g. a "sale" of -5 units
+// would add stock instead of removing it, and net a negative charge instead
+// of a positive one — and findStockShortages' available-vs-requested check
+// doesn't catch it, since a negative requested amount is never "insufficient".
+export function hasInvalidQuantity(items: { quantity: number }[]): boolean {
+  return items.some((it) => !Number.isFinite(it.quantity) || it.quantity <= 0);
+}
+
 export function findStockShortages(items: SaleItemInput[], stockByProduct: Map<string, number>): StockShortage[] {
   const shortages: StockShortage[] = [];
   for (const item of items) {
