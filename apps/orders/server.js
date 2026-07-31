@@ -17,6 +17,14 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
 };
 
+// No current feature embeds this storefront in another site — deny framing
+// outright rather than leaving clickjacking on the table.
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+};
+
 const server = http.createServer((req, res) => {
   const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
   let filePath = path.join(DIST_DIR, urlPath);
@@ -32,7 +40,7 @@ const server = http.createServer((req, res) => {
       filePath = path.join(DIST_DIR, 'index.html');
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream', ...SECURITY_HEADERS });
     fs.createReadStream(filePath).pipe(res);
   });
 });

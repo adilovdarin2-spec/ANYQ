@@ -29,6 +29,11 @@ app.use(
   }),
 );
 app.use(express.json());
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/auth', authRouter);
