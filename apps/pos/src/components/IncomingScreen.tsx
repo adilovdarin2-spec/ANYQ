@@ -101,40 +101,45 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
 
       {view === 'create' && (
         <div className="screen-body">
-          <div className="form-field">
-            <label htmlFor="supplier-name">Поставщик</label>
-            <input id="supplier-name" type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Необязательно" />
-          </div>
-          <div className="form-field">
-            <label htmlFor="supplier-phone">Телефон поставщика</label>
-            <input id="supplier-phone" type="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder="Необязательно" />
-          </div>
+          {products.length === 0 ? (
+            <div className="empty-state">Сначала добавьте товары в «Товары»</div>
+          ) : (
+            <>
+              <div className="form-field">
+                <label htmlFor="supplier-name">Поставщик</label>
+                <input id="supplier-name" type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Необязательно" />
+              </div>
+              <div className="form-field">
+                <label htmlFor="supplier-phone">Телефон поставщика</label>
+                <input id="supplier-phone" type="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder="Необязательно" />
+              </div>
 
-          <div className="section-title">Товары</div>
-          {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
-          {lines.map((l, i) => (
-            <div key={`${l.productId}-${i}`} className="report-row">
-              <span>{l.name} × {l.quantity} по {formatMoney(l.price)}</span>
-              <button className="li-remove" onClick={() => removeLine(i)}>Удалить</button>
-            </div>
-          ))}
-
-          <div className="transfer-add-row">
-            <select value={productId} onChange={(e) => setProductId(e.target.value)}>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+              <div className="section-title">Товары</div>
+              {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
+              {lines.map((l, i) => (
+                <div key={`${l.productId}-${i}`} className="report-row">
+                  <span>{l.name} × {l.quantity} по {formatMoney(l.price)}</span>
+                  <button className="li-remove" onClick={() => removeLine(i)}>Удалить</button>
+                </div>
               ))}
-            </select>
-            <input type="number" min="1" placeholder="Кол-во" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            <input type="number" min="0" placeholder="Цена за шт." value={price} onChange={(e) => setPrice(e.target.value)} />
-            <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
-          </div>
 
+              <div className="transfer-add-row">
+                <select value={productId} onChange={(e) => setProductId(e.target.value)}>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <input type="number" min="1" placeholder="Кол-во" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                <input type="number" min="0" placeholder="Цена за шт." value={price} onChange={(e) => setPrice(e.target.value)} />
+                <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
+              </div>
+            </>
+          )}
           {error && <div className="login-error">{error}</div>}
         </div>
       )}
 
-      {view === 'create' && (
+      {view === 'create' && products.length > 0 && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" disabled={lines.length === 0 || submitting} onClick={handleSubmit}>
             {submitting ? 'Отправляем…' : 'Оприходовать'}

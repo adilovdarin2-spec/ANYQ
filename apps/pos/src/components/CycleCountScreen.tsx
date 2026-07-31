@@ -21,12 +21,13 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
     setCountedByProduct((prev) => ({ ...prev, [productId]: value }));
   }
 
-  const entries = Object.entries(countedByProduct).filter(([, v]) => v.trim() !== '');
+  const enteredEntries = Object.entries(countedByProduct).filter(([, v]) => v.trim() !== '');
+  const items = enteredEntries
+    .map(([productId, v]) => ({ productId, countedQuantity: Number(v) }))
+    .filter((it) => Number.isFinite(it.countedQuantity) && it.countedQuantity >= 0);
+  const invalidCount = enteredEntries.length - items.length;
 
   async function handleSubmit() {
-    const items = entries
-      .map(([productId, v]) => ({ productId, countedQuantity: Number(v) }))
-      .filter((it) => Number.isFinite(it.countedQuantity) && it.countedQuantity >= 0);
     if (items.length === 0) return;
     const success = await onSubmit({ items });
     if (success) {
@@ -75,6 +76,7 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
           <div className="count-hint">
             Введите фактическое количество только для товаров, которые пересчитали — остальные останутся без изменений.
           </div>
+          {products.length === 0 && <div className="empty-state">Сначала добавьте товары в «Товары»</div>}
           {products.map((p) => (
             <div key={p.id} className="count-row">
               <div>
@@ -96,8 +98,13 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
 
       {view === 'create' && (
         <div className="screen-footer">
-          <button className="btn btn-primary btn-block" disabled={entries.length === 0 || submitting} onClick={handleSubmit}>
-            {submitting ? 'Сохраняем…' : `Сохранить пересчёт (${entries.length})`}
+          {invalidCount > 0 && (
+            <div className="login-error">
+              {invalidCount === 1 ? 'Одно значение не похоже на число — оно не сохранится.' : `${invalidCount} значения не похожи на числа — они не сохранятся.`}
+            </div>
+          )}
+          <button className="btn btn-primary btn-block" disabled={items.length === 0 || submitting} onClick={handleSubmit}>
+            {submitting ? 'Сохраняем…' : `Сохранить пересчёт (${items.length})`}
           </button>
         </div>
       )}

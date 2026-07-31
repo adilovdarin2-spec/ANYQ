@@ -18,9 +18,11 @@ export function FloorPlanScreen({ tables, loading, error, submitting, onBack, on
   const [name, setName] = useState('');
   const [seats, setSeats] = useState('2');
 
+  const seatsNum = Number(seats);
+  const createValid = name.trim() !== '' && Number.isFinite(seatsNum) && seatsNum > 0;
+
   function handleCreate() {
-    const seatsNum = Number(seats);
-    if (!name.trim() || !Number.isFinite(seatsNum) || seatsNum <= 0) return;
+    if (!createValid) return;
     onCreateTable(name.trim(), seatsNum);
     setName('');
     setSeats('2');
@@ -68,7 +70,7 @@ export function FloorPlanScreen({ tables, loading, error, submitting, onBack, on
             </div>
             <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary" onClick={() => setCreating(false)}>Отмена</button>
-              <button className="btn btn-primary" disabled={submitting} onClick={handleCreate}>
+              <button className="btn btn-primary" disabled={!createValid || submitting} onClick={handleCreate}>
                 {submitting ? 'Сохраняем…' : 'Добавить'}
               </button>
             </div>

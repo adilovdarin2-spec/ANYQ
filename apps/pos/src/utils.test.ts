@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genId, formatMoney, formatWeight, hoursSince } from './utils';
+import { genId, formatMoney, formatWeight, hoursSince, pluralizeRu } from './utils';
 
 describe('genId', () => {
   it('includes the given prefix and generates unique ids', () => {
@@ -34,5 +34,18 @@ describe('hoursSince', () => {
   it('returns ~1 for an instant one hour ago', () => {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     expect(hoursSince(oneHourAgo)).toBeCloseTo(1, 1);
+  });
+});
+
+describe('pluralizeRu', () => {
+  it('picks the correct Russian plural form for партия/партии/партий', () => {
+    expect(pluralizeRu(1, 'партия', 'партии', 'партий')).toBe('партия');
+    expect(pluralizeRu(21, 'партия', 'партии', 'партий')).toBe('партия');
+    expect(pluralizeRu(2, 'партия', 'партии', 'партий')).toBe('партии');
+    expect(pluralizeRu(3, 'партия', 'партии', 'партий')).toBe('партии');
+    expect(pluralizeRu(4, 'партия', 'партии', 'партий')).toBe('партии');
+    expect(pluralizeRu(5, 'партия', 'партии', 'партий')).toBe('партий');
+    expect(pluralizeRu(0, 'партия', 'партии', 'партий')).toBe('партий');
+    expect(pluralizeRu(11, 'партия', 'партии', 'партий')).toBe('партий');
   });
 });
