@@ -2,7 +2,7 @@ import type { Company } from '../types';
 import { SUPPORT_LABELS } from '../types';
 import { StatusChip } from './StatusChip';
 import { ModuleBadges } from './ModuleBadges';
-import { formatDate, getTariffState } from '../utils';
+import { formatDate, getTariffState, pluralizeRu } from '../utils';
 
 export function CompaniesTable({ companies, onSelect }: { companies: Company[]; onSelect: (id: string) => void }) {
   if (companies.length === 0) {
@@ -65,7 +65,7 @@ export function CompaniesTable({ companies, onSelect }: { companies: Company[]; 
               <ModuleBadges modules={c.tariff.modules} />
             </div>
             <div className="company-card-meta">
-              <span>{c.locations.length} {c.locations.length === 1 ? 'точка' : 'точек'}</span>
+              <span>{c.locations.length} {pluralizeRu(c.locations.length, 'точка', 'точки', 'точек')}</span>
               <span>{SUPPORT_LABELS[c.tariff.supportLevel]}</span>
               <span>до {formatDate(c.tariff.validUntil)}</span>
             </div>
