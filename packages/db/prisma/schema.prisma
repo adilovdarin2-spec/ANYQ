@@ -143,6 +143,12 @@ model Shift {
   location           Location  @relation(fields: [locationId], references: [id])
   locationId         String
   cashierName        String
+  // Nullable so pre-existing shifts (created before this field existed) don't
+  // need backfilling — their sales still get attributed by location+time only.
+  // New shifts always set this, letting the admin shift report correlate each
+  // shift with exactly its own cashier's sales instead of everyone's sales at
+  // that location, which matters as soon as two registers are open at once.
+  userId             String?
   openedAt           DateTime
   openingCash        Int
   closedAt           DateTime?

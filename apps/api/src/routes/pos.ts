@@ -377,6 +377,7 @@ posRouter.post('/shifts', requirePosAuth, async (req: PosAuthedRequest, res) => 
       companyId: req.posCompanyId!,
       locationId: b.locationId,
       cashierName: user?.name ?? 'Кассир',
+      userId: req.posUserId,
       openedAt: new Date(),
       openingCash,
     },
