@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Count, Product } from '../types';
-import { formatDateTime } from '../utils';
+import { formatDateTime, pluralizeRu } from '../utils';
 
 interface Props {
   counts: Count[];
@@ -100,7 +100,9 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
         <div className="screen-footer">
           {invalidCount > 0 && (
             <div className="login-error">
-              {invalidCount === 1 ? 'Одно значение не похоже на число — оно не сохранится.' : `${invalidCount} значения не похожи на числа — они не сохранятся.`}
+              {invalidCount === 1
+                ? 'Одно значение не похоже на число — оно не сохранится.'
+                : `${invalidCount} ${pluralizeRu(invalidCount, 'значение', 'значения', 'значений')} не похожи на числа — они не сохранятся.`}
             </div>
           )}
           <button className="btn btn-primary btn-block" disabled={items.length === 0 || submitting} onClick={handleSubmit}>
