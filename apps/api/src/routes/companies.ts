@@ -110,11 +110,17 @@ companiesRouter.get('/:id/shifts', async (req, res) => {
 
   const result = await Promise.all(
     shifts.map(async (shift) => {
+      // Two cashiers can have overlapping open shifts at the same location
+      // (a second register, a shift-change overlap) — without scoping by
+      // who actually rang each sale, both shifts' reports would show the
+      // same commingled total. Older shifts predate the userId column, so
+      // they fall back to the location+time-only match they've always used.
       const sales = await prisma.document.findMany({
         where: {
           locationId: shift.locationId,
           type: 'sale',
           createdAt: { gte: shift.openedAt, ...(shift.closedAt ? { lte: shift.closedAt } : {}) },
+          ...(shift.userId ? { createdBy: shift.userId } : {}),
         },
         include: { items: true },
       });
