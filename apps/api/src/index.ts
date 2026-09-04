@@ -1,6 +1,7 @@
 import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
+import { pruneIdempotencyKeys } from './idempotency';
 import { authRouter } from './routes/auth';
 import { companiesRouter } from './routes/companies';
 import { posRouter } from './routes/pos';
@@ -36,6 +37,19 @@ app.use((_req, res, next) => {
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// Housekeeping the deployment's scheduler calls. Guarded by a shared secret
+// rather than a user session: there is no user behind a cron job, and giving
+// one an account is worse than a header.
+app.post('/maintenance/prune-idempotency-keys', async (req, res) => {
+  const secret = process.env.MAINTENANCE_SECRET;
+  if (!secret || req.header('x-maintenance-secret') !== secret) {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  const removed = await pruneIdempotencyKeys();
+  res.json({ removed });
+});
 app.use('/auth', authRouter);
 app.use('/companies', companiesRouter);
 app.use('/pos', posRouter);

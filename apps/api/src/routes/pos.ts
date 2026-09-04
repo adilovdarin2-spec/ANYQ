@@ -306,8 +306,8 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           where: { companyId: req.posCompanyId, phone: customerPhone, type: 'customer' },
         })
       : null;
-    const charges = account ? await loadCharges(req.posCompanyId!, account.id, 'customer') : [];
-    const owed = account ? computeBalance(charges, await unappliedTotal(req.posCompanyId!, account.id)).balance : 0;
+    const ledger = account ? await loadLedger(req.posCompanyId!, account.id, 'customer') : null;
+    const owed = ledger ? computeBalance(ledger.charges, ledger.unapplied).balance : 0;
 
     const credit = resolveCreditSale({
       customerExisted: !!account,
@@ -1003,6 +1003,10 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const from = req.query.from ? new Date(String(req.query.from)) : defaultFrom;
   const to = req.query.to ? new Date(String(req.query.to)) : now;
 
+  // Bounded, and the response says when the bound was reached. An unbounded
+  // read of every sale in a period is fine for a shop and fatal for a busy
+  // one, and a report that quietly goes from correct to slow to timing out is
+  // worse than one that says it only covered part of the period.
   const documents = await prisma.document.findMany({
     where: {
       companyId: req.posCompanyId,
@@ -1012,6 +1016,8 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
       createdAt: { gte: from, lte: to },
     },
     include: { items: { include: { product: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: REPORT_SALE_LIMIT,
   });
 
   const returnDocuments = await prisma.document.findMany({
@@ -1079,6 +1085,10 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   res.json({
     from: from.toISOString(),
     to: to.toISOString(),
+    // True when there were more sales in the period than one report can read.
+    // The figures below then describe the most recent ones, not all of them,
+    // and the screen says so rather than presenting a partial total as whole.
+    truncated: documents.length >= REPORT_SALE_LIMIT,
     foodCost: buildFoodCost(sales, dishCostByProductId),
     summary,
     // Revenue that walked back out of the till. Reported next to the takings
@@ -1399,6 +1409,13 @@ posRouter.delete('/products/:id/packagings/:packagingId', requirePosAuth, async 
 // order.
 const DEMAND_WINDOW_DAYS = 28;
 
+// Ceilings on the two reads that grow with the business rather than with the
+// question. Neither is a real answer to scale — that needs daily balances kept
+// as they happen instead of replayed — but a visible ceiling beats a screen
+// that works until the day it doesn't.
+const REPORT_SALE_LIMIT = 5000;
+const DEMAND_MOVEMENT_LIMIT = 50000;
+
 // Movements where a customer took goods away, or brought them back. A receipt
 // or a transfer moves stock without anybody wanting it.
 const DEMAND_REASONS = new Set(['sale', 'order_fulfill', 'table_order', 'return']);
@@ -1440,6 +1457,8 @@ posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, re
     prisma.stockMovement.findMany({
       where: { locationId, createdAt: { gte: windowStart } },
       select: { productId: true, quantity: true, reason: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: DEMAND_MOVEMENT_LIMIT,
     }),
     // Goods already on their way here. Ordering on top of them is how a
     // stockroom ends up holding three months of one item.
@@ -1536,7 +1555,15 @@ posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, re
     .filter((line) => line.recommended > 0)
     .sort((a, b) => (a.daysOfCover ?? Number.POSITIVE_INFINITY) - (b.daysOfCover ?? Number.POSITIVE_INFINITY));
 
-  res.json({ locationId, windowDays: DEMAND_WINDOW_DAYS, items: needed });
+  res.json({
+    locationId,
+    windowDays: DEMAND_WINDOW_DAYS,
+    // When the ledger for this window did not fit, the demand rates are built
+    // from the most recent part of it. Better said out loud than quietly
+    // understated.
+    truncated: movements.length >= DEMAND_MOVEMENT_LIMIT,
+    items: needed,
+  });
 });
 
 posRouter.put('/products/:id/policy', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -1847,14 +1874,14 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
     prisma.counterparty.findMany({ where: { companyId: req.posCompanyId, type: 'supplier' }, select: { id: true } }),
   ]);
   const sumBalances = async (accounts: { id: string }[], type: string) => {
+    const ledgers = await loadLedgers(req.posCompanyId!, accounts.map((a) => a.id), type);
     let total = 0;
     let overdue = 0;
-    for (const account of accounts) {
-      const charges = await loadCharges(req.posCompanyId!, account.id, type);
-      const balance = computeBalance(charges, await unappliedTotal(req.posCompanyId!, account.id)).balance;
+    for (const ledger of ledgers.values()) {
+      const balance = computeBalance(ledger.charges, ledger.unapplied).balance;
       if (balance <= 0) continue;
       total += balance;
-      const aging = buildAging(charges, now);
+      const aging = buildAging(ledger.charges, now);
       overdue += aging.days31to60 + aging.over60;
     }
     return { total, overdue };
@@ -2769,52 +2796,86 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
   res.json({ productId: b.productId, fromBin, toBin, quantity });
 });
 
-// Everything a counterparty was ever charged, and what has been settled
-// against each of it. Sales on credit for a customer; deliveries for a
+export interface CounterpartyLedger {
+  charges: Charge[];
+  /** Money paid that has not been applied to any particular document. */
+  unapplied: number;
+}
+
+// Everything a set of counterparties was ever charged, and what has been
+// settled against each of it. Sales on credit for a customer; deliveries for a
 // supplier — a shop owes for goods the moment they arrive, not when somebody
 // gets round to the invoice.
-async function loadCharges(companyId: string, counterpartyId: string, type: string): Promise<Charge[]> {
+//
+// Batched on purpose. Loading this per counterparty is two queries each, and
+// the two screens that need it — the debt list and the owner's summary — need
+// it for everybody at once. At fifty regulars that is a hundred round trips to
+// answer one question.
+async function loadLedgers(
+  companyId: string,
+  counterpartyIds: string[],
+  type: string,
+): Promise<Map<string, CounterpartyLedger>> {
+  const ledgers = new Map<string, CounterpartyLedger>();
+  for (const id of counterpartyIds) ledgers.set(id, { charges: [], unapplied: 0 });
+  if (counterpartyIds.length === 0) return ledgers;
+
   const chargeType = type === 'supplier' ? 'receipt' : 'sale';
   const [documents, settlements] = await Promise.all([
     prisma.document.findMany({
       where: {
         companyId,
-        counterpartyId,
+        counterpartyId: { in: counterpartyIds },
         type: chargeType,
         status: 'confirmed',
         ...(chargeType === 'sale' ? { paymentMethod: 'credit' } : {}),
       },
       include: { items: true },
     }),
-    prisma.settlement.findMany({ where: { companyId, counterpartyId, documentId: { not: null } } }),
+    prisma.settlement.findMany({ where: { companyId, counterpartyId: { in: counterpartyIds } } }),
   ]);
 
   const settledByDocument = new Map<string, number>();
   for (const settlement of settlements) {
-    if (!settlement.documentId) continue;
-    settledByDocument.set(settlement.documentId, (settledByDocument.get(settlement.documentId) ?? 0) + settlement.amount);
+    if (settlement.documentId) {
+      settledByDocument.set(
+        settlement.documentId,
+        (settledByDocument.get(settlement.documentId) ?? 0) + settlement.amount,
+      );
+      continue;
+    }
+    const ledger = ledgers.get(settlement.counterpartyId);
+    if (ledger) ledger.unapplied += settlement.amount;
   }
 
-  return documents.map((doc) => ({
-    documentId: doc.id,
-    // A receipt is billed at what was actually paid per pack, not the rounded
-    // per-unit figure times the units — the same reading the receipt list uses.
-    amount: doc.items.reduce(
-      (sum, it) =>
-        sum +
-        (it.packPrice !== null && it.packQuantity !== null
-          ? Math.round(it.packPrice * it.packQuantity)
-          : Math.round(it.price * it.quantity)),
-      0,
-    ),
-    settled: settledByDocument.get(doc.id) ?? 0,
-    at: doc.createdAt,
-  }));
+  for (const doc of documents) {
+    if (!doc.counterpartyId) continue;
+    const ledger = ledgers.get(doc.counterpartyId);
+    if (!ledger) continue;
+    ledger.charges.push({
+      documentId: doc.id,
+      // A receipt is billed at what was actually paid per pack, not the
+      // rounded per-unit figure times the units — the same reading the receipt
+      // list uses.
+      amount: doc.items.reduce(
+        (sum, it) =>
+          sum +
+          (it.packPrice !== null && it.packQuantity !== null
+            ? Math.round(it.packPrice * it.packQuantity)
+            : Math.round(it.price * it.quantity)),
+        0,
+      ),
+      settled: settledByDocument.get(doc.id) ?? 0,
+      at: doc.createdAt,
+    });
+  }
+
+  return ledgers;
 }
 
-async function unappliedTotal(companyId: string, counterpartyId: string): Promise<number> {
-  const rows = await prisma.settlement.findMany({ where: { companyId, counterpartyId, documentId: null } });
-  return rows.reduce((sum, row) => sum + row.amount, 0);
+async function loadLedger(companyId: string, counterpartyId: string, type: string): Promise<CounterpartyLedger> {
+  const ledgers = await loadLedgers(companyId, [counterpartyId], type);
+  return ledgers.get(counterpartyId) ?? { charges: [], unapplied: 0 };
 }
 
 // Who owes the shop, who the shop owes, and how old the money is. A single
@@ -2840,22 +2901,19 @@ posRouter.get('/settlements', requirePosAuth, async (req: PosAuthedRequest, res)
   });
 
   const now = new Date();
-  const rows = await Promise.all(
-    counterparties.map(async (counterparty) => {
-      const charges = await loadCharges(req.posCompanyId!, counterparty.id, type);
-      const unapplied = await unappliedTotal(req.posCompanyId!, counterparty.id);
-      const balance = computeBalance(charges, unapplied);
-      return {
-        counterpartyId: counterparty.id,
-        name: counterparty.name,
-        phone: counterparty.phone ?? '',
-        creditAllowed: counterparty.creditAllowed,
-        creditLimit: counterparty.creditLimit,
-        ...balance,
-        aging: buildAging(charges, now),
-      };
-    }),
-  );
+  const ledgers = await loadLedgers(req.posCompanyId!, counterparties.map((c) => c.id), type);
+  const rows = counterparties.map((counterparty) => {
+    const ledger = ledgers.get(counterparty.id) ?? { charges: [], unapplied: 0 };
+    return {
+      counterpartyId: counterparty.id,
+      name: counterparty.name,
+      phone: counterparty.phone ?? '',
+      creditAllowed: counterparty.creditAllowed,
+      creditLimit: counterparty.creditLimit,
+      ...computeBalance(ledger.charges, ledger.unapplied),
+      aging: buildAging(ledger.charges, now),
+    };
+  });
 
   // Only accounts with something outstanding — an owner opens this to act, and
   // a list of everyone they have ever sold to is not a list of anything.
@@ -2876,13 +2934,16 @@ posRouter.get('/settlements/:counterpartyId', requirePosAuth, async (req: PosAut
     return;
   }
 
-  const charges = await loadCharges(req.posCompanyId!, counterparty.id, counterparty.type);
-  const payments = await prisma.settlement.findMany({
-    where: { companyId: req.posCompanyId, counterpartyId: counterparty.id },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  });
-  const unapplied = payments.filter((p) => !p.documentId).reduce((sum, p) => sum + p.amount, 0);
+  const [ledger, payments] = await Promise.all([
+    loadLedger(req.posCompanyId!, counterparty.id, counterparty.type),
+    prisma.settlement.findMany({
+      where: { companyId: req.posCompanyId, counterpartyId: counterparty.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    }),
+  ]);
+  const charges = ledger.charges;
+  const unapplied = ledger.unapplied;
 
   res.json({
     counterparty: {
@@ -2953,7 +3014,8 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
     return;
   }
 
-  const charges = await loadCharges(req.posCompanyId!, counterparty.id, counterparty.type);
+  const ledger = await loadLedger(req.posCompanyId!, counterparty.id, counterparty.type);
+  const charges = ledger.charges;
   const { allocations, unapplied } = allocatePayment(amount, charges);
 
   const created = await prisma.$transaction(async (tx) => {
@@ -2999,7 +3061,7 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
       ...charge,
       settled: charge.settled + (allocations.find((a) => a.documentId === charge.documentId)?.amount ?? 0),
     })),
-    (await unappliedTotal(req.posCompanyId!, counterparty.id)),
+    ledger.unapplied + unapplied,
   );
 
   res.status(201).json({
