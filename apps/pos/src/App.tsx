@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, Packaging, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, OwnerDashboard, Packaging, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -21,6 +21,7 @@ import {
   createReturn,
   fetchReplenishment,
   saveStockPolicy,
+  fetchOwnerDashboard,
   fetchTransfers,
   createTransfer,
   receiveTransfer,
@@ -83,6 +84,7 @@ import { KdsScreen } from './components/KdsScreen';
 import { StockHistoryScreen } from './components/StockHistoryScreen';
 import { ReturnsScreen } from './components/ReturnsScreen';
 import { ReplenishmentScreen } from './components/ReplenishmentScreen';
+import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -107,6 +109,7 @@ type View =
   | 'counts'
   | 'returns'
   | 'replenishment'
+  | 'dashboard'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -168,6 +171,10 @@ export default function App() {
   const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
   const [packagingBusy, setPackagingBusy] = useState(false);
   const [packagingError, setPackagingError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
+  const [dashboardDays, setDashboardDays] = useState(7);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [replenishment, setReplenishment] = useState<ReplenishmentItem[]>([]);
   const [replenishmentWindow, setReplenishmentWindow] = useState(28);
   const [replenishmentLoading, setReplenishmentLoading] = useState(false);
@@ -260,10 +267,15 @@ export default function App() {
   }
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 
+  // The summary is written for whoever answers for the money, so it is only
+  // offered to them — a cashier seeing colleagues' refund rates is a different
+  // product with different consequences.
+  const isOwnerOrManager = session?.user.role === 'owner' || session?.user.role === 'manager';
+
   const activeTab: MainTab =
     view === 'products' || view === 'product-edit' ? 'products' :
     OPERATIONS_VIEWS.has(view) ? 'operations' :
-    view === 'profile' || view === 'reports' ? 'profile' :
+    view === 'profile' || view === 'reports' || view === 'dashboard' ? 'profile' :
     'sale';
 
   function handleLogin(newSession: PosSession) {
@@ -639,6 +651,29 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadDashboard(days: number) {
+    if (!session || !currentLocationId) return;
+    setDashboardLoading(true);
+    setDashboardError(null);
+    try {
+      setDashboard(await fetchOwnerDashboard(session.token, currentLocationId, days));
+    } catch (err) {
+      setDashboardError(err instanceof ApiError ? err.message : 'Не удалось загрузить сводку');
+    } finally {
+      setDashboardLoading(false);
+    }
+  }
+
+  function handleShowDashboard() {
+    setView('dashboard');
+    void loadDashboard(dashboardDays);
+  }
+
+  function handleChangeDashboardDays(days: number) {
+    setDashboardDays(days);
+    void loadDashboard(days);
   }
 
   async function loadReplenishment() {
@@ -1438,6 +1473,19 @@ export default function App() {
         />
       )}
 
+      {view === 'dashboard' && (
+        <OwnerDashboardScreen
+          dashboard={dashboard}
+          days={dashboardDays}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onBack={() => setView('profile')}
+          onChangeDays={handleChangeDashboardDays}
+          onRefresh={() => loadDashboard(dashboardDays)}
+          onShowReplenishment={handleShowReplenishment}
+        />
+      )}
+
       {view === 'replenishment' && (
         <ReplenishmentScreen
           items={replenishment}
@@ -1569,6 +1617,7 @@ export default function App() {
           pushEnabled={pushEnabled}
           pushBusy={pushBusy}
           onTogglePush={handleTogglePush}
+          onShowDashboard={isOwnerOrManager ? handleShowDashboard : undefined}
           onShowReports={hasTerminal ? handleShowReports : undefined}
           onShowInstall={install.reopen}
           onCloseShift={() => setView('close-shift')}
