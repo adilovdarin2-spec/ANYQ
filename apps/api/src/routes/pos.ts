@@ -430,11 +430,11 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       const stockMovements: Promise<unknown>[] = [...otherUpdates];
       for (const deduction of deductions) {
         const stock = stockByProduct.get(deduction.productId)!;
-        stockMovements.push(applyStockDelta(tx, stock, -deduction.quantity, 'sale', document.id));
+        stockMovements.push(applyStockDelta(tx, stock, -deduction.quantity, 'sale', { documentId: document.id, createdBy: req.posUserId }));
       }
       for (const consumption of ingredientConsumption) {
         const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
-        stockMovements.push(applyStockDelta(tx, stock, -consumption.quantity, 'sale', document.id));
+        stockMovements.push(applyStockDelta(tx, stock, -consumption.quantity, 'sale', { documentId: document.id, createdBy: req.posUserId }));
       }
       await Promise.all(stockMovements);
 
@@ -735,12 +735,16 @@ posRouter.get('/stock-movements', requirePosAuth, async (req: PosAuthedRequest, 
   const locationIds = (company?.locations ?? []).map((l) => l.id);
   const productId = typeof req.query.productId === 'string' ? req.query.productId : undefined;
 
-  const movements = await prisma.stockMovement.findMany({
-    where: { locationId: { in: locationIds }, ...(productId ? { productId } : {}) },
-    include: { product: true, location: true },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  });
+  const [movements, users] = await Promise.all([
+    prisma.stockMovement.findMany({
+      where: { locationId: { in: locationIds }, ...(productId ? { productId } : {}) },
+      include: { product: true, location: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    }),
+    prisma.user.findMany({ where: { companyId: req.posCompanyId }, select: { id: true, name: true } }),
+  ]);
+  const nameByUserId = new Map(users.map((u) => [u.id, u.name]));
 
   res.json(
     movements.map((m) => ({
@@ -751,6 +755,10 @@ posRouter.get('/stock-movements', requirePosAuth, async (req: PosAuthedRequest, 
       quantity: m.quantity,
       reason: m.reason,
       documentId: m.documentId,
+      // Null for movements written before the ledger recorded an author, and
+      // for anything a storefront customer set off — there is no user behind
+      // those, and inventing one would be worse than saying so.
+      createdByName: m.createdBy ? nameByUserId.get(m.createdBy) ?? 'Удалённый сотрудник' : null,
       createdAt: m.createdAt.toISOString(),
     })),
   );
@@ -997,9 +1005,9 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
 
     const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId, binLocation: '' } });
     if (stock) {
-      await applyStockDelta(tx, stock, quantity, 'batch_receipt');
+      await applyStockDelta(tx, stock, quantity, 'batch_receipt', { createdBy: req.posUserId });
     } else {
-      await createStockWithMovement(tx, { productId: product.id, locationId, quantity, reason: 'batch_receipt' });
+      await createStockWithMovement(tx, { productId: product.id, locationId, quantity, reason: 'batch_receipt', createdBy: req.posUserId });
     }
 
     return created;
@@ -1074,7 +1082,7 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
         // Released before the deduction, in this order: the deduction respects
         // reservations, so this order's own hold would otherwise block it.
         await releaseStock(tx, stock.id, item.quantity);
-        await applyStockDelta(tx, stock, -item.quantity, 'order_fulfill', order.id);
+        await applyStockDelta(tx, stock, -item.quantity, 'order_fulfill', { documentId: order.id, createdBy: req.posUserId });
       }
 
       await tx.document.update({
@@ -1248,7 +1256,7 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
       // shortfall is discoverable at all.
       await Promise.all(
         moves.map((move) =>
-          applyStockDelta(tx, sourceStockByProduct.get(move.productId)!, -move.quantity, 'transfer_out', document.id),
+          applyStockDelta(tx, sourceStockByProduct.get(move.productId)!, -move.quantity, 'transfer_out', { documentId: document.id, createdBy: req.posUserId }),
         ),
       );
 
@@ -1347,7 +1355,7 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
 
         const dest = destStockByProduct.get(line.productId);
         if (dest) {
-          await applyStockDelta(tx, dest, line.received, 'transfer_in', transferDoc.id);
+          await applyStockDelta(tx, dest, line.received, 'transfer_in', { documentId: transferDoc.id, createdBy: req.posUserId });
         } else {
           await createStockWithMovement(tx, {
             productId: line.productId,
@@ -1355,6 +1363,7 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
             quantity: line.received,
             reason: 'transfer_in',
             documentId: transferDoc.id,
+            createdBy: req.posUserId,
           });
         }
       }
@@ -1416,7 +1425,7 @@ posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedReq
       for (const item of transferDoc.items) {
         const source = sourceStockByProduct.get(item.productId);
         if (source) {
-          await applyStockDelta(tx, source, item.quantity, 'transfer_cancelled', transferDoc.id);
+          await applyStockDelta(tx, source, item.quantity, 'transfer_cancelled', { documentId: transferDoc.id, createdBy: req.posUserId });
         } else {
           await createStockWithMovement(tx, {
             productId: item.productId,
@@ -1424,6 +1433,7 @@ posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedReq
             quantity: item.quantity,
             reason: 'transfer_cancelled',
             documentId: transferDoc.id,
+            createdBy: req.posUserId,
           });
         }
       }
@@ -1534,7 +1544,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     for (const item of items) {
       const existing = stockByProduct.get(item.productId);
       if (existing) {
-        updates.push(applyStockDelta(tx, existing, item.quantity, 'receipt', document.id));
+        updates.push(applyStockDelta(tx, existing, item.quantity, 'receipt', { documentId: document.id, createdBy: req.posUserId }));
       } else {
         updates.push(
           createStockWithMovement(tx, {
@@ -1543,6 +1553,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
             quantity: item.quantity,
             reason: 'receipt',
             documentId: document.id,
+            createdBy: req.posUserId,
           }),
         );
       }
@@ -1635,7 +1646,7 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     for (const adj of adjustments) {
       const existing = stockByProduct.get(adj.productId);
       if (existing) {
-        updates.push(applyStockDelta(tx, existing, adj.delta, 'adjustment', document.id));
+        updates.push(applyStockDelta(tx, existing, adj.delta, 'adjustment', { documentId: document.id, createdBy: req.posUserId }));
       } else if (adj.countedQuantity > 0) {
         updates.push(
           createStockWithMovement(tx, {
@@ -1644,6 +1655,7 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
             quantity: adj.countedQuantity,
             reason: 'adjustment',
             documentId: document.id,
+            createdBy: req.posUserId,
           }),
         );
       }
@@ -1795,12 +1807,12 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
       const updates: Promise<unknown>[] = [];
       for (const ing of ingredients) {
         const stock = ingredientStockByProduct.get(ing.ingredientId)!;
-        updates.push(applyStockDelta(tx, stock, -ing.quantity, 'production_out', document.id));
+        updates.push(applyStockDelta(tx, stock, -ing.quantity, 'production_out', { documentId: document.id, createdBy: req.posUserId }));
       }
 
       const finishedStock = finishedStockRows[0];
       if (finishedStock) {
-        updates.push(applyStockDelta(tx, finishedStock, yieldQuantity, 'production_in', document.id));
+        updates.push(applyStockDelta(tx, finishedStock, yieldQuantity, 'production_in', { documentId: document.id, createdBy: req.posUserId }));
       } else {
         updates.push(
           createStockWithMovement(tx, {
@@ -1809,6 +1821,7 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
             quantity: yieldQuantity,
             reason: 'production_in',
             documentId: document.id,
+            createdBy: req.posUserId,
           }),
         );
       }
@@ -2048,11 +2061,11 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
       const updates: Promise<unknown>[] = [];
       for (const item of plainItems) {
         const stock = stockByProduct.get(item.productId)!;
-        updates.push(applyStockDelta(tx, stock, -item.quantity, 'table_order', openDocument.id));
+        updates.push(applyStockDelta(tx, stock, -item.quantity, 'table_order', { documentId: openDocument.id, createdBy: req.posUserId }));
       }
       for (const consumption of ingredientConsumption) {
         const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
-        updates.push(applyStockDelta(tx, stock, -consumption.quantity, 'table_order', openDocument.id));
+        updates.push(applyStockDelta(tx, stock, -consumption.quantity, 'table_order', { documentId: openDocument.id, createdBy: req.posUserId }));
       }
       await Promise.all(updates);
 

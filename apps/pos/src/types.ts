@@ -304,6 +304,7 @@ export type StockMovementReason =
   | 'production_in'
   | 'production_out'
   | 'table_order'
+  | 'transfer_cancelled'
   | 'batch_receipt';
 
 export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
@@ -311,6 +312,7 @@ export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
   order_fulfill: 'Выдача заказа',
   transfer_out: 'Перемещение (откуда)',
   transfer_in: 'Перемещение (куда)',
+  transfer_cancelled: 'Перемещение отменено',
   receipt: 'Приёмка товара',
   adjustment: 'Инвентаризация',
   production_in: 'Производство (выпуск)',
@@ -327,5 +329,7 @@ export interface StockMovementRecord {
   quantity: number;
   reason: StockMovementReason;
   documentId: string | null;
+  /** Null for rows written before the ledger recorded an author, and for anything a storefront customer set off. */
+  createdByName: string | null;
   createdAt: string;
 }

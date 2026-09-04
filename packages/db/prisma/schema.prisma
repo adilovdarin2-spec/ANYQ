@@ -359,9 +359,16 @@ model StockMovement {
   reason     String
   document   Document? @relation(fields: [documentId], references: [id])
   documentId String?
+  // Who moved it. A reason and a document say what happened; only this says
+  // who did it, which is the question actually being asked when a shortage
+  // turns up. Nullable for the rows written before it existed, and for the
+  // storefront, where the mover is a customer with no user account.
+  // A plain id, not a relation — same shape as Document.createdBy.
+  createdBy  String?
   createdAt  DateTime  @default(now())
 
   @@index([productId, locationId])
+  @@index([locationId, createdAt])
   @@map("stock_movements")
 }
 
