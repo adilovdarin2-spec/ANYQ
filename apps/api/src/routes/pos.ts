@@ -27,6 +27,8 @@ import {
 } from '../idempotency';
 import { resolveLocationId, resolveTransferLocations, locationErrorMessage } from '../locations';
 import { resolveTransferReceipt, transferReceiptErrorMessage } from '../transfers';
+import { resolveReturn, returnErrorMessage } from '../returns';
+import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
@@ -187,6 +189,15 @@ posRouter.get('/catalog', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   res.json({ locationId, products: await buildPosCatalog(req.posCompanyId!, modules, locationId) });
 });
+
+// A document stores its discount as a loose type/value pair; this is the
+// narrowed shape the money maths takes, and the same reading has to be used
+// everywhere or a refund won't match the sale it reverses.
+function saleDiscount(document: { discountType: string | null; discountValue: number | null }) {
+  return document.discountType === 'percent' || document.discountType === 'fixed'
+    ? { type: document.discountType as DiscountType, value: document.discountValue ?? 0 }
+    : null;
+}
 
 posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
@@ -473,6 +484,271 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   }
 });
 
+// The sales a return can be made against: this register's own shift, plus
+// anything else the caller is allowed to reach. Kept short and recent — a
+// cashier looking for "the receipt from ten minutes ago" should not have to
+// page through a week.
+posRouter.get('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const sales = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed' },
+    include: { items: { include: { product: true } }, returns: { include: { items: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    sales.map((sale) => {
+      const returnedByItemId = new Map<string, number>();
+      for (const ret of sale.returns) {
+        for (const line of ret.items) {
+          if (!line.originalItemId) continue;
+          returnedByItemId.set(line.originalItemId, (returnedByItemId.get(line.originalItemId) ?? 0) + line.quantity);
+        }
+      }
+      const subtotal = sale.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
+      const { discountAmount } = computeDiscount(subtotal, saleDiscount(sale));
+
+      return {
+        id: sale.id,
+        createdAt: sale.createdAt.toISOString(),
+        paymentMethod: sale.paymentMethod,
+        total: subtotal - discountAmount - (sale.pointsRedeemed ?? 0),
+        refundedTotal: sale.returns.reduce((sum, ret) => sum + (ret.refundAmount ?? 0), 0),
+        items: sale.items.map((it) => ({
+          id: it.id,
+          productId: it.productId,
+          name: it.product.name,
+          quantity: it.quantity,
+          price: it.price,
+          // What is still returnable on this line, so the client never offers
+          // more than the server would accept.
+          returnedQuantity: returnedByItemId.get(it.id) ?? 0,
+        })),
+      };
+    }),
+  );
+});
+
+posRouter.get('/returns', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+  const returns = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, locationId, type: 'return' },
+    include: { items: { include: { product: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    returns.map((ret) => ({
+      id: ret.id,
+      createdAt: ret.createdAt.toISOString(),
+      saleId: ret.originalDocumentId,
+      reason: ret.reason ?? '',
+      refundAmount: ret.refundAmount ?? 0,
+      paymentMethod: ret.paymentMethod,
+      createdByName: ret.createdBy ? nameByUserId.get(ret.createdBy) ?? 'Удалённый сотрудник' : null,
+      items: ret.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity, price: it.price })),
+    })),
+  );
+});
+
+// A refund moves money out of the till, so it is the one operation a shop is
+// most often robbed through. Three things make it accountable: it can only be
+// made against a real sale, it can never give back more than that sale sold,
+// and it carries a reason and an author. Reaching past the cashier's own open
+// shift needs an owner or a manager — returning yesterday's receipt is the
+// version of this that gets abused.
+posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
+  const requested: { documentItemId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  if (!b.saleId || !reason) {
+    res.status(400).json({ error: 'Укажите чек и причину возврата' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const sale = await prisma.document.findFirst({
+    where: { id: b.saleId, companyId: req.posCompanyId, type: 'sale', status: 'confirmed' },
+    include: { items: true },
+  });
+  if (!sale) {
+    res.status(404).json({ error: 'Чек не найден' });
+    return;
+  }
+
+  const openShift = await prisma.shift.findFirst({
+    where: { companyId: req.posCompanyId, userId: req.posUserId, closedAt: null },
+    orderBy: { openedAt: 'desc' },
+  });
+  const withinOwnShift =
+    !!openShift && openShift.locationId === sale.locationId && sale.createdAt >= openShift.openedAt;
+  if (!withinOwnShift && !(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Возврат по чеку не из вашей смены проводит владелец или менеджер' });
+    return;
+  }
+
+  const returnedRows = await prisma.documentItem.groupBy({
+    by: ['originalItemId'],
+    where: { originalItemId: { in: sale.items.map((it) => it.id) } },
+    _sum: { quantity: true },
+  });
+  const returnedByItemId = new Map(returnedRows.map((row) => [row.originalItemId!, row._sum.quantity ?? 0]));
+
+  const sold: SoldLine[] = sale.items.map((it) => ({
+    documentItemId: it.id,
+    productId: it.productId,
+    batchId: it.batchId,
+    quantity: it.quantity,
+    price: it.price,
+    alreadyReturned: returnedByItemId.get(it.id) ?? 0,
+  }));
+
+  const subtotal = sale.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
+  const { discountAmount } = computeDiscount(subtotal, saleDiscount(sale));
+  const resolution = resolveReturn(sold, requested, {
+    subtotal,
+    discountAmount,
+    pointsRedeemed: sale.pointsRedeemed ?? 0,
+    pointsEarned: sale.pointsEarned ?? 0,
+  });
+  if (resolution.status !== 'ok') {
+    res.status(resolution.status === 'unknown' ? 404 : 400).json({ error: returnErrorMessage(resolution) });
+    return;
+  }
+  const { lines, refund } = resolution;
+
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/returns',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
+      const document = await tx.document.create({
+        data: {
+          companyId: req.posCompanyId!,
+          locationId: sale.locationId,
+          type: 'return',
+          status: 'confirmed',
+          // How the money went back, which is not always how it came in.
+          paymentMethod: typeof b.paymentMethod === 'string' ? b.paymentMethod : sale.paymentMethod,
+          counterpartyId: sale.counterpartyId,
+          originalDocumentId: sale.id,
+          reason,
+          refundAmount: refund.amount,
+          pointsRedeemed: refund.pointsRestored,
+          pointsEarned: refund.pointsRevoked,
+          createdBy: req.posUserId!,
+          items: {
+            create: lines.map((line) => ({
+              productId: line.productId,
+              batchId: line.batchId,
+              originalItemId: line.documentItemId,
+              quantity: line.quantity,
+              price: line.price,
+            })),
+          },
+        },
+      });
+
+      const stockRows = await tx.stock.findMany({
+        where: { locationId: sale.locationId, productId: { in: lines.map((l) => l.productId) } },
+      });
+      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+
+      for (const line of lines) {
+        const stock = stockByProduct.get(line.productId);
+        if (stock) {
+          await applyStockDelta(tx, stock, line.quantity, 'return', { documentId: document.id, createdBy: req.posUserId });
+        } else {
+          await createStockWithMovement(tx, {
+            productId: line.productId,
+            locationId: sale.locationId,
+            quantity: line.quantity,
+            reason: 'return',
+            documentId: document.id,
+            createdBy: req.posUserId,
+          });
+        }
+        // Back into the batch it left from, so its expiry date comes back with
+        // it instead of the goods rejoining the shelf as undated stock.
+        if (line.batchId) {
+          await tx.productBatch.update({ where: { id: line.batchId }, data: { quantity: { increment: line.quantity } } });
+        }
+      }
+
+      if (sale.counterpartyId) {
+        // Relative, and floored, for the same reason every other balance write
+        // is: the customer may have spent points elsewhere since.
+        const delta = refund.pointsRestored - refund.pointsRevoked;
+        await tx.$executeRaw`
+          UPDATE "counterparties" SET "loyaltyPoints" = GREATEST("loyaltyPoints" + ${delta}, 0)
+          WHERE "id" = ${sale.counterpartyId}`;
+      }
+
+      return {
+        id: document.id,
+        createdAt: document.createdAt.toISOString(),
+        saleId: sale.id,
+        refundAmount: refund.amount,
+        pointsRestored: refund.pointsRestored,
+        pointsRevoked: refund.pointsRevoked,
+      };
+    });
+
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого возврата' });
+      return;
+    }
+    throw err;
+  }
+});
+
 posRouter.get('/customers', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : '';
   if (!phone) {
@@ -651,18 +927,25 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
     include: { items: { include: { product: true } } },
   });
 
+  const returnDocuments = await prisma.document.findMany({
+    where: {
+      companyId: req.posCompanyId,
+      locationId,
+      type: 'return',
+      createdAt: { gte: from, lte: to },
+    },
+    select: { refundAmount: true },
+  });
+  const refundedTotal = returnDocuments.reduce((sum, r) => sum + (r.refundAmount ?? 0), 0);
+
   const sales: SaleRecord[] = documents.map((d) => {
     const subtotal = d.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
-    const discount: { type: DiscountType; value: number } | null =
-      d.discountType === 'percent' || d.discountType === 'fixed'
-        ? { type: d.discountType, value: d.discountValue ?? 0 }
-        : null;
     return {
       id: d.id,
       createdAt: d.createdAt,
       paymentMethod: d.paymentMethod,
       createdBy: d.createdBy,
-      discountAmount: computeDiscount(subtotal, discount).discountAmount,
+      discountAmount: computeDiscount(subtotal, saleDiscount(d)).discountAmount,
       pointsRedeemed: d.pointsRedeemed ?? undefined,
       pointsEarned: d.pointsEarned ?? undefined,
       items: d.items.map((it) => ({
@@ -704,11 +987,22 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
     }
   }
 
+  const summary = buildSummary(sales);
+
   res.json({
     from: from.toISOString(),
     to: to.toISOString(),
     foodCost: buildFoodCost(sales, dishCostByProductId),
-    summary: buildSummary(sales),
+    summary,
+    // Revenue that walked back out of the till. Reported next to the takings
+    // rather than folded into them: an owner needs the gross and the refunds
+    // separately to see a register giving too much back, and netRevenue is
+    // the number that actually stayed.
+    returns: {
+      count: returnDocuments.length,
+      total: refundedTotal,
+      netRevenue: summary.revenue - refundedTotal,
+    },
     topProducts: buildTopProducts(sales, 10),
     byCashier: buildCashierBreakdown(sales, nameByUserId),
     lowStock: findLowStock(stockForLowCheck, 10),

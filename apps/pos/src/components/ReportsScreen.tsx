@@ -64,6 +64,21 @@ export function ReportsScreen({ report, loading, error, rangeDays, onRangeChange
                 <span className="value">{formatMoney(report.summary.averageCheck)}</span>
                 <span className="label">Средний чек</span>
               </div>
+              {/* Shown only once there is something to show, but shown
+                  prominently when there is: a register giving too much back
+                  is the thing this screen exists to make visible. */}
+              {report.returns.count > 0 && (
+                <>
+                  <div className="report-card">
+                    <span className="value">{formatMoney(report.returns.total)}</span>
+                    <span className="label">Возвраты · {report.returns.count}</span>
+                  </div>
+                  <div className="report-card">
+                    <span className="value">{formatMoney(report.returns.netRevenue)}</span>
+                    <span className="label">Выручка за вычетом возвратов</span>
+                  </div>
+                </>
+              )}
               {report.summary.totalDiscount > 0 && (
                 <div className="report-card">
                   <span className="value">{formatMoney(report.summary.totalDiscount)}</span>
