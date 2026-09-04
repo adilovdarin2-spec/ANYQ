@@ -5,6 +5,7 @@ const SHIFT_KEY = 'anyq_pos_shift';
 const SALES_KEY = 'anyq_pos_sales';
 const SHIFT_HISTORY_KEY = 'anyq_pos_shift_history';
 const SESSION_KEY = 'anyq_pos_session';
+const LOCATION_KEY = 'anyq_pos_location';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -53,6 +54,18 @@ export function addClosedShift(shift: Shift): void {
   const history = getShiftHistory();
   history.push(shift);
   write(SHIFT_HISTORY_KEY, history);
+}
+
+// The location this register works at, remembered across reloads so a device
+// parked in the warehouse doesn't quietly revert to the shop every morning.
+// Validated against the session's locations on read, since the remembered one
+// may since have been removed from the company.
+export function getCurrentLocationId(): string | null {
+  return read<string | null>(LOCATION_KEY, null);
+}
+
+export function saveCurrentLocationId(locationId: string | null): void {
+  write(LOCATION_KEY, locationId);
 }
 
 export function getSession(): PosSession | null {

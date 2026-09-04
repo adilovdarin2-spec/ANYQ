@@ -4,12 +4,14 @@ import { formatTime, hoursSince } from '../utils';
 interface Props {
   shift: Shift;
   cashierName: string;
+  /** null while the company has only one location — there is nothing to tell apart. */
+  locationName: string | null;
   online: boolean;
   pendingCount: number;
   stuckCount: number;
 }
 
-export function ShiftBar({ shift, cashierName, online, pendingCount, stuckCount }: Props) {
+export function ShiftBar({ shift, cashierName, locationName, online, pendingCount, stuckCount }: Props) {
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
 
@@ -20,7 +22,9 @@ export function ShiftBar({ shift, cashierName, online, pendingCount, stuckCount 
           <span className="shift-mark">A</span>
           <div className="shift-info">
             <span className="name">{cashierName}</span>
-            <span className="meta">смена с {formatTime(shift.openedAt)}</span>
+            <span className="meta">
+              {locationName ? `${locationName} · ` : ''}смена с {formatTime(shift.openedAt)}
+            </span>
           </div>
         </div>
         <div className="shift-bar-right">

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Batch, CartLine, Count, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
-import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession } from './storage';
+import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
 import {
+  fetchCatalog,
   createRemoteShift,
   closeRemoteShift,
   fetchOrders,
@@ -104,8 +105,23 @@ const OPERATIONS_VIEWS = new Set<View>([
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
+  const [rememberedLocationId, setRememberedLocationId] = useState<string | null>(() => getCurrentLocationId());
+  const [locationSwitchError, setLocationSwitchError] = useState<string | null>(null);
+  const [locationSwitching, setLocationSwitching] = useState(false);
   const [shift, setShift] = useState<Shift | null>(() => getShift());
   const [cart, setCart] = useState<CartLine[]>([]);
+  // Falls back to the location the catalog was loaded for at login, so a
+  // single-location company never has to choose and a cashier signing in on a
+  // colleague's device doesn't inherit a location that isn't theirs.
+  const currentLocationId =
+    rememberedLocationId && session?.locations.some((l) => l.id === rememberedLocationId)
+      ? rememberedLocationId
+      // A session saved by an earlier build carries no catalogLocationId, so
+      // fall back to the location that build implicitly used — a register
+      // already signed in keeps working across the deploy instead of finding
+      // every warehouse screen refusing to load until someone signs in again.
+      : session?.catalogLocationId ?? session?.locations[0]?.id ?? null;
+  const currentLocation = session?.locations.find((l) => l.id === currentLocationId) ?? null;
   const [view, setView] = useState<View>('sale');
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [query, setQuery] = useState('');
@@ -231,6 +247,39 @@ export default function App() {
     setSession(null);
   }
 
+  // A register works at one location at a time: stock, receiving, counts and
+  // reports all mean something different in the shop than in the warehouse.
+  // A remembered location the company no longer has is dropped rather than
+  // sent — it would only earn a 404 from every call.
+  async function handleSwitchLocation(nextLocationId: string) {
+    if (!session || nextLocationId === currentLocationId) return;
+    // A shift belongs to the location it was opened at, and its sales are
+    // booked there. Switching underneath an open shift would file the rest of
+    // the day's takings against a point nobody was standing in.
+    if (shift) {
+      setLocationSwitchError('Сначала закройте смену — она открыта на текущей точке');
+      return;
+    }
+    setLocationSwitching(true);
+    setLocationSwitchError(null);
+    try {
+      // The grid only moves once the new location's stock is in hand. Moving
+      // first and failing here would leave the cashier reading one point's
+      // figures while every sale is booked against another.
+      const { products } = await fetchCatalog(session.token, nextLocationId);
+      const updated: PosSession = { ...session, products, catalogLocationId: nextLocationId };
+      saveSession(updated);
+      setSession(updated);
+      saveCurrentLocationId(nextLocationId);
+      setRememberedLocationId(nextLocationId);
+      setCart([]);
+    } catch (err) {
+      setLocationSwitchError(err instanceof ApiError ? err.message : 'Не удалось переключить точку — нет связи');
+    } finally {
+      setLocationSwitching(false);
+    }
+  }
+
   async function loadOrders() {
     if (!session) return;
     setOrdersLoading(true);
@@ -310,13 +359,13 @@ export default function App() {
   }
 
   async function loadReport(days: number) {
-    if (!session) return;
+    if (!session || !currentLocationId) return;
     setReportsLoading(true);
     setReportsError(null);
     try {
       const to = new Date();
       const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
-      const data = await fetchReports(session.token, from.toISOString(), to.toISOString());
+      const data = await fetchReports(session.token, from.toISOString(), to.toISOString(), currentLocationId);
       setReport(data);
     } catch (err) {
       setReportsError(err instanceof ApiError ? err.message : 'Не удалось загрузить отчёт');
@@ -336,11 +385,11 @@ export default function App() {
   }
 
   async function loadBatches() {
-    if (!session) return;
+    if (!session || !currentLocationId) return;
     setBatchesLoading(true);
     setBatchesError(null);
     try {
-      const data = await fetchBatches(session.token);
+      const data = await fetchBatches(session.token, currentLocationId);
       setBatches(data);
     } catch (err) {
       setBatchesError(err instanceof ApiError ? err.message : 'Не удалось загрузить партии');
@@ -355,11 +404,11 @@ export default function App() {
   }
 
   async function handleReceiveBatch(payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number }) {
-    if (!session) return false;
+    if (!session || !currentLocationId) return false;
     setBatchSubmitting(true);
     setBatchesError(null);
     try {
-      await receiveBatch(session.token, payload);
+      await receiveBatch(session.token, { ...payload, locationId: currentLocationId });
       await loadBatches();
       return true;
     } catch (err) {
@@ -406,11 +455,11 @@ export default function App() {
   }
 
   async function handleCreateTransfer(payload: { toLocationId: string; items: { productId: string; quantity: number }[] }) {
-    if (!session) return false;
+    if (!session || !currentLocationId) return false;
     setTransferSubmitting(true);
     setTransfersError(null);
     try {
-      await createTransfer(session.token, payload);
+      await createTransfer(session.token, { ...payload, fromLocationId: currentLocationId });
       await loadTransfers();
       return true;
     } catch (err) {
@@ -445,11 +494,11 @@ export default function App() {
     supplierPhone: string;
     items: { productId: string; quantity: number; price: number }[];
   }) {
-    if (!session) return false;
+    if (!session || !currentLocationId) return false;
     setReceiptSubmitting(true);
     setReceiptsError(null);
     try {
-      await createReceipt(session.token, payload);
+      await createReceipt(session.token, { ...payload, locationId: currentLocationId });
       await loadReceipts();
       return true;
     } catch (err) {
@@ -480,11 +529,11 @@ export default function App() {
   }
 
   async function handleCreateCount(payload: { items: { productId: string; countedQuantity: number }[] }) {
-    if (!session) return false;
+    if (!session || !currentLocationId) return false;
     setCountSubmitting(true);
     setCountsError(null);
     try {
-      await createCount(session.token, payload);
+      await createCount(session.token, { ...payload, locationId: currentLocationId });
       await loadCounts();
       return true;
     } catch (err) {
@@ -516,11 +565,11 @@ export default function App() {
   }
 
   async function handleCreateProduction(payload: { productId: string; quantity: number }) {
-    if (!session) return false;
+    if (!session || !currentLocationId) return false;
     setProductionSubmitting(true);
     setProductionError(null);
     try {
-      await createProduction(session.token, payload);
+      await createProduction(session.token, { ...payload, locationId: currentLocationId });
       await loadProduction();
       return true;
     } catch (err) {
@@ -644,11 +693,11 @@ export default function App() {
   }, [view, session?.token]);
 
   async function handleCreateTable(name: string, seats: number) {
-    if (!session) return;
+    if (!session || !currentLocationId) return;
     setTableSubmitting(true);
     setTablesError(null);
     try {
-      await createTable(session.token, { name, seats });
+      await createTable(session.token, { locationId: currentLocationId, name, seats });
       await loadTables();
     } catch (err) {
       setTablesError(err instanceof ApiError ? err.message : 'Не удалось добавить стол');
@@ -763,7 +812,7 @@ export default function App() {
       syncedToServer: false,
     };
 
-    const locationId = session?.locations[0]?.id;
+    const locationId = currentLocationId;
     if (session && locationId) {
       try {
         const remote = await createRemoteShift(session.token, { locationId, openingCash });
@@ -921,7 +970,7 @@ export default function App() {
     const sale: Sale = {
       id: genId('sale'),
       shiftId: shift.id,
-      locationId: session.locations[0]?.id ?? '',
+      locationId: currentLocationId ?? '',
       items: cart,
       total: cartTotal,
       discount,
@@ -968,7 +1017,14 @@ export default function App() {
   if (!shift) {
     return (
       <>
-        <OpenShiftScreen onOpen={openShift} />
+        <OpenShiftScreen
+          locations={session.locations}
+          currentLocationId={currentLocationId}
+          switchingLocation={locationSwitching}
+          locationError={locationSwitchError}
+          onSwitchLocation={handleSwitchLocation}
+          onOpen={openShift}
+        />
         <InstallPrompt {...install} />
       </>
     );
@@ -976,7 +1032,14 @@ export default function App() {
 
   return (
     <div className={isDesktop ? 'pos-shell desktop' : 'pos-shell'}>
-      <ShiftBar shift={shift} cashierName={session.user.name} online={online} pendingCount={pendingCount} stuckCount={stuckCount} />
+      <ShiftBar
+        shift={shift}
+        cashierName={session.user.name}
+        locationName={session.locations.length > 1 ? currentLocation?.name ?? null : null}
+        online={online}
+        pendingCount={pendingCount}
+        stuckCount={stuckCount}
+      />
 
       {view === 'sale' && isDesktop && (
         <div className="pos-main">
@@ -1118,7 +1181,7 @@ export default function App() {
         <TransfersScreen
           transfers={transfers}
           products={session.products}
-          otherLocations={session.locations.filter((l) => l.id !== session.locations[0]?.id)}
+          otherLocations={session.locations.filter((l) => l.id !== currentLocationId)}
           loading={transfersLoading}
           error={transfersError}
           submitting={transferSubmitting}
