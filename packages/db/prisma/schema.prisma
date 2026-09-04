@@ -109,6 +109,7 @@ model Location {
   shifts           Shift[]
   tables           Table[]
   stockMovements   StockMovement[]
+  stockPolicies    StockPolicy[]
 
   @@map("locations")
 }
@@ -216,8 +217,35 @@ model Product {
   modifiers      ProductModifier[]
   stockMovements StockMovement[]
   packagings     ProductPackaging[]
+  stockPolicies  StockPolicy[]
 
   @@map("products")
+}
+
+// How much of a product a particular point wants to keep. Per location, not
+// per product: a warehouse holding a month of cover and the shop it feeds
+// holding three days are the same goods with completely different answers, and
+// one company-wide number would be wrong for both.
+//
+// Every field is optional in effect — zero means "no opinion, work it out from
+// demand". An owner who does have an opinion outranks the estimate, because on
+// slow-moving goods they know something the sales history cannot show.
+model StockPolicy {
+  id             String   @id @default(cuid())
+  product        Product  @relation(fields: [productId], references: [id])
+  productId      String
+  location       Location @relation(fields: [locationId], references: [id])
+  locationId     String
+  minQuantity    Float    @default(0)
+  targetQuantity Float    @default(0)
+  // How long this point waits between ordering and receiving. The single
+  // number that decides whether a shelf is empty when the van arrives.
+  leadTimeDays   Int      @default(3)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([productId, locationId])
+  @@index([locationId])
+  @@map("stock_policies")
 }
 
 // The same goods arrive in one shape and leave in another: water comes in by

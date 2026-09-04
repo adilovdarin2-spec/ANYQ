@@ -29,6 +29,8 @@ import { resolveLocationId, resolveTransferLocations, locationErrorMessage } fro
 import { resolveTransferReceipt, transferReceiptErrorMessage } from '../transfers';
 import { resolveReturn, returnErrorMessage } from '../returns';
 import { resolvePackagedLines, packagingErrorMessage } from '../packaging';
+import { buildDailyClosingBalances, estimateDailyDemand, recommendOrder } from '../replenishment';
+import type { DailyMovement } from '../replenishment';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -1317,6 +1319,201 @@ posRouter.delete('/products/:id/packagings/:packagingId', requirePosAuth, async 
 
   await prisma.productPackaging.delete({ where: { id: packaging.id } });
   res.json({ ok: true });
+});
+
+// How far back demand is measured. Four weeks covers a shop's weekly rhythm
+// twice over without letting a season that has already ended drive today's
+// order.
+const DEMAND_WINDOW_DAYS = 28;
+
+// Movements where a customer took goods away, or brought them back. A receipt
+// or a transfer moves stock without anybody wanting it.
+const DEMAND_REASONS = new Set(['sale', 'order_fulfill', 'table_order', 'return']);
+
+// The answer to "what do I order today", with the numbers behind it. Nobody
+// acts on a figure they can't check, so every line carries the rate, the cover
+// and the reason it appeared — an owner who disagrees can see exactly which
+// input to argue with.
+posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Закупки недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - DEMAND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  const [products, stockRows, policies, packagings, movements, incomingTransfers] = await Promise.all([
+    prisma.product.findMany({ where: { companyId: req.posCompanyId, sellable: true } }),
+    prisma.stock.findMany({ where: { locationId } }),
+    prisma.stockPolicy.findMany({ where: { locationId } }),
+    prisma.productPackaging.findMany({
+      where: { product: { companyId: req.posCompanyId } },
+      orderBy: { unitsPerPack: 'asc' },
+    }),
+    prisma.stockMovement.findMany({
+      where: { locationId, createdAt: { gte: windowStart } },
+      select: { productId: true, quantity: true, reason: true, createdAt: true },
+    }),
+    // Goods already on their way here. Ordering on top of them is how a
+    // stockroom ends up holding three months of one item.
+    prisma.documentItem.findMany({
+      where: {
+        document: { companyId: req.posCompanyId, type: 'transfer', status: 'in_transit', toLocationId: locationId },
+      },
+      select: { productId: true, quantity: true },
+    }),
+  ]);
+
+  // Summed across bins: the question is what this point has, not what one
+  // shelf in it has.
+  const availableByProduct = new Map<string, number>();
+  for (const row of stockRows) {
+    availableByProduct.set(row.productId, (availableByProduct.get(row.productId) ?? 0) + availableQuantity(row));
+  }
+  const inTransitByProduct = new Map<string, number>();
+  for (const item of incomingTransfers) {
+    inTransitByProduct.set(item.productId, (inTransitByProduct.get(item.productId) ?? 0) + item.quantity);
+  }
+  const policyByProduct = new Map(policies.map((policy) => [policy.productId, policy]));
+  // The smallest pack the goods come in. Recommending three singles when they
+  // only ship in sixes is an answer nobody can act on.
+  const packByProduct = new Map<string, number>();
+  for (const pack of packagings) {
+    if (!packByProduct.has(pack.productId)) packByProduct.set(pack.productId, pack.unitsPerPack);
+  }
+
+  // One pass over the ledger builds both lists: every movement, for
+  // reconstructing what was on the shelf, and only the demand ones, for the
+  // rate. Bucketed by whole days back from now, so "yesterday" is the 24 hours
+  // before this moment rather than a calendar date in some timezone.
+  const allByProduct = new Map<string, DailyMovement[]>();
+  const demandByProduct = new Map<string, DailyMovement[]>();
+  for (const movement of movements) {
+    const dayIndex = Math.floor((now.getTime() - movement.createdAt.getTime()) / (24 * 60 * 60 * 1000));
+    const entry: DailyMovement = { dayIndex, quantity: movement.quantity };
+
+    const all = allByProduct.get(movement.productId) ?? [];
+    all.push(entry);
+    allByProduct.set(movement.productId, all);
+
+    if (!DEMAND_REASONS.has(movement.reason)) continue;
+    const demand = demandByProduct.get(movement.productId) ?? [];
+    demand.push(entry);
+    demandByProduct.set(movement.productId, demand);
+  }
+
+  const lines = products.map((product) => {
+    const available = availableByProduct.get(product.id) ?? 0;
+    const inTransit = inTransitByProduct.get(product.id) ?? 0;
+    const policy = policyByProduct.get(product.id);
+
+    const closing = buildDailyClosingBalances(available, allByProduct.get(product.id) ?? [], DEMAND_WINDOW_DAYS);
+    const demand = estimateDailyDemand(closing, demandByProduct.get(product.id) ?? [], () => true);
+
+    const recommendation = recommendOrder({
+      available,
+      inTransit,
+      demandPerDay: demand.perDay,
+      leadTimeDays: policy?.leadTimeDays ?? 3,
+      minQuantity: policy?.minQuantity ?? 0,
+      targetQuantity: policy?.targetQuantity ?? 0,
+      unitsPerPack: packByProduct.get(product.id),
+    });
+
+    return {
+      productId: product.id,
+      name: product.name,
+      unit: product.unit,
+      available,
+      inTransit,
+      demandPerDay: demand.perDay === null ? null : Math.round(demand.perDay * 100) / 100,
+      daysInStock: demand.daysInStock,
+      daysOutOfStock: demand.daysOutOfStock,
+      soldInWindow: demand.soldInWindow,
+      daysOfCover: recommendation.daysOfCover === null ? null : Math.round(recommendation.daysOfCover * 10) / 10,
+      recommended: recommendation.quantity,
+      trigger: recommendation.trigger,
+      minQuantity: policy?.minQuantity ?? 0,
+      targetQuantity: policy?.targetQuantity ?? 0,
+      leadTimeDays: policy?.leadTimeDays ?? 3,
+      unitsPerPack: packByProduct.get(product.id) ?? null,
+    };
+  });
+
+  // Only what actually needs ordering, soonest to run out first. A list of
+  // everything is a report; this is meant to be a decision.
+  const needed = lines
+    .filter((line) => line.recommended > 0)
+    .sort((a, b) => (a.daysOfCover ?? Number.POSITIVE_INFINITY) - (b.daysOfCover ?? Number.POSITIVE_INFINITY));
+
+  res.json({ locationId, windowDays: DEMAND_WINDOW_DAYS, items: needed });
+});
+
+posRouter.put('/products/:id/policy', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Доступно только владельцу и менеджеру' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const minQuantity = Number(b.minQuantity ?? 0);
+  const targetQuantity = Number(b.targetQuantity ?? 0);
+  const leadTimeDays = Number(b.leadTimeDays ?? 3);
+  if (
+    !Number.isFinite(minQuantity) || minQuantity < 0 ||
+    !Number.isFinite(targetQuantity) || targetQuantity < 0 ||
+    !Number.isFinite(leadTimeDays) || leadTimeDays < 0
+  ) {
+    res.status(400).json({ error: 'Некорректные значения запаса' });
+    return;
+  }
+  // A target below the minimum would top the shelf up to less than the level
+  // that triggered the order, and so trigger again immediately.
+  if (targetQuantity > 0 && minQuantity > 0 && targetQuantity < minQuantity) {
+    res.status(400).json({ error: 'Целевой запас не может быть меньше минимального' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!product) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const policy = await prisma.stockPolicy.upsert({
+    where: { productId_locationId: { productId: product.id, locationId } },
+    update: { minQuantity, targetQuantity, leadTimeDays: Math.round(leadTimeDays) },
+    create: { productId: product.id, locationId, minQuantity, targetQuantity, leadTimeDays: Math.round(leadTimeDays) },
+  });
+
+  res.json({
+    productId: policy.productId,
+    locationId: policy.locationId,
+    minQuantity: policy.minQuantity,
+    targetQuantity: policy.targetQuantity,
+    leadTimeDays: policy.leadTimeDays,
+  });
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

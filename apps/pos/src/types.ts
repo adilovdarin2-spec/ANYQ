@@ -390,3 +390,32 @@ export interface ReturnRecord {
   createdByName: string | null;
   items: { productId: string; name: string; quantity: number; price: number }[];
 }
+
+/** Why an item appeared on the order list, in the system's own words. */
+export type ReplenishmentTrigger = 'below_min' | 'cover_short' | 'no_demand_data' | 'sufficient';
+
+export interface ReplenishmentItem {
+  productId: string;
+  name: string;
+  unit: string;
+  available: number;
+  inTransit: number;
+  /** Base units a day, measured only over the days it was on the shelf. Null when it never was. */
+  demandPerDay: number | null;
+  daysInStock: number;
+  daysOutOfStock: number;
+  soldInWindow: number;
+  daysOfCover: number | null;
+  recommended: number;
+  trigger: ReplenishmentTrigger;
+  minQuantity: number;
+  targetQuantity: number;
+  leadTimeDays: number;
+  unitsPerPack: number | null;
+}
+
+export interface Replenishment {
+  locationId: string;
+  windowDays: number;
+  items: ReplenishmentItem[];
+}

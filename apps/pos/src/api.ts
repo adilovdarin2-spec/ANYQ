@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, Packaging, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, Packaging, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -381,4 +381,24 @@ export function createPackaging(token: string, productId: string, payload: Packa
 
 export function deletePackaging(token: string, productId: string, packagingId: string): Promise<{ ok: boolean }> {
   return request(`/pos/products/${productId}/packagings/${packagingId}`, { method: 'DELETE' }, token);
+}
+
+// What to order today, most urgent first, with the numbers behind each line.
+export function fetchReplenishment(token: string, locationId: string): Promise<Replenishment> {
+  return request(`/pos/replenishment?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+export interface StockPolicyPayload {
+  locationId: string;
+  minQuantity: number;
+  targetQuantity: number;
+  leadTimeDays: number;
+}
+
+export function saveStockPolicy(
+  token: string,
+  productId: string,
+  payload: StockPolicyPayload,
+): Promise<{ productId: string; minQuantity: number; targetQuantity: number; leadTimeDays: number }> {
+  return request(`/pos/products/${productId}/policy`, { method: 'PUT', body: JSON.stringify(payload) }, token);
 }
