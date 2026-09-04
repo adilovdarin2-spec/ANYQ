@@ -14,6 +14,7 @@ interface Props {
   pushEnabled: boolean;
   pushBusy: boolean;
   onTogglePush: () => void;
+  onShowDashboard?: () => void;
   onShowReports?: () => void;
   onShowInstall: () => void;
   onCloseShift: () => void;
@@ -40,6 +41,7 @@ export function ProfileScreen({
   pushEnabled,
   pushBusy,
   onTogglePush,
+  onShowDashboard,
   onShowReports,
   onShowInstall,
   onCloseShift,
@@ -85,6 +87,15 @@ export function ProfileScreen({
           <span>⚠ Требуют внимания</span>
           <span>{stuckCount} — обратитесь к владельцу, продажа не проведена</span>
         </div>
+      )}
+
+      {/* First, because it is the screen whoever answers for the money opens
+          before anything else. */}
+      {onShowDashboard && (
+        <button type="button" className="profile-action" onClick={onShowDashboard}>
+          <span>🧭 Сводка владельца</span>
+          <span>›</span>
+        </button>
       )}
 
       {onShowReports && (

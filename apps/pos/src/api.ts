@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, Packaging, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, OwnerDashboard, Packaging, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -401,4 +401,11 @@ export function saveStockPolicy(
   payload: StockPolicyPayload,
 ): Promise<{ productId: string; minQuantity: number; targetQuantity: number; leadTimeDays: number }> {
   return request(`/pos/products/${productId}/policy`, { method: 'PUT', body: JSON.stringify(payload) }, token);
+}
+
+// The owner's morning: six questions with answers, each traceable to the
+// documents underneath it.
+export function fetchOwnerDashboard(token: string, locationId: string, days: number): Promise<OwnerDashboard> {
+  const query = `locationId=${encodeURIComponent(locationId)}&days=${days}`;
+  return request(`/pos/dashboard?${query}`, { method: 'GET' }, token);
 }

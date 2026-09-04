@@ -419,3 +419,78 @@ export interface Replenishment {
   windowDays: number;
   items: ReplenishmentItem[];
 }
+
+/** Not "who is stealing" — which cashier is an outlier against their own takings. */
+export interface OwnerFlag {
+  kind: 'refund_rate' | 'discount_rate' | 'write_off';
+  userId: string;
+  name: string;
+  amount: number;
+  sharePercent: number;
+}
+
+export interface OwnerShiftCash {
+  shiftId: string;
+  cashierName: string;
+  openedAt: string;
+  closedAt: string | null;
+  expected: number;
+  counted: number | null;
+  /** Counted less expected. Negative is money missing. Null while the shift is open. */
+  difference: number | null;
+}
+
+export interface DeadStockItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  /** At cost — what clearing the shelf would give back. */
+  value: number;
+  daysSinceLastSale: number | null;
+}
+
+export interface ExpiringBatch {
+  batchId: string;
+  productName: string;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+  value: number;
+  status: ExpiryStatus;
+}
+
+export interface CountDiscrepancy {
+  documentId: string;
+  createdAt: string;
+  createdByName: string | null;
+  shortfallValue: number;
+  lines: { name: string; delta: number }[];
+}
+
+export interface TransferDiscrepancy {
+  documentId: string;
+  fromLocationName: string;
+  receivedAt: string | null;
+  receivedByName: string | null;
+  lines: { name: string; sent: number; received: number }[];
+}
+
+export interface OwnerDashboard {
+  locationId: string;
+  from: string;
+  to: string;
+  days: number;
+  money: {
+    revenue: number;
+    grossMargin: number;
+    marginPercent: number | null;
+    discounts: number;
+    refunds: number;
+    netRevenue: number;
+    shifts: OwnerShiftCash[];
+  };
+  deadStock: DeadStockItem[];
+  expiring: ExpiringBatch[];
+  flags: OwnerFlag[];
+  discrepancies: { counts: CountDiscrepancy[]; transfers: TransferDiscrepancy[] };
+}

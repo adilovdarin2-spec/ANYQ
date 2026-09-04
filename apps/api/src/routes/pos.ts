@@ -31,6 +31,8 @@ import { resolveReturn, returnErrorMessage } from '../returns';
 import { resolvePackagedLines, packagingErrorMessage } from '../packaging';
 import { buildDailyClosingBalances, estimateDailyDemand, recommendOrder } from '../replenishment';
 import type { DailyMovement } from '../replenishment';
+import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
+import type { CashierActivity, ShiftCash } from '../owner';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -1513,6 +1515,262 @@ posRouter.put('/products/:id/policy', requirePosAuth, async (req: PosAuthedReque
     minQuantity: policy.minQuantity,
     targetQuantity: policy.targetQuantity,
     leadTimeDays: policy.leadTimeDays,
+  });
+});
+
+// Goods that haven't moved in this long are asleep. Three months is long
+// enough that a seasonal item isn't accused of being dead in its off-season.
+const DEAD_STOCK_DAYS = 90;
+
+// The owner's morning. Not a page of charts — six questions with answers, each
+// one traceable to the documents underneath it.
+posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Сводка доступна владельцу и менеджеру' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const now = new Date();
+  const requestedDays = Number(req.query.days);
+  const days = Number.isFinite(requestedDays) && requestedDays > 0 && requestedDays <= 90 ? Math.round(requestedDays) : 7;
+  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const deadStockSince = new Date(now.getTime() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
+
+  const [products, stockRows, salesDocs, returnDocs, adjustmentDocs, receiptLines, lastSales, batches, shifts] =
+    await Promise.all([
+      prisma.product.findMany({ where: { companyId: req.posCompanyId }, select: { id: true, name: true, purchasePrice: true } }),
+      prisma.stock.findMany({ where: { locationId } }),
+      prisma.document.findMany({
+        where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
+        include: { items: true },
+      }),
+      prisma.document.findMany({
+        where: { companyId: req.posCompanyId, locationId, type: 'return', createdAt: { gte: from } },
+        include: { items: true },
+      }),
+      prisma.document.findMany({
+        where: { companyId: req.posCompanyId, locationId, type: 'adjustment', createdAt: { gte: from } },
+        include: { items: { include: { product: true } } },
+      }),
+      // Every receipt ever, because a weighted average cost is only honest if
+      // it averages everything that was ever paid for these goods.
+      prisma.documentItem.findMany({
+        where: { document: { companyId: req.posCompanyId, type: 'receipt' } },
+        select: { productId: true, quantity: true, price: true },
+      }),
+      prisma.stockMovement.groupBy({
+        by: ['productId'],
+        where: { locationId, reason: { in: ['sale', 'order_fulfill', 'table_order'] } },
+        _max: { createdAt: true },
+      }),
+      prisma.productBatch.findMany({
+        where: { locationId, quantity: { gt: 0 } },
+        include: { product: true },
+        orderBy: { expiryDate: 'asc' },
+      }),
+      prisma.shift.findMany({ where: { companyId: req.posCompanyId, locationId, openedAt: { gte: from } }, orderBy: { openedAt: 'desc' } }),
+    ]);
+
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+  const nameByProductId = new Map(products.map((p) => [p.id, p.name]));
+  const costByProduct = buildAverageCost(
+    receiptLines,
+    new Map(products.map((p) => [p.id, p.purchasePrice])),
+  );
+
+  // --- Money -----------------------------------------------------------
+  const soldLines = salesDocs.flatMap((doc) =>
+    doc.items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price })),
+  );
+  const returnedLines = returnDocs.flatMap((doc) =>
+    doc.items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price })),
+  );
+  const grossOnSales = computeGrossMargin(soldLines, costByProduct);
+  const grossOnReturns = computeGrossMargin(returnedLines, costByProduct);
+  const discountTotal = salesDocs.reduce((sum, doc) => {
+    const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
+    return sum + computeDiscount(subtotal, saleDiscount(doc)).discountAmount;
+  }, 0);
+  const refundTotal = returnDocs.reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
+
+  // --- Cash in the drawer, per shift -----------------------------------
+  const cashByShift = shifts.map<ShiftCash>((shift) => {
+    const until = shift.closedAt ?? now;
+    const matches = (doc: { createdBy: string | null; paymentMethod: string | null; createdAt: Date }) =>
+      doc.paymentMethod === 'cash' &&
+      doc.createdAt >= shift.openedAt &&
+      doc.createdAt <= until &&
+      (!shift.userId || doc.createdBy === shift.userId);
+
+    const takings = salesDocs.filter(matches).reduce((sum, doc) => {
+      const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
+      return sum + subtotal - computeDiscount(subtotal, saleDiscount(doc)).discountAmount - (doc.pointsRedeemed ?? 0);
+    }, 0);
+    // Refunds leave the same drawer, so they belong in the same figure.
+    const paidOut = returnDocs.filter(matches).reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
+
+    return {
+      shiftId: shift.id,
+      cashierName: shift.cashierName,
+      openedAt: shift.openedAt,
+      closedAt: shift.closedAt,
+      openingCash: shift.openingCash,
+      cashMovement: takings - paidOut,
+      countedAtClose: shift.closingCashCounted,
+    };
+  });
+  const reconciled = reconcileShiftCash(cashByShift);
+
+  // --- Who is an outlier ------------------------------------------------
+  const activityByUser = new Map<string, CashierActivity>();
+  const ensure = (userId: string): CashierActivity => {
+    const existing = activityByUser.get(userId);
+    if (existing) return existing;
+    const created: CashierActivity = {
+      userId,
+      name: nameByUserId.get(userId) ?? 'Удалённый сотрудник',
+      revenue: 0,
+      refunds: 0,
+      refundCount: 0,
+      discounts: 0,
+      writeOffs: 0,
+    };
+    activityByUser.set(userId, created);
+    return created;
+  };
+
+  for (const doc of salesDocs) {
+    if (!doc.createdBy) continue;
+    const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
+    const discount = computeDiscount(subtotal, saleDiscount(doc)).discountAmount;
+    const entry = ensure(doc.createdBy);
+    entry.revenue += subtotal - discount - (doc.pointsRedeemed ?? 0);
+    entry.discounts += discount;
+  }
+  for (const doc of returnDocs) {
+    if (!doc.createdBy) continue;
+    const entry = ensure(doc.createdBy);
+    entry.refunds += doc.refundAmount ?? 0;
+    entry.refundCount += 1;
+  }
+  for (const doc of adjustmentDocs) {
+    if (!doc.createdBy) continue;
+    const written = doc.items
+      .filter((it) => it.quantity < 0)
+      .reduce((sum, it) => sum + Math.round((costByProduct.get(it.productId) ?? 0) * -it.quantity), 0);
+    ensure(doc.createdBy).writeOffs += written;
+  }
+
+  // --- Stock that is asleep, and stock about to expire -------------------
+  const lastSaleDaysAgo = new Map<string, number>();
+  for (const row of lastSales) {
+    const at = row._max.createdAt;
+    if (!at) continue;
+    lastSaleDaysAgo.set(row.productId, Math.floor((now.getTime() - at.getTime()) / (24 * 60 * 60 * 1000)));
+  }
+  const stockedByProduct = new Map<string, number>();
+  for (const row of stockRows) {
+    stockedByProduct.set(row.productId, (stockedByProduct.get(row.productId) ?? 0) + row.quantity);
+  }
+  const deadStock = findDeadStock(
+    [...stockedByProduct.entries()].map(([productId, quantity]) => ({
+      productId,
+      name: nameByProductId.get(productId) ?? '—',
+      quantity,
+    })),
+    lastSaleDaysAgo,
+    costByProduct,
+    DEAD_STOCK_DAYS,
+  ).slice(0, 20);
+
+  const expiring = batches
+    .map((batch) => ({
+      batchId: batch.id,
+      productName: batch.product.name,
+      batchNumber: batch.batchNumber,
+      expiryDate: batch.expiryDate.toISOString(),
+      quantity: batch.quantity,
+      value: Math.round((costByProduct.get(batch.productId) ?? 0) * batch.quantity),
+      status: classifyExpiry(batch.expiryDate, now),
+    }))
+    .filter((batch) => batch.status !== 'ok')
+    .slice(0, 20);
+
+  // --- Discrepancies ----------------------------------------------------
+  const countDiscrepancies = adjustmentDocs
+    .map((doc) => ({
+      documentId: doc.id,
+      createdAt: doc.createdAt.toISOString(),
+      createdByName: doc.createdBy ? nameByUserId.get(doc.createdBy) ?? 'Удалённый сотрудник' : null,
+      shortfallValue: doc.items
+        .filter((it) => it.quantity < 0)
+        .reduce((sum, it) => sum + Math.round((costByProduct.get(it.productId) ?? 0) * -it.quantity), 0),
+      lines: doc.items
+        .filter((it) => it.quantity !== 0)
+        .map((it) => ({ name: it.product.name, delta: it.quantity })),
+    }))
+    .filter((doc) => doc.shortfallValue > 0)
+    .sort((a, b) => b.shortfallValue - a.shortfallValue)
+    .slice(0, 20);
+
+  const receivedTransfers = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'transfer', toLocationId: locationId, status: 'confirmed', fulfilledAt: { gte: from } },
+    include: { items: { include: { product: true } }, location: true },
+  });
+  const transferDiscrepancies = receivedTransfers
+    .map((doc) => ({
+      documentId: doc.id,
+      fromLocationName: doc.location.name,
+      receivedAt: doc.fulfilledAt ? doc.fulfilledAt.toISOString() : null,
+      receivedByName: doc.fulfilledBy ? nameByUserId.get(doc.fulfilledBy) ?? 'Удалённый сотрудник' : null,
+      lines: doc.items
+        .filter((it) => it.receivedQuantity !== null && it.receivedQuantity < it.quantity)
+        .map((it) => ({ name: it.product.name, sent: it.quantity, received: it.receivedQuantity ?? 0 })),
+    }))
+    .filter((doc) => doc.lines.length > 0)
+    .slice(0, 20);
+
+  res.json({
+    locationId,
+    from: from.toISOString(),
+    to: now.toISOString(),
+    days,
+    money: {
+      revenue: grossOnSales.revenue,
+      // Returned goods take their margin back out with them, so the period's
+      // real margin is what the sales earned less what the returns undid.
+      grossMargin: grossOnSales.grossMargin - grossOnReturns.grossMargin,
+      marginPercent: grossOnSales.marginPercent,
+      discounts: discountTotal,
+      refunds: refundTotal,
+      netRevenue: grossOnSales.revenue - refundTotal,
+      shifts: reconciled.map((shift) => ({
+        shiftId: shift.shiftId,
+        cashierName: shift.cashierName,
+        openedAt: shift.openedAt.toISOString(),
+        closedAt: shift.closedAt ? shift.closedAt.toISOString() : null,
+        expected: shift.expected,
+        counted: shift.countedAtClose,
+        difference: shift.difference,
+      })),
+    },
+    deadStock,
+    expiring,
+    flags: flagOutliers([...activityByUser.values()]),
+    discrepancies: { counts: countDiscrepancies, transfers: transferDiscrepancies },
   });
 });
 
