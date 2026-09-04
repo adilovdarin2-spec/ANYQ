@@ -106,6 +106,12 @@ export class ConcurrentStockChangeError extends Error {
   }
 }
 
+export interface MovementContext {
+  documentId?: string;
+  /** The user who caused this. Absent only where there isn't one — a storefront customer. */
+  createdBy?: string;
+}
+
 // Stock.quantity is a materialized cache over the StockMovement ledger — the
 // ledger is the source of truth and can always reconstruct the cache. This
 // is the only place an EXISTING Stock row's quantity is ever mutated; every
@@ -127,7 +133,7 @@ export async function applyStockDelta(
   stock: StockLike,
   delta: number,
   reason: StockMovementReason,
-  documentId?: string,
+  context: MovementContext = {},
 ): Promise<void> {
   if (delta < 0) {
     const needed = -delta;
@@ -147,7 +153,14 @@ export async function applyStockDelta(
   }
 
   await tx.stockMovement.create({
-    data: { productId: stock.productId, locationId: stock.locationId, quantity: delta, reason, documentId },
+    data: {
+      productId: stock.productId,
+      locationId: stock.locationId,
+      quantity: delta,
+      reason,
+      documentId: context.documentId,
+      createdBy: context.createdBy,
+    },
   });
 }
 
@@ -207,6 +220,8 @@ export async function createStockWithMovement(
     quantity: number;
     reason: StockMovementReason;
     documentId?: string;
+    /** The user who caused this. Absent only where there isn't one — a storefront customer. */
+    createdBy?: string;
     /** '' — the default — means the goods aren't put away in a bin yet. */
     binLocation?: string;
   },
@@ -227,6 +242,7 @@ export async function createStockWithMovement(
         quantity: input.quantity,
         reason: input.reason,
         documentId: input.documentId,
+        createdBy: input.createdBy,
       },
     }),
   ]);

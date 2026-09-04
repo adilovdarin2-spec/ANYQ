@@ -32,7 +32,12 @@ export function StockHistoryScreen({ movements, loading, error, onBack, onRefres
               </span>
             </div>
             <div className="stock-move-meta">
-              <span>{STOCK_MOVEMENT_LABELS[m.reason]} · {m.locationName}</span>
+              {/* The author is the point of the screen: a reason says what
+                  happened, this says who to ask about it. */}
+              <span>
+                {STOCK_MOVEMENT_LABELS[m.reason]} · {m.locationName}
+                {m.createdByName ? ` · ${m.createdByName}` : ''}
+              </span>
               <span>{formatDateTime(m.createdAt)}</span>
             </div>
           </div>
