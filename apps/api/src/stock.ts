@@ -57,6 +57,7 @@ export type StockMovementReason =
   | 'transfer_in'
   | 'transfer_cancelled'
   | 'return'
+  | 'write_off'
   | 'receipt'
   | 'adjustment'
   | 'production_in'
@@ -67,14 +68,17 @@ export type StockMovementReason =
 // What a register may actually draw on. Goods reserved against an open order
 // are physically present and countable, but they are not for sale — selling
 // them means telling a second customer they can have what a first was already
-// promised.
-export function availableQuantity(stock: { quantity: number; reserved: number }): number {
-  return stock.quantity - stock.reserved;
+// promised. Blocked goods are present too, and equally not for sale: they are
+// sitting in quarantine waiting for somebody to decide about them.
+export function availableQuantity(stock: { quantity: number; reserved: number; blocked?: number }): number {
+  return stock.quantity - stock.reserved - (stock.blocked ?? 0);
 }
 
 // An inventory count records what is on the shelf, so it has to be recordable
 // even when the shelf holds less than has been promised — that gap is exactly
-// the finding a count exists to surface. Receipts and returns only add. Every
+// the finding a count exists to surface. A write-off is the same: broken goods
+// are broken whoever was promised them, and refusing to record that leaves the
+// shelf lying rather than the order. Receipts and returns only add. Every
 // other outbound reason consumes sellable stock and must respect reservations.
 const RESERVATION_RESPECTING_REASONS: ReadonlySet<StockMovementReason> = new Set<StockMovementReason>([
   'sale',
@@ -163,6 +167,47 @@ export async function applyStockDelta(
       createdBy: context.createdBy,
     },
   });
+}
+
+// Moves goods out of what can be sold without moving them off the books —
+// they are still here, still the shop's, and simply not for sale until
+// somebody decides. Conditional on there being that much actually free.
+export async function blockStock(
+  tx: Prisma.TransactionClient,
+  stock: { id: string; productId: string },
+  quantity: number,
+): Promise<void> {
+  const affected = await tx.$executeRaw`
+    UPDATE "stocks" SET "blocked" = "blocked" + ${quantity}
+    WHERE "id" = ${stock.id} AND "quantity" - "reserved" - "blocked" >= ${quantity}`;
+  if (affected === 0) throw new ConcurrentStockChangeError(stock.productId);
+}
+
+// Back on sale. Conditional on that much actually being in quarantine, so a
+// double release can't invent availability that isn't on the shelf.
+export async function unblockStock(
+  tx: Prisma.TransactionClient,
+  stock: { id: string; productId: string },
+  quantity: number,
+): Promise<void> {
+  const affected = await tx.$executeRaw`
+    UPDATE "stocks" SET "blocked" = "blocked" - ${quantity}
+    WHERE "id" = ${stock.id} AND "blocked" >= ${quantity}`;
+  if (affected === 0) throw new ConcurrentStockChangeError(stock.productId);
+}
+
+// Writing off quarantined goods takes them off the books entirely, so their
+// hold has to go with them — otherwise the block outlives the stock and eats
+// availability that no longer exists. Floored, because a write-off may take
+// more than was ever blocked.
+export async function releaseBlockedOnWriteOff(
+  tx: Prisma.TransactionClient,
+  stockId: string,
+  quantity: number,
+): Promise<void> {
+  await tx.$executeRaw`
+    UPDATE "stocks" SET "blocked" = GREATEST("blocked" - ${quantity}, 0)
+    WHERE "id" = ${stockId}`;
 }
 
 // Holds goods for an open order. Conditional on the row still having them

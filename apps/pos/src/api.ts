@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -459,4 +459,38 @@ export function actOnPurchaseOrder(
   action: 'approve' | 'send' | 'cancel',
 ): Promise<{ id: string; status: string }> {
   return request(`/pos/purchase-orders/${orderId}/${action}`, { method: 'POST' }, token);
+}
+
+export function fetchWriteOffs(token: string, locationId: string): Promise<WriteOffRecord[]> {
+  return request(`/pos/write-offs?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+export interface CreateWriteOffPayload {
+  locationId: string;
+  reasonCode: WriteOffReason;
+  note: string;
+  items: { productId: string; quantity: number }[];
+}
+
+// Stock leaving the books because it is broken, expired or gone. Carries a
+// countable reason and a written one: the code makes losses addable up, the
+// note explains the instance.
+export function createWriteOff(token: string, payload: CreateWriteOffPayload): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/write-offs', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export interface QuarantinePayload {
+  locationId: string;
+  note: string;
+  items: { productId: string; quantity: number }[];
+}
+
+// Quarantine is not a write-off: the goods stay on the books and stop being
+// sellable until somebody decides about them.
+export function changeQuarantine(
+  token: string,
+  action: 'block' | 'release',
+  payload: QuarantinePayload,
+): Promise<{ id: string; action: string }> {
+  return request(`/pos/quarantine/${action}`, { method: 'POST', body: JSON.stringify(payload) }, token);
 }

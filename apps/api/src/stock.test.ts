@@ -12,6 +12,14 @@ describe('availableQuantity', () => {
     expect(availableQuantity({ quantity: 10, reserved: 4 })).toBe(6);
   });
 
+  it('also excludes goods sitting in quarantine — present, but not for sale', () => {
+    expect(availableQuantity({ quantity: 10, reserved: 4, blocked: 3 })).toBe(3);
+  });
+
+  it('treats an absent blocked figure as none, for rows written before quarantine existed', () => {
+    expect(availableQuantity({ quantity: 10, reserved: 0 })).toBe(10);
+  });
+
   it('is zero when every unit on the shelf belongs to an open order', () => {
     expect(availableQuantity({ quantity: 4, reserved: 4 })).toBe(0);
   });
@@ -35,6 +43,12 @@ describe('respectsReservations', () => {
     // A count records reality. Refusing it because the shelf is short of a
     // reservation would block the very finding a count exists to produce.
     expect(respectsReservations('adjustment')).toBe(false);
+  });
+
+  it('lets a write-off take goods that were promised to somebody', () => {
+    // Broken goods are broken whoever was promised them; refusing to record it
+    // leaves the shelf lying rather than the order.
+    expect(respectsReservations('write_off')).toBe(false);
   });
 
   it('does not constrain movements that only add stock', () => {
