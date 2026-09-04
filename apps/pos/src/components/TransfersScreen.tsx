@@ -11,6 +11,7 @@ interface TransferLine {
 interface Props {
   transfers: Transfer[];
   products: Product[];
+  currentLocationId: string;
   otherLocations: CompanyLocation[];
   loading: boolean;
   error: string | null;
@@ -18,11 +19,24 @@ interface Props {
   onBack: () => void;
   onRefresh: () => void;
   onSubmit: (payload: { toLocationId: string; items: { productId: string; quantity: number }[] }) => Promise<boolean>;
+  onReceive: (transferId: string, items: { productId: string; receivedQuantity: number }[]) => Promise<boolean>;
+  onCancel: (transferId: string) => Promise<boolean>;
+}
+
+const STATUS_LABELS: Record<Transfer['status'], string> = {
+  in_transit: 'В пути',
+  confirmed: 'Принято',
+  cancelled: 'Отменено',
+};
+
+function hasShortfall(transfer: Transfer): boolean {
+  return transfer.items.some((it) => it.receivedQuantity !== null && it.receivedQuantity < it.quantity);
 }
 
 export function TransfersScreen({
   transfers,
   products,
+  currentLocationId,
   otherLocations,
   loading,
   error,
@@ -30,12 +44,20 @@ export function TransfersScreen({
   onBack,
   onRefresh,
   onSubmit,
+  onReceive,
+  onCancel,
 }: Props) {
   const [view, setView] = useState<'list' | 'create'>('list');
   const [toLocationId, setToLocationId] = useState(otherLocations[0]?.id ?? '');
   const [lines, setLines] = useState<TransferLine[]>([]);
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [quantity, setQuantity] = useState('');
+  // The transfer being counted, and the count so far. Every line starts at the
+  // quantity that was sent, so "everything arrived" is one tap and only a
+  // discrepancy costs any typing.
+  const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [counted, setCounted] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   function addLine() {
     const product = products.find((p) => p.id === productId);
@@ -63,6 +85,29 @@ export function TransfersScreen({
     }
   }
 
+  function startReceiving(transfer: Transfer) {
+    setReceivingId(transfer.id);
+    setCounted(Object.fromEntries(transfer.items.map((it) => [it.productId, String(it.quantity)])));
+  }
+
+  async function confirmReceive(transfer: Transfer) {
+    const items = transfer.items.map((it) => ({
+      productId: it.productId,
+      receivedQuantity: Number(counted[it.productId]),
+    }));
+    if (items.some((it) => !Number.isFinite(it.receivedQuantity) || it.receivedQuantity < 0)) return;
+    setBusyId(transfer.id);
+    const success = await onReceive(transfer.id, items);
+    setBusyId(null);
+    if (success) setReceivingId(null);
+  }
+
+  async function confirmCancel(transfer: Transfer) {
+    setBusyId(transfer.id);
+    await onCancel(transfer.id);
+    setBusyId(null);
+  }
+
   return (
     <div className="screen">
       <div className="screen-header">
@@ -80,24 +125,76 @@ export function TransfersScreen({
           {error && <div className="login-error">{error}</div>}
           {loading && transfers.length === 0 && <div className="empty-state">Загрузка…</div>}
           {!loading && transfers.length === 0 && !error && <div className="empty-state">Перемещений пока не было</div>}
-          {transfers.map((t) => (
-            <div key={t.id} className="order-card">
-              <div className="order-card-head">
-                <div>
-                  <div className="order-customer">{t.fromLocationName} → {t.toLocationName}</div>
-                  <div className="order-meta">{formatDateTime(t.createdAt)}</div>
-                </div>
-              </div>
-              <div className="order-items">
-                {t.items.map((it) => (
-                  <div key={it.productId} className="order-item-row">
-                    <span>{it.name}</span>
-                    <span>{it.quantity}</span>
+          {transfers.map((t) => {
+            const incoming = t.toLocationId === currentLocationId;
+            const outgoing = t.fromLocationId === currentLocationId;
+            const inTransit = t.status === 'in_transit';
+            const counting = receivingId === t.id;
+            const busy = busyId === t.id;
+
+            return (
+              <div key={t.id} className="order-card">
+                <div className="order-card-head">
+                  <div>
+                    <div className="order-customer">{t.fromLocationName} → {t.toLocationName}</div>
+                    <div className="order-meta">{formatDateTime(t.createdAt)}</div>
                   </div>
-                ))}
+                  <span className={inTransit || hasShortfall(t) ? 'pill warn' : 'pill'}>
+                    {STATUS_LABELS[t.status]}
+                    {hasShortfall(t) ? ' · недостача' : ''}
+                  </span>
+                </div>
+
+                <div className="order-items">
+                  {t.items.map((it) => (
+                    <div key={it.productId} className="order-item-row">
+                      <span>{it.name}</span>
+                      {counting ? (
+                        <input
+                          type="number"
+                          min="0"
+                          max={it.quantity}
+                          value={counted[it.productId] ?? ''}
+                          onChange={(e) => setCounted((prev) => ({ ...prev, [it.productId]: e.target.value }))}
+                          aria-label={`Принято: ${it.name}`}
+                        />
+                      ) : (
+                        <span>
+                          {it.receivedQuantity !== null && it.receivedQuantity !== it.quantity
+                            ? `принято ${it.receivedQuantity} из ${it.quantity}`
+                            : it.quantity}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Only the far end signs for what turned up — that is the whole
+                    point of the goods being in transit rather than delivered. */}
+                {inTransit && incoming && !counting && (
+                  <button className="btn btn-primary btn-block" disabled={busy} onClick={() => startReceiving(t)}>
+                    Принять
+                  </button>
+                )}
+                {inTransit && incoming && counting && (
+                  <>
+                    <p className="order-meta">Проверьте количество по каждой позиции — расхождение сохранится в документе.</p>
+                    <button className="btn btn-primary btn-block" disabled={busy} onClick={() => confirmReceive(t)}>
+                      {busy ? 'Принимаем…' : 'Подтвердить приёмку'}
+                    </button>
+                    <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => setReceivingId(null)}>
+                      Отмена
+                    </button>
+                  </>
+                )}
+                {inTransit && outgoing && !counting && (
+                  <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => confirmCancel(t)}>
+                    {busy ? 'Возвращаем…' : 'Вернуть на точку отправления'}
+                  </button>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

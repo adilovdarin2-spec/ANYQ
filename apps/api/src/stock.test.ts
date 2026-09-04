@@ -1,5 +1,50 @@
 import { describe, it, expect } from 'vitest';
-import { findStockShortages, hasInvalidQuantity, aggregateRequestedQuantities } from './stock';
+import {
+  findStockShortages,
+  hasInvalidQuantity,
+  aggregateRequestedQuantities,
+  availableQuantity,
+  respectsReservations,
+} from './stock';
+
+describe('availableQuantity', () => {
+  it('is what is on hand less what is already promised', () => {
+    expect(availableQuantity({ quantity: 10, reserved: 4 })).toBe(6);
+  });
+
+  it('is zero when every unit on the shelf belongs to an open order', () => {
+    expect(availableQuantity({ quantity: 4, reserved: 4 })).toBe(0);
+  });
+
+  it('goes negative when a count finds less than was promised, rather than clamping', () => {
+    // Clamping to zero would hide the exact situation the owner has to see:
+    // three units are owed to someone and only one is on the shelf.
+    expect(availableQuantity({ quantity: 1, reserved: 4 })).toBe(-3);
+  });
+});
+
+describe('respectsReservations', () => {
+  it('holds reserved stock back from anything that consumes sellable goods', () => {
+    expect(respectsReservations('sale')).toBe(true);
+    expect(respectsReservations('transfer_out')).toBe(true);
+    expect(respectsReservations('production_out')).toBe(true);
+    expect(respectsReservations('table_order')).toBe(true);
+  });
+
+  it('lets an inventory count record a shelf holding less than was promised', () => {
+    // A count records reality. Refusing it because the shelf is short of a
+    // reservation would block the very finding a count exists to produce.
+    expect(respectsReservations('adjustment')).toBe(false);
+  });
+
+  it('does not constrain movements that only add stock', () => {
+    expect(respectsReservations('receipt')).toBe(false);
+    expect(respectsReservations('transfer_in')).toBe(false);
+    expect(respectsReservations('transfer_cancelled')).toBe(false);
+    expect(respectsReservations('production_in')).toBe(false);
+    expect(respectsReservations('batch_receipt')).toBe(false);
+  });
+});
 
 describe('aggregateRequestedQuantities', () => {
   it('sums lines that carry the same product', () => {

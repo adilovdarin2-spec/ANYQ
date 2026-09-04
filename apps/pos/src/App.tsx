@@ -18,6 +18,8 @@ import {
   setStopListed,
   fetchTransfers,
   createTransfer,
+  receiveTransfer,
+  cancelTransfer,
   fetchReceipts,
   createReceipt,
   fetchCounts,
@@ -452,6 +454,35 @@ export default function App() {
   function handleShowTransfers() {
     setView('transfers');
     void loadTransfers();
+  }
+
+  // Receiving is the far end signing for what actually turned up. A count
+  // that comes up short still goes through — the goods are gone either way,
+  // and the difference is what the owner needs to see.
+  async function handleReceiveTransfer(transferId: string, items: { productId: string; receivedQuantity: number }[]) {
+    if (!session || !currentLocationId) return false;
+    setTransfersError(null);
+    try {
+      await receiveTransfer(session.token, transferId, { locationId: currentLocationId, items });
+      await loadTransfers();
+      return true;
+    } catch (err) {
+      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось принять перемещение');
+      return false;
+    }
+  }
+
+  async function handleCancelTransfer(transferId: string) {
+    if (!session) return false;
+    setTransfersError(null);
+    try {
+      await cancelTransfer(session.token, transferId);
+      await loadTransfers();
+      return true;
+    } catch (err) {
+      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось отменить перемещение');
+      return false;
+    }
   }
 
   async function handleCreateTransfer(payload: { toLocationId: string; items: { productId: string; quantity: number }[] }) {
@@ -1181,7 +1212,10 @@ export default function App() {
         <TransfersScreen
           transfers={transfers}
           products={session.products}
+          currentLocationId={currentLocationId ?? ''}
           otherLocations={session.locations.filter((l) => l.id !== currentLocationId)}
+          onReceive={handleReceiveTransfer}
+          onCancel={handleCancelTransfer}
           loading={transfersLoading}
           error={transfersError}
           submitting={transferSubmitting}

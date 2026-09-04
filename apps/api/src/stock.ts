@@ -55,12 +55,37 @@ export type StockMovementReason =
   | 'order_fulfill'
   | 'transfer_out'
   | 'transfer_in'
+  | 'transfer_cancelled'
   | 'receipt'
   | 'adjustment'
   | 'production_in'
   | 'production_out'
   | 'table_order'
   | 'batch_receipt';
+
+// What a register may actually draw on. Goods reserved against an open order
+// are physically present and countable, but they are not for sale — selling
+// them means telling a second customer they can have what a first was already
+// promised.
+export function availableQuantity(stock: { quantity: number; reserved: number }): number {
+  return stock.quantity - stock.reserved;
+}
+
+// An inventory count records what is on the shelf, so it has to be recordable
+// even when the shelf holds less than has been promised — that gap is exactly
+// the finding a count exists to surface. Receipts and returns only add. Every
+// other outbound reason consumes sellable stock and must respect reservations.
+const RESERVATION_RESPECTING_REASONS: ReadonlySet<StockMovementReason> = new Set<StockMovementReason>([
+  'sale',
+  'order_fulfill',
+  'transfer_out',
+  'production_out',
+  'table_order',
+]);
+
+export function respectsReservations(reason: StockMovementReason): boolean {
+  return RESERVATION_RESPECTING_REASONS.has(reason);
+}
 
 interface StockLike {
   id: string;
@@ -105,11 +130,18 @@ export async function applyStockDelta(
   documentId?: string,
 ): Promise<void> {
   if (delta < 0) {
-    const { count } = await tx.stock.updateMany({
-      where: { id: stock.id, quantity: { gte: -delta } },
-      data: { quantity: { increment: delta } },
-    });
-    if (count === 0) throw new ConcurrentStockChangeError(stock.productId);
+    const needed = -delta;
+    // Raw statements because the condition compares two columns of the row
+    // being written, which Prisma's query API can't express. Both are still
+    // parameterized — the tagged template binds, it doesn't interpolate.
+    const affected = respectsReservations(reason)
+      ? await tx.$executeRaw`
+          UPDATE "stocks" SET "quantity" = "quantity" - ${needed}
+          WHERE "id" = ${stock.id} AND "quantity" - "reserved" >= ${needed}`
+      : await tx.$executeRaw`
+          UPDATE "stocks" SET "quantity" = "quantity" - ${needed}
+          WHERE "id" = ${stock.id} AND "quantity" >= ${needed}`;
+    if (affected === 0) throw new ConcurrentStockChangeError(stock.productId);
   } else {
     await tx.stock.update({ where: { id: stock.id }, data: { quantity: { increment: delta } } });
   }
@@ -117,6 +149,37 @@ export async function applyStockDelta(
   await tx.stockMovement.create({
     data: { productId: stock.productId, locationId: stock.locationId, quantity: delta, reason, documentId },
   });
+}
+
+// Holds goods for an open order. Conditional on the row still having them
+// free, so two orders placed at the same moment can't both be promised the
+// last unit — the check and the write are one statement, on a locked row.
+//
+// No movement row: nothing moved, and the ledger records physical movement.
+// What explains a reservation is the order document that made it.
+export async function reserveStock(
+  tx: Prisma.TransactionClient,
+  stock: { id: string; productId: string },
+  quantity: number,
+): Promise<void> {
+  const affected = await tx.$executeRaw`
+    UPDATE "stocks" SET "reserved" = "reserved" + ${quantity}
+    WHERE "id" = ${stock.id} AND "quantity" - "reserved" >= ${quantity}`;
+  if (affected === 0) throw new ConcurrentStockChangeError(stock.productId);
+}
+
+// Releasing must never fail: it runs when an order is fulfilled, rejected or
+// cancelled, and refusing there would strand the goods reserved forever. The
+// floor at zero guards against a double release inventing availability that
+// isn't on the shelf.
+export async function releaseStock(
+  tx: Prisma.TransactionClient,
+  stockId: string,
+  quantity: number,
+): Promise<void> {
+  await tx.$executeRaw`
+    UPDATE "stocks" SET "reserved" = GREATEST("reserved" - ${quantity}, 0)
+    WHERE "id" = ${stockId}`;
 }
 
 // Same conditional-decrement reasoning as applyStockDelta, for the batch rows
