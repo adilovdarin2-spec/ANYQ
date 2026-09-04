@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -24,6 +24,10 @@ import {
   fetchOwnerDashboard,
   fetchPendingFiscal,
   registerFiscalManually,
+  fetchBins,
+  createBin,
+  deleteBin,
+  putawayStock,
   fetchWriteOffs,
   createWriteOff,
   changeQuarantine,
@@ -97,6 +101,7 @@ import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
+import { BinsScreen } from './components/BinsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -125,6 +130,7 @@ type View =
   | 'fiscal'
   | 'purchase-orders'
   | 'write-offs'
+  | 'bins'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -132,7 +138,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -186,6 +192,11 @@ export default function App() {
   const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
   const [packagingBusy, setPackagingBusy] = useState(false);
   const [packagingError, setPackagingError] = useState<string | null>(null);
+  const [bins, setBins] = useState<StorageBin[]>([]);
+  const [unplaced, setUnplaced] = useState<BinContent[]>([]);
+  const [binsLoading, setBinsLoading] = useState(false);
+  const [binsError, setBinsError] = useState<string | null>(null);
+  const [binsSubmitting, setBinsSubmitting] = useState(false);
   const [writeOffs, setWriteOffs] = useState<WriteOffRecord[]>([]);
   const [writeOffLoading, setWriteOffLoading] = useState(false);
   const [writeOffError, setWriteOffError] = useState<string | null>(null);
@@ -284,6 +295,7 @@ export default function App() {
       { key: 'returns', icon: '↩️', label: 'Возвраты', onClick: handleShowReturns },
       { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
       { key: 'purchase-orders', icon: '📄', label: 'Заказы поставщику', onClick: handleShowPurchaseOrders },
+      { key: 'bins', icon: '🗄️', label: 'Ячейки', onClick: handleShowBins },
       { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
@@ -694,6 +706,69 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadBins() {
+    if (!session || !currentLocationId) return;
+    setBinsLoading(true);
+    setBinsError(null);
+    try {
+      const data = await fetchBins(session.token, currentLocationId);
+      setBins(data.bins);
+      setUnplaced(data.unplaced);
+    } catch (err) {
+      setBinsError(err instanceof ApiError ? err.message : 'Не удалось загрузить ячейки');
+    } finally {
+      setBinsLoading(false);
+    }
+  }
+
+  function handleShowBins() {
+    setView('bins');
+    void loadBins();
+  }
+
+  async function handleCreateBin(address: { zone: string; rack: string; shelf: string; bin: string }) {
+    if (!session || !currentLocationId) return false;
+    setBinsSubmitting(true);
+    setBinsError(null);
+    try {
+      await createBin(session.token, { ...address, locationId: currentLocationId });
+      await loadBins();
+      return true;
+    } catch (err) {
+      setBinsError(err instanceof ApiError ? err.message : 'Не удалось создать ячейку');
+      return false;
+    } finally {
+      setBinsSubmitting(false);
+    }
+  }
+
+  async function handleDeleteBin(binId: string) {
+    if (!session) return;
+    setBinsError(null);
+    try {
+      await deleteBin(session.token, binId);
+      await loadBins();
+    } catch (err) {
+      setBinsError(err instanceof ApiError ? err.message : 'Не удалось удалить ячейку');
+    }
+  }
+
+  async function handlePutaway(payload: { productId: string; quantity: number; fromBin: string; toBin: string }) {
+    if (!session || !currentLocationId) return false;
+    setBinsSubmitting(true);
+    setBinsError(null);
+    try {
+      await putawayStock(session.token, { ...payload, locationId: currentLocationId });
+      await loadBins();
+      return true;
+    } catch (err) {
+      setBinsError(err instanceof ApiError ? err.message : 'Не удалось разместить товар');
+      return false;
+    } finally {
+      setBinsSubmitting(false);
+    }
   }
 
   async function loadWriteOffs() {
@@ -1699,6 +1774,22 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'bins' && (
+        <BinsScreen
+          bins={bins}
+          unplaced={unplaced}
+          loading={binsLoading}
+          error={binsError}
+          submitting={binsSubmitting}
+          canManage={isOwnerOrManager}
+          onBack={() => setView('operations')}
+          onRefresh={loadBins}
+          onCreateBin={handleCreateBin}
+          onDeleteBin={handleDeleteBin}
+          onPutaway={handlePutaway}
         />
       )}
 

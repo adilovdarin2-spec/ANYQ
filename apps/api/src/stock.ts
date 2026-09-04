@@ -1,4 +1,6 @@
 import type { Prisma } from '@anyq/db';
+import { allocateFromBins } from './bins';
+import type { BinStock } from './bins';
 
 export interface SaleItemInput {
   productId: string;
@@ -97,6 +99,8 @@ interface StockLike {
   productId: string;
   locationId: string;
   quantity: number;
+  /** '' means the goods were never put away. */
+  binLocation?: string;
 }
 
 // Raised when a decrement can no longer be covered by the row it targets —
@@ -161,12 +165,88 @@ export async function applyStockDelta(
     data: {
       productId: stock.productId,
       locationId: stock.locationId,
+      // The shelf, not just the building. Without it a count that comes up
+      // short can only be traced to a whole warehouse, which is the same as
+      // not being traced.
+      binLocation: stock.binLocation ?? '',
       quantity: delta,
       reason,
       documentId: context.documentId,
       createdBy: context.createdBy,
     },
   });
+}
+
+// A location holds one product in as many bins as it likes, so every read has
+// to group rather than assume one row per product. Keeping a single row and
+// dropping the rest — which a Map keyed by productId does silently — is how a
+// shelf full of goods reads as empty.
+export function groupStockByProduct<T extends { productId: string }>(rows: T[]): Map<string, T[]> {
+  const byProduct = new Map<string, T[]>();
+  for (const row of rows) {
+    const list = byProduct.get(row.productId) ?? [];
+    list.push(row);
+    byProduct.set(row.productId, list);
+  }
+  return byProduct;
+}
+
+export function totalAvailable(rows: { quantity: number; reserved: number; blocked?: number }[] = []): number {
+  return rows.reduce((sum, row) => sum + availableQuantity(row), 0);
+}
+
+export function totalOnHand(rows: { quantity: number }[] = []): number {
+  return rows.reduce((sum, row) => sum + row.quantity, 0);
+}
+
+export function totalHeldBack(rows: { reserved: number; blocked?: number }[] = []): number {
+  return rows.reduce((sum, row) => sum + row.reserved + (row.blocked ?? 0), 0);
+}
+
+/** One product's stock at one location, split across the bins it sits in. */
+export interface BinnedStock {
+  id: string;
+  productId: string;
+  locationId: string;
+  quantity: number;
+  reserved: number;
+  blocked: number;
+  binLocation: string;
+}
+
+// Taking goods out of a location means taking them out of specific shelves.
+// A location holds one product in as many bins as it likes, and deducting from
+// whichever row happened to be read first would empty a shelf on paper while
+// the goods sat on another one.
+//
+// Which bins, and in what order, is allocateFromBins' decision; this applies
+// it, writing one movement per bin so the ledger says where each unit came
+// from.
+export async function deductAcrossBins(
+  tx: Prisma.TransactionClient,
+  rows: BinnedStock[],
+  quantity: number,
+  reason: StockMovementReason,
+  context: MovementContext = {},
+): Promise<void> {
+  const respects = respectsReservations(reason);
+  const bins: BinStock[] = rows.map((row) => ({
+    stockId: row.id,
+    binCode: row.binLocation,
+    // A write-off may take goods that are reserved or quarantined; a sale may
+    // not. The allocator only ever sees what this particular reason can touch.
+    available: respects ? availableQuantity(row) : row.quantity,
+  }));
+
+  const allocation = allocateFromBins(quantity, bins);
+  if (allocation.status !== 'ok') {
+    throw new ConcurrentStockChangeError(rows[0]?.productId ?? '');
+  }
+
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  for (const part of allocation.allocations) {
+    await applyStockDelta(tx, rowById.get(part.stockId)!, -part.quantity, reason, context);
+  }
 }
 
 // Moves goods out of what can be sold without moving them off the books —
