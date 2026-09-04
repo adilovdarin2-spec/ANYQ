@@ -513,6 +513,8 @@ export interface OwnerDashboard {
     shifts: OwnerShiftCash[];
   };
   unfiscalised: Unfiscalised;
+  /** The invariant everything else rests on, checked rather than assumed. */
+  ledgerCheck: { checked: number; mismatched: number; totalDrift: number };
   debts: { receivable: DebtSide; payable: DebtSide };
   deadStock: DeadStockItem[];
   expiring: ExpiringBatch[];
@@ -671,4 +673,28 @@ export interface BinCountAdjustmentResult {
   systemQuantity: number;
   countedQuantity: number;
   delta: number;
+}
+
+export interface LedgerMismatch {
+  productId: string;
+  name: string;
+  unit: string;
+  binLocation: string;
+  /** What the movement ledger says — the source of truth. */
+  ledger: number;
+  /** What the stock row says — what everything reads. */
+  cached: number;
+  difference: number;
+  kind: 'drift' | 'missing_row' | 'orphan_row';
+  explanation: string;
+}
+
+export interface ReconciliationReport {
+  locationId: string;
+  checkedAt: string;
+  checked: number;
+  mismatched: number;
+  /** Absolute units of disagreement, both directions added rather than cancelled. */
+  totalDrift: number;
+  mismatches: LedgerMismatch[];
 }
