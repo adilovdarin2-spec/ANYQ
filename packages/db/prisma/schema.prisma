@@ -390,6 +390,10 @@ model Stock {
   // changes the order, and rebuildable from those orders. It writes no
   // movement row, because nothing physically moved — the order explains it.
   reserved    Float   @default(0)
+  // Physically here, on the books, and not for sale: quarantined pending a
+  // decision. Pretending blocked goods are gone understates stock; leaving
+  // them sellable sells them. Available is quantity - reserved - blocked.
+  blocked     Float   @default(0)
   // Not nullable, and '' means "not put away in a bin yet". In Postgres two
   // NULLs are never equal, so a nullable column left the @@unique below
   // enforcing nothing for the rows the app actually writes — two concurrent
@@ -446,6 +450,10 @@ model Document {
   // out of a till, and "a reason and the right to do it" is what makes one
   // accountable rather than merely recorded.
   reason        String?
+  // The countable half of that, on a write-off: 'damage', 'expiry', 'theft',
+  // 'quality', 'other'. Free text alone can't answer "do we lose more to
+  // breakage or to expiry"; a code can, and the note explains the instance.
+  reasonCode    String?
   // When the goods are promised, on a purchase order. The date a lead time is
   // measured against, and the one that makes "late" answerable.
   expectedAt    DateTime?

@@ -6,6 +6,9 @@ import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage } from '../tariff';
 import {
+  blockStock,
+  unblockStock,
+  releaseBlockedOnWriteOff,
   findStockShortages,
   hasInvalidQuantity,
   aggregateRequestedQuantities,
@@ -36,6 +39,8 @@ import type { CashierActivity, ShiftCash } from '../owner';
 import { isValidManualEntry, manualRegistration } from '../fiscal';
 import { canTransition, nextStatus, transitionErrorMessage, computeOrderProgress, detectPriceDeviation } from '../purchasing';
 import type { PurchaseOrderStatus, OrderedLine } from '../purchasing';
+import { isWriteOffReason, resolveWriteOff, writeOffErrorMessage, resolveQuarantine, quarantineErrorMessage } from '../writeoffs';
+import type { QuarantineAction } from '../writeoffs';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -1580,8 +1585,16 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
         where: { companyId: req.posCompanyId, locationId, type: 'return', createdAt: { gte: from } },
         include: { items: true },
       }),
+      // Both kinds: a count that came up short and a deliberate write-off are
+      // the same thing to an owner — stock that left the books without being
+      // sold.
       prisma.document.findMany({
-        where: { companyId: req.posCompanyId, locationId, type: 'adjustment', createdAt: { gte: from } },
+        where: {
+          companyId: req.posCompanyId,
+          locationId,
+          type: { in: ['adjustment', 'write_off'] },
+          createdAt: { gte: from },
+        },
         include: { items: { include: { product: true } } },
       }),
       // Every receipt ever, because a weighted average cost is only honest if
@@ -1687,9 +1700,12 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
   }
   for (const doc of adjustmentDocs) {
     if (!doc.createdBy) continue;
-    const written = doc.items
-      .filter((it) => it.quantity < 0)
-      .reduce((sum, it) => sum + Math.round((costByProduct.get(it.productId) ?? 0) * -it.quantity), 0);
+    // A count records its shortfall as a negative delta; a write-off records
+    // the quantity destroyed as a positive one. Both are stock lost.
+    const written = doc.items.reduce((sum, it) => {
+      const lost = doc.type === 'write_off' ? it.quantity : Math.max(-it.quantity, 0);
+      return sum + Math.round((costByProduct.get(it.productId) ?? 0) * lost);
+    }, 0);
     ensure(doc.createdBy).writeOffs += written;
   }
 
@@ -1732,14 +1748,18 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
   const countDiscrepancies = adjustmentDocs
     .map((doc) => ({
       documentId: doc.id,
+      type: doc.type,
+      reasonCode: doc.reasonCode,
+      note: doc.reason ?? '',
       createdAt: doc.createdAt.toISOString(),
       createdByName: doc.createdBy ? nameByUserId.get(doc.createdBy) ?? 'Удалённый сотрудник' : null,
-      shortfallValue: doc.items
-        .filter((it) => it.quantity < 0)
-        .reduce((sum, it) => sum + Math.round((costByProduct.get(it.productId) ?? 0) * -it.quantity), 0),
+      shortfallValue: doc.items.reduce((sum, it) => {
+        const lost = doc.type === 'write_off' ? it.quantity : Math.max(-it.quantity, 0);
+        return sum + Math.round((costByProduct.get(it.productId) ?? 0) * lost);
+      }, 0),
       lines: doc.items
         .filter((it) => it.quantity !== 0)
-        .map((it) => ({ name: it.product.name, delta: it.quantity })),
+        .map((it) => ({ name: it.product.name, delta: doc.type === 'write_off' ? -it.quantity : it.quantity })),
     }))
     .filter((doc) => doc.shortfallValue > 0)
     .sort((a, b) => b.shortfallValue - a.shortfallValue)
@@ -2231,6 +2251,239 @@ posRouter.get('/suppliers/:id/prices', requirePosAuth, async (req: PosAuthedRequ
       };
     }),
   );
+});
+
+// Stock leaving the books because it is broken, expired or simply gone. The
+// plainest signal there is that money has been lost, so it carries a countable
+// reason, a written one, and a name — and the owner's summary surfaces it
+// without any threshold at all.
+posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const note = typeof b.note === 'string' ? b.note.trim() : '';
+  const lines: { productId: string; quantity: number; batchId?: string | null }[] = Array.isArray(b.items) ? b.items : [];
+  if (!isWriteOffReason(b.reasonCode)) {
+    res.status(400).json({ error: 'Выберите причину списания' });
+    return;
+  }
+  if (!note) {
+    res.status(400).json({ error: 'Опишите, что произошло' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Списания недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const stockRows = await prisma.stock.findMany({
+    where: { locationId, productId: { in: lines.map((line) => line.productId) } },
+  });
+  const onHandByProduct = new Map<string, number>();
+  for (const row of stockRows) {
+    onHandByProduct.set(row.productId, (onHandByProduct.get(row.productId) ?? 0) + row.quantity);
+  }
+
+  const resolution = resolveWriteOff(lines, onHandByProduct);
+  if (resolution.status !== 'ok') {
+    res.status(400).json({ error: writeOffErrorMessage(resolution) });
+    return;
+  }
+
+  const stockByProduct = new Map(stockRows.map((row) => [row.productId, row]));
+
+  try {
+    const document = await prisma.$transaction(async (tx) => {
+      const created = await tx.document.create({
+        data: {
+          companyId: req.posCompanyId!,
+          locationId,
+          type: 'write_off',
+          status: 'confirmed',
+          reasonCode: b.reasonCode,
+          reason: note,
+          createdBy: req.posUserId!,
+          items: {
+            create: resolution.lines.map((line) => ({
+              productId: line.productId,
+              batchId: line.batchId,
+              quantity: line.quantity,
+              price: 0,
+            })),
+          },
+        },
+      });
+
+      for (const line of resolution.lines) {
+        const stock = stockByProduct.get(line.productId)!;
+        await applyStockDelta(tx, stock, -line.quantity, 'write_off', {
+          documentId: created.id,
+          createdBy: req.posUserId,
+        });
+        // Quarantined goods that are then written off take their hold with
+        // them — otherwise the block outlives the stock and eats availability
+        // that no longer exists.
+        await releaseBlockedOnWriteOff(tx, stock.id, line.quantity);
+        // Off the batch too, so the expiry that went in the bin stops counting
+        // towards what can be sold.
+        if (line.batchId) {
+          await tx.productBatch.update({
+            where: { id: line.batchId },
+            data: { quantity: { decrement: line.quantity } },
+          });
+        }
+      }
+
+      return created;
+    }, { timeout: 15000 });
+
+    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+  } catch (err) {
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
+});
+
+posRouter.get('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Списания недоступны на вашем тарифе' });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+  const documents = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, locationId, type: { in: ['write_off', 'quarantine'] } },
+    include: { items: { include: { product: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(
+    documents.map((doc) => ({
+      id: doc.id,
+      type: doc.type,
+      createdAt: doc.createdAt.toISOString(),
+      reasonCode: doc.reasonCode ?? 'other',
+      note: doc.reason ?? '',
+      createdByName: doc.createdBy ? nameByUserId.get(doc.createdBy) ?? 'Удалённый сотрудник' : null,
+      items: doc.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity })),
+    })),
+  );
+});
+
+// Quarantine is not a write-off. The goods are still there and still the
+// shop's; they simply cannot be sold until somebody decides. Nothing moves, so
+// no ledger row is written — what explains it is this document.
+posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const action = req.params.action;
+  if (action !== 'block' && action !== 'release') {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const note = typeof b.note === 'string' ? b.note.trim() : '';
+  const changes: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  if (action === 'block' && !note) {
+    res.status(400).json({ error: 'Опишите, почему товар изолируется' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Карантин недоступен на вашем тарифе' });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const stockRows = await prisma.stock.findMany({
+    where: { locationId, productId: { in: changes.map((c) => c.productId) } },
+  });
+  // Blocking is limited by what is free; releasing by what is actually held.
+  const limitByProduct = new Map<string, number>();
+  for (const row of stockRows) {
+    const limit = action === 'block' ? availableQuantity(row) : row.blocked;
+    limitByProduct.set(row.productId, (limitByProduct.get(row.productId) ?? 0) + limit);
+  }
+
+  const resolution = resolveQuarantine(changes, action as QuarantineAction, limitByProduct);
+  if (resolution.status !== 'ok') {
+    res.status(400).json({ error: quarantineErrorMessage(resolution, action as QuarantineAction) });
+    return;
+  }
+
+  const stockByProduct = new Map(stockRows.map((row) => [row.productId, row]));
+
+  try {
+    const document = await prisma.$transaction(async (tx) => {
+      const created = await tx.document.create({
+        data: {
+          companyId: req.posCompanyId!,
+          locationId,
+          type: 'quarantine',
+          status: action === 'block' ? 'confirmed' : 'cancelled',
+          reasonCode: action,
+          reason: note || null,
+          createdBy: req.posUserId!,
+          items: {
+            create: resolution.changes.map((change) => ({
+              productId: change.productId,
+              quantity: change.quantity,
+              price: 0,
+            })),
+          },
+        },
+      });
+
+      for (const change of resolution.changes) {
+        const stock = stockByProduct.get(change.productId)!;
+        if (action === 'block') {
+          await blockStock(tx, stock, change.quantity);
+        } else {
+          await unblockStock(tx, stock, change.quantity);
+        }
+      }
+
+      return created;
+    }, { timeout: 15000 });
+
+    res.status(201).json({ id: document.id, action });
+  } catch (err) {
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

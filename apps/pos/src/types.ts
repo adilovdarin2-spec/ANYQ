@@ -568,3 +568,27 @@ export interface SupplierPrice {
   /** True once the move is large enough to be worth a person's attention. */
   notable: boolean;
 }
+
+export type WriteOffReason = 'damage' | 'expiry' | 'theft' | 'quality' | 'other';
+
+// A code makes losses countable; the note that goes with it makes each one
+// explainable. An owner asking "do we lose more to breakage or to expiry"
+// cannot get that out of a hundred hand-typed notes.
+export const WRITE_OFF_LABELS: Record<WriteOffReason, string> = {
+  damage: 'Повреждение',
+  expiry: 'Просрочка',
+  theft: 'Недостача',
+  quality: 'Брак',
+  other: 'Другое',
+};
+
+export interface WriteOffRecord {
+  id: string;
+  /** 'write_off' takes goods off the books; 'quarantine' only takes them off sale. */
+  type: 'write_off' | 'quarantine';
+  createdAt: string;
+  reasonCode: string;
+  note: string;
+  createdByName: string | null;
+  items: { productId: string; name: string; quantity: number }[];
+}

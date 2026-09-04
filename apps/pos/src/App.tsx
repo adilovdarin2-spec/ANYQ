@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -24,6 +24,9 @@ import {
   fetchOwnerDashboard,
   fetchPendingFiscal,
   registerFiscalManually,
+  fetchWriteOffs,
+  createWriteOff,
+  changeQuarantine,
   fetchSuppliers,
   fetchPurchaseOrders,
   createPurchaseOrder,
@@ -93,6 +96,7 @@ import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
+import { WriteOffScreen } from './components/WriteOffScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -120,6 +124,7 @@ type View =
   | 'dashboard'
   | 'fiscal'
   | 'purchase-orders'
+  | 'write-offs'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -127,7 +132,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -181,6 +186,10 @@ export default function App() {
   const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
   const [packagingBusy, setPackagingBusy] = useState(false);
   const [packagingError, setPackagingError] = useState<string | null>(null);
+  const [writeOffs, setWriteOffs] = useState<WriteOffRecord[]>([]);
+  const [writeOffLoading, setWriteOffLoading] = useState(false);
+  const [writeOffError, setWriteOffError] = useState<string | null>(null);
+  const [writeOffSubmitting, setWriteOffSubmitting] = useState(false);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
@@ -275,6 +284,7 @@ export default function App() {
       { key: 'returns', icon: '↩️', label: 'Возвраты', onClick: handleShowReturns },
       { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
       { key: 'purchase-orders', icon: '📄', label: 'Заказы поставщику', onClick: handleShowPurchaseOrders },
+      { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
     );
@@ -684,6 +694,80 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadWriteOffs() {
+    if (!session || !currentLocationId) return;
+    setWriteOffLoading(true);
+    setWriteOffError(null);
+    try {
+      setWriteOffs(await fetchWriteOffs(session.token, currentLocationId));
+    } catch (err) {
+      setWriteOffError(err instanceof ApiError ? err.message : 'Не удалось загрузить списания');
+    } finally {
+      setWriteOffLoading(false);
+    }
+  }
+
+  function handleShowWriteOffs() {
+    setView('write-offs');
+    void loadWriteOffs();
+  }
+
+  // Both of these change what the register may sell, so the catalog it holds
+  // has to be refreshed — otherwise a cashier keeps being offered goods that
+  // are now in a bin or in quarantine.
+  async function refreshCatalogAfterStockChange() {
+    if (!session || !currentLocationId) return;
+    try {
+      const { products } = await fetchCatalog(session.token, currentLocationId);
+      const updated = { ...session, products, catalogLocationId: currentLocationId };
+      saveSession(updated);
+      setSession(updated);
+    } catch {
+      // Offline: the grid stays as it was until the next successful load.
+    }
+  }
+
+  async function handleCreateWriteOff(payload: {
+    reasonCode: WriteOffReason;
+    note: string;
+    items: { productId: string; quantity: number }[];
+  }) {
+    if (!session || !currentLocationId) return false;
+    setWriteOffSubmitting(true);
+    setWriteOffError(null);
+    try {
+      await createWriteOff(session.token, { ...payload, locationId: currentLocationId });
+      await loadWriteOffs();
+      await refreshCatalogAfterStockChange();
+      return true;
+    } catch (err) {
+      setWriteOffError(err instanceof ApiError ? err.message : 'Не удалось списать товар');
+      return false;
+    } finally {
+      setWriteOffSubmitting(false);
+    }
+  }
+
+  async function handleQuarantine(
+    action: 'block' | 'release',
+    payload: { note: string; items: { productId: string; quantity: number }[] },
+  ) {
+    if (!session || !currentLocationId) return false;
+    setWriteOffSubmitting(true);
+    setWriteOffError(null);
+    try {
+      await changeQuarantine(session.token, action, { ...payload, locationId: currentLocationId });
+      await loadWriteOffs();
+      await refreshCatalogAfterStockChange();
+      return true;
+    } catch (err) {
+      setWriteOffError(err instanceof ApiError ? err.message : 'Не удалось изменить карантин');
+      return false;
+    } finally {
+      setWriteOffSubmitting(false);
+    }
   }
 
   async function loadPurchaseOrders() {
@@ -1615,6 +1699,20 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'write-offs' && (
+        <WriteOffScreen
+          records={writeOffs}
+          products={session.products}
+          loading={writeOffLoading}
+          error={writeOffError}
+          submitting={writeOffSubmitting}
+          onBack={() => setView('operations')}
+          onRefresh={loadWriteOffs}
+          onWriteOff={handleCreateWriteOff}
+          onQuarantine={handleQuarantine}
         />
       )}
 
