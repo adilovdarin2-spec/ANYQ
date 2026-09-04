@@ -355,6 +355,8 @@ export interface StockMovementRecord {
   quantity: number;
   reason: StockMovementReason;
   documentId: string | null;
+  /** The shelf the goods came off. '' means they were never put away. */
+  binLocation: string;
   /** Null for rows written before the ledger recorded an author, and for anything a storefront customer set off. */
   createdByName: string | null;
   createdAt: string;
@@ -591,4 +593,25 @@ export interface WriteOffRecord {
   note: string;
   createdByName: string | null;
   items: { productId: string; name: string; quantity: number }[];
+}
+
+export interface BinContent {
+  productId: string;
+  name: string;
+  /** Everything on this shelf, including what is promised or quarantined. */
+  quantity: number;
+  /** What can actually be taken off it. */
+  available: number;
+}
+
+/** A place goods can be sent to or found in: zone → rack → shelf → bin. */
+export interface StorageBin {
+  id: string;
+  /** The label painted on the shelf, e.g. A-02-03-04. */
+  code: string;
+  zone: string;
+  rack: string;
+  shelf: string;
+  bin: string;
+  contents: BinContent[];
 }

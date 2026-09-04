@@ -36,6 +36,7 @@ export function StockHistoryScreen({ movements, loading, error, onBack, onRefres
                   happened, this says who to ask about it. */}
               <span>
                 {STOCK_MOVEMENT_LABELS[m.reason]} · {m.locationName}
+                {m.binLocation ? ` · ${m.binLocation}` : ''}
                 {m.createdByName ? ` · ${m.createdByName}` : ''}
               </span>
               <span>{formatDateTime(m.createdAt)}</span>

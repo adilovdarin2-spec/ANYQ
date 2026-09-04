@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -493,4 +493,45 @@ export function changeQuarantine(
   payload: QuarantinePayload,
 ): Promise<{ id: string; action: string }> {
   return request(`/pos/quarantine/${action}`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+// The shelves, and what is on each of them. `unplaced` is not a bin: it is the
+// pile that arrived and was never put away, which is the thing a warehouse
+// most needs to see rather than have hidden.
+export function fetchBins(
+  token: string,
+  locationId: string,
+): Promise<{ unplaced: BinContent[]; bins: StorageBin[] }> {
+  return request(`/pos/bins?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+export interface CreateBinPayload {
+  locationId: string;
+  zone: string;
+  rack: string;
+  shelf: string;
+  bin: string;
+}
+
+export function createBin(token: string, payload: CreateBinPayload): Promise<StorageBin> {
+  return request('/pos/bins', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function deleteBin(token: string, binId: string): Promise<{ ok: boolean }> {
+  return request(`/pos/bins/${binId}`, { method: 'DELETE' }, token);
+}
+
+export interface PutawayPayload {
+  locationId: string;
+  productId: string;
+  quantity: number;
+  /** '' means the goods are being put away for the first time. */
+  fromBin: string;
+  toBin: string;
+}
+
+// Moving goods between shelves inside one building. Nothing enters or leaves,
+// so the location's total is unchanged.
+export function putawayStock(token: string, payload: PutawayPayload): Promise<{ productId: string }> {
+  return request('/pos/bins/putaway', { method: 'POST', body: JSON.stringify(payload) }, token);
 }

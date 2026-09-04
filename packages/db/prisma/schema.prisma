@@ -111,6 +111,7 @@ model Location {
   stockMovements   StockMovement[]
   stockPolicies    StockPolicy[]
   fiscalDevice     FiscalDevice?
+  storageBins      StorageBin[]
 
   @@map("locations")
 }
@@ -272,6 +273,31 @@ model FiscalReceipt {
 
   @@index([status, createdAt])
   @@map("fiscal_receipts")
+}
+
+// A place inside a building that goods can be sent to or found in:
+// zone → rack → shelf → bin. `code` is the label painted on the shelf, and it
+// is what Stock and StockMovement carry — not an id, because the address is
+// the thing people read out to each other, and because renaming a shelf is a
+// deliberate act rather than a silent cascade.
+//
+// The empty code is reserved and never stored here: it means "arrived and not
+// put away yet", which is a real state a warehouse needs to see rather than an
+// absence to be hidden.
+model StorageBin {
+  id         String   @id @default(cuid())
+  location   Location @relation(fields: [locationId], references: [id])
+  locationId String
+  code       String
+  zone       String
+  rack       String   @default("")
+  shelf      String   @default("")
+  bin        String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@unique([locationId, code])
+  @@index([locationId, zone])
+  @@map("storage_bins")
 }
 
 // How much of a product a particular point wants to keep. Per location, not
@@ -498,6 +524,9 @@ model StockMovement {
   reason     String
   document   Document? @relation(fields: [documentId], references: [id])
   documentId String?
+  // Which bin the goods left or arrived in, so a discrepancy can be traced to
+  // a shelf rather than to a building. '' means they were never put away.
+  binLocation String  @default("")
   // Who moved it. A reason and a document say what happened; only this says
   // who did it, which is the question actually being asked when a shortage
   // turns up. Nullable for the rows written before it existed, and for the

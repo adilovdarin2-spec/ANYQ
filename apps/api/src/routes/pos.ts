@@ -13,6 +13,11 @@ import {
   hasInvalidQuantity,
   aggregateRequestedQuantities,
   availableQuantity,
+  groupStockByProduct,
+  totalAvailable,
+  totalOnHand,
+  totalHeldBack,
+  deductAcrossBins,
   applyStockDelta,
   createStockWithMovement,
   decrementBatchQuantity,
@@ -41,6 +46,7 @@ import { canTransition, nextStatus, transitionErrorMessage, computeOrderProgress
 import type { PurchaseOrderStatus, OrderedLine } from '../purchasing';
 import { isWriteOffReason, resolveWriteOff, writeOffErrorMessage, resolveQuarantine, quarantineErrorMessage } from '../writeoffs';
 import type { QuarantineAction } from '../writeoffs';
+import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErrorMessage } from '../bins';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -354,7 +360,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         }),
         tx.stock.findMany({ where: { locationId, productId: { in: ingredientIds } } }),
       ]);
-      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      const stockByProduct = groupStockByProduct(stockRows);
       const batchesByProduct = new Map<string, typeof batchRows>();
       for (const batch of batchRows) {
         const list = batchesByProduct.get(batch.productId) ?? [];
@@ -368,20 +374,22 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       // held for an open order: those units are on the shelf but promised.
       const quantityByProduct = new Map<string, number>();
       for (const item of plainItems) {
-        const stock = stockByProduct.get(item.productId);
+        const rows = stockByProduct.get(item.productId);
         const productBatches = batchesByProduct.get(item.productId);
         if (productBatches && productBatches.length > 0) {
           const sellable = productBatches
             .filter((batch) => batch.expiryDate > now)
             .reduce((sum, batch) => sum + batch.quantity, 0);
-          quantityByProduct.set(item.productId, sellable - (stock?.reserved ?? 0));
+          quantityByProduct.set(item.productId, sellable - totalHeldBack(rows));
         } else {
-          quantityByProduct.set(item.productId, stock ? availableQuantity(stock) : 0);
+          quantityByProduct.set(item.productId, totalAvailable(rows));
         }
       }
 
-      const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
-      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, availableQuantity(s)]));
+      const ingredientStockByProduct = groupStockByProduct(ingredientStockRows);
+      const ingredientQuantityByProduct = new Map(
+        [...ingredientStockByProduct.entries()].map(([productId, rows]) => [productId, totalAvailable(rows)]),
+      );
 
       // Stock is held per product, not per cart line, and one cart can carry
       // the same product on several lines — a weighed item added twice, or a
@@ -476,13 +484,23 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       }
 
       const stockMovements: Promise<unknown>[] = [...otherUpdates];
+      // Across bins, because one product sits on as many shelves as it likes
+      // and a sale takes from real ones.
       for (const deduction of deductions) {
-        const stock = stockByProduct.get(deduction.productId)!;
-        stockMovements.push(applyStockDelta(tx, stock, -deduction.quantity, 'sale', { documentId: document.id, createdBy: req.posUserId }));
+        stockMovements.push(
+          deductAcrossBins(tx, stockByProduct.get(deduction.productId) ?? [], deduction.quantity, 'sale', {
+            documentId: document.id,
+            createdBy: req.posUserId,
+          }),
+        );
       }
       for (const consumption of ingredientConsumption) {
-        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
-        stockMovements.push(applyStockDelta(tx, stock, -consumption.quantity, 'sale', { documentId: document.id, createdBy: req.posUserId }));
+        stockMovements.push(
+          deductAcrossBins(tx, ingredientStockByProduct.get(consumption.ingredientId) ?? [], consumption.quantity, 'sale', {
+            documentId: document.id,
+            createdBy: req.posUserId,
+          }),
+        );
       }
       await Promise.all(stockMovements);
 
@@ -1089,6 +1107,9 @@ posRouter.get('/stock-movements', requirePosAuth, async (req: PosAuthedRequest, 
       quantity: m.quantity,
       reason: m.reason,
       documentId: m.documentId,
+      // The shelf it came off. Without it a shortage traces to a building,
+      // which is the same as not tracing.
+      binLocation: m.binLocation,
       // Null for movements written before the ledger recorded an author, and
       // for anything a storefront customer set off — there is no user behind
       // those, and inventing one would be worse than saying so.
@@ -2302,7 +2323,7 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
     return;
   }
 
-  const stockByProduct = new Map(stockRows.map((row) => [row.productId, row]));
+  const stockByProduct = groupStockByProduct(stockRows);
 
   try {
     const document = await prisma.$transaction(async (tx) => {
@@ -2327,15 +2348,15 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
       });
 
       for (const line of resolution.lines) {
-        const stock = stockByProduct.get(line.productId)!;
-        await applyStockDelta(tx, stock, -line.quantity, 'write_off', {
+        const rows = stockByProduct.get(line.productId) ?? [];
+        await deductAcrossBins(tx, rows, line.quantity, 'write_off', {
           documentId: created.id,
           createdBy: req.posUserId,
         });
         // Quarantined goods that are then written off take their hold with
         // them — otherwise the block outlives the stock and eats availability
         // that no longer exists.
-        await releaseBlockedOnWriteOff(tx, stock.id, line.quantity);
+        if (rows[0]) await releaseBlockedOnWriteOff(tx, rows[0].id, line.quantity);
         // Off the batch too, so the expiry that went in the bin stops counting
         // towards what can be sold.
         if (line.batchId) {
@@ -2441,7 +2462,7 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
     return;
   }
 
-  const stockByProduct = new Map(stockRows.map((row) => [row.productId, row]));
+  const stockByProduct = groupStockByProduct(stockRows);
 
   try {
     const document = await prisma.$transaction(async (tx) => {
@@ -2464,13 +2485,25 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
         },
       });
 
+      // Spread across the shelves the goods are actually on: isolating a
+      // whole bin's worth against one row would block goods that are not there
+      // and leave the ones that are on sale.
       for (const change of resolution.changes) {
-        const stock = stockByProduct.get(change.productId)!;
-        if (action === 'block') {
-          await blockStock(tx, stock, change.quantity);
-        } else {
-          await unblockStock(tx, stock, change.quantity);
+        const rows = stockByProduct.get(change.productId) ?? [];
+        let remaining = change.quantity;
+        for (const row of rows) {
+          if (remaining <= 0) break;
+          const capacity = action === 'block' ? availableQuantity(row) : row.blocked;
+          const take = Math.min(capacity, remaining);
+          if (take <= 0) continue;
+          if (action === 'block') {
+            await blockStock(tx, row, take);
+          } else {
+            await unblockStock(tx, row, take);
+          }
+          remaining -= take;
         }
+        if (remaining > 0) throw new ConcurrentStockChangeError(change.productId);
       }
 
       return created;
@@ -2484,6 +2517,203 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
     }
     throw err;
   }
+});
+
+// The shelves goods can be sent to or found on, and what is on each of them.
+// A warehouse's real question is "where is it", and a location total cannot
+// answer that however accurate it is.
+posRouter.get('/bins', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Адресное хранение недоступно на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const [bins, stockRows] = await Promise.all([
+    prisma.storageBin.findMany({ where: { locationId }, orderBy: { code: 'asc' } }),
+    prisma.stock.findMany({ where: { locationId, quantity: { gt: 0 } }, include: { product: true } }),
+  ]);
+
+  const contentsByCode = new Map<string, { productId: string; name: string; quantity: number; available: number }[]>();
+  for (const row of stockRows) {
+    const list = contentsByCode.get(row.binLocation) ?? [];
+    list.push({
+      productId: row.productId,
+      name: row.product.name,
+      quantity: row.quantity,
+      available: availableQuantity(row),
+    });
+    contentsByCode.set(row.binLocation, list);
+  }
+
+  res.json({
+    // The empty code is not a bin and is never stored as one, but it is a real
+    // state: goods that arrived and were never put away. A warehouse needs to
+    // see that pile, not have it hidden.
+    unplaced: contentsByCode.get('') ?? [],
+    bins: bins.map((bin) => ({
+      id: bin.id,
+      code: bin.code,
+      zone: bin.zone,
+      rack: bin.rack,
+      shelf: bin.shelf,
+      bin: bin.bin,
+      contents: contentsByCode.get(bin.code) ?? [],
+    })),
+  });
+});
+
+posRouter.post('/bins', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Ячейки настраивает владелец или менеджер' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const address = resolveBinAddress(b);
+  if (address.status !== 'ok') {
+    res.status(400).json({ error: binAddressErrorMessage(address.status) });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const existing = await prisma.storageBin.findFirst({ where: { locationId, code: address.code } });
+  if (existing) {
+    res.status(409).json({ error: `Ячейка ${address.code} уже есть на этой точке` });
+    return;
+  }
+
+  const bin = await prisma.storageBin.create({
+    data: { locationId, code: address.code, ...address.address },
+  });
+  res.status(201).json({ id: bin.id, code: bin.code, zone: bin.zone, rack: bin.rack, shelf: bin.shelf, bin: bin.bin, contents: [] });
+});
+
+posRouter.delete('/bins/:id', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Ячейки настраивает владелец или менеджер' });
+    return;
+  }
+
+  const bin = await prisma.storageBin.findFirst({
+    where: { id: req.params.id, location: { companyId: req.posCompanyId } },
+  });
+  if (!bin) {
+    res.status(404).json({ error: 'Ячейка не найдена' });
+    return;
+  }
+
+  // Deleting a shelf that still holds goods would leave them addressed to a
+  // place that no longer exists — findable by nobody.
+  const held = await prisma.stock.count({
+    where: { locationId: bin.locationId, binLocation: bin.code, quantity: { gt: 0 } },
+  });
+  if (held > 0) {
+    res.status(409).json({ error: 'В ячейке есть товар — сначала переместите его' });
+    return;
+  }
+
+  await prisma.storageBin.delete({ where: { id: bin.id } });
+  res.json({ ok: true });
+});
+
+// Putting goods away, or moving them between shelves. Nothing enters or leaves
+// the building, so the location's total is unchanged — which is exactly why it
+// is one operation rather than two movements that could each fail alone.
+posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const quantity = Number(b.quantity);
+  const fromBin = typeof b.fromBin === 'string' ? b.fromBin.trim().toUpperCase() : '';
+  const toBin = typeof b.toBin === 'string' ? b.toBin.trim().toUpperCase() : '';
+  if (!b.productId) {
+    res.status(400).json({ error: 'Выберите товар' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Адресное хранение недоступно на вашем тарифе' });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  // A destination has to be a shelf somebody labelled. Sending goods to a
+  // made-up address is the same as losing them.
+  if (toBin !== '') {
+    const destination = await prisma.storageBin.findFirst({ where: { locationId, code: toBin } });
+    if (!destination) {
+      res.status(404).json({ error: `Ячейки ${toBin} нет на этой точке` });
+      return;
+    }
+  }
+
+  const source = await prisma.stock.findFirst({
+    where: { productId: b.productId, locationId, binLocation: fromBin },
+  });
+  const validation = validatePutaway({
+    quantity,
+    fromBinCode: fromBin,
+    toBinCode: toBin,
+    // Reserved and quarantined goods stay where they are: something has been
+    // promised or decided about them at that address.
+    availableInSource: source ? availableQuantity(source) : 0,
+  });
+  if (validation.status !== 'ok') {
+    res.status(400).json({ error: putawayErrorMessage(validation) });
+    return;
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await applyStockDelta(tx, source!, -quantity, 'adjustment', { createdBy: req.posUserId });
+
+      const destinationRow = await tx.stock.findFirst({ where: { productId: b.productId, locationId, binLocation: toBin } });
+      if (destinationRow) {
+        await applyStockDelta(tx, destinationRow, quantity, 'adjustment', { createdBy: req.posUserId });
+      } else {
+        await createStockWithMovement(tx, {
+          productId: b.productId,
+          locationId,
+          quantity,
+          reason: 'adjustment',
+          createdBy: req.posUserId,
+          binLocation: toBin,
+        });
+      }
+    }, { timeout: 15000 });
+  } catch (err) {
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток в ячейке изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
+
+  res.json({ productId: b.productId, fromBin, toBin, quantity });
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -2627,11 +2857,13 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
       const stockRows = await tx.stock.findMany({
         where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
       });
-      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      const stockByProduct = groupStockByProduct(stockRows);
       // Checked against what is physically here, not what is available: the
       // units this order is about to take are the ones it reserved when it was
       // placed, so its own hold must not read as somebody else's claim.
-      const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+      const quantityByProduct = new Map(
+        [...stockByProduct.entries()].map(([productId, rows]) => [productId, totalOnHand(rows)]),
+      );
 
       const shortages = findStockShortages(
         order.items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price })),
@@ -2642,11 +2874,15 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
       }
 
       for (const item of order.items) {
-        const stock = stockByProduct.get(item.productId)!;
+        const rows = stockByProduct.get(item.productId) ?? [];
         // Released before the deduction, in this order: the deduction respects
-        // reservations, so this order's own hold would otherwise block it.
-        await releaseStock(tx, stock.id, item.quantity);
-        await applyStockDelta(tx, stock, -item.quantity, 'order_fulfill', { documentId: order.id, createdBy: req.posUserId });
+        // reservations, so this order's own hold would otherwise block it. The
+        // hold was taken against one row, so it comes off the same one.
+        if (rows[0]) await releaseStock(tx, rows[0].id, item.quantity);
+        await deductAcrossBins(tx, rows, item.quantity, 'order_fulfill', {
+          documentId: order.id,
+          createdBy: req.posUserId,
+        });
       }
 
       await tx.document.update({
@@ -2780,8 +3016,10 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
       const sourceStockRows = await tx.stock.findMany({
         where: { locationId: fromLocationId, productId: { in: items.map((it) => it.productId) } },
       });
-      const sourceStockByProduct = new Map(sourceStockRows.map((s) => [s.productId, s]));
-      const quantityByProduct = new Map(sourceStockRows.map((s) => [s.productId, availableQuantity(s)]));
+      const sourceStockByProduct = groupStockByProduct(sourceStockRows);
+      const quantityByProduct = new Map(
+        [...sourceStockByProduct.entries()].map(([productId, rows]) => [productId, totalAvailable(rows)]),
+      );
 
       // Per product, not per line — two lines of the same product would
       // otherwise each pass the check and each write from the same starting
@@ -2820,7 +3058,10 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
       // shortfall is discoverable at all.
       await Promise.all(
         moves.map((move) =>
-          applyStockDelta(tx, sourceStockByProduct.get(move.productId)!, -move.quantity, 'transfer_out', { documentId: document.id, createdBy: req.posUserId }),
+          deductAcrossBins(tx, sourceStockByProduct.get(move.productId) ?? [], move.quantity, 'transfer_out', {
+            documentId: document.id,
+            createdBy: req.posUserId,
+          }),
         ),
       );
 
@@ -3274,8 +3515,13 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     const stockRows = await tx.stock.findMany({
       where: { locationId, productId: { in: items.map((it) => it.productId) } },
     });
-    const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
-    const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+    const stockByProduct = groupStockByProduct(stockRows);
+    // Counted against everything the point holds, across every bin. Comparing
+    // a counted shelf against one row of several would report a shortage that
+    // is sitting on the next rack.
+    const quantityByProduct = new Map(
+      [...stockByProduct.entries()].map(([productId, rows]) => [productId, totalOnHand(rows)]),
+    );
 
     const adjustments = computeCountAdjustments(items, quantityByProduct);
 
@@ -3293,9 +3539,16 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
 
     const updates: Promise<unknown>[] = [];
     for (const adj of adjustments) {
-      const existing = stockByProduct.get(adj.productId);
-      if (existing) {
-        updates.push(applyStockDelta(tx, existing, adj.delta, 'adjustment', { documentId: document.id, createdBy: req.posUserId }));
+      const rows = stockByProduct.get(adj.productId) ?? [];
+      if (rows.length > 0) {
+        // A shortfall is taken off the shelves the goods were on; a surplus
+        // lands in the first one, since a count cannot say which shelf the
+        // extra units were found on until counting is done per bin.
+        updates.push(
+          adj.delta < 0
+            ? deductAcrossBins(tx, rows, -adj.delta, 'adjustment', { documentId: document.id, createdBy: req.posUserId })
+            : applyStockDelta(tx, rows[0], adj.delta, 'adjustment', { documentId: document.id, createdBy: req.posUserId }),
+        );
       } else if (adj.countedQuantity > 0) {
         updates.push(
           createStockWithMovement(tx, {
@@ -3425,8 +3678,10 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
         tx.stock.findMany({ where: { locationId, productId: { in: ingredients.map((i) => i.ingredientId) } } }),
         tx.stock.findMany({ where: { locationId, productId: recipe.productId } }),
       ]);
-      const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
-      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
+      const ingredientStockByProduct = groupStockByProduct(ingredientStockRows);
+      const ingredientQuantityByProduct = new Map(
+        [...ingredientStockByProduct.entries()].map(([productId, rows]) => [productId, totalAvailable(rows)]),
+      );
 
       const shortages = findStockShortages(
         ingredients.map((i) => ({ productId: i.ingredientId, quantity: i.quantity, price: 0 })),
@@ -3455,8 +3710,12 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
 
       const updates: Promise<unknown>[] = [];
       for (const ing of ingredients) {
-        const stock = ingredientStockByProduct.get(ing.ingredientId)!;
-        updates.push(applyStockDelta(tx, stock, -ing.quantity, 'production_out', { documentId: document.id, createdBy: req.posUserId }));
+        updates.push(
+          deductAcrossBins(tx, ingredientStockByProduct.get(ing.ingredientId) ?? [], ing.quantity, 'production_out', {
+            documentId: document.id,
+            createdBy: req.posUserId,
+          }),
+        );
       }
 
       const finishedStock = finishedStockRows[0];
@@ -3671,10 +3930,14 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
         tx.stock.findMany({ where: { locationId, productId: { in: plainItems.map((it) => it.productId) } } }),
         tx.stock.findMany({ where: { locationId, productId: { in: ingredientIds } } }),
       ]);
-      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
-      const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
-      const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
-      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
+      const stockByProduct = groupStockByProduct(stockRows);
+      const quantityByProduct = new Map(
+        [...stockByProduct.entries()].map(([productId, rows]) => [productId, totalAvailable(rows)]),
+      );
+      const ingredientStockByProduct = groupStockByProduct(ingredientStockRows);
+      const ingredientQuantityByProduct = new Map(
+        [...ingredientStockByProduct.entries()].map(([productId, rows]) => [productId, totalAvailable(rows)]),
+      );
 
       const shortages = [
         ...findStockShortages(plainItems, quantityByProduct),
@@ -3710,11 +3973,20 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
       const updates: Promise<unknown>[] = [];
       for (const item of plainItems) {
         const stock = stockByProduct.get(item.productId)!;
-        updates.push(applyStockDelta(tx, stock, -item.quantity, 'table_order', { documentId: openDocument.id, createdBy: req.posUserId }));
+        updates.push(
+          deductAcrossBins(tx, stockByProduct.get(item.productId) ?? [], item.quantity, 'table_order', {
+            documentId: openDocument.id,
+            createdBy: req.posUserId,
+          }),
+        );
       }
       for (const consumption of ingredientConsumption) {
-        const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
-        updates.push(applyStockDelta(tx, stock, -consumption.quantity, 'table_order', { documentId: openDocument.id, createdBy: req.posUserId }));
+        updates.push(
+          deductAcrossBins(tx, ingredientStockByProduct.get(consumption.ingredientId) ?? [], consumption.quantity, 'table_order', {
+            documentId: openDocument.id,
+            createdBy: req.posUserId,
+          }),
+        );
       }
       await Promise.all(updates);
 
