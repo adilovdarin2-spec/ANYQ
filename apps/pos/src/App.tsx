@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, BinContent, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -24,6 +24,9 @@ import {
   fetchOwnerDashboard,
   fetchPendingFiscal,
   registerFiscalManually,
+  fetchSettlements,
+  recordSettlement,
+  setCounterpartyCredit,
   fetchBins,
   createBin,
   deleteBin,
@@ -102,6 +105,7 @@ import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
 import { BinsScreen } from './components/BinsScreen';
+import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -131,6 +135,7 @@ type View =
   | 'purchase-orders'
   | 'write-offs'
   | 'bins'
+  | 'settlements'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -138,7 +143,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -192,6 +197,11 @@ export default function App() {
   const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
   const [packagingBusy, setPackagingBusy] = useState(false);
   const [packagingError, setPackagingError] = useState<string | null>(null);
+  const [settlementType, setSettlementType] = useState<'customer' | 'supplier'>('customer');
+  const [settlementAccounts, setSettlementAccounts] = useState<SettlementAccount[]>([]);
+  const [settlementsLoading, setSettlementsLoading] = useState(false);
+  const [settlementsError, setSettlementsError] = useState<string | null>(null);
+  const [settlementsSubmitting, setSettlementsSubmitting] = useState(false);
   const [bins, setBins] = useState<StorageBin[]>([]);
   const [unplaced, setUnplaced] = useState<BinContent[]>([]);
   const [binsLoading, setBinsLoading] = useState(false);
@@ -296,6 +306,7 @@ export default function App() {
       { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
       { key: 'purchase-orders', icon: '📄', label: 'Заказы поставщику', onClick: handleShowPurchaseOrders },
       { key: 'bins', icon: '🗄️', label: 'Ячейки', onClick: handleShowBins },
+      { key: 'settlements', icon: '🤝', label: 'Расчёты и долги', onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
@@ -706,6 +717,67 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadSettlements(type: 'customer' | 'supplier') {
+    if (!session) return;
+    setSettlementsLoading(true);
+    setSettlementsError(null);
+    try {
+      const data = await fetchSettlements(session.token, type);
+      setSettlementAccounts(data.accounts);
+    } catch (err) {
+      setSettlementsError(err instanceof ApiError ? err.message : 'Не удалось загрузить расчёты');
+    } finally {
+      setSettlementsLoading(false);
+    }
+  }
+
+  function handleShowSettlements() {
+    setView('settlements');
+    void loadSettlements(settlementType);
+  }
+
+  function handleChangeSettlementType(type: 'customer' | 'supplier') {
+    setSettlementType(type);
+    void loadSettlements(type);
+  }
+
+  async function handleRecordSettlement(counterpartyId: string, amount: number) {
+    if (!session || !currentLocationId) return false;
+    setSettlementsSubmitting(true);
+    setSettlementsError(null);
+    try {
+      await recordSettlement(session.token, {
+        locationId: currentLocationId,
+        counterpartyId,
+        amount,
+        paymentMethod: 'cash',
+      });
+      await loadSettlements(settlementType);
+      return true;
+    } catch (err) {
+      setSettlementsError(err instanceof ApiError ? err.message : 'Не удалось провести платёж');
+      return false;
+    } finally {
+      setSettlementsSubmitting(false);
+    }
+  }
+
+  async function handleSetCredit(counterpartyId: string, creditAllowed: boolean, creditLimit: number) {
+    if (!session) return false;
+    setSettlementsSubmitting(true);
+    setSettlementsError(null);
+    try {
+      await setCounterpartyCredit(session.token, counterpartyId, creditAllowed, creditLimit);
+      await loadSettlements(settlementType);
+      return true;
+    } catch (err) {
+      setSettlementsError(err instanceof ApiError ? err.message : 'Не удалось изменить условия долга');
+      return false;
+    } finally {
+      setSettlementsSubmitting(false);
+    }
   }
 
   async function loadBins() {
@@ -1679,7 +1751,7 @@ export default function App() {
       )}
 
       {view === 'payment' && (
-        <PaymentModal total={cartTotal} onCancel={() => setView('cart')} onConfirm={completeSale} />
+        <PaymentModal total={cartTotal} hasCustomer={!!loyalty} onCancel={() => setView('cart')} onConfirm={completeSale} />
       )}
 
       {view === 'receipt' && lastSale && (
@@ -1774,6 +1846,21 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'settlements' && (
+        <SettlementsScreen
+          type={settlementType}
+          accounts={settlementAccounts}
+          loading={settlementsLoading}
+          error={settlementsError}
+          submitting={settlementsSubmitting}
+          onBack={() => setView('operations')}
+          onRefresh={() => loadSettlements(settlementType)}
+          onChangeType={handleChangeSettlementType}
+          onPay={handleRecordSettlement}
+          onSetCredit={handleSetCredit}
         />
       )}
 

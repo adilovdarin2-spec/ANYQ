@@ -82,6 +82,25 @@ export function OwnerDashboardScreen({
                   <span className="label">Не фискализировано чеков</span>
                 </div>
               )}
+              {/* A till figure answers "what did we take today"; these answer
+                  "where is our money", which is usually the larger question. */}
+              {dashboard.debts.receivable.total > 0 && (
+                <div className="report-card">
+                  <span className="value">{formatMoney(dashboard.debts.receivable.total)}</span>
+                  <span className="label">
+                    Должны нам
+                    {dashboard.debts.receivable.overdue > 0
+                      ? ` · ${formatMoney(dashboard.debts.receivable.overdue)} старше месяца`
+                      : ''}
+                  </span>
+                </div>
+              )}
+              {dashboard.debts.payable.total > 0 && (
+                <div className="report-card">
+                  <span className="value">{formatMoney(dashboard.debts.payable.total)}</span>
+                  <span className="label">Должны мы</span>
+                </div>
+              )}
               {dashboard.money.refunds > 0 && (
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.money.refunds)}</span>
