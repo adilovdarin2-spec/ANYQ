@@ -400,6 +400,8 @@ export interface ReplenishmentItem {
   unit: string;
   available: number;
   inTransit: number;
+  /** Already asked of a supplier on a sent order and not yet delivered. */
+  onOrder: number;
   /** Base units a day, measured only over the days it was on the shelf. Null when it never was. */
   demandPerDay: number | null;
   daysInStock: number;
@@ -517,4 +519,52 @@ export interface PendingFiscalReceipt {
   lastError: string | null;
   createdAt: string;
   total: number;
+}
+
+export type PurchaseOrderStatus = 'draft' | 'approved' | 'sent' | 'partially_received' | 'received' | 'cancelled';
+
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  productId: string;
+  name: string;
+  unit: string;
+  /** Base units ordered. */
+  quantity: number;
+  /** Base units delivered so far, across every delivery against this order. */
+  receivedQuantity: number;
+  price: number;
+  packagingName: string | null;
+  packQuantity: number | null;
+  packPrice: number | null;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  status: PurchaseOrderStatus;
+  createdAt: string;
+  expectedAt: string | null;
+  note: string;
+  supplier: { id: string; name: string } | null;
+  createdByName: string | null;
+  /** Who took responsibility for the money. */
+  approvedByName: string | null;
+  total: number;
+  items: PurchaseOrderItem[];
+}
+
+export interface SupplierPrice {
+  productId: string;
+  name: string;
+  lastPrice: number;
+  lastAt: string;
+  previousPrice: number | null;
+  deviationPercent: number | null;
+  /** True once the move is large enough to be worth a person's attention. */
+  notable: boolean;
 }

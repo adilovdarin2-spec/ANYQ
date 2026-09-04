@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Product, Receipt } from '../types';
+import type { Product, PurchaseOrder, Receipt } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
 
 interface ReceiptLine {
@@ -20,20 +20,24 @@ const LOOSE = '';
 interface Props {
   receipts: Receipt[];
   products: Product[];
+  /** Orders still awaiting delivery. A receipt filed against one turns a short delivery into a visible fact. */
+  openOrders: PurchaseOrder[];
   loading: boolean;
   error: string | null;
   submitting: boolean;
   onBack: () => void;
   onRefresh: () => void;
   onSubmit: (payload: {
+    purchaseOrderId: string | null;
     supplierName: string;
     supplierPhone: string;
     items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
   }) => Promise<boolean>;
 }
 
-export function IncomingScreen({ receipts, products, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
+export function IncomingScreen({ receipts, products, openOrders, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
   const [view, setView] = useState<'list' | 'create'>('list');
+  const [purchaseOrderId, setPurchaseOrderId] = useState(LOOSE);
   const [supplierName, setSupplierName] = useState('');
   const [supplierPhone, setSupplierPhone] = useState('');
   const [lines, setLines] = useState<ReceiptLine[]>([]);
@@ -44,6 +48,29 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
 
   const selectedProduct = products.find((p) => p.id === productId) ?? null;
   const selectedPackaging = selectedProduct?.packagings.find((pack) => pack.id === packagingId) ?? null;
+
+  // Picking an order fills the delivery in with what is still owed on it.
+  // Whatever actually turned up gets corrected line by line, and the gap
+  // between the two is the point of ordering through a document.
+  function pickOrder(nextOrderId: string) {
+    setPurchaseOrderId(nextOrderId);
+    const order = openOrders.find((candidate) => candidate.id === nextOrderId);
+    if (!order) return;
+    setSupplierName(order.supplier?.name ?? '');
+    setLines(
+      order.items
+        .filter((item) => item.quantity > item.receivedQuantity)
+        .map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          quantity: item.quantity - item.receivedQuantity,
+          price: item.price,
+          packagingId: null,
+          packagingName: null,
+          unitsPerPack: 1,
+        })),
+    );
+  }
 
   function pickProduct(nextProductId: string) {
     setProductId(nextProductId);
@@ -80,12 +107,14 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
 
   async function handleSubmit() {
     const success = await onSubmit({
+      purchaseOrderId: purchaseOrderId || null,
       supplierName: supplierName.trim(),
       supplierPhone: supplierPhone.trim(),
       items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, price: l.price, packagingId: l.packagingId })),
     });
     if (success) {
       setLines([]);
+      setPurchaseOrderId(LOOSE);
       setSupplierName('');
       setSupplierPhone('');
       setView('list');
@@ -150,6 +179,20 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
             <div className="empty-state">Сначала добавьте товары в «Товары»</div>
           ) : (
             <>
+              {openOrders.length > 0 && (
+                <div className="form-field">
+                  <label htmlFor="receipt-order">По заказу поставщику</label>
+                  <select id="receipt-order" value={purchaseOrderId} onChange={(e) => pickOrder(e.target.value)}>
+                    <option value={LOOSE}>Без заказа</option>
+                    {openOrders.map((order) => (
+                      <option key={order.id} value={order.id}>
+                        {order.supplier?.name ?? 'Без поставщика'} · {formatDateTime(order.createdAt)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="form-field">
                 <label htmlFor="supplier-name">Поставщик</label>
                 <input id="supplier-name" type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Необязательно" />

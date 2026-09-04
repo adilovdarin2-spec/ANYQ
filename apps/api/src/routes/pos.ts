@@ -34,6 +34,8 @@ import type { DailyMovement } from '../replenishment';
 import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
 import type { CashierActivity, ShiftCash } from '../owner';
 import { isValidManualEntry, manualRegistration } from '../fiscal';
+import { canTransition, nextStatus, transitionErrorMessage, computeOrderProgress, detectPriceDeviation } from '../purchasing';
+import type { PurchaseOrderStatus, OrderedLine } from '../purchasing';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -1393,6 +1395,7 @@ posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, re
       select: { productId: true, quantity: true },
     }),
   ]);
+  const onOrderByProduct = await outstandingOnOrder(req.posCompanyId!, locationId);
 
   // Summed across bins: the question is what this point has, not what one
   // shelf in it has.
@@ -1443,6 +1446,7 @@ posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, re
     const recommendation = recommendOrder({
       available,
       inTransit,
+      onOrder: onOrderByProduct.get(product.id) ?? 0,
       demandPerDay: demand.perDay,
       leadTimeDays: policy?.leadTimeDays ?? 3,
       minQuantity: policy?.minQuantity ?? 0,
@@ -1456,6 +1460,7 @@ posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, re
       unit: product.unit,
       available,
       inTransit,
+      onOrder: onOrderByProduct.get(product.id) ?? 0,
       demandPerDay: demand.perDay === null ? null : Math.round(demand.perDay * 100) / 100,
       daysInStock: demand.daysInStock,
       daysOutOfStock: demand.daysOutOfStock,
@@ -1919,6 +1924,313 @@ posRouter.put('/fiscal/device', requirePosAuth, async (req: PosAuthedRequest, re
   });
 
   res.json({ provider: device.provider, registrationNumber: device.registrationNumber, enabled: device.enabled });
+});
+
+// Goods a supplier has been asked for and has not yet delivered. Counted
+// against a new recommendation, so a shop doesn't order again on top of a
+// delivery that is merely late.
+async function outstandingOnOrder(companyId: string, locationId: string): Promise<Map<string, number>> {
+  const lines = await prisma.documentItem.findMany({
+    where: {
+      document: {
+        companyId,
+        locationId,
+        type: 'purchase_order',
+        status: { in: ['sent', 'partially_received'] },
+      },
+    },
+    select: { productId: true, quantity: true, receivedQuantity: true },
+  });
+
+  const byProduct = new Map<string, number>();
+  for (const line of lines) {
+    const outstanding = Math.max(line.quantity - (line.receivedQuantity ?? 0), 0);
+    if (outstanding <= 0) continue;
+    byProduct.set(line.productId, (byProduct.get(line.productId) ?? 0) + outstanding);
+  }
+  return byProduct;
+}
+
+function serializePurchaseOrder(order: {
+  id: string;
+  status: string;
+  createdAt: Date;
+  expectedAt: Date | null;
+  reason: string | null;
+  counterparty: { id: string; name: string; phone: string | null } | null;
+  createdBy: string | null;
+  fulfilledBy: string | null;
+  items: {
+    id: string;
+    productId: string;
+    quantity: number;
+    receivedQuantity: number | null;
+    price: number;
+    packQuantity: number | null;
+    packPrice: number | null;
+    product: { name: string; unit: string };
+    packaging: { name: string; unitsPerPack: number } | null;
+  }[];
+}, nameByUserId: Map<string, string>) {
+  return {
+    id: order.id,
+    status: order.status,
+    createdAt: order.createdAt.toISOString(),
+    expectedAt: order.expectedAt ? order.expectedAt.toISOString() : null,
+    note: order.reason ?? '',
+    supplier: order.counterparty ? { id: order.counterparty.id, name: order.counterparty.name } : null,
+    createdByName: order.createdBy ? nameByUserId.get(order.createdBy) ?? 'Удалённый сотрудник' : null,
+    approvedByName: order.fulfilledBy ? nameByUserId.get(order.fulfilledBy) ?? 'Удалённый сотрудник' : null,
+    total: order.items.reduce(
+      (sum, it) =>
+        sum +
+        (it.packPrice !== null && it.packQuantity !== null
+          ? Math.round(it.packPrice * it.packQuantity)
+          : Math.round(it.price * it.quantity)),
+      0,
+    ),
+    items: order.items.map((it) => ({
+      id: it.id,
+      productId: it.productId,
+      name: it.product.name,
+      unit: it.product.unit,
+      quantity: it.quantity,
+      receivedQuantity: it.receivedQuantity ?? 0,
+      price: it.price,
+      packagingName: it.packaging?.name ?? null,
+      packQuantity: it.packQuantity,
+      packPrice: it.packPrice,
+    })),
+  };
+}
+
+const PURCHASE_ORDER_INCLUDE = {
+  counterparty: true,
+  items: { include: { product: true, packaging: true } },
+} as const;
+
+posRouter.get('/purchase-orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Закупки недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+  const orders = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, locationId, type: 'purchase_order' },
+    include: PURCHASE_ORDER_INCLUDE,
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  res.json(orders.map((order) => serializePurchaseOrder(order, nameByUserId)));
+});
+
+// Created as a draft, always. An order that appears already approved is one
+// nobody agreed to pay for.
+posRouter.post('/purchase-orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const rawItems: { productId: string; quantity: number; price: number; packagingId?: string | null }[] = Array.isArray(b.items)
+    ? b.items
+    : [];
+  if (rawItems.length === 0 || hasInvalidQuantity(rawItems)) {
+    res.status(400).json({ error: 'Добавьте хотя бы одну позицию' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Закупки недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const namedPackagingIds = rawItems.map((it) => it.packagingId).filter((id): id is string => !!id);
+  const packagings = namedPackagingIds.length
+    ? await prisma.productPackaging.findMany({
+        where: { id: { in: namedPackagingIds }, product: { companyId: req.posCompanyId } },
+      })
+    : [];
+  // Ordered in the shape the supplier sells: cases, not bottles.
+  const packaged = resolvePackagedLines(rawItems, packagings);
+  if (packaged.status !== 'ok') {
+    res.status(400).json({ error: packagingErrorMessage(packaged) });
+    return;
+  }
+
+  let counterpartyId: string | undefined;
+  if (typeof b.supplierId === 'string' && b.supplierId) {
+    const supplier = await prisma.counterparty.findFirst({
+      where: { id: b.supplierId, companyId: req.posCompanyId, type: 'supplier' },
+    });
+    if (!supplier) {
+      res.status(404).json({ error: 'Поставщик не найден' });
+      return;
+    }
+    counterpartyId = supplier.id;
+  }
+
+  const expectedAt = b.expectedAt ? new Date(b.expectedAt) : null;
+  if (expectedAt && Number.isNaN(expectedAt.getTime())) {
+    res.status(400).json({ error: 'Некорректная дата поставки' });
+    return;
+  }
+
+  const order = await prisma.document.create({
+    data: {
+      companyId: req.posCompanyId!,
+      locationId,
+      type: 'purchase_order',
+      status: 'draft',
+      counterpartyId,
+      expectedAt,
+      reason: typeof b.note === 'string' ? b.note.trim() || null : null,
+      createdBy: req.posUserId!,
+      items: {
+        create: packaged.lines.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity,
+          price: line.price,
+          packagingId: line.packagingId,
+          packQuantity: line.packQuantity,
+          packPrice: line.packPrice,
+        })),
+      },
+    },
+    include: PURCHASE_ORDER_INCLUDE,
+  });
+
+  res.status(201).json(serializePurchaseOrder(order, new Map()));
+});
+
+// Approving is the moment somebody takes responsibility for the money, so it
+// is the one step a cashier can't do — and sending follows it rather than
+// replacing it.
+posRouter.post('/purchase-orders/:id/:action', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const action = req.params.action;
+  if (action !== 'approve' && action !== 'send' && action !== 'cancel') {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  if ((action === 'approve' || action === 'send') && !(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Согласовать и отправить заказ может владелец или менеджер' });
+    return;
+  }
+
+  const order = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'purchase_order' },
+  });
+  if (!order) {
+    res.status(404).json({ error: 'Заказ не найден' });
+    return;
+  }
+
+  const from = order.status as PurchaseOrderStatus;
+  const to = nextStatus(from, action);
+  if (!to) {
+    res.status(409).json({ error: transitionErrorMessage(from, action) });
+    return;
+  }
+
+  // Guarded on the status it was read at, so two people acting on the same
+  // order at once can't both move it.
+  const { count } = await prisma.document.updateMany({
+    where: { id: order.id, status: from },
+    data: {
+      status: to,
+      // Who agreed to the spend. Recorded on approval, and kept through the
+      // later steps rather than overwritten by whoever pressed send.
+      ...(action === 'approve' ? { fulfilledBy: req.posUserId, fulfilledAt: new Date() } : {}),
+    },
+  });
+  if (count === 0) {
+    res.status(409).json({ error: 'Статус заказа изменился — обновите список' });
+    return;
+  }
+
+  res.json({ id: order.id, status: to });
+});
+
+// What this supplier charged last time, so a quiet price rise is a question
+// asked at the moment it can still be asked.
+posRouter.get('/suppliers', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const suppliers = await prisma.counterparty.findMany({
+    where: { companyId: req.posCompanyId, type: 'supplier' },
+    orderBy: { name: 'asc' },
+  });
+  res.json(suppliers.map((s) => ({ id: s.id, name: s.name, phone: s.phone ?? '' })));
+});
+
+posRouter.get('/suppliers/:id/prices', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const supplier = await prisma.counterparty.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'supplier' },
+  });
+  if (!supplier) {
+    res.status(404).json({ error: 'Поставщик не найден' });
+    return;
+  }
+
+  const lines = await prisma.documentItem.findMany({
+    where: { document: { companyId: req.posCompanyId, type: 'receipt', counterpartyId: supplier.id } },
+    include: { product: true, document: { select: { createdAt: true } } },
+    orderBy: { document: { createdAt: 'desc' } },
+    take: 500,
+  });
+
+  const historyByProduct = new Map<string, { price: number; at: Date }[]>();
+  for (const line of lines) {
+    const list = historyByProduct.get(line.productId) ?? [];
+    list.push({ price: line.price, at: line.document.createdAt });
+    historyByProduct.set(line.productId, list);
+  }
+
+  const nameByProduct = new Map(lines.map((line) => [line.productId, line.product.name]));
+  res.json(
+    [...historyByProduct.entries()].map(([productId, history]) => {
+      const latest = history[0];
+      const deviation = detectPriceDeviation(latest.price, history.slice(1));
+      return {
+        productId,
+        name: nameByProduct.get(productId) ?? '—',
+        lastPrice: latest.price,
+        lastAt: latest.at.toISOString(),
+        previousPrice: deviation.previousPrice,
+        deviationPercent: deviation.deviationPercent,
+        notable: deviation.notable,
+      };
+    }),
+  );
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -2531,6 +2843,25 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
   }
   const items = packaged.lines;
 
+  // A delivery can answer an order, and then the shop can tell a short
+  // delivery from a small order — which is the whole reason to order through
+  // a document rather than a note on a phone.
+  const purchaseOrder =
+    typeof b.purchaseOrderId === 'string' && b.purchaseOrderId
+      ? await prisma.document.findFirst({
+          where: { id: b.purchaseOrderId, companyId: req.posCompanyId, type: 'purchase_order' },
+          include: { items: true },
+        })
+      : null;
+  if (b.purchaseOrderId && !purchaseOrder) {
+    res.status(404).json({ error: 'Заказ поставщику не найден' });
+    return;
+  }
+  if (purchaseOrder && !canTransition(purchaseOrder.status as PurchaseOrderStatus, 'receive')) {
+    res.status(409).json({ error: transitionErrorMessage(purchaseOrder.status as PurchaseOrderStatus, 'receive') });
+    return;
+  }
+
   const supplierName = typeof b.supplierName === 'string' ? b.supplierName.trim() : '';
   const supplierPhone = typeof b.supplierPhone === 'string' ? b.supplierPhone.trim() : '';
 
@@ -2546,6 +2877,11 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     }
     counterpartyId = counterparty.id;
   }
+
+  // One order line per product, so a delivery line maps to exactly one of
+  // them — the order's lines are written aggregated for the same reason a
+  // transfer's are.
+  const orderItemIdByProduct = new Map((purchaseOrder?.items ?? []).map((item) => [item.productId, item.id]));
 
   const document = await prisma.$transaction(async (tx) => {
     const stockRows = await tx.stock.findMany({
@@ -2569,11 +2905,36 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
             packagingId: it.packagingId,
             packQuantity: it.packQuantity,
             packPrice: it.packPrice,
+            // Points at the order line this delivery answers, so what was
+            // promised and what turned up stay attached to each other.
+            originalItemId: orderItemIdByProduct.get(it.productId) ?? null,
           })),
         },
       },
       include: { items: true },
     });
+
+    if (purchaseOrder) {
+      const receivedByLine = new Map<string, number>();
+      for (const line of items) {
+        const orderItemId = orderItemIdByProduct.get(line.productId);
+        if (!orderItemId) continue;
+        receivedByLine.set(orderItemId, (receivedByLine.get(orderItemId) ?? 0) + line.quantity);
+      }
+
+      const lines: OrderedLine[] = purchaseOrder.items.map((item) => ({
+        itemId: item.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        receivedQuantity: (item.receivedQuantity ?? 0) + (receivedByLine.get(item.id) ?? 0),
+      }));
+      const progress = computeOrderProgress(lines);
+
+      for (const line of lines) {
+        await tx.documentItem.update({ where: { id: line.itemId }, data: { receivedQuantity: line.receivedQuantity } });
+      }
+      await tx.document.update({ where: { id: purchaseOrder.id }, data: { status: progress.status } });
+    }
 
     const updates: Promise<unknown>[] = [];
     for (const item of items) {

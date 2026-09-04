@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -24,6 +24,10 @@ import {
   fetchOwnerDashboard,
   fetchPendingFiscal,
   registerFiscalManually,
+  fetchSuppliers,
+  fetchPurchaseOrders,
+  createPurchaseOrder,
+  actOnPurchaseOrder,
   fetchTransfers,
   createTransfer,
   receiveTransfer,
@@ -88,6 +92,7 @@ import { ReturnsScreen } from './components/ReturnsScreen';
 import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { FiscalScreen } from './components/FiscalScreen';
+import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -114,6 +119,7 @@ type View =
   | 'replenishment'
   | 'dashboard'
   | 'fiscal'
+  | 'purchase-orders'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -121,7 +127,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -175,6 +181,12 @@ export default function App() {
   const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
   const [packagingBusy, setPackagingBusy] = useState(false);
   const [packagingError, setPackagingError] = useState<string | null>(null);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [fiscalDevice, setFiscalDevice] = useState<FiscalDevice | null>(null);
   const [pendingFiscal, setPendingFiscal] = useState<PendingFiscalReceipt[]>([]);
   const [fiscalLoading, setFiscalLoading] = useState(false);
@@ -262,6 +274,7 @@ export default function App() {
       { key: 'counts', icon: '📋', label: 'Инвентаризация', onClick: handleShowCounts },
       { key: 'returns', icon: '↩️', label: 'Возвраты', onClick: handleShowReturns },
       { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
+      { key: 'purchase-orders', icon: '📄', label: 'Заказы поставщику', onClick: handleShowPurchaseOrders },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
     );
@@ -564,12 +577,19 @@ export default function App() {
     }
   }
 
+  // Only orders a delivery can actually answer. A draft nobody has approved is
+  // not something a supplier could have shipped against.
+  const openPurchaseOrders = purchaseOrders.filter(
+    (order) => order.status === 'sent' || order.status === 'partially_received',
+  );
+
   function handleShowIncoming() {
     setView('incoming');
     void loadReceipts();
   }
 
   async function handleCreateReceipt(payload: {
+    purchaseOrderId: string | null;
     supplierName: string;
     supplierPhone: string;
     items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
@@ -580,6 +600,9 @@ export default function App() {
     try {
       await createReceipt(session.token, { ...payload, locationId: currentLocationId });
       await loadReceipts();
+      // A delivery against an order changes that order's status, so the list
+      // the receipt screen offers has to stop offering what is now complete.
+      if (payload.purchaseOrderId) await loadPurchaseOrders();
       return true;
     } catch (err) {
       setReceiptsError(err instanceof ApiError ? err.message : 'Не удалось оприходовать товар');
@@ -661,6 +684,81 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadPurchaseOrders() {
+    if (!session || !currentLocationId) return;
+    setPurchaseLoading(true);
+    setPurchaseError(null);
+    try {
+      const [orders, suppliersList] = await Promise.all([
+        fetchPurchaseOrders(session.token, currentLocationId),
+        fetchSuppliers(session.token),
+      ]);
+      setPurchaseOrders(orders);
+      setSuppliers(suppliersList);
+    } catch (err) {
+      setPurchaseError(err instanceof ApiError ? err.message : 'Не удалось загрузить заказы');
+    } finally {
+      setPurchaseLoading(false);
+    }
+  }
+
+  function handleShowPurchaseOrders() {
+    setView('purchase-orders');
+    void loadPurchaseOrders();
+  }
+
+  async function handleCreatePurchaseOrder(payload: {
+    supplierId: string | null;
+    note: string;
+    items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
+  }) {
+    if (!session || !currentLocationId) return false;
+    setPurchaseSubmitting(true);
+    setPurchaseError(null);
+    try {
+      await createPurchaseOrder(session.token, { ...payload, locationId: currentLocationId });
+      await loadPurchaseOrders();
+      return true;
+    } catch (err) {
+      setPurchaseError(err instanceof ApiError ? err.message : 'Не удалось создать заказ');
+      return false;
+    } finally {
+      setPurchaseSubmitting(false);
+    }
+  }
+
+  async function handleActOnPurchaseOrder(orderId: string, action: 'approve' | 'send' | 'cancel') {
+    if (!session) return;
+    setBusyOrderId(orderId);
+    setPurchaseError(null);
+    try {
+      await actOnPurchaseOrder(session.token, orderId, action);
+      await loadPurchaseOrders();
+    } catch (err) {
+      setPurchaseError(err instanceof ApiError ? err.message : 'Не удалось изменить статус заказа');
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  // The recommendation is only worth making if there is somewhere to press it.
+  // Everything the list says to buy becomes one draft order, at each item's own
+  // purchase price, for a person to check and approve.
+  async function handleOrderEverythingRecommended() {
+    if (!session || !currentLocationId || replenishment.length === 0) return;
+    const items = replenishment.map((item) => {
+      const product = session.products.find((p) => p.id === item.productId);
+      return {
+        productId: item.productId,
+        quantity: item.recommended,
+        price: product?.price ?? 0,
+        packagingId: null,
+      };
+    });
+    const created = await handleCreatePurchaseOrder({ supplierId: null, note: 'Из списка «Что заказать»', items });
+    if (created) setView('purchase-orders');
   }
 
   async function loadFiscal() {
@@ -1500,6 +1598,7 @@ export default function App() {
           loading={receiptsLoading}
           error={receiptsError}
           submitting={receiptSubmitting}
+          openOrders={openPurchaseOrders}
           onBack={() => setView('operations')}
           onRefresh={loadReceipts}
           onSubmit={handleCreateReceipt}
@@ -1516,6 +1615,23 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'purchase-orders' && (
+        <PurchaseOrdersScreen
+          orders={purchaseOrders}
+          suppliers={suppliers}
+          products={session.products}
+          loading={purchaseLoading}
+          error={purchaseError}
+          submitting={purchaseSubmitting}
+          busyOrderId={busyOrderId}
+          canApprove={isOwnerOrManager}
+          onBack={() => setView('operations')}
+          onRefresh={loadPurchaseOrders}
+          onCreate={handleCreatePurchaseOrder}
+          onAct={handleActOnPurchaseOrder}
         />
       )}
 
@@ -1555,6 +1671,8 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadReplenishment}
           onSavePolicy={handleSaveStockPolicy}
+          onOrderEverything={handleOrderEverythingRecommended}
+          ordering={purchaseSubmitting}
         />
       )}
 

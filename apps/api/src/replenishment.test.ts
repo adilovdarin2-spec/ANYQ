@@ -83,7 +83,7 @@ describe('estimateDailyDemand', () => {
 });
 
 describe('recommendOrder', () => {
-  const base = { available: 20, inTransit: 0, demandPerDay: 2, leadTimeDays: 3, minQuantity: 0, targetQuantity: 0 };
+  const base = { available: 20, inTransit: 0, onOrder: 0, demandPerDay: 2, leadTimeDays: 3, minQuantity: 0, targetQuantity: 0 };
 
   it('recommends nothing while the cover comfortably outlasts the delivery', () => {
     expect(recommendOrder(base)).toEqual({ quantity: 0, daysOfCover: 10, trigger: 'sufficient' });
@@ -164,5 +164,24 @@ describe('estimateDailyDemand and returns', () => {
     const movements: DailyMovement[] = [{ dayIndex: 0, quantity: 4 }];
     const countsAsDemand = () => true;
     expect(estimateDailyDemand(closing, movements, countsAsDemand).perDay).toBe(0);
+  });
+});
+
+describe('recommendOrder and goods already on order', () => {
+  const base = { available: 20, inTransit: 0, onOrder: 0, demandPerDay: 2, leadTimeDays: 3, minQuantity: 0, targetQuantity: 0 };
+
+  it('counts an outstanding purchase order against what to order now', () => {
+    // Ordering on top of goods that are merely late is how a stockroom ends up
+    // holding three months of one item.
+    const without = recommendOrder({ ...base, available: 22, demandPerDay: 12 });
+    const withOrder = recommendOrder({ ...base, available: 22, onOrder: 30, demandPerDay: 12 });
+    expect(without.quantity).toBe(50);
+    expect(withOrder.quantity).toBe(20);
+  });
+
+  it('adds an outstanding order to the cover, not only to the quantity', () => {
+    const result = recommendOrder({ ...base, available: 12, onOrder: 60, demandPerDay: 12 });
+    expect(result.daysOfCover).toBe(6);
+    expect(result.trigger).toBe('sufficient');
   });
 });
