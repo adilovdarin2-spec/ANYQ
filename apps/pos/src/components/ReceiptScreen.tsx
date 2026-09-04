@@ -17,6 +17,11 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
       <div className="screen-body">
         <div className="receipt-card">
           <div className="r-title">ANYQ Касса</div>
+          {/* Always, and not conditionally: a slip printed by ANYQ is never
+              itself a fiscal receipt, whatever the point's setup. Saying so on
+              the paper is the difference between a shop that knows that and one
+              that finds out from an inspector. */}
+          <div className="r-sub">Товарный чек</div>
           <div className="r-sub">{formatDateTime(sale.createdAt)}{!sale.synced ? ' · не синхронизирован' : ''}</div>
           {sale.items.map((line) => (
             <div key={line.id} className="receipt-line">

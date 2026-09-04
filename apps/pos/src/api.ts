@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, OwnerDashboard, Packaging, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -62,6 +62,8 @@ export interface SubmitSalePayload {
 export interface SubmitSaleResult {
   id: string;
   createdAt: string;
+  /** 'not_required' when the point isn't fiscalised; 'pending' until a register confirms it. */
+  fiscalStatus: 'pending' | 'not_required';
   discountAmount: number;
   pointsRedeemed: number;
   pointsEarned: number;
@@ -408,4 +410,21 @@ export function saveStockPolicy(
 export function fetchOwnerDashboard(token: string, locationId: string, days: number): Promise<OwnerDashboard> {
   const query = `locationId=${encodeURIComponent(locationId)}&days=${days}`;
   return request(`/pos/dashboard?${query}`, { method: 'GET' }, token);
+}
+
+export function fetchPendingFiscal(
+  token: string,
+  locationId: string,
+): Promise<{ device: FiscalDevice | null; receipts: PendingFiscalReceipt[] }> {
+  return request(`/pos/fiscal/pending?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+// The number read off a standalone register's own slip. ANYQ does not talk to
+// that register; it records that the register did its job.
+export function registerFiscalManually(
+  token: string,
+  documentId: string,
+  fiscalNumber: string,
+): Promise<{ documentId: string; status: string; fiscalNumber: string | null }> {
+  return request(`/pos/fiscal/${documentId}/manual`, { method: 'POST', body: JSON.stringify({ fiscalNumber }) }, token);
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, OwnerDashboard, Packaging, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -22,6 +22,8 @@ import {
   fetchReplenishment,
   saveStockPolicy,
   fetchOwnerDashboard,
+  fetchPendingFiscal,
+  registerFiscalManually,
   fetchTransfers,
   createTransfer,
   receiveTransfer,
@@ -85,6 +87,7 @@ import { StockHistoryScreen } from './components/StockHistoryScreen';
 import { ReturnsScreen } from './components/ReturnsScreen';
 import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
+import { FiscalScreen } from './components/FiscalScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -110,6 +113,7 @@ type View =
   | 'returns'
   | 'replenishment'
   | 'dashboard'
+  | 'fiscal'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -117,7 +121,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -171,6 +175,11 @@ export default function App() {
   const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
   const [packagingBusy, setPackagingBusy] = useState(false);
   const [packagingError, setPackagingError] = useState<string | null>(null);
+  const [fiscalDevice, setFiscalDevice] = useState<FiscalDevice | null>(null);
+  const [pendingFiscal, setPendingFiscal] = useState<PendingFiscalReceipt[]>([]);
+  const [fiscalLoading, setFiscalLoading] = useState(false);
+  const [fiscalError, setFiscalError] = useState<string | null>(null);
+  const [fiscalBusyDocumentId, setFiscalBusyDocumentId] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
   const [dashboardDays, setDashboardDays] = useState(7);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -253,6 +262,7 @@ export default function App() {
       { key: 'counts', icon: '📋', label: 'Инвентаризация', onClick: handleShowCounts },
       { key: 'returns', icon: '↩️', label: 'Возвраты', onClick: handleShowReturns },
       { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
+      { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
     );
   }
@@ -651,6 +661,42 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadFiscal() {
+    if (!session || !currentLocationId) return;
+    setFiscalLoading(true);
+    setFiscalError(null);
+    try {
+      const data = await fetchPendingFiscal(session.token, currentLocationId);
+      setFiscalDevice(data.device);
+      setPendingFiscal(data.receipts);
+    } catch (err) {
+      setFiscalError(err instanceof ApiError ? err.message : 'Не удалось загрузить фискализацию');
+    } finally {
+      setFiscalLoading(false);
+    }
+  }
+
+  function handleShowFiscal() {
+    setView('fiscal');
+    void loadFiscal();
+  }
+
+  async function handleRegisterFiscal(documentId: string, fiscalNumber: string) {
+    if (!session) return false;
+    setFiscalBusyDocumentId(documentId);
+    setFiscalError(null);
+    try {
+      await registerFiscalManually(session.token, documentId, fiscalNumber);
+      await loadFiscal();
+      return true;
+    } catch (err) {
+      setFiscalError(err instanceof ApiError ? err.message : 'Не удалось сохранить номер чека');
+      return false;
+    } finally {
+      setFiscalBusyDocumentId(null);
+    }
   }
 
   async function loadDashboard(days: number) {
@@ -1470,6 +1516,19 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'fiscal' && (
+        <FiscalScreen
+          device={fiscalDevice}
+          receipts={pendingFiscal}
+          loading={fiscalLoading}
+          error={fiscalError}
+          busyDocumentId={fiscalBusyDocumentId}
+          onBack={() => setView('operations')}
+          onRefresh={loadFiscal}
+          onRegister={handleRegisterFiscal}
         />
       )}
 

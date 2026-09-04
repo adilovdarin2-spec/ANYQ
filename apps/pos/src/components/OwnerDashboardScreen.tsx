@@ -74,6 +74,14 @@ export function OwnerDashboardScreen({
                   Валовая маржа{dashboard.money.marginPercent !== null ? ` · ${dashboard.money.marginPercent}%` : ''}
                 </span>
               </div>
+              {/* Beside the money, because it is the figure that turns into a
+                  fine rather than a loss. */}
+              {dashboard.unfiscalised.count > 0 && (
+                <div className="report-card">
+                  <span className="value">{dashboard.unfiscalised.count}</span>
+                  <span className="label">Не фискализировано чеков</span>
+                </div>
+              )}
               {dashboard.money.refunds > 0 && (
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.money.refunds)}</span>

@@ -110,6 +110,7 @@ model Location {
   tables           Table[]
   stockMovements   StockMovement[]
   stockPolicies    StockPolicy[]
+  fiscalDevice     FiscalDevice?
 
   @@map("locations")
 }
@@ -220,6 +221,57 @@ model Product {
   stockPolicies  StockPolicy[]
 
   @@map("products")
+}
+
+// The registered cash register a point sells through. One per location,
+// because a ККМ is registered to a place, not to a company.
+//
+// No credentials here. A provider's API key is a secret shared with the tax
+// authority's operator, and storing one per company in plain columns is a
+// decision that needs encryption at rest and a key custodian — not a default
+// chosen in passing. Until that exists, the credential lives in the
+// deployment's environment and this row only says which provider and which
+// registration number.
+model FiscalDevice {
+  id                 String   @id @default(cuid())
+  location           Location @relation(fields: [locationId], references: [id])
+  locationId         String   @unique
+  // 'none' — not fiscalised here. 'manual' — a standalone register next to the
+  // POS, whose number a cashier enters. Network providers are added as
+  // adapters against the same interface.
+  provider           String   @default("none")
+  /// РНМ: the number the register is entered in the state register under.
+  registrationNumber String
+  enabled            Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("fiscal_devices")
+}
+
+// A printed POS slip is not a fiscal receipt. It becomes one only when a
+// registered cash register or its operator confirms it, and a shop has to be
+// able to answer "which of today's sales never reached the tax authority" —
+// which it can only do if the two were never treated as the same thing.
+//
+// One row per sale, so a retry registers the same receipt rather than a
+// second one: the tax version of selling the same goods twice.
+model FiscalReceipt {
+  id           String    @id @default(cuid())
+  document     Document  @relation(fields: [documentId], references: [id])
+  documentId   String    @unique
+  provider     String
+  status       String    @default("pending")
+  attempts     Int       @default(0)
+  lastError    String?
+  fiscalNumber String?
+  fiscalSign   String?
+  registeredAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@map("fiscal_receipts")
 }
 
 // How much of a product a particular point wants to keep. Per location, not
@@ -412,6 +464,7 @@ model Document {
 
   items          DocumentItem[]
   stockMovements StockMovement[]
+  fiscalReceipt  FiscalReceipt?
 
   @@index([companyId, type, createdAt])
   @@map("documents")
