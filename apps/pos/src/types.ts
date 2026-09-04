@@ -652,3 +652,23 @@ export interface SettlementAccount {
   openCount: number;
   aging: AgingBuckets;
 }
+
+/** A line on the sheet somebody walks the shelf with. */
+export interface CountSheetLine {
+  productId: string;
+  name: string;
+  unit: string;
+  systemQuantity: number;
+  /** Held for an order — still on the shelf, so still counted. */
+  reserved: number;
+  /** In quarantine — likewise present, likewise counted. */
+  blocked: number;
+}
+
+export interface BinCountAdjustmentResult {
+  productId: string;
+  binLocation: string;
+  systemQuantity: number;
+  countedQuantity: number;
+  delta: number;
+}
