@@ -4,8 +4,23 @@ import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage } from '../tariff';
-import { findStockShortages, hasInvalidQuantity, applyStockDelta, createStockWithMovement } from '../stock';
+import {
+  findStockShortages,
+  hasInvalidQuantity,
+  aggregateRequestedQuantities,
+  applyStockDelta,
+  createStockWithMovement,
+  decrementBatchQuantity,
+  ConcurrentStockChangeError,
+} from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
+import {
+  IDEMPOTENCY_HEADER,
+  readIdempotencyKey,
+  hashRequestBody,
+  runIdempotent,
+  IdempotencyConflictError,
+} from '../idempotency';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
@@ -164,26 +179,42 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     return;
   }
 
-  let customer = customerPhone
-    ? await prisma.counterparty.findFirst({ where: { companyId: req.posCompanyId, phone: customerPhone, type: 'customer' } })
-    : null;
-  if (!customer && customerPhone) {
-    const customerName = typeof b.customerName === 'string' && b.customerName.trim() ? b.customerName.trim() : customerPhone;
-    customer = await prisma.counterparty.create({
-      data: { companyId: req.posCompanyId!, name: customerName, phone: customerPhone, type: 'customer' },
-    });
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
   }
-
-  const { redemptionAmount, finalTotal, pointsEarned } = computeLoyalty({
-    netAfterDiscount: subtotal - discountAmount,
-    availablePoints: customer?.loyaltyPoints ?? 0,
-    pointsToRedeem,
-    earnRatePercent: LOYALTY_EARN_RATE_PERCENT,
-  });
+  const customerName = typeof b.customerName === 'string' && b.customerName.trim() ? b.customerName.trim() : customerPhone;
 
   try {
-    const document = await prisma.$transaction(async (tx) => {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/sales',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
       const now = new Date();
+
+      // Looked up and created inside the transaction. Done outside, a customer
+      // row was left behind whenever the sale itself failed — a shopper who hit
+      // an out-of-stock error ended up half-registered, with a loyalty account
+      // and no purchase.
+      let customer = customerPhone
+        ? await tx.counterparty.findFirst({ where: { companyId: req.posCompanyId, phone: customerPhone, type: 'customer' } })
+        : null;
+      if (!customer && customerPhone) {
+        customer = await tx.counterparty.create({
+          data: { companyId: req.posCompanyId!, name: customerName, phone: customerPhone, type: 'customer' },
+        });
+      }
+
+      const { redemptionAmount, finalTotal, pointsEarned } = computeLoyalty({
+        netAfterDiscount: subtotal - discountAmount,
+        availablePoints: customer?.loyaltyPoints ?? 0,
+        pointsToRedeem,
+        earnRatePercent: LOYALTY_EARN_RATE_PERCENT,
+      });
 
       // Dishes (products with a recipe, on restaurant-tariff companies) don't carry
       // their own stock — selling one consumes its recipe's ingredients instead.
@@ -239,8 +270,14 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
       const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
 
+      // Stock is held per product, not per cart line, and one cart can carry
+      // the same product on several lines — a weighed item added twice, or a
+      // scanner that fired twice. Checked line by line, two lines of 3 both
+      // pass against a stock of 5 and the sale goes through for 6.
+      const deductions = aggregateRequestedQuantities(plainItems);
+
       const shortages = [
-        ...findStockShortages(plainItems, quantityByProduct),
+        ...findStockShortages(deductions, quantityByProduct),
         ...findStockShortages(
           ingredientConsumption.map((c) => ({ productId: c.ingredientId, quantity: c.quantity, price: 0 })),
           ingredientQuantityByProduct,
@@ -252,17 +289,22 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
 
       const documentItemsData: { productId: string; batchId: string | null; quantity: number; price: number }[] = [];
       const otherUpdates: Promise<unknown>[] = [];
+      // Drawn down as lines are allocated. Two lines of one batch-tracked
+      // product must not both allocate against the batch's opening quantity,
+      // or FEFO hands out the same units twice.
+      const remainingByBatchId = new Map(batchRows.map((batch) => [batch.id, batch.quantity]));
 
       for (const item of plainItems) {
         const productBatches = batchesByProduct.get(item.productId);
         if (productBatches && productBatches.length > 0) {
           const sellableBatches: BatchStock[] = productBatches
             .filter((batch) => batch.expiryDate > now)
-            .map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: batch.quantity }));
+            .map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: remainingByBatchId.get(batch.id) ?? 0 }));
           const { allocations } = allocateFefo(item.quantity, sellableBatches);
           for (const alloc of allocations) {
             const batch = productBatches.find((batchRow) => batchRow.id === alloc.batchId)!;
-            otherUpdates.push(tx.productBatch.update({ where: { id: batch.id }, data: { quantity: batch.quantity - alloc.quantity } }));
+            remainingByBatchId.set(batch.id, (remainingByBatchId.get(batch.id) ?? 0) - alloc.quantity);
+            otherUpdates.push(decrementBatchQuantity(tx, batch, alloc.quantity));
             documentItemsData.push({ productId: item.productId, batchId: alloc.batchId, quantity: alloc.quantity, price: item.price });
           }
         } else {
@@ -275,8 +317,19 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       }
 
       if (customer) {
-        const newBalance = customer.loyaltyPoints - redemptionAmount + pointsEarned;
-        otherUpdates.push(tx.counterparty.update({ where: { id: customer.id }, data: { loyaltyPoints: newBalance } }));
+        // Relative and conditional, for the same reason stock deltas are: an
+        // absolute write computed from a balance read earlier lets two
+        // registers spend the same points twice, each overwriting the other.
+        otherUpdates.push(
+          tx.counterparty
+            .updateMany({
+              where: { id: customer.id, loyaltyPoints: { gte: redemptionAmount } },
+              data: { loyaltyPoints: { increment: pointsEarned - redemptionAmount } },
+            })
+            .then(({ count }) => {
+              if (count === 0) throw new LoyaltyPointsError();
+            }),
+        );
       }
 
       // Document is created before the stock movements so each ledger row can
@@ -301,9 +354,9 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       });
 
       const stockMovements: Promise<unknown>[] = [...otherUpdates];
-      for (const item of plainItems) {
-        const stock = stockByProduct.get(item.productId)!;
-        stockMovements.push(applyStockDelta(tx, stock, -item.quantity, 'sale', document.id));
+      for (const deduction of deductions) {
+        const stock = stockByProduct.get(deduction.productId)!;
+        stockMovements.push(applyStockDelta(tx, stock, -deduction.quantity, 'sale', document.id));
       }
       for (const consumption of ingredientConsumption) {
         const stock = ingredientStockByProduct.get(consumption.ingredientId)!;
@@ -311,21 +364,35 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       }
       await Promise.all(stockMovements);
 
-      return document;
-    }, { timeout: 15000 });
-
-    res.status(201).json({
-      id: document.id,
-      createdAt: document.createdAt.toISOString(),
-      discountAmount,
-      pointsRedeemed: redemptionAmount,
-      pointsEarned,
-      total: finalTotal,
-      customerPoints: customer ? customer.loyaltyPoints - redemptionAmount + pointsEarned : null,
+      return {
+        id: document.id,
+        createdAt: document.createdAt.toISOString(),
+        discountAmount,
+        pointsRedeemed: redemptionAmount,
+        pointsEarned,
+        total: finalTotal,
+        customerPoints: customer ? customer.loyaltyPoints - redemptionAmount + pointsEarned : null,
+      };
     });
+
+    // A replay reuses the stored status, so the register that retried a sale
+    // it had already made gets exactly the receipt it got the first time.
+    res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
+      return;
+    }
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Товар разобрали на другой кассе — повторите продажу' });
+      return;
+    }
+    if (err instanceof LoyaltyPointsError) {
+      res.status(409).json({ error: 'Баллы клиента изменились — повторите продажу' });
+      return;
+    }
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другой продажи' });
       return;
     }
     throw err;
@@ -400,12 +467,29 @@ posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedReques
     return;
   }
 
-  const closed = await prisma.shift.update({
-    where: { id: shift.id },
+  // The counted cash is the evidence behind every shortage the owner will
+  // ever be shown for this shift. Closing an already-closed shift silently
+  // overwrote that number with a second count, erasing the discrepancy — so a
+  // closed shift is final, and only the cashier who worked it (or an owner or
+  // manager) may set it.
+  if (shift.userId && shift.userId !== req.posUserId && !(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Закрыть смену может только её кассир, владелец или менеджер' });
+    return;
+  }
+
+  // Guarded on closedAt rather than checked beforehand, so two devices closing
+  // the same shift at once can't both succeed with different counts.
+  const { count } = await prisma.shift.updateMany({
+    where: { id: shift.id, closedAt: null },
     data: { closedAt: new Date(), closingCashCounted },
   });
+  if (count === 0) {
+    res.status(409).json({ error: 'Смена уже закрыта' });
+    return;
+  }
 
-  res.json({ id: closed.id, closedAt: closed.closedAt?.toISOString() });
+  const closed = await prisma.shift.findUnique({ where: { id: shift.id } });
+  res.json({ id: shift.id, closedAt: closed?.closedAt?.toISOString() });
 });
 
 posRouter.get('/push/vapid-public-key', requirePosAuth, (_req, res) => {
@@ -819,7 +903,7 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
       data: { productId: product.id, locationId: location.id, batchNumber, expiryDate, quantity },
     });
 
-    const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId: location.id, binLocation: null } });
+    const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId: location.id, binLocation: '' } });
     if (stock) {
       await applyStockDelta(tx, stock, quantity, 'batch_receipt');
     } else {
@@ -1830,5 +1914,13 @@ class StockError extends Error {
   constructor(shortages: StockShortage[]) {
     super('Insufficient stock');
     this.shortages = shortages;
+  }
+}
+
+// The customer's balance no longer covers the redemption this sale was
+// priced against — points were spent at another register in between.
+class LoyaltyPointsError extends Error {
+  constructor() {
+    super('Loyalty balance changed');
   }
 }
