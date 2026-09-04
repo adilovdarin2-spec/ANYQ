@@ -446,6 +446,9 @@ model Document {
   // out of a till, and "a reason and the right to do it" is what makes one
   // accountable rather than merely recorded.
   reason        String?
+  // When the goods are promised, on a purchase order. The date a lead time is
+  // measured against, and the one that makes "late" answerable.
+  expectedAt    DateTime?
   // The sale a return is against. A return standing on its own would let a
   // cashier refund goods nobody ever bought — the oldest way a till is
   // emptied — so a return is always a claim on one specific receipt, and can

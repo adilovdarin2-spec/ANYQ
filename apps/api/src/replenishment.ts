@@ -91,6 +91,8 @@ export interface ReplenishmentInput {
   available: number;
   /** Already on its way here on an unreceived transfer. */
   inTransit: number;
+  /** Already asked of a supplier on a sent purchase order and not yet delivered. */
+  onOrder: number;
   demandPerDay: number | null;
   /** Days between placing an order and the goods arriving. */
   leadTimeDays: number;
@@ -117,7 +119,10 @@ export interface Recommendation {
 const SAFETY_DAYS = 3;
 
 export function recommendOrder(input: ReplenishmentInput): Recommendation {
-  const position = input.available + input.inTransit;
+  // Everything already coming, from wherever. Ordering on top of goods that
+  // are merely late is how a stockroom ends up holding three months of one
+  // item, and it is the mistake a shop makes precisely when it is worried.
+  const position = input.available + input.inTransit + input.onOrder;
   const demand = input.demandPerDay;
 
   // Nothing ever sold while it was on the shelf, so there is no rate to

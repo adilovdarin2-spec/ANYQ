@@ -13,6 +13,8 @@ interface Props {
     productId: string,
     policy: { minQuantity: number; targetQuantity: number; leadTimeDays: number },
   ) => Promise<boolean>;
+  onOrderEverything: () => void;
+  ordering: boolean;
 }
 
 function formatQuantity(value: number): string {
@@ -42,6 +44,8 @@ export function ReplenishmentScreen({
   onBack,
   onRefresh,
   onSavePolicy,
+  onOrderEverything,
+  ordering,
 }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [minQuantity, setMinQuantity] = useState('');
@@ -104,6 +108,14 @@ export function ReplenishmentScreen({
                   <div className="order-item-row">
                     <span>Уже в пути</span>
                     <span>{formatQuantity(item.inTransit)}</span>
+                  </div>
+                )}
+                {/* Already asked for. Shown because the reason a line is small
+                    is as worth seeing as the reason it is large. */}
+                {item.onOrder > 0 && (
+                  <div className="order-item-row">
+                    <span>Заказано у поставщика</span>
+                    <span>{formatQuantity(item.onOrder)}</span>
                   </div>
                 )}
                 {/* Shown because it is the reason to distrust the rate: a
@@ -173,6 +185,15 @@ export function ReplenishmentScreen({
           );
         })}
       </div>
+
+      {/* A recommendation nobody can act on is a report. This is the press. */}
+      {items.length > 0 && (
+        <div className="screen-footer">
+          <button className="btn btn-primary btn-block" disabled={ordering} onClick={onOrderEverything}>
+            {ordering ? 'Создаём заказ…' : 'Оформить черновик заказа на всё'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

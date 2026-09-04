@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, Supplier, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -187,6 +187,8 @@ export function fetchReceipts(token: string): Promise<Receipt[]> {
 
 export interface CreateReceiptPayload {
   locationId: string;
+  /** Links the delivery to the order it answers, so short deliveries are visible. */
+  purchaseOrderId?: string | null;
   supplierName: string;
   supplierPhone: string;
   /**
@@ -427,4 +429,34 @@ export function registerFiscalManually(
   fiscalNumber: string,
 ): Promise<{ documentId: string; status: string; fiscalNumber: string | null }> {
   return request(`/pos/fiscal/${documentId}/manual`, { method: 'POST', body: JSON.stringify({ fiscalNumber }) }, token);
+}
+
+export function fetchSuppliers(token: string): Promise<Supplier[]> {
+  return request('/pos/suppliers', { method: 'GET' }, token);
+}
+
+export function fetchPurchaseOrders(token: string, locationId: string): Promise<PurchaseOrder[]> {
+  return request(`/pos/purchase-orders?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+export interface CreatePurchaseOrderPayload {
+  locationId: string;
+  supplierId: string | null;
+  note: string;
+  /** `quantity` and `price` are per pack when packagingId is set, per base unit otherwise. */
+  items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
+}
+
+// Always created as a draft: an order that appears already approved is one
+// nobody agreed to pay for.
+export function createPurchaseOrder(token: string, payload: CreatePurchaseOrderPayload): Promise<PurchaseOrder> {
+  return request('/pos/purchase-orders', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function actOnPurchaseOrder(
+  token: string,
+  orderId: string,
+  action: 'approve' | 'send' | 'cancel',
+): Promise<{ id: string; status: string }> {
+  return request(`/pos/purchase-orders/${orderId}/${action}`, { method: 'POST' }, token);
 }
