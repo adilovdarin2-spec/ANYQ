@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, Packaging, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, Packaging, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -19,6 +19,8 @@ import {
   fetchReturnableSales,
   fetchReturns,
   createReturn,
+  fetchReplenishment,
+  saveStockPolicy,
   fetchTransfers,
   createTransfer,
   receiveTransfer,
@@ -80,6 +82,7 @@ import { TableOrderScreen } from './components/TableOrderScreen';
 import { KdsScreen } from './components/KdsScreen';
 import { StockHistoryScreen } from './components/StockHistoryScreen';
 import { ReturnsScreen } from './components/ReturnsScreen';
+import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -103,6 +106,7 @@ type View =
   | 'incoming'
   | 'counts'
   | 'returns'
+  | 'replenishment'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -110,7 +114,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -164,6 +168,11 @@ export default function App() {
   const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
   const [packagingBusy, setPackagingBusy] = useState(false);
   const [packagingError, setPackagingError] = useState<string | null>(null);
+  const [replenishment, setReplenishment] = useState<ReplenishmentItem[]>([]);
+  const [replenishmentWindow, setReplenishmentWindow] = useState(28);
+  const [replenishmentLoading, setReplenishmentLoading] = useState(false);
+  const [replenishmentError, setReplenishmentError] = useState<string | null>(null);
+  const [policySavingProductId, setPolicySavingProductId] = useState<string | null>(null);
   const [returnableSales, setReturnableSales] = useState<ReturnableSale[]>([]);
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
   const [returnsLoading, setReturnsLoading] = useState(false);
@@ -236,6 +245,7 @@ export default function App() {
       { key: 'incoming', icon: '📥', label: 'Приёмка', onClick: handleShowIncoming },
       { key: 'counts', icon: '📋', label: 'Инвентаризация', onClick: handleShowCounts },
       { key: 'returns', icon: '↩️', label: 'Возвраты', onClick: handleShowReturns },
+      { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
     );
   }
@@ -629,6 +639,48 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadReplenishment() {
+    if (!session || !currentLocationId) return;
+    setReplenishmentLoading(true);
+    setReplenishmentError(null);
+    try {
+      const data = await fetchReplenishment(session.token, currentLocationId);
+      setReplenishment(data.items);
+      setReplenishmentWindow(data.windowDays);
+    } catch (err) {
+      setReplenishmentError(err instanceof ApiError ? err.message : 'Не удалось рассчитать заказ');
+    } finally {
+      setReplenishmentLoading(false);
+    }
+  }
+
+  function handleShowReplenishment() {
+    setView('replenishment');
+    void loadReplenishment();
+  }
+
+  async function handleSaveStockPolicy(
+    productId: string,
+    policy: { minQuantity: number; targetQuantity: number; leadTimeDays: number },
+  ) {
+    if (!session || !currentLocationId) return false;
+    setPolicySavingProductId(productId);
+    setReplenishmentError(null);
+    try {
+      await saveStockPolicy(session.token, productId, { ...policy, locationId: currentLocationId });
+      // Recalculated rather than patched locally: changing a minimum can take
+      // an item off the list entirely, and a stale row would keep telling the
+      // owner to order something they have just decided they don't need.
+      await loadReplenishment();
+      return true;
+    } catch (err) {
+      setReplenishmentError(err instanceof ApiError ? err.message : 'Не удалось сохранить запас');
+      return false;
+    } finally {
+      setPolicySavingProductId(null);
+    }
   }
 
   async function loadReturns() {
@@ -1383,6 +1435,19 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'replenishment' && (
+        <ReplenishmentScreen
+          items={replenishment}
+          windowDays={replenishmentWindow}
+          loading={replenishmentLoading}
+          error={replenishmentError}
+          savingProductId={policySavingProductId}
+          onBack={() => setView('operations')}
+          onRefresh={loadReplenishment}
+          onSavePolicy={handleSaveStockPolicy}
         />
       )}
 
