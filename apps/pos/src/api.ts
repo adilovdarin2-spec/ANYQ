@@ -32,7 +32,16 @@ export interface PosSession {
   company: { id: string; name: string; slug: string | null };
   modules: string[];
   locations: CompanyLocation[];
+  /** Which location the `products` stock figures belong to; null if the company has none. */
+  catalogLocationId: string | null;
   products: Product[];
+}
+
+// Reloads the sale grid after the user switches location. Stock only means
+// something at one place, so the grid has to follow the switch or the cashier
+// reads the shop's numbers while selling out of the warehouse.
+export function fetchCatalog(token: string, locationId: string): Promise<{ locationId: string; products: Product[] }> {
+  return request(`/pos/catalog?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
 }
 
 export function posLogin(pin: string): Promise<PosSession> {
@@ -110,15 +119,17 @@ export function rejectOrder(token: string, id: string): Promise<{ id: string; st
   return request(`/pos/orders/${id}/reject`, { method: 'POST' }, token);
 }
 
-export function fetchReports(token: string, from: string, to: string): Promise<Report> {
-  return request(`/pos/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { method: 'GET' }, token);
+export function fetchReports(token: string, from: string, to: string, locationId: string): Promise<Report> {
+  const query = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&locationId=${encodeURIComponent(locationId)}`;
+  return request(`/pos/reports?${query}`, { method: 'GET' }, token);
 }
 
-export function fetchBatches(token: string): Promise<Batch[]> {
-  return request('/pos/batches', { method: 'GET' }, token);
+export function fetchBatches(token: string, locationId: string): Promise<Batch[]> {
+  return request(`/pos/batches?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
 }
 
 export interface ReceiveBatchPayload {
+  locationId: string;
   productId: string;
   batchNumber: string;
   expiryDate: string;
@@ -138,6 +149,7 @@ export function fetchTransfers(token: string): Promise<Transfer[]> {
 }
 
 export interface CreateTransferPayload {
+  fromLocationId: string;
   toLocationId: string;
   items: { productId: string; quantity: number }[];
 }
@@ -151,6 +163,7 @@ export function fetchReceipts(token: string): Promise<Receipt[]> {
 }
 
 export interface CreateReceiptPayload {
+  locationId: string;
   supplierName: string;
   supplierPhone: string;
   items: { productId: string; quantity: number; price: number }[];
@@ -165,6 +178,7 @@ export function fetchCounts(token: string): Promise<Count[]> {
 }
 
 export interface CreateCountPayload {
+  locationId: string;
   items: { productId: string; countedQuantity: number }[];
 }
 
@@ -181,6 +195,7 @@ export function fetchProductionRuns(token: string): Promise<ProductionRun[]> {
 }
 
 export interface CreateProductionPayload {
+  locationId: string;
   productId: string;
   quantity: number;
 }
@@ -196,7 +211,7 @@ export function fetchTables(token: string): Promise<RestaurantTable[]> {
   return request('/pos/tables', { method: 'GET' }, token);
 }
 
-export function createTable(token: string, payload: { name: string; seats: number }): Promise<RestaurantTable> {
+export function createTable(token: string, payload: { locationId: string; name: string; seats: number }): Promise<RestaurantTable> {
   return request('/pos/tables', { method: 'POST', body: JSON.stringify(payload) }, token);
 }
 

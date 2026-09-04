@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Response } from 'express';
 import { prisma } from '@anyq/db';
 import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
@@ -21,6 +22,7 @@ import {
   runIdempotent,
   IdempotencyConflictError,
 } from '../idempotency';
+import { resolveLocationId, resolveTransferLocations, locationErrorMessage } from '../locations';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
@@ -42,6 +44,20 @@ const LOYALTY_EARN_RATE_PERCENT = 5;
 
 export const posRouter = Router();
 
+// Resolves the location an operation happens at, and answers the request
+// itself when it can't — returning null then, so the caller just stops.
+// A location the company doesn't own is a 404 rather than a 400: from the
+// caller's side it is a thing that isn't there, and answering "invalid" would
+// confirm that some other company's location id exists.
+function resolveLocationOrRespond(locations: { id: string }[], requested: unknown, res: Response): string | null {
+  const resolution = resolveLocationId(locations, requested);
+  if (resolution.status !== 'ok') {
+    res.status(resolution.status === 'unknown' ? 404 : 400).json({ error: locationErrorMessage(resolution.status) });
+    return null;
+  }
+  return resolution.locationId;
+}
+
 posRouter.post('/login', loginRateLimit, async (req, res) => {
   const { pin } = req.body ?? {};
   if (!pin) {
@@ -51,7 +67,10 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
 
   const user = await prisma.user.findFirst({
     where: { posPin: pin },
-    include: { company: { include: { tariff: true, locations: true } } },
+    // Ordered, because an unordered list has no meaningful "first" — Postgres
+    // is free to return these in any order, so the location the register
+    // defaulted to could change between logins.
+    include: { company: { include: { tariff: true, locations: { orderBy: { name: 'asc' } } } } },
   });
   if (!user) {
     res.status(401).json({ error: 'Неверный PIN' });
@@ -65,12 +84,36 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   }
 
   const modules: string[] = user.company.tariff ? JSON.parse(user.company.tariff.modules) : [];
-  const products = await prisma.product.findMany({ where: { companyId: user.companyId, sellable: true } });
-  const primaryLocationId = user.company.locations[0]?.id;
-  const stockRows = primaryLocationId
-    ? await prisma.stock.findMany({ where: { locationId: primaryLocationId } })
-    : [];
-  const stockByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+  // The catalog carries stock, and stock only means something at one location,
+  // so the register is told which one these numbers are for. It opens on this
+  // location and refetches from /pos/catalog when the user switches.
+  const catalogLocationId = user.company.locations[0]?.id ?? null;
+  const groupedProducts = await buildPosCatalog(user.companyId, modules, catalogLocationId);
+
+  res.json({
+    token: signPosToken(user.id, user.companyId),
+    user: { id: user.id, name: user.name, role: user.role },
+    company: { id: user.company.id, name: user.company.name, slug: user.company.slug },
+    modules,
+    locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
+    catalogLocationId,
+    products: groupedProducts,
+  });
+});
+
+// The sale grid for one location. Shared by /pos/login (which opens on the
+// company's first location) and /pos/catalog (which reloads it when the user
+// switches), so a register can never end up showing one location's stock while
+// selling against another's.
+async function buildPosCatalog(companyId: string, modules: string[], locationId: string | null) {
+  const products = await prisma.product.findMany({ where: { companyId, sellable: true } });
+  const stockRows = locationId ? await prisma.stock.findMany({ where: { locationId } }) : [];
+  const stockByProduct = new Map<string, number>();
+  for (const row of stockRows) {
+    // One product can hold stock in several bins at a location; the grid shows
+    // what's sellable there in total, not whatever bin sorted last.
+    stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + row.quantity);
+  }
 
   // Dishes (recipe-tracked products) don't carry their own stock row — their real
   // availability is checked against ingredient stock at sale time — so the client
@@ -113,34 +156,56 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   // Variant grouping only applies for retail-tariff companies — everyone else sees
   // every product (including variant children) as a flat, ungrouped list, which is
   // exactly today's behaviour and stays backward-compatible.
-  const groupedProducts = modules.includes('retail')
+  return modules.includes('retail')
     ? groupProductVariants(productRows).map(({ product, variants }) => ({ ...product, variants }))
     : productRows.map((p) => ({ ...p, variants: [] }));
+}
 
-  res.json({
-    token: signPosToken(user.id, user.companyId),
-    user: { id: user.id, name: user.name, role: user.role },
-    company: { id: user.company.id, name: user.company.name, slug: user.company.slug },
-    modules,
-    locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
-    products: groupedProducts,
+// Reloads the sale grid for another location. A register that switches from
+// the shop to the warehouse has to see the warehouse's stock, or the cashier
+// is reading one location's numbers while selling out of another's.
+posRouter.get('/catalog', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: { orderBy: { name: 'asc' } } },
   });
-});
-
-posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
-  const b = req.body ?? {};
-  const items: SaleItemInput[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0 || !b.locationId || !b.paymentMethod || hasInvalidQuantity(items)) {
-    res.status(400).json({ error: 'Некорректные данные продажи' });
-    return;
-  }
-
-  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
   const state = tariffState(company?.tariff ?? null);
   if (state !== 'active') {
     res.status(403).json({ error: tariffDenialMessage(state) });
     return;
   }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  res.json({ locationId, products: await buildPosCatalog(req.posCompanyId!, modules, locationId) });
+});
+
+posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const items: SaleItemInput[] = Array.isArray(b.items) ? b.items : [];
+  if (items.length === 0 || !b.paymentMethod || hasInvalidQuantity(items)) {
+    res.status(400).json({ error: 'Некорректные данные продажи' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: { orderBy: { name: 'asc' } } },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  // The submitted location was previously written straight into the sale and
+  // its stock lookups without being checked against the caller's company — a
+  // register could book a sale against another tenant's location and write
+  // that company's stock down.
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
 
@@ -238,11 +303,11 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       const ingredientIds = ingredientConsumption.map((c) => c.ingredientId);
 
       const [stockRows, batchRows, ingredientStockRows] = await Promise.all([
-        tx.stock.findMany({ where: { locationId: b.locationId, productId: { in: plainItems.map((it) => it.productId) } } }),
+        tx.stock.findMany({ where: { locationId, productId: { in: plainItems.map((it) => it.productId) } } }),
         tx.productBatch.findMany({
-          where: { locationId: b.locationId, productId: { in: plainItems.map((it) => it.productId) }, quantity: { gt: 0 } },
+          where: { locationId, productId: { in: plainItems.map((it) => it.productId) }, quantity: { gt: 0 } },
         }),
-        tx.stock.findMany({ where: { locationId: b.locationId, productId: { in: ingredientIds } } }),
+        tx.stock.findMany({ where: { locationId, productId: { in: ingredientIds } } }),
       ]);
       const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
       const batchesByProduct = new Map<string, typeof batchRows>();
@@ -338,7 +403,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       const document = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
-          locationId: b.locationId,
+          locationId,
           type: 'sale',
           status: 'confirmed',
           paymentMethod: b.paymentMethod,
@@ -425,24 +490,33 @@ posRouter.get('/customers', requirePosAuth, async (req: PosAuthedRequest, res) =
 posRouter.post('/shifts', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const openingCash = Number(b.openingCash);
-  if (!b.locationId || !Number.isFinite(openingCash) || openingCash < 0) {
+  if (!Number.isFinite(openingCash) || openingCash < 0) {
     res.status(400).json({ error: 'Некорректные данные смены' });
     return;
   }
 
-  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: { orderBy: { name: 'asc' } } },
+  });
   const state = tariffState(company?.tariff ?? null);
   if (state !== 'active') {
     res.status(403).json({ error: tariffDenialMessage(state) });
     return;
   }
 
+  // Checked against the company, like the sale's: a shift opened against
+  // someone else's location would file this register's whole day of takings
+  // under another company.
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
   const user = await prisma.user.findUnique({ where: { id: req.posUserId } });
 
   const shift = await prisma.shift.create({
     data: {
       companyId: req.posCompanyId!,
-      locationId: b.locationId,
+      locationId,
       cashierName: user?.name ?? 'Кассир',
       userId: req.posUserId,
       openedAt: new Date(),
@@ -544,6 +618,14 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
     return;
   }
 
+  // A report belongs to one location. Revenue was summed across the whole
+  // company while the low-stock list came from whichever location sorted
+  // first, so a two-shop owner read one shop's shortages under both shops'
+  // takings. Answering "which point earns and which only turns over" needs
+  // both halves scoped to the same place.
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
   const now = new Date();
   const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const from = req.query.from ? new Date(String(req.query.from)) : defaultFrom;
@@ -552,6 +634,7 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const documents = await prisma.document.findMany({
     where: {
       companyId: req.posCompanyId,
+      locationId,
       type: 'sale',
       status: 'confirmed',
       createdAt: { gte: from, lte: to },
@@ -584,10 +667,7 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
 
   const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
 
-  const location = company?.locations[0];
-  const stockRows = location
-    ? await prisma.stock.findMany({ where: { locationId: location.id }, include: { product: true } })
-    : [];
+  const stockRows = await prisma.stock.findMany({ where: { locationId }, include: { product: true } });
   const stockForLowCheck = stockRows.map((s) => ({ productId: s.productId, name: s.product.name, quantity: s.quantity }));
 
   const dishCostByProductId = new Map<string, number>();
@@ -836,14 +916,14 @@ posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => 
     return;
   }
 
-  const location = company?.locations[0];
-  const batches = location
-    ? await prisma.productBatch.findMany({
-        where: { locationId: location.id },
-        include: { product: true },
-        orderBy: { expiryDate: 'asc' },
-      })
-    : [];
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const batches = await prisma.productBatch.findMany({
+    where: { locationId },
+    include: { product: true },
+    orderBy: { expiryDate: 'asc' },
+  });
 
   const now = new Date();
   res.json(
@@ -892,22 +972,19 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
     return;
   }
 
-  const location = company?.locations[0];
-  if (!location) {
-    res.status(400).json({ error: 'У компании не настроена точка' });
-    return;
-  }
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
 
   const batch = await prisma.$transaction(async (tx) => {
     const created = await tx.productBatch.create({
-      data: { productId: product.id, locationId: location.id, batchNumber, expiryDate, quantity },
+      data: { productId: product.id, locationId, batchNumber, expiryDate, quantity },
     });
 
-    const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId: location.id, binLocation: '' } });
+    const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId, binLocation: '' } });
     if (stock) {
       await applyStockDelta(tx, stock, quantity, 'batch_receipt');
     } else {
-      await createStockWithMovement(tx, { productId: product.id, locationId: location.id, quantity, reason: 'batch_receipt' });
+      await createStockWithMovement(tx, { productId: product.id, locationId, quantity, reason: 'batch_receipt' });
     }
 
     return created;
@@ -1050,7 +1127,7 @@ posRouter.get('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) =
 posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0 || !b.toLocationId || hasInvalidQuantity(items)) {
+  if (items.length === 0 || hasInvalidQuantity(items)) {
     res.status(400).json({ error: 'Некорректные данные перемещения' });
     return;
   }
@@ -1070,35 +1147,34 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
     return;
   }
 
-  const fromLocation = company?.locations[0];
-  if (!fromLocation) {
-    res.status(400).json({ error: 'У компании не настроена точка' });
+  // The source used to be the company's first location no matter where the
+  // user was standing, so a warehouse hand shipping to a shop moved stock out
+  // of whichever location happened to sort first.
+  const transfer = resolveTransferLocations(company?.locations ?? [], b.fromLocationId, b.toLocationId);
+  if (transfer.status !== 'ok') {
+    res.status(transfer.status === 'unknown' ? 404 : 400).json({ error: locationErrorMessage(transfer.status) });
     return;
   }
-  if (b.toLocationId === fromLocation.id) {
-    res.status(400).json({ error: 'Точка назначения совпадает с текущей точкой' });
-    return;
-  }
-  const toLocation = company?.locations.find((l) => l.id === b.toLocationId);
-  if (!toLocation) {
-    res.status(404).json({ error: 'Точка назначения не найдена' });
-    return;
-  }
+  const { fromLocationId, toLocationId } = transfer;
 
   try {
     const document = await prisma.$transaction(async (tx) => {
       const [sourceStockRows, destStockRows] = await Promise.all([
-        tx.stock.findMany({ where: { locationId: fromLocation.id, productId: { in: items.map((it) => it.productId) } } }),
-        tx.stock.findMany({ where: { locationId: toLocation.id, productId: { in: items.map((it) => it.productId) } } }),
+        tx.stock.findMany({ where: { locationId: fromLocationId, productId: { in: items.map((it) => it.productId) } } }),
+        tx.stock.findMany({ where: { locationId: toLocationId, productId: { in: items.map((it) => it.productId) } } }),
       ]);
       const sourceStockByProduct = new Map(sourceStockRows.map((s) => [s.productId, s]));
       const destStockByProduct = new Map(destStockRows.map((s) => [s.productId, s]));
       const quantityByProduct = new Map(sourceStockRows.map((s) => [s.productId, s.quantity]));
 
-      const shortages = findStockShortages(
+      // Per product, not per line — two lines of the same product would
+      // otherwise each pass the check and each write from the same starting
+      // quantity, moving one line's worth while the document claims two.
+      const moves = aggregateRequestedQuantities(
         items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: 0 })),
-        quantityByProduct,
       );
+
+      const shortages = findStockShortages(moves, quantityByProduct);
       if (shortages.length > 0) {
         throw new StockError(shortages);
       }
@@ -1106,8 +1182,8 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
       const document = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
-          locationId: fromLocation.id,
-          toLocationId: toLocation.id,
+          locationId: fromLocationId,
+          toLocationId,
           type: 'transfer',
           status: 'confirmed',
           createdBy: req.posUserId!,
@@ -1117,19 +1193,19 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
       });
 
       const updates: Promise<unknown>[] = [];
-      for (const item of items) {
-        const source = sourceStockByProduct.get(item.productId)!;
-        updates.push(applyStockDelta(tx, source, -item.quantity, 'transfer_out', document.id));
+      for (const move of moves) {
+        const source = sourceStockByProduct.get(move.productId)!;
+        updates.push(applyStockDelta(tx, source, -move.quantity, 'transfer_out', document.id));
 
-        const dest = destStockByProduct.get(item.productId);
+        const dest = destStockByProduct.get(move.productId);
         if (dest) {
-          updates.push(applyStockDelta(tx, dest, item.quantity, 'transfer_in', document.id));
+          updates.push(applyStockDelta(tx, dest, move.quantity, 'transfer_in', document.id));
         } else {
           updates.push(
             createStockWithMovement(tx, {
-              productId: item.productId,
-              locationId: toLocation.id,
-              quantity: item.quantity,
+              productId: move.productId,
+              locationId: toLocationId,
+              quantity: move.quantity,
               reason: 'transfer_in',
               documentId: document.id,
             }),
@@ -1204,11 +1280,8 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     return;
   }
 
-  const location = company?.locations[0];
-  if (!location) {
-    res.status(400).json({ error: 'У компании не настроена точка' });
-    return;
-  }
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
 
   const supplierName = typeof b.supplierName === 'string' ? b.supplierName.trim() : '';
   const supplierPhone = typeof b.supplierPhone === 'string' ? b.supplierPhone.trim() : '';
@@ -1228,14 +1301,14 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
 
   const document = await prisma.$transaction(async (tx) => {
     const stockRows = await tx.stock.findMany({
-      where: { locationId: location.id, productId: { in: items.map((it) => it.productId) } },
+      where: { locationId, productId: { in: items.map((it) => it.productId) } },
     });
     const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
 
     const document = await tx.document.create({
       data: {
         companyId: req.posCompanyId!,
-        locationId: location.id,
+        locationId,
         type: 'receipt',
         status: 'confirmed',
         counterpartyId,
@@ -1254,7 +1327,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
         updates.push(
           createStockWithMovement(tx, {
             productId: item.productId,
-            locationId: location.id,
+            locationId,
             quantity: item.quantity,
             reason: 'receipt',
             documentId: document.id,
@@ -1322,15 +1395,12 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     return;
   }
 
-  const location = company?.locations[0];
-  if (!location) {
-    res.status(400).json({ error: 'У компании не настроена точка' });
-    return;
-  }
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
 
   const document = await prisma.$transaction(async (tx) => {
     const stockRows = await tx.stock.findMany({
-      where: { locationId: location.id, productId: { in: items.map((it) => it.productId) } },
+      where: { locationId, productId: { in: items.map((it) => it.productId) } },
     });
     const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
     const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
@@ -1340,7 +1410,7 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     const document = await tx.document.create({
       data: {
         companyId: req.posCompanyId!,
-        locationId: location.id,
+        locationId,
         type: 'adjustment',
         status: 'confirmed',
         createdBy: req.posUserId!,
@@ -1358,7 +1428,7 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
         updates.push(
           createStockWithMovement(tx, {
             productId: adj.productId,
-            locationId: location.id,
+            locationId,
             quantity: adj.countedQuantity,
             reason: 'adjustment',
             documentId: document.id,
@@ -1454,11 +1524,8 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
     return;
   }
 
-  const location = company?.locations[0];
-  if (!location) {
-    res.status(400).json({ error: 'У компании не настроена точка' });
-    return;
-  }
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
 
   const recipe = await prisma.recipe.findFirst({
     where: { productId: b.productId, product: { companyId: req.posCompanyId } },
@@ -1482,8 +1549,8 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
   try {
     const document = await prisma.$transaction(async (tx) => {
       const [ingredientStockRows, finishedStockRows] = await Promise.all([
-        tx.stock.findMany({ where: { locationId: location.id, productId: { in: ingredients.map((i) => i.ingredientId) } } }),
-        tx.stock.findMany({ where: { locationId: location.id, productId: recipe.productId } }),
+        tx.stock.findMany({ where: { locationId, productId: { in: ingredients.map((i) => i.ingredientId) } } }),
+        tx.stock.findMany({ where: { locationId, productId: recipe.productId } }),
       ]);
       const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
       const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
@@ -1499,7 +1566,7 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
       const document = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
-          locationId: location.id,
+          locationId,
           type: 'production',
           status: 'confirmed',
           createdBy: req.posUserId!,
@@ -1526,7 +1593,7 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
         updates.push(
           createStockWithMovement(tx, {
             productId: recipe.productId,
-            locationId: location.id,
+            locationId,
             quantity: yieldQuantity,
             reason: 'production_in',
             documentId: document.id,
@@ -1610,14 +1677,11 @@ posRouter.post('/tables', requirePosAuth, async (req: PosAuthedRequest, res) => 
     res.status(403).json({ error: tariffDenialMessage(state) });
     return;
   }
-  const location = company?.locations[0];
-  if (!location) {
-    res.status(400).json({ error: 'У компании не настроена точка' });
-    return;
-  }
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
 
   const table = await prisma.table.create({
-    data: { companyId: req.posCompanyId!, locationId: location.id, name, seats },
+    data: { companyId: req.posCompanyId!, locationId, name, seats },
   });
   res.status(201).json({ id: table.id, name: table.name, seats: table.seats, status: table.status, orderId: null, itemCount: 0, total: 0 });
 });
@@ -1685,11 +1749,9 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
     res.status(404).json({ error: 'Стол не найден' });
     return;
   }
-  const location = company?.locations[0];
-  if (!location) {
-    res.status(400).json({ error: 'У компании не настроена точка' });
-    return;
-  }
+  // The table already knows where it stands, so the location isn't the
+  // caller's to choose here — the ingredients come off that room's stock.
+  const locationId = table.locationId;
 
   // Same stale/tampered-price guard as /pos/sales — the waiter's device caches
   // the menu at login, so a price the owner changes mid-shift keeps ringing
@@ -1732,8 +1794,8 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
       const ingredientIds = ingredientConsumption.map((c) => c.ingredientId);
 
       const [stockRows, ingredientStockRows] = await Promise.all([
-        tx.stock.findMany({ where: { locationId: location.id, productId: { in: plainItems.map((it) => it.productId) } } }),
-        tx.stock.findMany({ where: { locationId: location.id, productId: { in: ingredientIds } } }),
+        tx.stock.findMany({ where: { locationId, productId: { in: plainItems.map((it) => it.productId) } } }),
+        tx.stock.findMany({ where: { locationId, productId: { in: ingredientIds } } }),
       ]);
       const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
       const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
@@ -1760,7 +1822,7 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
         openDocument = await tx.document.create({
           data: {
             companyId: req.posCompanyId!,
-            locationId: location.id,
+            locationId,
             type: 'sale',
             status: 'open',
             tableId: table.id,
