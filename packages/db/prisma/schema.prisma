@@ -430,6 +430,9 @@ model Stock {
   binLocation String  @default("")
 
   @@unique([productId, locationId, binLocation])
+  // Reading a whole location's stock is the commonest query in the product:
+  // the sale grid, every availability check, the bin map and the order list.
+  @@index([locationId])
   @@map("stocks")
 }
 
@@ -507,6 +510,8 @@ model Document {
   settlements    Settlement[]
 
   @@index([companyId, type, createdAt])
+  // Every debt figure starts from "what has this counterparty been charged".
+  @@index([counterpartyId, type])
   @@map("documents")
 }
 
@@ -606,6 +611,7 @@ model Counterparty {
   documents   Document[]
   settlements Settlement[]
 
+  @@index([companyId, type])
   @@map("counterparties")
 }
 

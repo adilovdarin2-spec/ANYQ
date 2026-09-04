@@ -51,6 +51,15 @@ export function ReportsScreen({ report, loading, error, rangeDays, onRangeChange
 
         {report && (
           <>
+            {/* Said out loud rather than presenting a partial total as a
+                whole one. */}
+            {report.truncated && (
+              <div className="login-error">
+                Продаж за период больше, чем помещается в один отчёт — цифры ниже описывают только
+                самые свежие. Возьмите период короче.
+              </div>
+            )}
+
             <div className="report-cards">
               <div className="report-card">
                 <span className="value">{formatMoney(report.summary.revenue)}</span>

@@ -174,6 +174,8 @@ export interface ReportReturns {
 export interface Report {
   from: string;
   to: string;
+  /** True when the period held more sales than one report can read: the figures cover the most recent of them. */
+  truncated: boolean;
   summary: ReportSummary;
   returns: ReportReturns;
   topProducts: TopProduct[];
@@ -424,6 +426,8 @@ export interface ReplenishmentItem {
 export interface Replenishment {
   locationId: string;
   windowDays: number;
+  /** True when the demand window held more movements than one pass can read. */
+  truncated: boolean;
   items: ReplenishmentItem[];
 }
 

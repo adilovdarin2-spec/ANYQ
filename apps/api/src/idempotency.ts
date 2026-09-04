@@ -90,6 +90,24 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
+/**
+ * How long a key is worth keeping. Retries happen within seconds, or within
+ * hours for a register that was offline overnight; nothing retries a week
+ * later. Kept far longer than that anyway, because the cost of an extra day of
+ * rows is nothing and the cost of dropping one too early is a double sale.
+ */
+export const KEY_RETENTION_DAYS = 30;
+
+// The table only ever grows, and nothing reads a key once its client has
+// stopped retrying. Called on a schedule, or by hand — it is deliberately not
+// automatic on write, because deleting rows in the path of a sale is exactly
+// the kind of cleverness that makes a register slow at the worst moment.
+export async function pruneIdempotencyKeys(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - KEY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const { count } = await prisma.idempotencyKey.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  return count;
+}
+
 // `work` returns the response body, not an entity: the body is what a retry
 // has to reproduce byte for byte, so it is what gets stored.
 export async function runIdempotent<T>(
