@@ -47,6 +47,8 @@ import type { PurchaseOrderStatus, OrderedLine } from '../purchasing';
 import { isWriteOffReason, resolveWriteOff, writeOffErrorMessage, resolveQuarantine, quarantineErrorMessage } from '../writeoffs';
 import type { QuarantineAction } from '../writeoffs';
 import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErrorMessage } from '../bins';
+import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
+import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -293,6 +295,33 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if ((customerPhone || pointsToRedeem > 0) && !modules.includes('retail')) {
     res.status(403).json({ error: 'Программа лояльности недоступна на вашем тарифе' });
     return;
+  }
+
+  // "On credit, and only with permission." The permission is the account: a
+  // cashier can let a regular the owner has set up take goods away, and cannot
+  // open one for a phone number typed at the counter.
+  if (b.paymentMethod === 'credit') {
+    const account = customerPhone
+      ? await prisma.counterparty.findFirst({
+          where: { companyId: req.posCompanyId, phone: customerPhone, type: 'customer' },
+        })
+      : null;
+    const charges = account ? await loadCharges(req.posCompanyId!, account.id, 'customer') : [];
+    const owed = account ? computeBalance(charges, await unappliedTotal(req.posCompanyId!, account.id)).balance : 0;
+
+    const credit = resolveCreditSale({
+      customerExisted: !!account,
+      creditAllowed: account?.creditAllowed ?? false,
+      creditLimit: account?.creditLimit ?? 0,
+      currentBalance: owed,
+      // Points are not money, and a credit sale settles in money — so the
+      // limit is checked against what will actually be owed.
+      saleTotal: subtotal - discountAmount,
+    });
+    if (credit.status !== 'ok') {
+      res.status(403).json({ error: creditSaleErrorMessage(credit) });
+      return;
+    }
   }
 
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
@@ -1810,11 +1839,35 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
     .filter((doc) => doc.lines.length > 0)
     .slice(0, 20);
 
+  // What the shop is owed and what it owes. A till figure answers "what did we
+  // take today"; these answer "where is our money", which is a different and
+  // usually larger question.
+  const [customerAccounts, supplierAccounts] = await Promise.all([
+    prisma.counterparty.findMany({ where: { companyId: req.posCompanyId, type: 'customer' }, select: { id: true } }),
+    prisma.counterparty.findMany({ where: { companyId: req.posCompanyId, type: 'supplier' }, select: { id: true } }),
+  ]);
+  const sumBalances = async (accounts: { id: string }[], type: string) => {
+    let total = 0;
+    let overdue = 0;
+    for (const account of accounts) {
+      const charges = await loadCharges(req.posCompanyId!, account.id, type);
+      const balance = computeBalance(charges, await unappliedTotal(req.posCompanyId!, account.id)).balance;
+      if (balance <= 0) continue;
+      total += balance;
+      const aging = buildAging(charges, now);
+      overdue += aging.days31to60 + aging.over60;
+    }
+    return { total, overdue };
+  };
+  const receivable = await sumBalances(customerAccounts, 'customer');
+  const payable = await sumBalances(supplierAccounts, 'supplier');
+
   res.json({
     locationId,
     from: from.toISOString(),
     to: now.toISOString(),
     days,
+    debts: { receivable, payable },
     money: {
       revenue: grossOnSales.revenue,
       // Returned goods take their margin back out with them, so the period's
@@ -2714,6 +2767,279 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
   }
 
   res.json({ productId: b.productId, fromBin, toBin, quantity });
+});
+
+// Everything a counterparty was ever charged, and what has been settled
+// against each of it. Sales on credit for a customer; deliveries for a
+// supplier — a shop owes for goods the moment they arrive, not when somebody
+// gets round to the invoice.
+async function loadCharges(companyId: string, counterpartyId: string, type: string): Promise<Charge[]> {
+  const chargeType = type === 'supplier' ? 'receipt' : 'sale';
+  const [documents, settlements] = await Promise.all([
+    prisma.document.findMany({
+      where: {
+        companyId,
+        counterpartyId,
+        type: chargeType,
+        status: 'confirmed',
+        ...(chargeType === 'sale' ? { paymentMethod: 'credit' } : {}),
+      },
+      include: { items: true },
+    }),
+    prisma.settlement.findMany({ where: { companyId, counterpartyId, documentId: { not: null } } }),
+  ]);
+
+  const settledByDocument = new Map<string, number>();
+  for (const settlement of settlements) {
+    if (!settlement.documentId) continue;
+    settledByDocument.set(settlement.documentId, (settledByDocument.get(settlement.documentId) ?? 0) + settlement.amount);
+  }
+
+  return documents.map((doc) => ({
+    documentId: doc.id,
+    // A receipt is billed at what was actually paid per pack, not the rounded
+    // per-unit figure times the units — the same reading the receipt list uses.
+    amount: doc.items.reduce(
+      (sum, it) =>
+        sum +
+        (it.packPrice !== null && it.packQuantity !== null
+          ? Math.round(it.packPrice * it.packQuantity)
+          : Math.round(it.price * it.quantity)),
+      0,
+    ),
+    settled: settledByDocument.get(doc.id) ?? 0,
+    at: doc.createdAt,
+  }));
+}
+
+async function unappliedTotal(companyId: string, counterpartyId: string): Promise<number> {
+  const rows = await prisma.settlement.findMany({ where: { companyId, counterpartyId, documentId: null } });
+  return rows.reduce((sum, row) => sum + row.amount, 0);
+}
+
+// Who owes the shop, who the shop owes, and how old the money is. A single
+// "total debt" figure hides the only part that matters: the same sum owed
+// since yesterday and owed since spring are different situations.
+posRouter.get('/settlements', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Расчёты доступны владельцу и менеджеру' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const type = req.query.type === 'supplier' ? 'supplier' : 'customer';
+  const counterparties = await prisma.counterparty.findMany({
+    where: { companyId: req.posCompanyId, type },
+    orderBy: { name: 'asc' },
+  });
+
+  const now = new Date();
+  const rows = await Promise.all(
+    counterparties.map(async (counterparty) => {
+      const charges = await loadCharges(req.posCompanyId!, counterparty.id, type);
+      const unapplied = await unappliedTotal(req.posCompanyId!, counterparty.id);
+      const balance = computeBalance(charges, unapplied);
+      return {
+        counterpartyId: counterparty.id,
+        name: counterparty.name,
+        phone: counterparty.phone ?? '',
+        creditAllowed: counterparty.creditAllowed,
+        creditLimit: counterparty.creditLimit,
+        ...balance,
+        aging: buildAging(charges, now),
+      };
+    }),
+  );
+
+  // Only accounts with something outstanding — an owner opens this to act, and
+  // a list of everyone they have ever sold to is not a list of anything.
+  res.json({ type, accounts: rows.filter((row) => row.balance !== 0).sort((a, b) => b.balance - a.balance) });
+});
+
+posRouter.get('/settlements/:counterpartyId', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Расчёты доступны владельцу и менеджеру' });
+    return;
+  }
+
+  const counterparty = await prisma.counterparty.findFirst({
+    where: { id: req.params.counterpartyId, companyId: req.posCompanyId },
+  });
+  if (!counterparty) {
+    res.status(404).json({ error: 'Контрагент не найден' });
+    return;
+  }
+
+  const charges = await loadCharges(req.posCompanyId!, counterparty.id, counterparty.type);
+  const payments = await prisma.settlement.findMany({
+    where: { companyId: req.posCompanyId, counterpartyId: counterparty.id },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+  const unapplied = payments.filter((p) => !p.documentId).reduce((sum, p) => sum + p.amount, 0);
+
+  res.json({
+    counterparty: {
+      id: counterparty.id,
+      name: counterparty.name,
+      type: counterparty.type,
+      creditAllowed: counterparty.creditAllowed,
+      creditLimit: counterparty.creditLimit,
+    },
+    ...computeBalance(charges, unapplied),
+    aging: buildAging(charges, new Date()),
+    charges: charges
+      .map((charge) => ({
+        documentId: charge.documentId,
+        amount: charge.amount,
+        settled: charge.settled,
+        at: charge.at.toISOString(),
+      }))
+      .sort((a, b) => (a.at < b.at ? 1 : -1)),
+    payments: payments.map((payment) => ({
+      id: payment.id,
+      direction: payment.direction,
+      amount: payment.amount,
+      paymentMethod: payment.paymentMethod,
+      documentId: payment.documentId,
+      note: payment.note ?? '',
+      createdAt: payment.createdAt.toISOString(),
+    })),
+  });
+});
+
+// Taking money in from a customer, or paying a supplier. The payment closes
+// the oldest debts first and whatever is left sits on the account: a system
+// that refuses cash just means somebody writes it in a notebook.
+posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const amount = Math.round(Number(b.amount));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ error: 'Введите сумму платежа' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const counterparty = await prisma.counterparty.findFirst({
+    where: { id: b.counterpartyId, companyId: req.posCompanyId },
+  });
+  if (!counterparty) {
+    res.status(404).json({ error: 'Контрагент не найден' });
+    return;
+  }
+  // Paying a supplier is spending the company's money, which is not a
+  // cashier's decision. Taking a customer's payment is.
+  const direction = counterparty.type === 'supplier' ? 'out' : 'in';
+  if (direction === 'out' && !(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Оплату поставщику проводит владелец или менеджер' });
+    return;
+  }
+
+  const charges = await loadCharges(req.posCompanyId!, counterparty.id, counterparty.type);
+  const { allocations, unapplied } = allocatePayment(amount, charges);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const rows = [];
+    for (const allocation of allocations) {
+      rows.push(
+        await tx.settlement.create({
+          data: {
+            companyId: req.posCompanyId!,
+            locationId,
+            counterpartyId: counterparty.id,
+            direction,
+            amount: allocation.amount,
+            paymentMethod: typeof b.paymentMethod === 'string' ? b.paymentMethod : 'cash',
+            documentId: allocation.documentId,
+            note: typeof b.note === 'string' ? b.note.trim() || null : null,
+            createdBy: req.posUserId,
+          },
+        }),
+      );
+    }
+    if (unapplied > 0) {
+      rows.push(
+        await tx.settlement.create({
+          data: {
+            companyId: req.posCompanyId!,
+            locationId,
+            counterpartyId: counterparty.id,
+            direction,
+            amount: unapplied,
+            paymentMethod: typeof b.paymentMethod === 'string' ? b.paymentMethod : 'cash',
+            note: typeof b.note === 'string' ? b.note.trim() || null : null,
+            createdBy: req.posUserId,
+          },
+        }),
+      );
+    }
+    return rows;
+  }, { timeout: 15000 });
+
+  const after = computeBalance(
+    charges.map((charge) => ({
+      ...charge,
+      settled: charge.settled + (allocations.find((a) => a.documentId === charge.documentId)?.amount ?? 0),
+    })),
+    (await unappliedTotal(req.posCompanyId!, counterparty.id)),
+  );
+
+  res.status(201).json({
+    settlements: created.length,
+    applied: allocations,
+    unapplied,
+    balance: after.balance,
+  });
+});
+
+// Whether an account may take goods away without paying, and how far. The
+// permission an owner grants, and the only thing standing between "on credit"
+// and "given away".
+posRouter.put('/counterparties/:id/credit', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Долг разрешает владелец или менеджер' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const creditLimit = Math.round(Number(b.creditLimit ?? 0));
+  if (!Number.isFinite(creditLimit) || creditLimit < 0) {
+    res.status(400).json({ error: 'Некорректный лимит долга' });
+    return;
+  }
+
+  const counterparty = await prisma.counterparty.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId },
+  });
+  if (!counterparty) {
+    res.status(404).json({ error: 'Контрагент не найден' });
+    return;
+  }
+
+  const updated = await prisma.counterparty.update({
+    where: { id: counterparty.id },
+    data: { creditAllowed: b.creditAllowed === true, creditLimit },
+  });
+
+  res.json({ id: updated.id, creditAllowed: updated.creditAllowed, creditLimit: updated.creditLimit });
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

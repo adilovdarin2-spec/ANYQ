@@ -43,6 +43,7 @@ model Company {
   tables            Table[]
   pushSubscriptions PushSubscription[]
   idempotencyKeys   IdempotencyKey[]
+  settlements       Settlement[]
 
   @@map("companies")
 }
@@ -112,6 +113,7 @@ model Location {
   stockPolicies    StockPolicy[]
   fiscalDevice     FiscalDevice?
   storageBins      StorageBin[]
+  settlements      Settlement[]
 
   @@map("locations")
 }
@@ -502,6 +504,7 @@ model Document {
   items          DocumentItem[]
   stockMovements StockMovement[]
   fiscalReceipt  FiscalReceipt?
+  settlements    Settlement[]
 
   @@index([companyId, type, createdAt])
   @@map("documents")
@@ -592,10 +595,50 @@ model Counterparty {
   type          String
   binIin        String?
   loyaltyPoints Int     @default(0)
+  // Whether this account may take goods away without paying. The permission
+  // itself: a cashier can let a regular the owner has set up buy on credit,
+  // and cannot open an account for a phone number typed at the counter.
+  creditAllowed Boolean @default(false)
+  // 0 means "no ceiling set", not "no credit" — an owner who wants to stop
+  // credit turns the account off rather than setting the number to nothing.
+  creditLimit   Int     @default(0)
 
-  documents Document[]
+  documents   Document[]
+  settlements Settlement[]
 
   @@map("counterparties")
+}
+
+// Money moving between the company and somebody it deals with. A sale on
+// credit and a delivery not yet paid for are both debts, and a shop that only
+// records what passed through the till can answer "what did we take today" but
+// never "where is our money".
+//
+// Kept apart from Document deliberately: a payment settles documents, and one
+// payment can settle several. Folding it into the same table would make
+// "what does this invoice still owe" a question about document types.
+model Settlement {
+  id             String       @id @default(cuid())
+  company        Company      @relation(fields: [companyId], references: [id])
+  companyId      String
+  location       Location     @relation(fields: [locationId], references: [id])
+  locationId     String
+  counterparty   Counterparty @relation(fields: [counterpartyId], references: [id])
+  counterpartyId String
+  /// 'in' — money from a customer. 'out' — money to a supplier.
+  direction      String
+  amount         Int
+  paymentMethod  String
+  /// Which document this instalment went against. Null while it sits on account.
+  document       Document?    @relation(fields: [documentId], references: [id])
+  documentId     String?
+  note           String?
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([companyId, counterpartyId, createdAt])
+  @@index([documentId])
+  @@map("settlements")
 }
 
 model Prescription {

@@ -50,9 +50,12 @@ export interface CartLine {
   saleUnit?: SaleUnit;
 }
 
-export type PaymentMethod = 'cash' | 'kaspi' | 'card';
+// 'credit' is not a way of paying — it is a way of not paying yet, and the
+// only one that needs an account behind it.
+export type PaymentMethod = 'cash' | 'kaspi' | 'card' | 'credit';
 
 export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  credit: 'В долг',
   cash: 'Наличные',
   kaspi: 'Kaspi QR',
   card: 'Карта',
@@ -484,6 +487,13 @@ export interface Unfiscalised {
   count: number;
 }
 
+/** Money the shop is owed, or owes, and how much of it has gone stale. */
+export interface DebtSide {
+  total: number;
+  /** Outstanding more than a month — the part that has stopped being a receivable and started being a problem. */
+  overdue: number;
+}
+
 export interface OwnerDashboard {
   locationId: string;
   from: string;
@@ -499,6 +509,7 @@ export interface OwnerDashboard {
     shifts: OwnerShiftCash[];
   };
   unfiscalised: Unfiscalised;
+  debts: { receivable: DebtSide; payable: DebtSide };
   deadStock: DeadStockItem[];
   expiring: ExpiringBatch[];
   flags: OwnerFlag[];
@@ -614,4 +625,26 @@ export interface StorageBin {
   shelf: string;
   bin: string;
   contents: BinContent[];
+}
+
+export interface AgingBuckets {
+  current: number;
+  days8to30: number;
+  days31to60: number;
+  over60: number;
+}
+
+export interface SettlementAccount {
+  counterpartyId: string;
+  name: string;
+  phone: string;
+  creditAllowed: boolean;
+  /** 0 means no ceiling set, not no credit. */
+  creditLimit: number;
+  charged: number;
+  paid: number;
+  /** Positive means still owed. */
+  balance: number;
+  openCount: number;
+  aging: AgingBuckets;
 }

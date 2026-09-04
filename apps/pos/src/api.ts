@@ -1,4 +1,4 @@
-import type { Batch, BinContent, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -534,4 +534,41 @@ export interface PutawayPayload {
 // so the location's total is unchanged.
 export function putawayStock(token: string, payload: PutawayPayload): Promise<{ productId: string }> {
   return request('/pos/bins/putaway', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function fetchSettlements(
+  token: string,
+  type: 'customer' | 'supplier',
+): Promise<{ type: string; accounts: SettlementAccount[] }> {
+  return request(`/pos/settlements?type=${type}`, { method: 'GET' }, token);
+}
+
+export interface RecordSettlementPayload {
+  locationId: string;
+  counterpartyId: string;
+  amount: number;
+  paymentMethod: string;
+  note?: string;
+}
+
+// The payment closes the oldest debts first and whatever is left sits on the
+// account — a system that refuses cash just means somebody writes it down.
+export function recordSettlement(
+  token: string,
+  payload: RecordSettlementPayload,
+): Promise<{ applied: { documentId: string; amount: number }[]; unapplied: number; balance: number }> {
+  return request('/pos/settlements', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function setCounterpartyCredit(
+  token: string,
+  counterpartyId: string,
+  creditAllowed: boolean,
+  creditLimit: number,
+): Promise<{ id: string; creditAllowed: boolean; creditLimit: number }> {
+  return request(
+    `/pos/counterparties/${counterpartyId}/credit`,
+    { method: 'PUT', body: JSON.stringify({ creditAllowed, creditLimit }) },
+    token,
+  );
 }
