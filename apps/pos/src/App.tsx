@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, BinContent, CartLine, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -27,6 +27,8 @@ import {
   fetchSettlements,
   recordSettlement,
   setCounterpartyCredit,
+  fetchCountSheet,
+  submitBinCount,
   fetchBins,
   createBin,
   deleteBin,
@@ -105,6 +107,7 @@ import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
 import { BinsScreen } from './components/BinsScreen';
+import { BinCountScreen } from './components/BinCountScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
@@ -135,6 +138,7 @@ type View =
   | 'purchase-orders'
   | 'write-offs'
   | 'bins'
+  | 'bin-count'
   | 'settlements'
   | 'production'
   | 'floorplan'
@@ -143,7 +147,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -202,6 +206,13 @@ export default function App() {
   const [settlementsLoading, setSettlementsLoading] = useState(false);
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [settlementsSubmitting, setSettlementsSubmitting] = useState(false);
+  const [countSheet, setCountSheet] = useState<{ bin: string; lines: CountSheetLine[] } | null>(null);
+  const [countSheetLoading, setCountSheetLoading] = useState(false);
+  const [binCountError, setBinCountError] = useState<string | null>(null);
+  const [binCountSubmitting, setBinCountSubmitting] = useState(false);
+  const [binCountResult, setBinCountResult] = useState<
+    { binLocation: string; name: string; systemQuantity: number; countedQuantity: number; delta: number }[] | null
+  >(null);
   const [bins, setBins] = useState<StorageBin[]>([]);
   const [unplaced, setUnplaced] = useState<BinContent[]>([]);
   const [binsLoading, setBinsLoading] = useState(false);
@@ -306,6 +317,7 @@ export default function App() {
       { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
       { key: 'purchase-orders', icon: '📄', label: 'Заказы поставщику', onClick: handleShowPurchaseOrders },
       { key: 'bins', icon: '🗄️', label: 'Ячейки', onClick: handleShowBins },
+      { key: 'bin-count', icon: '🔢', label: 'Пересчёт по ячейкам', onClick: handleShowBinCount },
       { key: 'settlements', icon: '🤝', label: 'Расчёты и долги', onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
@@ -717,6 +729,66 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  function handleShowBinCount() {
+    setView('bin-count');
+    setCountSheet(null);
+    setBinCountError(null);
+    void loadBins();
+  }
+
+  async function handleOpenCountBin(bin: string) {
+    // The back arrow inside the sheet asks for this sentinel rather than a
+    // real bin: it means "put the sheet away", not "open another shelf".
+    if (bin === '__none__') {
+      setCountSheet(null);
+      return;
+    }
+    if (!session || !currentLocationId) return;
+    setCountSheetLoading(true);
+    setBinCountError(null);
+    try {
+      setCountSheet(await fetchCountSheet(session.token, currentLocationId, bin));
+    } catch (err) {
+      setBinCountError(err instanceof ApiError ? err.message : 'Не удалось загрузить ячейку');
+    } finally {
+      setCountSheetLoading(false);
+    }
+  }
+
+  async function handleSubmitBinCount(bin: string, lines: { productId: string; countedQuantity: number }[]) {
+    if (!session || !currentLocationId) return false;
+    setBinCountSubmitting(true);
+    setBinCountError(null);
+    try {
+      const result = await submitBinCount(session.token, {
+        locationId: currentLocationId,
+        bins: [bin],
+        items: lines.map((line) => ({ ...line, binLocation: bin })),
+      });
+      const nameByProductId = new Map(session.products.map((p) => [p.id, p.name]));
+      setBinCountResult(
+        result.adjustments.map((adjustment: BinCountAdjustmentResult) => ({
+          binLocation: adjustment.binLocation,
+          name: nameByProductId.get(adjustment.productId) ?? '—',
+          systemQuantity: adjustment.systemQuantity,
+          countedQuantity: adjustment.countedQuantity,
+          delta: adjustment.delta,
+        })),
+      );
+      setCountSheet(null);
+      // A count changes what the register may sell, so its cached grid has to
+      // hear about it.
+      await refreshCatalogAfterStockChange();
+      await loadBins();
+      return true;
+    } catch (err) {
+      setBinCountError(err instanceof ApiError ? err.message : 'Не удалось сохранить пересчёт');
+      return false;
+    } finally {
+      setBinCountSubmitting(false);
+    }
   }
 
   async function loadSettlements(type: 'customer' | 'supplier') {
@@ -1861,6 +1933,21 @@ export default function App() {
           onChangeType={handleChangeSettlementType}
           onPay={handleRecordSettlement}
           onSetCredit={handleSetCredit}
+        />
+      )}
+
+      {view === 'bin-count' && (
+        <BinCountScreen
+          bins={bins}
+          sheet={countSheet}
+          loading={countSheetLoading}
+          error={binCountError}
+          submitting={binCountSubmitting}
+          lastResult={binCountResult}
+          onBack={() => setView('operations')}
+          onOpenBin={handleOpenCountBin}
+          onSubmit={handleSubmitBinCount}
+          onClearResult={() => setBinCountResult(null)}
         />
       )}
 

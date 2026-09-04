@@ -1,4 +1,4 @@
-import type { Batch, BinContent, CompanyLocation, Count, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -571,4 +571,30 @@ export function setCounterpartyCredit(
     { method: 'PUT', body: JSON.stringify({ creditAllowed, creditLimit }) },
     token,
   );
+}
+
+// What the system believes is on a shelf, so a counter has something to
+// disagree with. Counting from memory finds miscounts and never finds missing
+// goods.
+export function fetchCountSheet(
+  token: string,
+  locationId: string,
+  bin: string,
+): Promise<{ bin: string; lines: CountSheetLine[] }> {
+  const query = `locationId=${encodeURIComponent(locationId)}&bin=${encodeURIComponent(bin)}`;
+  return request(`/pos/counts/sheet?${query}`, { method: 'GET' }, token);
+}
+
+export interface BinCountPayload {
+  locationId: string;
+  /** The shelves that were walked. Everything on them that isn't counted is missing. */
+  bins: string[];
+  items: { productId: string; binLocation: string; countedQuantity: number }[];
+}
+
+export function submitBinCount(
+  token: string,
+  payload: BinCountPayload,
+): Promise<{ id: string; bins: string[]; adjustments: BinCountAdjustmentResult[] }> {
+  return request('/pos/counts/by-bin', { method: 'POST', body: JSON.stringify(payload) }, token);
 }

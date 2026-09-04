@@ -55,7 +55,8 @@ import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
-import { computeCountAdjustments, hasInvalidCountedQuantity } from '../counts';
+import { computeCountAdjustments, computeBinCountAdjustments, binCountKey, hasInvalidCountedQuantity } from '../counts';
+import type { BinCountLine, BinSystemQuantity } from '../counts';
 import { computeDiscount } from '../discounts';
 import { findPriceMismatches } from '../pricing';
 import type { DiscountType } from '../discounts';
@@ -3102,6 +3103,168 @@ posRouter.put('/counterparties/:id/credit', requirePosAuth, async (req: PosAuthe
   });
 
   res.json({ id: updated.id, creditAllowed: updated.creditAllowed, creditLimit: updated.creditLimit });
+});
+
+// The list somebody walks the shelf with: what the system believes is on it,
+// so a counter has something to disagree with. Counting from memory finds
+// miscounts and never finds missing goods.
+posRouter.get('/counts/sheet', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  // No bin named means the unplaced pile, which is countable like any shelf
+  // and is usually the one most worth counting.
+  const requested = typeof req.query.bin === 'string' ? req.query.bin.trim().toUpperCase() : '';
+  const rows = await prisma.stock.findMany({
+    where: { locationId, binLocation: requested },
+    include: { product: true },
+    orderBy: { product: { name: 'asc' } },
+  });
+
+  res.json({
+    bin: requested,
+    lines: rows
+      .filter((row) => row.quantity !== 0)
+      .map((row) => ({
+        productId: row.productId,
+        name: row.product.name,
+        unit: row.product.unit,
+        systemQuantity: row.quantity,
+        // Shown so a counter knows why a figure may look odd: goods held for
+        // an order or sitting in quarantine are still on the shelf.
+        reserved: row.reserved,
+        blocked: row.blocked,
+      })),
+  });
+});
+
+// Counting shelves rather than a building. This is what makes counting in
+// parts real: a rack today, another tomorrow, without closing the shop — and
+// the whole rack is settled each time rather than only the lines somebody
+// happened to type.
+posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const rawLines: { productId: string; binLocation?: string; countedQuantity: number }[] = Array.isArray(b.items)
+    ? b.items
+    : [];
+  const walkedBins: string[] = Array.isArray(b.bins)
+    ? b.bins.map((code: unknown) => (typeof code === 'string' ? code.trim().toUpperCase() : '')).filter((code: string) => code !== undefined)
+    : [];
+  if (walkedBins.length === 0 && rawLines.length === 0) {
+    res.status(400).json({ error: 'Укажите, какие ячейки пересчитали' });
+    return;
+  }
+  if (hasInvalidCountedQuantity(rawLines)) {
+    res.status(400).json({ error: 'Некорректные данные инвентаризации' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const counted: BinCountLine[] = rawLines.map((line) => ({
+    productId: line.productId,
+    binLocation: typeof line.binLocation === 'string' ? line.binLocation.trim().toUpperCase() : '',
+    countedQuantity: line.countedQuantity,
+  }));
+  const scope = [...new Set([...walkedBins, ...counted.map((line) => line.binLocation)])];
+
+  const stockRows = await prisma.stock.findMany({ where: { locationId, binLocation: { in: scope } } });
+  const system: BinSystemQuantity[] = stockRows.map((row) => ({
+    productId: row.productId,
+    binLocation: row.binLocation,
+    quantity: row.quantity,
+  }));
+
+  const adjustments = computeBinCountAdjustments(counted, system, scope);
+  const rowByKey = new Map(stockRows.map((row) => [binCountKey(row.productId, row.binLocation), row]));
+
+  const document = await prisma.$transaction(async (tx) => {
+    const created = await tx.document.create({
+      data: {
+        companyId: req.posCompanyId!,
+        locationId,
+        type: 'adjustment',
+        status: 'confirmed',
+        reason: `Пересчёт ячеек: ${scope.map((code) => code || 'не размещено').join(', ')}`,
+        createdBy: req.posUserId!,
+        items: {
+          create: adjustments.map((adjustment) => ({
+            productId: adjustment.productId,
+            quantity: adjustment.delta,
+            price: 0,
+          })),
+        },
+      },
+    });
+
+    for (const adjustment of adjustments) {
+      const row = rowByKey.get(binCountKey(adjustment.productId, adjustment.binLocation));
+      if (row) {
+        // Straight at the row for this shelf: a count is a statement about one
+        // shelf, so it must not be spread across the others the way a sale is.
+        await applyStockDelta(tx, row, adjustment.delta, 'adjustment', {
+          documentId: created.id,
+          createdBy: req.posUserId,
+        });
+      } else if (adjustment.delta > 0) {
+        await createStockWithMovement(tx, {
+          productId: adjustment.productId,
+          locationId,
+          quantity: adjustment.delta,
+          reason: 'adjustment',
+          documentId: created.id,
+          createdBy: req.posUserId,
+          binLocation: adjustment.binLocation,
+        });
+      }
+    }
+
+    return created;
+  }, { timeout: 15000 });
+
+  res.status(201).json({
+    id: document.id,
+    createdAt: document.createdAt.toISOString(),
+    bins: scope,
+    adjustments: adjustments.map((adjustment) => ({
+      productId: adjustment.productId,
+      binLocation: adjustment.binLocation,
+      systemQuantity: adjustment.systemQuantity,
+      countedQuantity: adjustment.countedQuantity,
+      delta: adjustment.delta,
+    })),
+  });
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
