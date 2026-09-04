@@ -177,14 +177,24 @@ export interface Batch {
 export interface TransferItem {
   productId: string;
   name: string;
+  /** How much left the source. */
   quantity: number;
+  /** How much turned up. Null while the goods are still on their way. */
+  receivedQuantity: number | null;
 }
+
+/** 'in_transit' — gone from the source, not yet at the destination. */
+export type TransferStatus = 'in_transit' | 'confirmed' | 'cancelled';
 
 export interface Transfer {
   id: string;
   createdAt: string;
+  status: TransferStatus;
+  fromLocationId: string;
+  toLocationId: string;
   fromLocationName: string;
   toLocationName: string;
+  receivedAt: string | null;
   items: TransferItem[];
 }
 

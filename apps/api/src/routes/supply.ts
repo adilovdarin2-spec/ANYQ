@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '@anyq/db';
 import { tariffState, tariffDenialMessage } from '../tariff';
+import { availableQuantity, findStockShortages, aggregateRequestedQuantities, reserveStock, ConcurrentStockChangeError } from '../stock';
 import { loginRateLimit } from '../rateLimit';
 import { sendPushToCompany } from '../push';
 
@@ -12,7 +13,7 @@ export const supplyRouter = Router();
 function findCompanyBySlugOrId(param: string) {
   return prisma.company.findFirst({
     where: { OR: [{ slug: param }, { id: param }] },
-    include: { tariff: true, locations: true },
+    include: { tariff: true, locations: { orderBy: { name: 'asc' } } },
   });
 }
 
@@ -38,7 +39,9 @@ supplyRouter.get('/:companyId/catalog', async (req, res) => {
   const location = company.locations[0];
   const products = await prisma.product.findMany({ where: { companyId: company.id } });
   const stockRows = location ? await prisma.stock.findMany({ where: { locationId: location.id } }) : [];
-  const stockByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+  // What a customer can actually order: units already held for someone
+  // else's open order are on the shelf but not on offer.
+  const stockByProduct = new Map(stockRows.map((s) => [s.productId, availableQuantity(s)]));
 
   res.json({
     company: { id: company.id, name: company.name },
@@ -99,36 +102,75 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
     return;
   }
 
-  let counterparty = await prisma.counterparty.findFirst({
-    where: { companyId: company.id, phone: customerPhone },
-  });
-  if (!counterparty) {
-    counterparty = await prisma.counterparty.create({
-      data: { companyId: company.id, name: customerName, phone: customerPhone, type: 'customer' },
-    });
-  } else if (counterparty.name !== customerName) {
-    counterparty = await prisma.counterparty.update({ where: { id: counterparty.id }, data: { name: customerName } });
+  // An order holds the goods it names. Without that, the same units stayed
+  // on sale at the register until someone got round to fulfilling the order,
+  // and the customer found out their order was impossible days later.
+  const ordered = aggregateRequestedQuantities(
+    validItems.map((it) => ({ productId: it.productId, quantity: it.quantity, price: 0 })),
+  );
+
+  let document;
+  try {
+    document = await prisma.$transaction(async (tx) => {
+      const stockRows = await tx.stock.findMany({
+        where: { locationId: location.id, productId: { in: ordered.map((it) => it.productId) } },
+      });
+      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      const availableByProduct = new Map(stockRows.map((s) => [s.productId, availableQuantity(s)]));
+
+      const shortages = findStockShortages(ordered, availableByProduct);
+      if (shortages.length > 0) throw new OrderStockError(shortages);
+
+      // Created inside the transaction: done outside, a customer row was left
+      // behind whenever the order itself failed.
+      let counterparty = await tx.counterparty.findFirst({
+        where: { companyId: company.id, phone: customerPhone },
+      });
+      if (!counterparty) {
+        counterparty = await tx.counterparty.create({
+          data: { companyId: company.id, name: customerName, phone: customerPhone, type: 'customer' },
+        });
+      } else if (counterparty.name !== customerName) {
+        counterparty = await tx.counterparty.update({ where: { id: counterparty.id }, data: { name: customerName } });
+      }
+
+      const created = await tx.document.create({
+        data: {
+          companyId: company.id,
+          locationId: location.id,
+          type: 'order',
+          status: 'pending',
+          counterpartyId: counterparty.id,
+          deliveryAddress,
+          items: {
+            create: ordered.map((it) => ({
+              productId: it.productId,
+              quantity: it.quantity,
+              price: productById.get(it.productId)!.salePrice,
+            })),
+          },
+        },
+      });
+
+      for (const item of ordered) {
+        await reserveStock(tx, stockByProduct.get(item.productId)!, item.quantity);
+      }
+
+      return created;
+    }, { timeout: 15000 });
+  } catch (err) {
+    if (err instanceof OrderStockError) {
+      res.status(409).json({ error: 'Часть товара уже разобрали — обновите корзину', shortages: err.shortages });
+      return;
+    }
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Часть товара уже разобрали — обновите корзину' });
+      return;
+    }
+    throw err;
   }
 
-  const document = await prisma.document.create({
-    data: {
-      companyId: company.id,
-      locationId: location.id,
-      type: 'order',
-      status: 'pending',
-      counterpartyId: counterparty.id,
-      deliveryAddress,
-      items: {
-        create: validItems.map((it) => ({
-          productId: it.productId,
-          quantity: it.quantity,
-          price: productById.get(it.productId)!.salePrice,
-        })),
-      },
-    },
-  });
-
-  const total = validItems.reduce((sum, it) => sum + productById.get(it.productId)!.salePrice * it.quantity, 0);
+  const total = ordered.reduce((sum, it) => sum + productById.get(it.productId)!.salePrice * it.quantity, 0);
   sendPushToCompany(company.id, {
     title: 'Новый заказ',
     body: `${customerName} · ${total.toLocaleString('ru-RU')} ₸`,
@@ -137,3 +179,14 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
 
   res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
 });
+
+// Not enough on the shelf for what was just ordered. Named separately from the
+// POS one so the storefront can answer in a customer's words rather than a
+// stockroom's.
+class OrderStockError extends Error {
+  shortages: { productId: string; available: number; requested: number }[];
+  constructor(shortages: { productId: string; available: number; requested: number }[]) {
+    super('Insufficient stock');
+    this.shortages = shortages;
+  }
+}

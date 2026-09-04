@@ -9,9 +9,12 @@ import {
   findStockShortages,
   hasInvalidQuantity,
   aggregateRequestedQuantities,
+  availableQuantity,
   applyStockDelta,
   createStockWithMovement,
   decrementBatchQuantity,
+  reserveStock,
+  releaseStock,
   ConcurrentStockChangeError,
 } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
@@ -23,6 +26,7 @@ import {
   IdempotencyConflictError,
 } from '../idempotency';
 import { resolveLocationId, resolveTransferLocations, locationErrorMessage } from '../locations';
+import { resolveTransferReceipt, transferReceiptErrorMessage } from '../transfers';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
@@ -111,8 +115,10 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
   const stockByProduct = new Map<string, number>();
   for (const row of stockRows) {
     // One product can hold stock in several bins at a location; the grid shows
-    // what's sellable there in total, not whatever bin sorted last.
-    stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + row.quantity);
+    // what's sellable there in total, not whatever bin sorted last. Sellable
+    // means available, not on hand — units held for an open order are on the
+    // shelf but already somebody else's.
+    stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + availableQuantity(row));
   }
 
   // Dishes (recipe-tracked products) don't carry their own stock row — their real
@@ -319,21 +325,24 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
 
       // For batch-tracked products, only non-expired batches count as sellable —
       // expired stock must never be auto-sold, it has to be written off explicitly.
+      // Either way what's left over for a walk-in excludes whatever is being
+      // held for an open order: those units are on the shelf but promised.
       const quantityByProduct = new Map<string, number>();
       for (const item of plainItems) {
+        const stock = stockByProduct.get(item.productId);
         const productBatches = batchesByProduct.get(item.productId);
         if (productBatches && productBatches.length > 0) {
           const sellable = productBatches
             .filter((batch) => batch.expiryDate > now)
             .reduce((sum, batch) => sum + batch.quantity, 0);
-          quantityByProduct.set(item.productId, sellable);
+          quantityByProduct.set(item.productId, sellable - (stock?.reserved ?? 0));
         } else {
-          quantityByProduct.set(item.productId, stockByProduct.get(item.productId)?.quantity ?? 0);
+          quantityByProduct.set(item.productId, stock ? availableQuantity(stock) : 0);
         }
       }
 
       const ingredientStockByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s]));
-      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, s.quantity]));
+      const ingredientQuantityByProduct = new Map(ingredientStockRows.map((s) => [s.productId, availableQuantity(s)]));
 
       // Stock is held per product, not per cart line, and one cart can carry
       // the same product on several lines — a weighed item added twice, or a
@@ -668,7 +677,13 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
 
   const stockRows = await prisma.stock.findMany({ where: { locationId }, include: { product: true } });
-  const stockForLowCheck = stockRows.map((s) => ({ productId: s.productId, name: s.product.name, quantity: s.quantity }));
+  // "About to run out" is a question about what is still sellable, so goods
+  // already promised to an open order count as gone, not as cover.
+  const stockForLowCheck = stockRows.map((s) => ({
+    productId: s.productId,
+    name: s.product.name,
+    quantity: availableQuantity(s),
+  }));
 
   const dishCostByProductId = new Map<string, number>();
   if (modules.includes('restaurant')) {
@@ -1041,6 +1056,9 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
         where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
       });
       const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      // Checked against what is physically here, not what is available: the
+      // units this order is about to take are the ones it reserved when it was
+      // placed, so its own hold must not read as somebody else's claim.
       const quantityByProduct = new Map(stockRows.map((s) => [s.productId, s.quantity]));
 
       const shortages = findStockShortages(
@@ -1051,12 +1069,13 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
         throw new StockError(shortages);
       }
 
-      await Promise.all(
-        order.items.map((item) => {
-          const stock = stockByProduct.get(item.productId)!;
-          return applyStockDelta(tx, stock, -item.quantity, 'order_fulfill', order.id);
-        }),
-      );
+      for (const item of order.items) {
+        const stock = stockByProduct.get(item.productId)!;
+        // Released before the deduction, in this order: the deduction respects
+        // reservations, so this order's own hold would otherwise block it.
+        await releaseStock(tx, stock.id, item.quantity);
+        await applyStockDelta(tx, stock, -item.quantity, 'order_fulfill', order.id);
+      }
 
       await tx.document.update({
         where: { id: order.id },
@@ -1075,7 +1094,10 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
 });
 
 posRouter.post('/orders/:id/reject', requirePosAuth, async (req: PosAuthedRequest, res) => {
-  const order = await prisma.document.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' } });
+  const order = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' },
+    include: { items: true },
+  });
   if (!order) {
     res.status(404).json({ error: 'Заказ не найден' });
     return;
@@ -1085,9 +1107,22 @@ posRouter.post('/orders/:id/reject', requirePosAuth, async (req: PosAuthedReques
     return;
   }
 
-  await prisma.document.update({
-    where: { id: order.id },
-    data: { status: 'cancelled', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+  await prisma.$transaction(async (tx) => {
+    // The goods go back on sale the moment the order stops being one. Leaving
+    // the hold in place would quietly shrink the shelf for everyone else.
+    const stockRows = await tx.stock.findMany({
+      where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
+    });
+    const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+    for (const item of order.items) {
+      const stock = stockByProduct.get(item.productId);
+      if (stock) await releaseStock(tx, stock.id, item.quantity);
+    }
+
+    await tx.document.update({
+      where: { id: order.id },
+      data: { status: 'cancelled', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+    });
   });
 
   res.json({ id: order.id, status: 'cancelled' });
@@ -1117,9 +1152,20 @@ posRouter.get('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) =
     transfers.map((t) => ({
       id: t.id,
       createdAt: t.createdAt.toISOString(),
+      status: t.status,
+      fromLocationId: t.locationId,
+      toLocationId: t.toLocationId ?? '',
       fromLocationName: t.location.name,
       toLocationName: t.toLocation?.name ?? '—',
-      items: t.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity })),
+      receivedAt: t.fulfilledAt ? t.fulfilledAt.toISOString() : null,
+      items: t.items.map((it) => ({
+        productId: it.productId,
+        name: it.product.name,
+        quantity: it.quantity,
+        // Null while the goods are still on their way. Once received, a value
+        // below `quantity` is the shortfall that went missing in transit.
+        receivedQuantity: it.receivedQuantity,
+      })),
     })),
   );
 });
@@ -1159,13 +1205,11 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
 
   try {
     const document = await prisma.$transaction(async (tx) => {
-      const [sourceStockRows, destStockRows] = await Promise.all([
-        tx.stock.findMany({ where: { locationId: fromLocationId, productId: { in: items.map((it) => it.productId) } } }),
-        tx.stock.findMany({ where: { locationId: toLocationId, productId: { in: items.map((it) => it.productId) } } }),
-      ]);
+      const sourceStockRows = await tx.stock.findMany({
+        where: { locationId: fromLocationId, productId: { in: items.map((it) => it.productId) } },
+      });
       const sourceStockByProduct = new Map(sourceStockRows.map((s) => [s.productId, s]));
-      const destStockByProduct = new Map(destStockRows.map((s) => [s.productId, s]));
-      const quantityByProduct = new Map(sourceStockRows.map((s) => [s.productId, s.quantity]));
+      const quantityByProduct = new Map(sourceStockRows.map((s) => [s.productId, availableQuantity(s)]));
 
       // Per product, not per line — two lines of the same product would
       // otherwise each pass the check and each write from the same starting
@@ -1185,39 +1229,33 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
           locationId: fromLocationId,
           toLocationId,
           type: 'transfer',
-          status: 'confirmed',
+          // Goods on a van are at neither end. Booking them into the
+          // destination the moment they left made the same units countable in
+          // two places at once and sellable at a shop that had not seen them.
+          // They stay here until somebody at the far end receives them.
+          status: 'in_transit',
           createdBy: req.posUserId!,
-          items: { create: items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: 0 })) },
+          // One line per product, matching the one movement each product got.
+          // Two lines of the same product would leave receipt ambiguous —
+          // which of them did the four units that turned up belong to?
+          items: { create: moves.map((m) => ({ productId: m.productId, quantity: m.quantity, price: 0 })) },
         },
         include: { items: true },
       });
 
-      const updates: Promise<unknown>[] = [];
-      for (const move of moves) {
-        const source = sourceStockByProduct.get(move.productId)!;
-        updates.push(applyStockDelta(tx, source, -move.quantity, 'transfer_out', document.id));
-
-        const dest = destStockByProduct.get(move.productId);
-        if (dest) {
-          updates.push(applyStockDelta(tx, dest, move.quantity, 'transfer_in', document.id));
-        } else {
-          updates.push(
-            createStockWithMovement(tx, {
-              productId: move.productId,
-              locationId: toLocationId,
-              quantity: move.quantity,
-              reason: 'transfer_in',
-              documentId: document.id,
-            }),
-          );
-        }
-      }
-      await Promise.all(updates);
+      // Only the source moves. The destination gets nothing until receipt —
+      // that gap is what "in transit" means, and it is why a transfer's
+      // shortfall is discoverable at all.
+      await Promise.all(
+        moves.map((move) =>
+          applyStockDelta(tx, sourceStockByProduct.get(move.productId)!, -move.quantity, 'transfer_out', document.id),
+        ),
+      );
 
       return document;
     }, { timeout: 15000 });
 
-    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString(), status: 'in_transit' });
   } catch (err) {
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
@@ -1225,6 +1263,180 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
     }
     throw err;
   }
+});
+
+// Receiving is what ends a transfer: the goods stop being in transit and
+// become the destination's stock. A count that comes up short does not block
+// the receipt — the goods really are gone, and refusing to record that would
+// leave them in transit forever. The shortfall is written onto the document
+// instead, where it can be looked into.
+posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Перемещения недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const transferDoc = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'transfer' },
+    include: { items: true },
+  });
+  if (!transferDoc || !transferDoc.toLocationId) {
+    res.status(404).json({ error: 'Перемещение не найдено' });
+    return;
+  }
+  if (transferDoc.status !== 'in_transit') {
+    res.status(409).json({ error: 'Перемещение уже закрыто' });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+  // Only the far end may receive — a transfer means nothing if the sender can
+  // also sign for what turned up.
+  if (locationId !== transferDoc.toLocationId) {
+    res.status(403).json({ error: 'Принять перемещение может только точка назначения' });
+    return;
+  }
+
+  const receipt = resolveTransferReceipt(
+    transferDoc.items.map((it) => ({ productId: it.productId, quantity: it.quantity })),
+    Array.isArray(b.items) ? b.items : undefined,
+  );
+  if (receipt.status !== 'ok') {
+    res.status(400).json({ error: transferReceiptErrorMessage(receipt) });
+    return;
+  }
+
+  const toLocationId = transferDoc.toLocationId;
+  const itemIdByProduct = new Map(transferDoc.items.map((it) => [it.productId, it.id]));
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Claimed before anything moves, so two people receiving the same van at
+      // once can't both add its contents to the shelf.
+      const claimed = await tx.document.updateMany({
+        where: { id: transferDoc.id, status: 'in_transit' },
+        data: { status: 'confirmed', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+      });
+      if (claimed.count === 0) throw new TransferClosedError();
+
+      const destStockRows = await tx.stock.findMany({
+        where: { locationId: toLocationId, productId: { in: receipt.lines.map((l) => l.productId) } },
+      });
+      const destStockByProduct = new Map(destStockRows.map((s) => [s.productId, s]));
+
+      for (const line of receipt.lines) {
+        await tx.documentItem.update({
+          where: { id: itemIdByProduct.get(line.productId)! },
+          data: { receivedQuantity: line.received },
+        });
+        // A line that arrived with nothing books no movement: nothing reached
+        // this location. What left the source is still on the document.
+        if (line.received === 0) continue;
+
+        const dest = destStockByProduct.get(line.productId);
+        if (dest) {
+          await applyStockDelta(tx, dest, line.received, 'transfer_in', transferDoc.id);
+        } else {
+          await createStockWithMovement(tx, {
+            productId: line.productId,
+            locationId: toLocationId,
+            quantity: line.received,
+            reason: 'transfer_in',
+            documentId: transferDoc.id,
+          });
+        }
+      }
+    }, { timeout: 15000 });
+  } catch (err) {
+    if (err instanceof TransferClosedError) {
+      res.status(409).json({ error: 'Перемещение уже закрыто' });
+      return;
+    }
+    throw err;
+  }
+
+  res.json({ id: transferDoc.id, status: 'confirmed', hasShortfall: receipt.hasShortfall, lines: receipt.lines });
+});
+
+// The van turned back. Goods that never left the yard belong to the source
+// again — leaving them in transit would strand them at neither end.
+posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Перемещения недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const transferDoc = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'transfer' },
+    include: { items: true },
+  });
+  if (!transferDoc) {
+    res.status(404).json({ error: 'Перемещение не найдено' });
+    return;
+  }
+  if (transferDoc.status !== 'in_transit') {
+    res.status(409).json({ error: 'Перемещение уже закрыто' });
+    return;
+  }
+
+  const fromLocationId = transferDoc.locationId;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.document.updateMany({
+        where: { id: transferDoc.id, status: 'in_transit' },
+        data: { status: 'cancelled', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+      });
+      if (claimed.count === 0) throw new TransferClosedError();
+
+      const sourceStockRows = await tx.stock.findMany({
+        where: { locationId: fromLocationId, productId: { in: transferDoc.items.map((it) => it.productId) } },
+      });
+      const sourceStockByProduct = new Map(sourceStockRows.map((s) => [s.productId, s]));
+
+      for (const item of transferDoc.items) {
+        const source = sourceStockByProduct.get(item.productId);
+        if (source) {
+          await applyStockDelta(tx, source, item.quantity, 'transfer_cancelled', transferDoc.id);
+        } else {
+          await createStockWithMovement(tx, {
+            productId: item.productId,
+            locationId: fromLocationId,
+            quantity: item.quantity,
+            reason: 'transfer_cancelled',
+            documentId: transferDoc.id,
+          });
+        }
+      }
+    }, { timeout: 15000 });
+  } catch (err) {
+    if (err instanceof TransferClosedError) {
+      res.status(409).json({ error: 'Перемещение уже закрыто' });
+      return;
+    }
+    throw err;
+  }
+
+  res.json({ id: transferDoc.id, status: 'cancelled' });
 });
 
 posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -1976,6 +2188,14 @@ class StockError extends Error {
   constructor(shortages: StockShortage[]) {
     super('Insufficient stock');
     this.shortages = shortages;
+  }
+}
+
+// Somebody else received or cancelled this transfer between the check and
+// the write.
+class TransferClosedError extends Error {
+  constructor() {
+    super('Transfer already closed');
   }
 }
 

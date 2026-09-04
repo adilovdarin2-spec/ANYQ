@@ -154,8 +154,29 @@ export interface CreateTransferPayload {
   items: { productId: string; quantity: number }[];
 }
 
-export function createTransfer(token: string, payload: CreateTransferPayload): Promise<{ id: string; createdAt: string }> {
+export function createTransfer(
+  token: string,
+  payload: CreateTransferPayload,
+): Promise<{ id: string; createdAt: string; status: string }> {
   return request('/pos/transfers', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export interface ReceiveTransferPayload {
+  locationId: string;
+  /** Every line, counted. The server refuses a partial list rather than assuming an unmentioned line arrived intact. */
+  items: { productId: string; receivedQuantity: number }[];
+}
+
+export function receiveTransfer(
+  token: string,
+  transferId: string,
+  payload: ReceiveTransferPayload,
+): Promise<{ id: string; status: string; hasShortfall: boolean }> {
+  return request(`/pos/transfers/${transferId}/receive`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function cancelTransfer(token: string, transferId: string): Promise<{ id: string; status: string }> {
+  return request(`/pos/transfers/${transferId}/cancel`, { method: 'POST' }, token);
 }
 
 export function fetchReceipts(token: string): Promise<Receipt[]> {
