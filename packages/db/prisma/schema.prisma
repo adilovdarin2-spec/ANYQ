@@ -215,8 +215,38 @@ model Product {
   usedInRecipes  RecipeIngredient[]  @relation("IngredientUsage")
   modifiers      ProductModifier[]
   stockMovements StockMovement[]
+  packagings     ProductPackaging[]
 
   @@map("products")
+}
+
+// The same goods arrive in one shape and leave in another: water comes in by
+// the case of 24 and leaves the shelf a bottle at a time. Stock, movements and
+// every quantity in the ledger stay in the product's base unit — a packaging is
+// only a multiplier that documents and scanners work in, never a second place
+// stock is counted.
+//
+// Getting this wrong is how a receipt of 2 cases becomes 2 bottles on the
+// shelf, which is the single most common way a hardware or wholesale
+// business's stock stops matching reality.
+model ProductPackaging {
+  id           String  @id @default(cuid())
+  product      Product @relation(fields: [productId], references: [id])
+  productId    String
+  name         String
+  // How many base units this holds. Float for the same reason Stock.quantity
+  // is: a "packaging" can be a 0.5 kg pack of something sold by weight.
+  unitsPerPack Float
+  // Cases carry their own barcode, distinct from the unit's. Scanning it at
+  // receiving is the whole point: one scan, and the quantity is already right.
+  barcode      String?
+  createdAt    DateTime @default(now())
+
+  documentItems DocumentItem[]
+
+  @@unique([productId, name])
+  @@index([barcode])
+  @@map("product_packagings")
 }
 
 // A dish (sellable Product) has at most one Recipe — its bill of materials.
@@ -401,6 +431,19 @@ model DocumentItem {
   // The sale line this return line gives back. Keeps the cap per line rather
   // than per product, so a partly-returned receipt can still be reasoned
   // about, and so the goods go back into the batch they left from.
+  // What the person actually handled, when it wasn't loose units: 2 cases
+  // rather than 48 bottles. `quantity` above is always the base-unit figure
+  // these three resolve to, so nothing downstream has to know about packs.
+  //
+  // packPrice is kept alongside the derived per-unit `price` because the two
+  // can't both be exact in whole tenge — a 1000 ₸ case of 24 is 41.67 a
+  // bottle. The pack price is what was really paid, so it is what a supplier
+  // balance is built from; the per-unit price is the rounded figure margin
+  // maths uses.
+  packaging      ProductPackaging? @relation(fields: [packagingId], references: [id])
+  packagingId    String?
+  packQuantity   Float?
+  packPrice      Int?
   originalItem   DocumentItem?  @relation("ItemReturns", fields: [originalItemId], references: [id])
   originalItemId String?
   returns        DocumentItem[] @relation("ItemReturns")

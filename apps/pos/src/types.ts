@@ -12,6 +12,14 @@ export interface ProductVariantOption {
 
 export type SaleUnit = 'piece' | 'weight';
 
+/** A shape the goods arrive or leave in — a case, a six-pack. Never a second place stock is counted. */
+export interface Packaging {
+  id: string;
+  name: string;
+  unitsPerPack: number;
+  barcode: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -22,6 +30,7 @@ export interface Product {
   stopListed: boolean;
   saleUnit: SaleUnit;
   modifiers: ProductModifierOption[];
+  packagings: Packaging[];
   variants: ProductVariantOption[];
 }
 
@@ -210,8 +219,14 @@ export interface Transfer {
 export interface ReceiptItem {
   productId: string;
   name: string;
+  /** Always base units, whatever shape it was received in. */
   quantity: number;
+  /** Always per base unit, rounded. */
   price: number;
+  /** What was actually handled, when it wasn't loose units. */
+  packagingName: string | null;
+  packQuantity: number | null;
+  packPrice: number | null;
 }
 
 export interface Receipt {

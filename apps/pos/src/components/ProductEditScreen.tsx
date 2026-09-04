@@ -1,15 +1,36 @@
 import { useState } from 'react';
-import type { ManagedProduct, ManagedProductPayload } from '../api';
+import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from '../api';
+import type { Packaging } from '../types';
 
 interface Props {
   product: ManagedProduct | null;
+  /** Empty for a product that hasn't been saved yet — packagings hang off an existing product. */
+  packagings: Packaging[];
+  packagingBusy: boolean;
+  packagingError: string | null;
   submitting: boolean;
   error: string | null;
   onBack: () => void;
   onSave: (payload: ManagedProductPayload) => void;
+  onAddPackaging: (payload: PackagingPayload) => Promise<boolean>;
+  onDeletePackaging: (packagingId: string) => void;
 }
 
-export function ProductEditScreen({ product, submitting, error, onBack, onSave }: Props) {
+export function ProductEditScreen({
+  product,
+  packagings,
+  packagingBusy,
+  packagingError,
+  submitting,
+  error,
+  onBack,
+  onSave,
+  onAddPackaging,
+  onDeletePackaging,
+}: Props) {
+  const [packName, setPackName] = useState('');
+  const [packUnits, setPackUnits] = useState('');
+  const [packBarcode, setPackBarcode] = useState('');
   const [name, setName] = useState(product?.name ?? '');
   const [category, setCategory] = useState(product?.category ?? '');
   const [unit, setUnit] = useState(product?.unit ?? 'шт');
@@ -22,6 +43,23 @@ export function ProductEditScreen({ product, submitting, error, onBack, onSave }
   const sale = Number(salePrice);
   const valid =
     name.trim() !== '' && unit.trim() !== '' && Number.isFinite(purchase) && purchase >= 0 && Number.isFinite(sale) && sale >= 0;
+
+  const packUnitsValue = Number(packUnits);
+  const packValid = packName.trim() !== '' && Number.isFinite(packUnitsValue) && packUnitsValue > 0;
+
+  async function handleAddPackaging() {
+    if (!packValid) return;
+    const added = await onAddPackaging({
+      name: packName.trim(),
+      unitsPerPack: packUnitsValue,
+      barcode: packBarcode.trim(),
+    });
+    if (added) {
+      setPackName('');
+      setPackUnits('');
+      setPackBarcode('');
+    }
+  }
 
   function handleSave() {
     if (!valid) return;
@@ -84,6 +122,50 @@ export function ProductEditScreen({ product, submitting, error, onBack, onSave }
             Показывать в кассе (снимите галочку, чтобы скрыть товар)
           </label>
         )}
+        {/* Packagings hang off a saved product, so a brand-new one is asked to
+            be saved first rather than shown a section that can't work yet. */}
+        {product && (
+          <>
+            <div className="section-title">Упаковки</div>
+            <p className="field-hint">
+              Как товар приходит и уезжает: ящик, блок, паллета. На складе он всё равно считается
+              в «{unit.trim() || 'шт'}» — упаковка только умножает. Штрихкод ящика можно
+              отсканировать на приёмке и на кассе.
+            </p>
+
+            {packagings.length === 0 && <div className="empty-state">Упаковок нет — товар только поштучно</div>}
+            {packagings.map((pack) => (
+              <div key={pack.id} className="report-row">
+                <span>
+                  {pack.name} × {pack.unitsPerPack}
+                  {pack.barcode ? <span className="order-meta"> · {pack.barcode}</span> : null}
+                </span>
+                <button className="li-remove" disabled={packagingBusy} onClick={() => onDeletePackaging(pack.id)}>
+                  Удалить
+                </button>
+              </div>
+            ))}
+
+            <div className="transfer-add-row">
+              <input type="text" placeholder="Название (Ящик)" value={packName} onChange={(e) => setPackName(e.target.value)} />
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Единиц в упаковке"
+                value={packUnits}
+                onChange={(e) => setPackUnits(e.target.value)}
+              />
+              <input type="text" placeholder="Штрихкод" value={packBarcode} onChange={(e) => setPackBarcode(e.target.value)} />
+              <button type="button" className="btn btn-secondary" disabled={!packValid || packagingBusy} onClick={handleAddPackaging}>
+                Добавить
+              </button>
+            </div>
+
+            {packagingError && <div className="login-error">{packagingError}</div>}
+          </>
+        )}
+
         {error && <div className="login-error">{error}</div>}
       </div>
       <div className="screen-footer">

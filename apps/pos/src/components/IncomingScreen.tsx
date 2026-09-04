@@ -5,9 +5,17 @@ import { formatDateTime, formatMoney } from '../utils';
 interface ReceiptLine {
   productId: string;
   name: string;
+  /** How many of whatever was handled — packs when packagingId is set, base units otherwise. */
   quantity: number;
+  /** Price of one of those. */
   price: number;
+  packagingId: string | null;
+  packagingName: string | null;
+  unitsPerPack: number;
 }
+
+// '' rather than null, because that is what an unselected <option> carries.
+const LOOSE = '';
 
 interface Props {
   receipts: Receipt[];
@@ -20,7 +28,7 @@ interface Props {
   onSubmit: (payload: {
     supplierName: string;
     supplierPhone: string;
-    items: { productId: string; quantity: number; price: number }[];
+    items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
   }) => Promise<boolean>;
 }
 
@@ -30,15 +38,38 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
   const [supplierPhone, setSupplierPhone] = useState('');
   const [lines, setLines] = useState<ReceiptLine[]>([]);
   const [productId, setProductId] = useState(products[0]?.id ?? '');
+  const [packagingId, setPackagingId] = useState(LOOSE);
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
+
+  const selectedProduct = products.find((p) => p.id === productId) ?? null;
+  const selectedPackaging = selectedProduct?.packagings.find((pack) => pack.id === packagingId) ?? null;
+
+  function pickProduct(nextProductId: string) {
+    setProductId(nextProductId);
+    // A packaging belongs to one product; carrying the previous product's
+    // choice over would silently multiply the new goods by the old case.
+    setPackagingId(LOOSE);
+  }
 
   function addLine() {
     const product = products.find((p) => p.id === productId);
     const qty = Number(quantity);
     const unitPrice = Number(price);
     if (!product || !(qty > 0) || !(unitPrice >= 0)) return;
-    setLines((prev) => [...prev, { productId: product.id, name: product.name, quantity: qty, price: unitPrice }]);
+    const pack = product.packagings.find((candidate) => candidate.id === packagingId) ?? null;
+    setLines((prev) => [
+      ...prev,
+      {
+        productId: product.id,
+        name: product.name,
+        quantity: qty,
+        price: unitPrice,
+        packagingId: pack?.id ?? null,
+        packagingName: pack?.name ?? null,
+        unitsPerPack: pack?.unitsPerPack ?? 1,
+      },
+    ]);
     setQuantity('');
     setPrice('');
   }
@@ -51,7 +82,7 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
     const success = await onSubmit({
       supplierName: supplierName.trim(),
       supplierPhone: supplierPhone.trim(),
-      items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, price: l.price })),
+      items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, price: l.price, packagingId: l.packagingId })),
     });
     if (success) {
       setLines([]);
@@ -89,8 +120,22 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
               <div className="order-items">
                 {r.items.map((it) => (
                   <div key={it.productId} className="order-item-row">
-                    <span>{it.name} × {it.quantity}</span>
-                    <span>{formatMoney(it.price * it.quantity)}</span>
+                    <span>
+                      {it.name} ×{' '}
+                      {it.packagingName !== null && it.packQuantity !== null
+                        ? `${it.packQuantity} ${it.packagingName.toLowerCase()} (${it.quantity})`
+                        : it.quantity}
+                    </span>
+                    {/* Packs are billed at the pack price: the rounded
+                        per-unit figure times the units overstates a case that
+                        does not divide evenly. */}
+                    <span>
+                      {formatMoney(
+                        it.packPrice !== null && it.packQuantity !== null
+                          ? Math.round(it.packPrice * it.packQuantity)
+                          : Math.round(it.price * it.quantity),
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -118,19 +163,47 @@ export function IncomingScreen({ receipts, products, loading, error, submitting,
               {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
               {lines.map((l, i) => (
                 <div key={`${l.productId}-${i}`} className="report-row">
-                  <span>{l.name} × {l.quantity} по {formatMoney(l.price)}</span>
+                  <span>
+                    {l.name} × {l.quantity}
+                    {l.packagingName ? ` ${l.packagingName.toLowerCase()}` : ''} по {formatMoney(l.price)}
+                    {/* The resolved figure is shown next to what was typed, so
+                        a wrong coefficient is caught here and not on the shelf. */}
+                    {l.packagingId && <span className="order-meta"> → {l.quantity * l.unitsPerPack} на склад</span>}
+                  </span>
                   <button className="li-remove" onClick={() => removeLine(i)}>Удалить</button>
                 </div>
               ))}
 
               <div className="transfer-add-row">
-                <select value={productId} onChange={(e) => setProductId(e.target.value)}>
+                <select value={productId} onChange={(e) => pickProduct(e.target.value)}>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
-                <input type="number" min="1" placeholder="Кол-во" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-                <input type="number" min="0" placeholder="Цена за шт." value={price} onChange={(e) => setPrice(e.target.value)} />
+                {/* Only offered for goods that actually come in packs, so a
+                    shop selling nothing by the case never sees the control. */}
+                {selectedProduct && selectedProduct.packagings.length > 0 && (
+                  <select value={packagingId} onChange={(e) => setPackagingId(e.target.value)} aria-label="Упаковка">
+                    <option value={LOOSE}>Поштучно</option>
+                    {selectedProduct.packagings.map((pack) => (
+                      <option key={pack.id} value={pack.id}>{pack.name} × {pack.unitsPerPack}</option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  type="number"
+                  min="1"
+                  placeholder={selectedPackaging ? 'Упаковок' : 'Кол-во'}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  placeholder={selectedPackaging ? 'Цена за упаковку' : 'Цена за шт.'}
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                />
                 <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
               </div>
             </>

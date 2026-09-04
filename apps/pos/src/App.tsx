@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, Packaging, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
-import { genId } from './utils';
+import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
@@ -42,10 +42,13 @@ import {
   fetchManagedProducts,
   createManagedProduct,
   updateManagedProduct,
+  fetchPackagings,
+  createPackaging,
+  deletePackaging,
   ORDERS_BASE,
   ApiError,
 } from './api';
-import type { ManagedProduct, ManagedProductPayload } from './api';
+import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
 import type { PosSession, CustomerLookupResult } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
@@ -158,6 +161,9 @@ export default function App() {
   const [receiptsLoading, setReceiptsLoading] = useState(false);
   const [receiptsError, setReceiptsError] = useState<string | null>(null);
   const [receiptSubmitting, setReceiptSubmitting] = useState(false);
+  const [editingPackagings, setEditingPackagings] = useState<Packaging[]>([]);
+  const [packagingBusy, setPackagingBusy] = useState(false);
+  const [packagingError, setPackagingError] = useState<string | null>(null);
   const [returnableSales, setReturnableSales] = useState<ReturnableSale[]>([]);
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
   const [returnsLoading, setReturnsLoading] = useState(false);
@@ -534,7 +540,7 @@ export default function App() {
   async function handleCreateReceipt(payload: {
     supplierName: string;
     supplierPhone: string;
-    items: { productId: string; quantity: number; price: number }[];
+    items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
   }) {
     if (!session || !currentLocationId) return false;
     setReceiptSubmitting(true);
@@ -568,6 +574,61 @@ export default function App() {
   function handleShowCounts() {
     setView('counts');
     void loadCounts();
+  }
+
+  async function loadPackagings(productId: string) {
+    if (!session) return;
+    setPackagingError(null);
+    try {
+      setEditingPackagings(await fetchPackagings(session.token, productId));
+    } catch (err) {
+      setPackagingError(err instanceof ApiError ? err.message : 'Не удалось загрузить упаковки');
+    }
+  }
+
+  async function handleAddPackaging(payload: PackagingPayload) {
+    if (!session || !editingProduct) return false;
+    setPackagingBusy(true);
+    setPackagingError(null);
+    try {
+      const created = await createPackaging(session.token, editingProduct.id, payload);
+      setEditingPackagings((prev) => [...prev, created]);
+      // The register reads case barcodes out of its cached catalog, so a new
+      // packaging has to reach that cache or the scan won't resolve until the
+      // next login.
+      applyPackagingsToSession(editingProduct.id, [...editingPackagings, created]);
+      return true;
+    } catch (err) {
+      setPackagingError(err instanceof ApiError ? err.message : 'Не удалось добавить упаковку');
+      return false;
+    } finally {
+      setPackagingBusy(false);
+    }
+  }
+
+  async function handleDeletePackaging(packagingId: string) {
+    if (!session || !editingProduct) return;
+    setPackagingBusy(true);
+    setPackagingError(null);
+    try {
+      await deletePackaging(session.token, editingProduct.id, packagingId);
+      const remaining = editingPackagings.filter((pack) => pack.id !== packagingId);
+      setEditingPackagings(remaining);
+      applyPackagingsToSession(editingProduct.id, remaining);
+    } catch (err) {
+      setPackagingError(err instanceof ApiError ? err.message : 'Не удалось удалить упаковку');
+    } finally {
+      setPackagingBusy(false);
+    }
+  }
+
+  function applyPackagingsToSession(productId: string, packagings: Packaging[]) {
+    setSession((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, products: prev.products.map((p) => (p.id === productId ? { ...p, packagings } : p)) };
+      saveSession(updated);
+      return updated;
+    });
   }
 
   async function loadReturns() {
@@ -710,14 +771,20 @@ export default function App() {
 
   function handleAddProduct() {
     setEditingProduct(null);
+    // A product that doesn't exist yet can't have packagings hanging off it.
+    setEditingPackagings([]);
+    setPackagingError(null);
     setProductSaveError(null);
     setView('product-edit');
   }
 
   function handleEditProduct(product: ManagedProduct) {
     setEditingProduct(product);
+    setEditingPackagings([]);
+    setPackagingError(null);
     setProductSaveError(null);
     setView('product-edit');
+    void loadPackagings(product.id);
   }
 
   async function handleSaveProduct(payload: ManagedProductPayload) {
@@ -933,20 +1000,23 @@ export default function App() {
     setView('sale');
   }
 
-  function addToCart(product: Product, modifier?: ProductModifierOption, explicitQty?: number) {
+  function addToCart(product: Product, modifier?: ProductModifierOption, explicitQty?: number, addQty = false) {
     const lineId = modifier ? `${product.id}:${modifier.id}` : product.id;
     const displayName = modifier ? `${product.name} (${modifier.name})` : product.name;
     const price = product.price + (modifier?.priceDelta ?? 0);
     setCart((prev) => {
       // Weight-based lines are set (re-entering a weight corrects the amount),
-      // not incremented like piece-based lines.
+      // not incremented like piece-based lines. A scanned case is the opposite:
+      // scanning a second one means two cases, so it adds.
       if (explicitQty !== undefined) {
-        if (explicitQty <= 0 || explicitQty > product.stock) return prev;
+        if (explicitQty <= 0) return prev;
         const existing = prev.find((l) => l.id === lineId);
+        const nextQty = addQty ? (existing?.qty ?? 0) + explicitQty : explicitQty;
+        if (nextQty > product.stock) return prev;
         if (existing) {
-          return prev.map((l) => (l.id === lineId ? { ...l, qty: explicitQty } : l));
+          return prev.map((l) => (l.id === lineId ? { ...l, qty: nextQty } : l));
         }
-        return [...prev, { id: lineId, productId: product.id, name: displayName, price, qty: explicitQty, saleUnit: product.saleUnit }];
+        return [...prev, { id: lineId, productId: product.id, name: displayName, price, qty: nextQty, saleUnit: product.saleUnit }];
       }
       const existing = prev.find((l) => l.id === lineId);
       const currentQty = existing?.qty ?? 0;
@@ -992,6 +1062,8 @@ export default function App() {
         price: variantProduct.price,
         barcode: '',
         saleUnit: 'piece',
+        // A variant is picked from a list, never scanned as a case of its own.
+        packagings: [],
         category: variantProduct.category,
         stock: variant.stock,
         stopListed: false,
@@ -1021,11 +1093,15 @@ export default function App() {
 
   function handleSearchEnter() {
     if (!session) return;
-    const match = session.products.find((p) => p.barcode === query.trim());
-    if (match) {
-      addToCart(match);
-      setQuery('');
-    }
+    // A case barcode and a bottle barcode look the same to a scanner, so the
+    // lookup answers both which product and how many of it. Scanning a case
+    // adds the case, not one bottle out of it.
+    const scanned = resolveScannedBarcode(query, session.products);
+    if (!scanned) return;
+    const match = session.products.find((p) => p.id === scanned.productId);
+    if (!match) return;
+    addToCart(match, undefined, scanned.unitsPerPack > 1 ? scanned.unitsPerPack : undefined, true);
+    setQuery('');
   }
 
   const cartSubtotal = cart.reduce((sum, l) => sum + Math.round(l.price * l.qty), 0);
@@ -1401,10 +1477,15 @@ export default function App() {
       {view === 'product-edit' && (
         <ProductEditScreen
           product={editingProduct}
+          packagings={editingPackagings}
+          packagingBusy={packagingBusy}
+          packagingError={packagingError}
           submitting={productSaveSubmitting}
           error={productSaveError}
           onBack={() => setView('products')}
           onSave={handleSaveProduct}
+          onAddPackaging={handleAddPackaging}
+          onDeletePackaging={handleDeletePackaging}
         />
       )}
 
