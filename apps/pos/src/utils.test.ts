@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genId, formatMoney, formatWeight, hoursSince, pluralizeRu } from './utils';
+import { genId, formatMoney, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode } from './utils';
 
 describe('genId', () => {
   it('includes the given prefix and generates unique ids', () => {
@@ -47,5 +47,37 @@ describe('pluralizeRu', () => {
     expect(pluralizeRu(5, 'партия', 'партии', 'партий')).toBe('партий');
     expect(pluralizeRu(0, 'партия', 'партии', 'партий')).toBe('партий');
     expect(pluralizeRu(11, 'партия', 'партии', 'партий')).toBe('партий');
+  });
+});
+
+describe('resolveScannedBarcode', () => {
+  const water = {
+    id: 'water',
+    barcode: '4870001',
+    packagings: [{ id: 'pk_case', unitsPerPack: 24, barcode: '4870001CASE' }],
+  };
+  const bread = { id: 'bread', barcode: '4870002', packagings: [] };
+  const products = [water, bread];
+
+  it('reads a unit barcode as one unit', () => {
+    expect(resolveScannedBarcode('4870001', products)).toEqual({ productId: 'water', unitsPerPack: 1 });
+  });
+
+  it('reads a case barcode as the whole case, not one bottle out of it', () => {
+    expect(resolveScannedBarcode('4870001CASE', products)).toEqual({ productId: 'water', unitsPerPack: 24 });
+  });
+
+  it('prefers the unit when one code is registered as both', () => {
+    const clashing = [{ ...water, packagings: [{ id: 'pk_case', unitsPerPack: 24, barcode: '4870001' }] }];
+    expect(resolveScannedBarcode('4870001', clashing)).toEqual({ productId: 'water', unitsPerPack: 1 });
+  });
+
+  it('ignores the whitespace a scanner appends', () => {
+    expect(resolveScannedBarcode(' 4870001 ', products)?.productId).toBe('water');
+  });
+
+  it('returns nothing for an unknown or empty code instead of guessing', () => {
+    expect(resolveScannedBarcode('0000', products)).toBeNull();
+    expect(resolveScannedBarcode('  ', products)).toBeNull();
   });
 });

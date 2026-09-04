@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, Packaging, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -187,7 +187,11 @@ export interface CreateReceiptPayload {
   locationId: string;
   supplierName: string;
   supplierPhone: string;
-  items: { productId: string; quantity: number; price: number }[];
+  /**
+   * `quantity` and `price` are per pack when packagingId is set, per base unit
+   * otherwise — the storeman enters what they handled, and the server converts.
+   */
+  items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
 }
 
 export function createReceipt(token: string, payload: CreateReceiptPayload): Promise<{ id: string; createdAt: string }> {
@@ -359,4 +363,22 @@ export function createReturn(
     { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } },
     token,
   );
+}
+
+export interface PackagingPayload {
+  name: string;
+  unitsPerPack: number;
+  barcode: string;
+}
+
+export function fetchPackagings(token: string, productId: string): Promise<Packaging[]> {
+  return request(`/pos/products/${productId}/packagings`, { method: 'GET' }, token);
+}
+
+export function createPackaging(token: string, productId: string, payload: PackagingPayload): Promise<Packaging> {
+  return request(`/pos/products/${productId}/packagings`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function deletePackaging(token: string, productId: string, packagingId: string): Promise<{ ok: boolean }> {
+  return request(`/pos/products/${productId}/packagings/${packagingId}`, { method: 'DELETE' }, token);
 }

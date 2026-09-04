@@ -28,6 +28,7 @@ import {
 import { resolveLocationId, resolveTransferLocations, locationErrorMessage } from '../locations';
 import { resolveTransferReceipt, transferReceiptErrorMessage } from '../transfers';
 import { resolveReturn, returnErrorMessage } from '../returns';
+import { resolvePackagedLines, packagingErrorMessage } from '../packaging';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -137,6 +138,19 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
   const modifierRows = modules.includes('restaurant')
     ? await prisma.productModifier.findMany({ where: { productId: { in: products.map((p) => p.id) } } })
     : [];
+
+  // Sent with the catalog rather than looked up per scan: a register has to
+  // read a case barcode with the network down, the same as a unit barcode.
+  const packagingRows = await prisma.productPackaging.findMany({
+    where: { productId: { in: products.map((p) => p.id) } },
+    orderBy: { unitsPerPack: 'asc' },
+  });
+  const packagingsByProduct = new Map<string, { id: string; name: string; unitsPerPack: number; barcode: string }[]>();
+  for (const pack of packagingRows) {
+    const list = packagingsByProduct.get(pack.productId) ?? [];
+    list.push({ id: pack.id, name: pack.name, unitsPerPack: pack.unitsPerPack, barcode: pack.barcode ?? '' });
+    packagingsByProduct.set(pack.productId, list);
+  }
   const modifiersByProduct = new Map<string, { id: string; name: string; priceDelta: number }[]>();
   for (const m of modifierRows) {
     const list = modifiersByProduct.get(m.productId) ?? [];
@@ -157,6 +171,7 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
     // same gating pattern used for variant grouping just below.
     saleUnit: modules.includes('retail') ? p.saleUnit : 'piece',
     modifiers: modifiersByProduct.get(p.id) ?? [],
+    packagings: packagingsByProduct.get(p.id) ?? [],
     parentProductId: p.parentProductId,
     variantLabel: p.variantLabel,
   }));
@@ -1216,6 +1231,94 @@ posRouter.patch('/products/:id', requirePosAuth, async (req: PosAuthedRequest, r
   res.json(serializePosProduct(product));
 });
 
+// Packagings are the shapes a product arrives and leaves in. Owner-facing,
+// like the rest of product management: a cashier changing what a case holds
+// would silently rewrite every future receipt's quantities.
+posRouter.get('/products/:id/packagings', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Доступно только владельцу и менеджеру' });
+    return;
+  }
+
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!product) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const packagings = await prisma.productPackaging.findMany({
+    where: { productId: product.id },
+    orderBy: { unitsPerPack: 'asc' },
+  });
+  res.json(packagings.map((pack) => ({ id: pack.id, name: pack.name, unitsPerPack: pack.unitsPerPack, barcode: pack.barcode ?? '' })));
+});
+
+posRouter.post('/products/:id/packagings', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Доступно только владельцу и менеджеру' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const name = typeof b.name === 'string' ? b.name.trim() : '';
+  const unitsPerPack = Number(b.unitsPerPack);
+  const barcode = typeof b.barcode === 'string' ? b.barcode.trim() : '';
+  // A pack holding one unit is the base unit under another name, and a pack
+  // holding none would multiply every receipt to zero.
+  if (!name || !Number.isFinite(unitsPerPack) || unitsPerPack <= 0) {
+    res.status(400).json({ error: 'Укажите название упаковки и сколько единиц в ней' });
+    return;
+  }
+
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!product) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const existing = await prisma.productPackaging.findFirst({ where: { productId: product.id, name } });
+  if (existing) {
+    res.status(409).json({ error: 'Упаковка с таким названием уже есть у этого товара' });
+    return;
+  }
+
+  const packaging = await prisma.productPackaging.create({
+    data: { productId: product.id, name, unitsPerPack, barcode: barcode || null },
+  });
+  res.status(201).json({
+    id: packaging.id,
+    name: packaging.name,
+    unitsPerPack: packaging.unitsPerPack,
+    barcode: packaging.barcode ?? '',
+  });
+});
+
+posRouter.delete('/products/:id/packagings/:packagingId', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Доступно только владельцу и менеджеру' });
+    return;
+  }
+
+  const packaging = await prisma.productPackaging.findFirst({
+    where: { id: req.params.packagingId, productId: req.params.id, product: { companyId: req.posCompanyId } },
+  });
+  if (!packaging) {
+    res.status(404).json({ error: 'Упаковка не найдена' });
+    return;
+  }
+
+  // Documents keep pointing at it, so removing one would erase what a past
+  // receipt actually recorded. The link is severed instead of the history.
+  const used = await prisma.documentItem.count({ where: { packagingId: packaging.id } });
+  if (used > 0) {
+    res.status(409).json({ error: 'По этой упаковке уже есть документы — её нельзя удалить' });
+    return;
+  }
+
+  await prisma.productPackaging.delete({ where: { id: packaging.id } });
+  res.json({ ok: true });
+});
+
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
@@ -1758,7 +1861,7 @@ posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =>
 
   const receipts = await prisma.document.findMany({
     where: { companyId: req.posCompanyId, type: 'receipt' },
-    include: { items: { include: { product: true } }, counterparty: true },
+    include: { items: { include: { product: true, packaging: true } }, counterparty: true },
     orderBy: { createdAt: 'desc' },
     take: 50,
   });
@@ -1768,15 +1871,27 @@ posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =>
       id: r.id,
       createdAt: r.createdAt.toISOString(),
       supplierName: r.counterparty?.name ?? null,
-      items: r.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity, price: it.price })),
+      items: r.items.map((it) => ({
+        productId: it.productId,
+        name: it.product.name,
+        quantity: it.quantity,
+        price: it.price,
+        // What the storeman actually counted, so the document reads back the
+        // way it was entered rather than as a bare pile of base units.
+        packagingName: it.packaging?.name ?? null,
+        packQuantity: it.packQuantity,
+        packPrice: it.packPrice,
+      })),
     })),
   );
 });
 
 posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
-  const items: { productId: string; quantity: number; price: number }[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0 || hasInvalidQuantity(items)) {
+  const rawItems: { productId: string; quantity: number; price: number; packagingId?: string | null }[] = Array.isArray(b.items)
+    ? b.items
+    : [];
+  if (rawItems.length === 0 || hasInvalidQuantity(rawItems)) {
     res.status(400).json({ error: 'Некорректные данные приёмки' });
     return;
   }
@@ -1798,6 +1913,21 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
 
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
+
+  // A line's quantity is however many of the thing the storeman handled — two
+  // cases, not forty-eight bottles. Everything past this point is base units.
+  const namedPackagingIds = rawItems.map((it) => it.packagingId).filter((id): id is string => !!id);
+  const packagings = namedPackagingIds.length
+    ? await prisma.productPackaging.findMany({
+        where: { id: { in: namedPackagingIds }, product: { companyId: req.posCompanyId } },
+      })
+    : [];
+  const packaged = resolvePackagedLines(rawItems, packagings);
+  if (packaged.status !== 'ok') {
+    res.status(400).json({ error: packagingErrorMessage(packaged) });
+    return;
+  }
+  const items = packaged.lines;
 
   const supplierName = typeof b.supplierName === 'string' ? b.supplierName.trim() : '';
   const supplierPhone = typeof b.supplierPhone === 'string' ? b.supplierPhone.trim() : '';
@@ -1829,7 +1959,16 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
         status: 'confirmed',
         counterpartyId,
         createdBy: req.posUserId!,
-        items: { create: items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price ?? 0 })) },
+        items: {
+          create: items.map((it) => ({
+            productId: it.productId,
+            quantity: it.quantity,
+            price: it.price ?? 0,
+            packagingId: it.packagingId,
+            packQuantity: it.packQuantity,
+            packPrice: it.packPrice,
+          })),
+        },
       },
       include: { items: true },
     });
