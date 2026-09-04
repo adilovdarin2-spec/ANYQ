@@ -151,10 +151,19 @@ export interface DishMargin {
   marginPercent: number;
 }
 
+/** Money that walked back out of the till, reported beside the takings rather than folded into them. */
+export interface ReportReturns {
+  count: number;
+  total: number;
+  /** Takings less refunds — the figure that actually stayed. */
+  netRevenue: number;
+}
+
 export interface Report {
   from: string;
   to: string;
   summary: ReportSummary;
+  returns: ReportReturns;
   topProducts: TopProduct[];
   byCashier: CashierBreakdown[];
   lowStock: LowStockItem[];
@@ -305,6 +314,7 @@ export type StockMovementReason =
   | 'production_out'
   | 'table_order'
   | 'transfer_cancelled'
+  | 'return'
   | 'batch_receipt';
 
 export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
@@ -313,6 +323,7 @@ export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
   transfer_out: 'Перемещение (откуда)',
   transfer_in: 'Перемещение (куда)',
   transfer_cancelled: 'Перемещение отменено',
+  return: 'Возврат от покупателя',
   receipt: 'Приёмка товара',
   adjustment: 'Инвентаризация',
   production_in: 'Производство (выпуск)',
@@ -332,4 +343,35 @@ export interface StockMovementRecord {
   /** Null for rows written before the ledger recorded an author, and for anything a storefront customer set off. */
   createdByName: string | null;
   createdAt: string;
+}
+
+/** A past sale, with what is still outstanding on each of its lines. */
+export interface ReturnableSaleItem {
+  /** The sale line's own id — what a return is filed against. */
+  id: string;
+  productId: string;
+  name: string;
+  quantity: number;
+  price: number;
+  returnedQuantity: number;
+}
+
+export interface ReturnableSale {
+  id: string;
+  createdAt: string;
+  paymentMethod: string | null;
+  total: number;
+  refundedTotal: number;
+  items: ReturnableSaleItem[];
+}
+
+export interface ReturnRecord {
+  id: string;
+  createdAt: string;
+  saleId: string | null;
+  reason: string;
+  refundAmount: number;
+  paymentMethod: string | null;
+  createdByName: string | null;
+  items: { productId: string; name: string; quantity: number; price: number }[];
 }

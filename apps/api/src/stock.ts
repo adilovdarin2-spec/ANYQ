@@ -56,6 +56,7 @@ export type StockMovementReason =
   | 'transfer_out'
   | 'transfer_in'
   | 'transfer_cancelled'
+  | 'return'
   | 'receipt'
   | 'adjustment'
   | 'production_in'

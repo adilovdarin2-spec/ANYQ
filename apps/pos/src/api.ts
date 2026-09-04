@@ -1,4 +1,4 @@
-import type { Batch, CompanyLocation, Count, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CompanyLocation, Count, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -318,4 +318,45 @@ export function subscribePush(token: string, payload: SubscribePushPayload): Pro
 
 export function unsubscribePush(token: string, endpoint: string): Promise<{ ok: boolean }> {
   return request('/pos/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }, token);
+}
+
+// The receipts a return can be filed against, newest first. Each line carries
+// what is still outstanding on it, so the register never offers more than the
+// server would accept.
+export function fetchReturnableSales(token: string, locationId: string): Promise<ReturnableSale[]> {
+  return request(`/pos/sales?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+export function fetchReturns(token: string, locationId: string): Promise<ReturnRecord[]> {
+  return request(`/pos/returns?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+export interface CreateReturnPayload {
+  saleId: string;
+  reason: string;
+  paymentMethod: string;
+  items: { documentItemId: string; quantity: number }[];
+}
+
+export interface CreateReturnResult {
+  id: string;
+  createdAt: string;
+  saleId: string;
+  refundAmount: number;
+  pointsRestored: number;
+  pointsRevoked: number;
+}
+
+// Carries an idempotency key for the same reason a sale does: a refund whose
+// reply is lost must not hand the money back twice on the retry.
+export function createReturn(
+  token: string,
+  payload: CreateReturnPayload,
+  idempotencyKey: string,
+): Promise<CreateReturnResult> {
+  return request(
+    '/pos/returns',
+    { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } },
+    token,
+  );
 }

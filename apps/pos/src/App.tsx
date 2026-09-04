@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, CartLine, Count, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, CartLine, Count, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -16,6 +16,9 @@ import {
   fetchBatches,
   receiveBatch,
   setStopListed,
+  fetchReturnableSales,
+  fetchReturns,
+  createReturn,
   fetchTransfers,
   createTransfer,
   receiveTransfer,
@@ -73,6 +76,7 @@ import { FloorPlanScreen } from './components/FloorPlanScreen';
 import { TableOrderScreen } from './components/TableOrderScreen';
 import { KdsScreen } from './components/KdsScreen';
 import { StockHistoryScreen } from './components/StockHistoryScreen';
+import { ReturnsScreen } from './components/ReturnsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
 import type { OperationItem } from './components/OperationsScreen';
@@ -95,6 +99,7 @@ type View =
   | 'transfers'
   | 'incoming'
   | 'counts'
+  | 'returns'
   | 'production'
   | 'floorplan'
   | 'table-order'
@@ -102,7 +107,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -153,6 +158,11 @@ export default function App() {
   const [receiptsLoading, setReceiptsLoading] = useState(false);
   const [receiptsError, setReceiptsError] = useState<string | null>(null);
   const [receiptSubmitting, setReceiptSubmitting] = useState(false);
+  const [returnableSales, setReturnableSales] = useState<ReturnableSale[]>([]);
+  const [returns, setReturns] = useState<ReturnRecord[]>([]);
+  const [returnsLoading, setReturnsLoading] = useState(false);
+  const [returnsError, setReturnsError] = useState<string | null>(null);
+  const [returnSubmitting, setReturnSubmitting] = useState(false);
   const [counts, setCounts] = useState<Count[]>([]);
   const [countsLoading, setCountsLoading] = useState(false);
   const [countsError, setCountsError] = useState<string | null>(null);
@@ -219,6 +229,7 @@ export default function App() {
       { key: 'transfers', icon: '🔄', label: 'Перемещения', onClick: handleShowTransfers },
       { key: 'incoming', icon: '📥', label: 'Приёмка', onClick: handleShowIncoming },
       { key: 'counts', icon: '📋', label: 'Инвентаризация', onClick: handleShowCounts },
+      { key: 'returns', icon: '↩️', label: 'Возвраты', onClick: handleShowReturns },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
     );
   }
@@ -557,6 +568,54 @@ export default function App() {
   function handleShowCounts() {
     setView('counts');
     void loadCounts();
+  }
+
+  async function loadReturns() {
+    if (!session || !currentLocationId) return;
+    setReturnsLoading(true);
+    setReturnsError(null);
+    try {
+      // Both halves in one go: the screen shows past returns and needs the
+      // receipts behind them the moment the cashier taps "new".
+      const [sales, made] = await Promise.all([
+        fetchReturnableSales(session.token, currentLocationId),
+        fetchReturns(session.token, currentLocationId),
+      ]);
+      setReturnableSales(sales);
+      setReturns(made);
+    } catch (err) {
+      setReturnsError(err instanceof ApiError ? err.message : 'Не удалось загрузить возвраты');
+    } finally {
+      setReturnsLoading(false);
+    }
+  }
+
+  function handleShowReturns() {
+    setView('returns');
+    void loadReturns();
+  }
+
+  async function handleCreateReturn(payload: {
+    saleId: string;
+    reason: string;
+    paymentMethod: PaymentMethod;
+    items: { documentItemId: string; quantity: number }[];
+  }) {
+    if (!session) return false;
+    setReturnSubmitting(true);
+    setReturnsError(null);
+    try {
+      // A fresh key per attempt at a new refund, stable across the retries
+      // inside one attempt — a lost reply must not hand the money back twice.
+      await createReturn(session.token, payload, genId('return'));
+      await loadReturns();
+      return true;
+    } catch (err) {
+      setReturnsError(err instanceof ApiError ? err.message : 'Не удалось оформить возврат');
+      return false;
+    } finally {
+      setReturnSubmitting(false);
+    }
   }
 
   async function handleCreateCount(payload: { items: { productId: string; countedQuantity: number }[] }) {
@@ -1248,6 +1307,19 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadCounts}
           onSubmit={handleCreateCount}
+        />
+      )}
+
+      {view === 'returns' && (
+        <ReturnsScreen
+          sales={returnableSales}
+          returns={returns}
+          loading={returnsLoading}
+          error={returnsError}
+          submitting={returnSubmitting}
+          onBack={() => setView('operations')}
+          onRefresh={loadReturns}
+          onSubmit={handleCreateReturn}
         />
       )}
 

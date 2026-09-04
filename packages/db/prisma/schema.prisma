@@ -331,6 +331,22 @@ model Document {
   // Only set for type='order' placed through the public /supply storefront —
   // where the customer wants this delivered, in their own words.
   deliveryAddress String?
+  // Why this document exists, in the words of whoever made it. Required for a
+  // return: a refund with no stated reason is the cheapest way to take money
+  // out of a till, and "a reason and the right to do it" is what makes one
+  // accountable rather than merely recorded.
+  reason        String?
+  // The sale a return is against. A return standing on its own would let a
+  // cashier refund goods nobody ever bought — the oldest way a till is
+  // emptied — so a return is always a claim on one specific receipt, and can
+  // never give back more than that receipt sold.
+  originalDocument   Document?  @relation("DocumentReturns", fields: [originalDocumentId], references: [id])
+  originalDocumentId String?
+  returns            Document[] @relation("DocumentReturns")
+  // What was actually handed back, on a return. Not derivable from the lines:
+  // a refund owes a share of the discount and the points the sale collected,
+  // so it is almost never the sum of the returned lines at list price.
+  refundAmount  Int?
   createdBy     String?
   createdAt     DateTime      @default(now())
   fulfilledBy   String?
@@ -339,6 +355,7 @@ model Document {
   items          DocumentItem[]
   stockMovements StockMovement[]
 
+  @@index([companyId, type, createdAt])
   @@map("documents")
 }
 
@@ -381,6 +398,12 @@ model DocumentItem {
   batch         ProductBatch? @relation(fields: [batchId], references: [id])
   batchId       String?
   quantity      Float
+  // The sale line this return line gives back. Keeps the cap per line rather
+  // than per product, so a partly-returned receipt can still be reasoned
+  // about, and so the goods go back into the batch they left from.
+  originalItem   DocumentItem?  @relation("ItemReturns", fields: [originalItemId], references: [id])
+  originalItemId String?
+  returns        DocumentItem[] @relation("ItemReturns")
   // What actually arrived, against the `quantity` that was sent. Null until
   // the document is received. A transfer that leaves with 5 and arrives with
   // 4 is the shape a loss in transit takes, and it is only visible if both
@@ -392,6 +415,7 @@ model DocumentItem {
   // (type='sale', tableId set) — every other document type ignores it.
   kitchenStatus String        @default("pending")
 
+  @@index([originalItemId])
   @@map("document_items")
 }
 
