@@ -1,5 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import { findStockShortages, hasInvalidQuantity } from './stock';
+import { findStockShortages, hasInvalidQuantity, aggregateRequestedQuantities } from './stock';
+
+describe('aggregateRequestedQuantities', () => {
+  it('sums lines that carry the same product', () => {
+    const items = [
+      { productId: 'p1', quantity: 3, price: 100 },
+      { productId: 'p1', quantity: 3, price: 100 },
+    ];
+    expect(aggregateRequestedQuantities(items)).toEqual([{ productId: 'p1', quantity: 6, price: 100 }]);
+  });
+
+  it('leaves distinct products alone and keeps their order', () => {
+    const items = [
+      { productId: 'p1', quantity: 1, price: 100 },
+      { productId: 'p2', quantity: 2, price: 200 },
+    ];
+    expect(aggregateRequestedQuantities(items)).toEqual(items);
+  });
+
+  it('does not mutate the caller’s lines — the document still needs them as they were', () => {
+    const items = [
+      { productId: 'p1', quantity: 3, price: 100 },
+      { productId: 'p1', quantity: 4, price: 100 },
+    ];
+    aggregateRequestedQuantities(items);
+    expect(items[0].quantity).toBe(3);
+  });
+
+  it('turns a cart that passes a per-line check into one that fails the real check', () => {
+    // Two lines of 3 against a stock of 5: each line passes on its own, the
+    // document as a whole does not.
+    const items = [
+      { productId: 'p1', quantity: 3, price: 100 },
+      { productId: 'p1', quantity: 3, price: 100 },
+    ];
+    const stock = new Map([['p1', 5]]);
+
+    expect(findStockShortages(items, stock)).toEqual([]);
+    expect(findStockShortages(aggregateRequestedQuantities(items), stock)).toEqual([
+      { productId: 'p1', available: 5, requested: 6 },
+    ]);
+  });
+});
 
 describe('findStockShortages', () => {
   it('returns no shortages when stock covers every requested item', () => {

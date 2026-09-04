@@ -42,8 +42,36 @@ model Company {
   shifts            Shift[]
   tables            Table[]
   pushSubscriptions PushSubscription[]
+  idempotencyKeys   IdempotencyKey[]
 
   @@map("companies")
+}
+
+// Makes every mutating POS request safely retryable. A cashier's offline queue
+// can't tell "the server never got this sale" from "the server saved it and
+// the reply was lost coming back" — without a key the retry sells the same
+// goods twice. The row is written inside the same transaction as the work it
+// guards, so a committed key and a committed sale are one event: a retry finds
+// both (and replays the stored response) or neither (and does the work).
+//
+// `response` holds the exact JSON body the first attempt returned — a retry
+// has to reproduce it, not just avoid re-running. Rows are never read after
+// their client stops retrying, so they want a retention job (drop keys older
+// than a few days) once the table starts growing.
+model IdempotencyKey {
+  id          String   @id @default(cuid())
+  company     Company  @relation(fields: [companyId], references: [id])
+  companyId   String
+  key         String
+  endpoint    String
+  requestHash String
+  statusCode  Int
+  response    String
+  createdAt   DateTime @default(now())
+
+  @@unique([companyId, key])
+  @@index([createdAt])
+  @@map("idempotency_keys")
 }
 
 model Tariff {
@@ -242,7 +270,12 @@ model Stock {
   // widened the same way for the same reason; RecipeIngredient and
   // ProductBatch stay Int since they're untouched by retail weight-sale.
   quantity    Float
-  binLocation String?
+  // Not nullable, and '' means "not put away in a bin yet". In Postgres two
+  // NULLs are never equal, so a nullable column left the @@unique below
+  // enforcing nothing for the rows the app actually writes — two concurrent
+  // first receipts of one product could each create a row, and the read path
+  // (a Map keyed by productId) would keep one and lose the other's quantity.
+  binLocation String  @default("")
 
   @@unique([productId, locationId, binLocation])
   @@map("stocks")

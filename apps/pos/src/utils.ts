@@ -1,5 +1,12 @@
 export function genId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // A sale's id is what the server matches a retry against, so two registers
+  // generating the same one would make the second register's sale replay the
+  // first's receipt and vanish. Timestamp + six random characters is not a
+  // strong enough guarantee for that; randomUUID is. The old shape stays as a
+  // fallback for the contexts where crypto.randomUUID isn't exposed — older
+  // Android WebViews, and any non-secure origin.
+  const unique = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${unique}`;
 }
 
 export function formatMoney(n: number): string {
