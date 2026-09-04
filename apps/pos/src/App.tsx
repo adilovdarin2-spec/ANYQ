@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -27,6 +27,8 @@ import {
   fetchSettlements,
   recordSettlement,
   setCounterpartyCredit,
+  fetchReconciliation,
+  repairReconciliation,
   fetchCountSheet,
   submitBinCount,
   fetchBins,
@@ -108,6 +110,7 @@ import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
 import { BinsScreen } from './components/BinsScreen';
 import { BinCountScreen } from './components/BinCountScreen';
+import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
@@ -139,6 +142,7 @@ type View =
   | 'write-offs'
   | 'bins'
   | 'bin-count'
+  | 'reconciliation'
   | 'settlements'
   | 'production'
   | 'floorplan'
@@ -147,7 +151,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -206,6 +210,10 @@ export default function App() {
   const [settlementsLoading, setSettlementsLoading] = useState(false);
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [settlementsSubmitting, setSettlementsSubmitting] = useState(false);
+  const [reconciliation, setReconciliation] = useState<ReconciliationReport | null>(null);
+  const [reconciliationLoading, setReconciliationLoading] = useState(false);
+  const [reconciliationError, setReconciliationError] = useState<string | null>(null);
+  const [reconciliationRepairing, setReconciliationRepairing] = useState(false);
   const [countSheet, setCountSheet] = useState<{ bin: string; lines: CountSheetLine[] } | null>(null);
   const [countSheetLoading, setCountSheetLoading] = useState(false);
   const [binCountError, setBinCountError] = useState<string | null>(null);
@@ -318,6 +326,7 @@ export default function App() {
       { key: 'purchase-orders', icon: '📄', label: 'Заказы поставщику', onClick: handleShowPurchaseOrders },
       { key: 'bins', icon: '🗄️', label: 'Ячейки', onClick: handleShowBins },
       { key: 'bin-count', icon: '🔢', label: 'Пересчёт по ячейкам', onClick: handleShowBinCount },
+      { key: 'reconciliation', icon: '⚖️', label: 'Сверка журнала', onClick: handleShowReconciliation },
       { key: 'settlements', icon: '🤝', label: 'Расчёты и долги', onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
@@ -729,6 +738,40 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  async function loadReconciliation() {
+    if (!session || !currentLocationId) return;
+    setReconciliationLoading(true);
+    setReconciliationError(null);
+    try {
+      setReconciliation(await fetchReconciliation(session.token, currentLocationId));
+    } catch (err) {
+      setReconciliationError(err instanceof ApiError ? err.message : 'Не удалось выполнить сверку');
+    } finally {
+      setReconciliationLoading(false);
+    }
+  }
+
+  function handleShowReconciliation() {
+    setView('reconciliation');
+    void loadReconciliation();
+  }
+
+  async function handleRepairReconciliation() {
+    if (!session || !currentLocationId) return;
+    setReconciliationRepairing(true);
+    setReconciliationError(null);
+    try {
+      await repairReconciliation(session.token, currentLocationId);
+      await loadReconciliation();
+      // The corrected figures are what the register sells against.
+      await refreshCatalogAfterStockChange();
+    } catch (err) {
+      setReconciliationError(err instanceof ApiError ? err.message : 'Не удалось исправить остатки');
+    } finally {
+      setReconciliationRepairing(false);
+    }
   }
 
   function handleShowBinCount() {
@@ -1933,6 +1976,18 @@ export default function App() {
           onChangeType={handleChangeSettlementType}
           onPay={handleRecordSettlement}
           onSetCredit={handleSetCredit}
+        />
+      )}
+
+      {view === 'reconciliation' && (
+        <ReconciliationScreen
+          report={reconciliation}
+          loading={reconciliationLoading}
+          error={reconciliationError}
+          repairing={reconciliationRepairing}
+          onBack={() => setView('operations')}
+          onRefresh={loadReconciliation}
+          onRepair={handleRepairReconciliation}
         />
       )}
 

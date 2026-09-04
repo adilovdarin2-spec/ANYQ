@@ -76,6 +76,15 @@ export function OwnerDashboardScreen({
               </div>
               {/* Beside the money, because it is the figure that turns into a
                   fine rather than a loss. */}
+              {/* Shown only when it isn't zero. A trust indicator that is
+                  always green stops being read, and this one should be green
+                  every single day. */}
+              {dashboard.ledgerCheck.mismatched > 0 && (
+                <div className="report-card">
+                  <span className="value">{dashboard.ledgerCheck.mismatched}</span>
+                  <span className="label">Остатки не сходятся с журналом</span>
+                </div>
+              )}
               {dashboard.unfiscalised.count > 0 && (
                 <div className="report-card">
                   <span className="value">{dashboard.unfiscalised.count}</span>

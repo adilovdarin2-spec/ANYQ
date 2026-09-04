@@ -1,4 +1,4 @@
-import type { Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, FiscalDevice, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, FiscalDevice, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -597,4 +597,21 @@ export function submitBinCount(
   payload: BinCountPayload,
 ): Promise<{ id: string; bins: string[]; adjustments: BinCountAdjustmentResult[] }> {
   return request('/pos/counts/by-bin', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+// Checks that stock still equals the sum of its own movements. The invariant
+// every other figure rests on, stated as an assertion rather than trusted as a
+// convention.
+export function fetchReconciliation(token: string, locationId: string): Promise<ReconciliationReport> {
+  return request(`/pos/reconciliation?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+// Makes the cached figure equal the ledger. Never the other way round: the
+// ledger is the source of truth by construction, so where they disagree it is
+// the cache that is wrong.
+export function repairReconciliation(
+  token: string,
+  locationId: string,
+): Promise<{ repaired: number; documentId: string | null }> {
+  return request('/pos/reconciliation/repair', { method: 'POST', body: JSON.stringify({ locationId }) }, token);
 }

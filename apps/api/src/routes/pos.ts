@@ -48,6 +48,8 @@ import { isWriteOffReason, resolveWriteOff, writeOffErrorMessage, resolveQuarant
 import type { QuarantineAction } from '../writeoffs';
 import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErrorMessage } from '../bins';
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
+import { reconcileBalances, summarize, mismatchExplanation } from '../reconciliation';
+import type { LedgerTotal, CachedQuantity } from '../reconciliation';
 import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
@@ -1850,6 +1852,11 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
   });
   const unfiscalised = { count: unfiscalisedCount };
 
+  // Shown only when it isn't zero. A trust indicator that is always green
+  // stops being read, and this one should be green every single day.
+  const { ledgerTotals, mismatches } = await findLedgerMismatches(req.posCompanyId!, locationId);
+  const ledgerCheck = summarize(ledgerTotals, mismatches);
+
   const receivedTransfers = await prisma.document.findMany({
     where: { companyId: req.posCompanyId, type: 'transfer', toLocationId: locationId, status: 'confirmed', fulfilledAt: { gte: from } },
     include: { items: { include: { product: true } }, location: true },
@@ -1916,6 +1923,7 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
       })),
     },
     unfiscalised,
+    ledgerCheck,
     deadStock,
     expiring,
     flags: flagOutliers([...activityByUser.values()]),
@@ -3265,6 +3273,158 @@ posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, r
       delta: adjustment.delta,
     })),
   });
+});
+
+// Stock.quantity is a cache over the movement ledger, and the promise that
+// every figure can be traced rests on the two agreeing. Nothing checked that
+// they did: it held because every write goes through two helpers, which is a
+// fact about today's code rather than a property of the data.
+//
+// This states the invariant as an assertion instead of a convention, and is
+// the only thing that can catch a write which changes stock without writing a
+// movement — including one introduced tomorrow.
+async function findLedgerMismatches(companyId: string, locationId: string) {
+  const [grouped, stockRows] = await Promise.all([
+    prisma.stockMovement.groupBy({
+      by: ['productId', 'binLocation'],
+      where: { locationId },
+      _sum: { quantity: true },
+    }),
+    prisma.stock.findMany({ where: { locationId } }),
+  ]);
+
+  const ledgerTotals: LedgerTotal[] = grouped.map((row) => ({
+    productId: row.productId,
+    binLocation: row.binLocation,
+    total: row._sum.quantity ?? 0,
+  }));
+  const cached: CachedQuantity[] = stockRows.map((row) => ({
+    productId: row.productId,
+    binLocation: row.binLocation,
+    quantity: row.quantity,
+  }));
+
+  return { ledgerTotals, mismatches: reconcileBalances(ledgerTotals, cached) };
+}
+
+posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Сверка доступна владельцу и менеджеру' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const { ledgerTotals, mismatches } = await findLedgerMismatches(req.posCompanyId!, locationId);
+  const products = await prisma.product.findMany({
+    where: { id: { in: [...new Set(mismatches.map((m) => m.productId))] } },
+    select: { id: true, name: true, unit: true },
+  });
+  const productById = new Map(products.map((product) => [product.id, product]));
+
+  res.json({
+    locationId,
+    checkedAt: new Date().toISOString(),
+    ...summarize(ledgerTotals, mismatches),
+    mismatches: mismatches.slice(0, 100).map((mismatch) => ({
+      productId: mismatch.productId,
+      name: productById.get(mismatch.productId)?.name ?? '—',
+      unit: productById.get(mismatch.productId)?.unit ?? '',
+      binLocation: mismatch.binLocation,
+      ledger: mismatch.ledger,
+      cached: mismatch.cached,
+      difference: mismatch.difference,
+      kind: mismatch.kind,
+      explanation: mismatchExplanation(mismatch.kind),
+    })),
+  });
+});
+
+// Rebuilding the cache from the ledger, which is the only repair that makes
+// sense: the ledger is the source of truth by construction, so where they
+// disagree the ledger is right and the cache is wrong.
+//
+// No movement is written. Nothing moved — a wrong number was corrected — and
+// writing one would change the ledger sum too and fix nothing. What records it
+// is a document, the same shape quarantine uses for the same reason.
+posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Сверка доступна владельцу и менеджеру' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const { mismatches } = await findLedgerMismatches(req.posCompanyId!, locationId);
+  if (mismatches.length === 0) {
+    res.json({ repaired: 0, documentId: null });
+    return;
+  }
+
+  const document = await prisma.$transaction(async (tx) => {
+    const created = await tx.document.create({
+      data: {
+        companyId: req.posCompanyId!,
+        locationId,
+        type: 'reconciliation',
+        status: 'confirmed',
+        reason: `Сверка журнала: исправлено позиций ${mismatches.length}`,
+        createdBy: req.posUserId!,
+        items: {
+          // The correction, signed the way every other document's quantity is:
+          // what the number moved by, so the document reads like the others.
+          create: mismatches.map((mismatch) => ({
+            productId: mismatch.productId,
+            quantity: -mismatch.difference,
+            price: 0,
+          })),
+        },
+      },
+    });
+
+    for (const mismatch of mismatches) {
+      if (mismatch.kind === 'missing_row') {
+        await tx.stock.create({
+          data: {
+            productId: mismatch.productId,
+            locationId,
+            binLocation: mismatch.binLocation,
+            quantity: mismatch.ledger,
+          },
+        });
+        continue;
+      }
+      // Set, not incremented: the point is to make the cache equal the ledger,
+      // and an increment computed from a value read a moment ago is exactly
+      // the pattern that let them drift apart in the first place.
+      await tx.$executeRaw`
+        UPDATE "stocks" SET "quantity" = ${mismatch.ledger}
+        WHERE "locationId" = ${locationId}
+          AND "productId" = ${mismatch.productId}
+          AND "binLocation" = ${mismatch.binLocation}`;
+    }
+
+    return created;
+  }, { timeout: 30000 });
+
+  res.json({ repaired: mismatches.length, documentId: document.id });
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
