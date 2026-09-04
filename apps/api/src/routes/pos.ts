@@ -33,6 +33,7 @@ import { buildDailyClosingBalances, estimateDailyDemand, recommendOrder } from '
 import type { DailyMovement } from '../replenishment';
 import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
 import type { CashierActivity, ShiftCash } from '../owner';
+import { isValidManualEntry, manualRegistration } from '../fiscal';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
@@ -242,6 +243,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   // that company's stock down.
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
+  const fiscalDevice = await prisma.fiscalDevice.findUnique({ where: { locationId } });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
 
@@ -457,6 +459,15 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         include: { items: true },
       });
 
+      // Queued, never awaited inline: an OFD that is slow or unreachable must
+      // not stop a cashier serving the next customer. The row is what makes
+      // "this sale has not reached the tax authority" answerable later.
+      if (fiscalDevice?.enabled && fiscalDevice.provider !== 'none') {
+        await tx.fiscalReceipt.create({
+          data: { documentId: document.id, provider: fiscalDevice.provider, status: 'pending' },
+        });
+      }
+
       const stockMovements: Promise<unknown>[] = [...otherUpdates];
       for (const deduction of deductions) {
         const stock = stockByProduct.get(deduction.productId)!;
@@ -471,6 +482,9 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       return {
         id: document.id,
         createdAt: document.createdAt.toISOString(),
+        // So the printed slip can say so. A cashier handing over a slip that
+        // is not yet a fiscal receipt should know that is what they are doing.
+        fiscalStatus: fiscalDevice?.enabled && fiscalDevice.provider !== 'none' ? 'pending' : 'not_required',
         discountAmount,
         pointsRedeemed: redemptionAmount,
         pointsEarned,
@@ -1726,6 +1740,13 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
     .sort((a, b) => b.shortfallValue - a.shortfallValue)
     .slice(0, 20);
 
+  // Sales that never reached the tax authority. A number an owner needs on the
+  // same screen as the money, because it is the one that turns into a fine.
+  const unfiscalisedCount = await prisma.fiscalReceipt.count({
+    where: { status: { in: ['pending', 'failed'] }, document: { locationId, companyId: req.posCompanyId } },
+  });
+  const unfiscalised = { count: unfiscalisedCount };
+
   const receivedTransfers = await prisma.document.findMany({
     where: { companyId: req.posCompanyId, type: 'transfer', toLocationId: locationId, status: 'confirmed', fulfilledAt: { gte: from } },
     include: { items: { include: { product: true } }, location: true },
@@ -1767,11 +1788,137 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
         difference: shift.difference,
       })),
     },
+    unfiscalised,
     deadStock,
     expiring,
     flags: flagOutliers([...activityByUser.values()]),
     discrepancies: { counts: countDiscrepancies, transfers: transferDiscrepancies },
   });
+});
+
+// Which of this point's sales have not reached the tax authority. The
+// question a shop has to be able to answer at any moment, and can only answer
+// because a printed slip and a fiscal receipt were never treated as one thing.
+posRouter.get('/fiscal/pending', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const device = await prisma.fiscalDevice.findUnique({ where: { locationId } });
+  const receipts = await prisma.fiscalReceipt.findMany({
+    where: { status: { in: ['pending', 'failed'] }, document: { locationId, companyId: req.posCompanyId } },
+    include: { document: { include: { items: true } } },
+    orderBy: { createdAt: 'asc' },
+    take: 100,
+  });
+
+  res.json({
+    device: device ? { provider: device.provider, registrationNumber: device.registrationNumber, enabled: device.enabled } : null,
+    receipts: receipts.map((receipt) => ({
+      id: receipt.id,
+      documentId: receipt.documentId,
+      status: receipt.status,
+      attempts: receipt.attempts,
+      lastError: receipt.lastError,
+      createdAt: receipt.createdAt.toISOString(),
+      total: receipt.document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
+    })),
+  });
+});
+
+// A standalone register beside the POS is how a great many small shops in
+// Kazakhstan actually work. ANYQ doesn't talk to it: the cashier reads the
+// fiscal number off its slip and enters it here, and the sale stops being
+// unfiscalised. Unglamorous, and honest about who did what.
+posRouter.post('/fiscal/:documentId/manual', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  if (!isValidManualEntry(b.fiscalNumber)) {
+    res.status(400).json({ error: 'Введите номер фискального чека с кассового аппарата' });
+    return;
+  }
+
+  const receipt = await prisma.fiscalReceipt.findFirst({
+    where: { documentId: req.params.documentId, document: { companyId: req.posCompanyId } },
+  });
+  if (!receipt) {
+    res.status(404).json({ error: 'Чек не найден' });
+    return;
+  }
+  // Already filed. Overwriting would replace the number the tax authority has
+  // with a different one and leave no trace of the first.
+  if (receipt.status === 'registered') {
+    res.status(409).json({ error: 'Чек уже фискализирован' });
+    return;
+  }
+
+  const registration = manualRegistration(
+    String(b.fiscalNumber),
+    typeof b.fiscalSign === 'string' ? b.fiscalSign : '',
+    new Date(),
+  );
+  const updated = await prisma.fiscalReceipt.update({
+    where: { id: receipt.id },
+    data: {
+      status: 'registered',
+      fiscalNumber: registration.fiscalNumber,
+      fiscalSign: registration.fiscalSign || null,
+      registeredAt: registration.registeredAt,
+      lastError: null,
+    },
+  });
+
+  res.json({
+    documentId: updated.documentId,
+    status: updated.status,
+    fiscalNumber: updated.fiscalNumber,
+    registeredAt: updated.registeredAt?.toISOString() ?? null,
+  });
+});
+
+posRouter.put('/fiscal/device', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Настройка кассового аппарата доступна владельцу и менеджеру' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const provider = b.provider === 'manual' || b.provider === 'none' ? b.provider : null;
+  const registrationNumber = typeof b.registrationNumber === 'string' ? b.registrationNumber.trim() : '';
+  if (!provider) {
+    res.status(400).json({ error: 'Выберите способ фискализации' });
+    return;
+  }
+  // A device with no registration number can't be tied to anything the tax
+  // authority knows about, so it is not a device.
+  if (provider !== 'none' && !registrationNumber) {
+    res.status(400).json({ error: 'Укажите регистрационный номер кассового аппарата (РНМ)' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const enabled = provider !== 'none';
+  const device = await prisma.fiscalDevice.upsert({
+    where: { locationId },
+    update: { provider, registrationNumber, enabled },
+    create: { locationId, provider, registrationNumber, enabled },
+  });
+
+  res.json({ provider: device.provider, registrationNumber: device.registrationNumber, enabled: device.enabled });
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

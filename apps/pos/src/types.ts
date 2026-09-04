@@ -475,6 +475,11 @@ export interface TransferDiscrepancy {
   lines: { name: string; sent: number; received: number }[];
 }
 
+/** Sales that have not reached the tax authority. The count that turns into a fine. */
+export interface Unfiscalised {
+  count: number;
+}
+
 export interface OwnerDashboard {
   locationId: string;
   from: string;
@@ -489,8 +494,27 @@ export interface OwnerDashboard {
     netRevenue: number;
     shifts: OwnerShiftCash[];
   };
+  unfiscalised: Unfiscalised;
   deadStock: DeadStockItem[];
   expiring: ExpiringBatch[];
   flags: OwnerFlag[];
   discrepancies: { counts: CountDiscrepancy[]; transfers: TransferDiscrepancy[] };
+}
+
+export interface FiscalDevice {
+  /** 'none' — not fiscalised here. 'manual' — a standalone register beside the POS. */
+  provider: string;
+  /** РНМ: the number the register is entered in the state register under. */
+  registrationNumber: string;
+  enabled: boolean;
+}
+
+export interface PendingFiscalReceipt {
+  id: string;
+  documentId: string;
+  status: 'pending' | 'failed';
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  total: number;
 }
