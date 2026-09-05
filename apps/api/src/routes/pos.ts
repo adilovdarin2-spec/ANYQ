@@ -121,7 +121,7 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   const groupedProducts = await buildPosCatalog(user.companyId, modules, catalogLocationId);
 
   res.json({
-    token: signPosToken(user.id, user.companyId),
+    token: signPosToken(user.id, user.companyId, user.tokenVersion),
     user: { id: user.id, name: user.name, role: user.role },
     company: { id: user.company.id, name: user.company.name, slug: user.company.slug },
     modules,

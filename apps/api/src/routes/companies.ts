@@ -312,9 +312,22 @@ companiesRouter.patch('/:id/users/:userId', async (req, res) => {
     }
   }
 
+  // A new PIN or a new role is exactly the moment an old token should stop
+  // working: an owner who takes a cashier's PIN away means them to be out, not
+  // to keep selling from the token already on their phone for another month.
+  // Renaming somebody or fixing their phone number is not that, so it doesn't
+  // sign them out mid-shift.
+  const accessChanged = b.role !== existing.role || (posPin || null) !== existing.posPin;
+
   const user = await prisma.user.update({
     where: { id: existing.id },
-    data: { name: b.name, role: b.role, phone: b.phone || null, posPin: posPin || null },
+    data: {
+      name: b.name,
+      role: b.role,
+      phone: b.phone || null,
+      posPin: posPin || null,
+      ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
+    },
   });
   res.json(serializeUser(user));
 });

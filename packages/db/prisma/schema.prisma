@@ -146,6 +146,14 @@ model User {
   phone     String?
   email     String?
   posPin    String?
+  // Bumped whenever this person's access changes — a new PIN, a new role, or
+  // an outright revocation. Tokens carry the version they were minted at, so
+  // raising it retires every token already in the wild.
+  //
+  // A POS token lasts thirty days, which without this means a cashier who
+  // leaves keeps selling for a month: changing their PIN stops them logging
+  // in again and does nothing to the token already on their phone.
+  tokenVersion Int   @default(0)
   createdAt DateTime @default(now())
 
   pushSubscriptions PushSubscription[]

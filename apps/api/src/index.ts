@@ -2,6 +2,7 @@ import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import { pruneIdempotencyKeys } from './idempotency';
+import { writeRateLimit } from './rateLimit';
 import { authRouter } from './routes/auth';
 import { companiesRouter } from './routes/companies';
 import { posRouter } from './routes/pos';
@@ -34,6 +35,18 @@ app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
+});
+
+// Every mutating request, wherever it lands. Applied here rather than route by
+// route, because a limit somebody has to remember to add is one the next
+// endpoint will be missing. Reads are left alone: they cost little and a
+// throttled dashboard helps nobody.
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+  writeRateLimit(req, res, next);
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));

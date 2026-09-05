@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken';
 import type { NextFunction, Request, Response } from 'express';
+import { requireSecret } from './secrets';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'anyq-dev-secret-change-me';
+const JWT_SECRET = requireSecret('JWT_SECRET');
 
 export interface AuthedRequest extends Request {
   adminUserId?: string;
