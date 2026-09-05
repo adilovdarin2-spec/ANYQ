@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, ImportPreview, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -27,6 +27,8 @@ import {
   fetchSettlements,
   recordSettlement,
   setCounterpartyCredit,
+  previewImport,
+  commitImport,
   fetchReconciliation,
   repairReconciliation,
   fetchCountSheet,
@@ -111,6 +113,7 @@ import { WriteOffScreen } from './components/WriteOffScreen';
 import { BinsScreen } from './components/BinsScreen';
 import { BinCountScreen } from './components/BinCountScreen';
 import { ReconciliationScreen } from './components/ReconciliationScreen';
+import { ImportScreen } from './components/ImportScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
@@ -143,6 +146,7 @@ type View =
   | 'bins'
   | 'bin-count'
   | 'reconciliation'
+  | 'import'
   | 'settlements'
   | 'production'
   | 'floorplan'
@@ -151,7 +155,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -210,6 +214,13 @@ export default function App() {
   const [settlementsLoading, setSettlementsLoading] = useState(false);
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [settlementsSubmitting, setSettlementsSubmitting] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSubmitting, setImportSubmitting] = useState(false);
+  const [importResult, setImportResult] = useState<
+    { created: number; updated: number; stocked: number; skipped: number } | null
+  >(null);
   const [reconciliation, setReconciliation] = useState<ReconciliationReport | null>(null);
   const [reconciliationLoading, setReconciliationLoading] = useState(false);
   const [reconciliationError, setReconciliationError] = useState<string | null>(null);
@@ -327,6 +338,7 @@ export default function App() {
       { key: 'bins', icon: '🗄️', label: 'Ячейки', onClick: handleShowBins },
       { key: 'bin-count', icon: '🔢', label: 'Пересчёт по ячейкам', onClick: handleShowBinCount },
       { key: 'reconciliation', icon: '⚖️', label: 'Сверка журнала', onClick: handleShowReconciliation },
+      { key: 'import', icon: '📥', label: 'Импорт товаров', onClick: handleShowImport },
       { key: 'settlements', icon: '🤝', label: 'Расчёты и долги', onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
@@ -738,6 +750,52 @@ export default function App() {
       saveSession(updated);
       return updated;
     });
+  }
+
+  function handleShowImport() {
+    setView('import');
+    setImportPreview(null);
+    setImportResult(null);
+    setImportError(null);
+  }
+
+  function resetImport() {
+    setImportPreview(null);
+    setImportResult(null);
+    setImportError(null);
+  }
+
+  async function handlePreviewImport(grid: string[][]) {
+    if (!session) return;
+    setImportLoading(true);
+    setImportError(null);
+    try {
+      setImportPreview(await previewImport(session.token, grid));
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : 'Не удалось проверить файл');
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleCommitImport(grid: string[][]) {
+    if (!session || !currentLocationId) return;
+    setImportSubmitting(true);
+    setImportError(null);
+    try {
+      // A key per attempt: importing a thousand products twice because a reply
+      // was lost would double the catalogue.
+      const result = await commitImport(session.token, currentLocationId, grid, genId('import'));
+      setImportResult(result);
+      setImportPreview(null);
+      // The register sells from its cached catalogue, so it has to hear about
+      // a thousand new products.
+      await refreshCatalogAfterStockChange();
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : 'Не удалось импортировать');
+    } finally {
+      setImportSubmitting(false);
+    }
   }
 
   async function loadReconciliation() {
@@ -1976,6 +2034,20 @@ export default function App() {
           onChangeType={handleChangeSettlementType}
           onPay={handleRecordSettlement}
           onSetCredit={handleSetCredit}
+        />
+      )}
+
+      {view === 'import' && (
+        <ImportScreen
+          preview={importPreview}
+          loading={importLoading}
+          error={importError}
+          submitting={importSubmitting}
+          result={importResult}
+          onBack={() => setView('operations')}
+          onPreview={handlePreviewImport}
+          onCommit={handleCommitImport}
+          onReset={resetImport}
         />
       )}
 

@@ -1,4 +1,4 @@
-import type { Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, FiscalDevice, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, FiscalDevice, ImportPreview, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -614,4 +614,32 @@ export function repairReconciliation(
   locationId: string,
 ): Promise<{ repaired: number; documentId: string | null }> {
   return request('/pos/reconciliation/repair', { method: 'POST', body: JSON.stringify({ locationId }) }, token);
+}
+
+// Says what an import would do and changes nothing. The whole file is judged
+// before any of it is written, because an import that stops at the first bad
+// row leaves a catalogue half in and half not.
+export function previewImport(token: string, grid: string[][]): Promise<ImportPreview> {
+  return request('/pos/import/products/preview', { method: 'POST', body: JSON.stringify({ grid }) }, token);
+}
+
+export interface ImportResult {
+  created: number;
+  updated: number;
+  /** How many of the new products arrived with stock on the shelf. */
+  stocked: number;
+  skipped: number;
+}
+
+export function commitImport(
+  token: string,
+  locationId: string,
+  grid: string[][],
+  idempotencyKey: string,
+): Promise<ImportResult> {
+  return request(
+    '/pos/import/products',
+    { method: 'POST', body: JSON.stringify({ locationId, grid }), headers: { 'Idempotency-Key': idempotencyKey } },
+    token,
+  );
 }

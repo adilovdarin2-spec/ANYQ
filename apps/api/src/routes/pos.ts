@@ -49,6 +49,7 @@ import type { QuarantineAction } from '../writeoffs';
 import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErrorMessage } from '../bins';
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
 import { reconcileBalances, summarize, mismatchExplanation } from '../reconciliation';
+import { buildImportPlan } from '../import';
 import type { LedgerTotal, CachedQuantity } from '../reconciliation';
 import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
@@ -3425,6 +3426,173 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
   }, { timeout: 30000 });
 
   res.json({ repaired: mismatches.length, documentId: document.id });
+});
+
+// A catalogue arrives as a grid of strings — pasted straight out of Excel, or
+// read from a CSV. The client's job is to produce the grid; making sense of it
+// is done here, once, where it can be tested.
+const MAX_IMPORT_ROWS = 20000;
+/** Enough for somebody to see the shape of what is wrong without scrolling forever. */
+const MAX_REPORTED_PROBLEMS = 200;
+
+function readGrid(body: any): string[][] | null {
+  if (!Array.isArray(body?.grid)) return null;
+  if (body.grid.length > MAX_IMPORT_ROWS) return null;
+  return body.grid.map((row: unknown) =>
+    Array.isArray(row) ? row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))) : [],
+  );
+}
+
+async function planImport(companyId: string, grid: string[][]) {
+  const existing = await prisma.product.findMany({
+    where: { companyId },
+    select: { id: true, name: true, barcode: true },
+  });
+  return buildImportPlan(grid, existing);
+}
+
+// Says what would happen and changes nothing. An import that starts applying
+// rows and stops at the first bad one leaves a catalogue half in and half not,
+// with no way to tell which — so the whole file is judged first and the person
+// decides.
+posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Импорт доступен владельцу и менеджеру' });
+    return;
+  }
+
+  const grid = readGrid(req.body);
+  if (!grid) {
+    res.status(400).json({ error: `Не удалось прочитать таблицу — не больше ${MAX_IMPORT_ROWS} строк за раз` });
+    return;
+  }
+
+  const plan = await planImport(req.posCompanyId!, grid);
+  res.json({
+    created: plan.created,
+    updated: plan.updated,
+    skipped: plan.skipped,
+    problems: plan.problems.slice(0, MAX_REPORTED_PROBLEMS),
+    problemCount: plan.problems.length,
+    // Enough rows to recognise your own file and see the columns landed where
+    // you meant them to.
+    sample: plan.rows.slice(0, 20),
+  });
+});
+
+posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Импорт доступен владельцу и менеджеру' });
+    return;
+  }
+
+  const grid = readGrid(req.body);
+  if (!grid) {
+    res.status(400).json({ error: `Не удалось прочитать таблицу — не больше ${MAX_IMPORT_ROWS} строк за раз` });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.body?.locationId, res);
+  if (!locationId) return;
+
+  const plan = await planImport(req.posCompanyId!, grid);
+  if (plan.rows.length === 0) {
+    res.status(400).json({ error: 'В файле нет ни одной строки, которую можно импортировать', problems: plan.problems.slice(0, MAX_REPORTED_PROBLEMS) });
+    return;
+  }
+
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/import/products',
+      requestHash: hashRequestBody(req.body),
+      statusCode: 201,
+      // A thousand products is a lot of round trips, and a person is watching.
+      timeoutMs: 120000,
+    }, async (tx) => {
+      let created = 0;
+      let updated = 0;
+      let stocked = 0;
+
+      for (const row of plan.rows) {
+        if (row.existingProductId) {
+          await tx.product.update({
+            where: { id: row.existingProductId },
+            data: {
+              name: row.name,
+              category: row.category,
+              unit: row.unit,
+              barcode: row.barcode,
+              purchasePrice: row.purchasePrice,
+              salePrice: row.salePrice,
+            },
+          });
+          updated += 1;
+          continue;
+        }
+
+        const product = await tx.product.create({
+          data: {
+            companyId: req.posCompanyId!,
+            name: row.name,
+            category: row.category,
+            unit: row.unit,
+            barcode: row.barcode,
+            purchasePrice: row.purchasePrice,
+            salePrice: row.salePrice,
+          },
+        });
+        created += 1;
+
+        // Opening stock only for goods this import is introducing. Re-running a
+        // price list must not overwrite what is on the shelf: a second import
+        // would wipe a day's trading, and nobody re-imports expecting that.
+        // Correcting stock on goods that already exist is what a count is for.
+        if (row.quantity > 0) {
+          await createStockWithMovement(tx, {
+            productId: product.id,
+            locationId,
+            quantity: row.quantity,
+            // The goods were on the shelf before the system arrived. Saying so
+            // as a movement is what keeps every later figure traceable.
+            reason: 'opening',
+            createdBy: req.posUserId,
+          });
+          stocked += 1;
+        }
+      }
+
+      return { created, updated, stocked, skipped: plan.skipped, problemCount: plan.problems.length };
+    });
+
+    res.status(outcome.statusCode).json({
+      ...outcome.result,
+      problems: plan.problems.slice(0, MAX_REPORTED_PROBLEMS),
+    });
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого импорта' });
+      return;
+    }
+    throw err;
+  }
 });
 
 posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

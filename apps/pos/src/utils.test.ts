@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genId, formatMoney, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode } from './utils';
+import { genId, formatMoney, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode, parseSheet, detectDelimiter } from './utils';
 
 describe('genId', () => {
   it('includes the given prefix and generates unique ids', () => {
@@ -79,5 +79,57 @@ describe('resolveScannedBarcode', () => {
   it('returns nothing for an unknown or empty code instead of guessing', () => {
     expect(resolveScannedBarcode('0000', products)).toBeNull();
     expect(resolveScannedBarcode('  ', products)).toBeNull();
+  });
+});
+
+describe('parseSheet', () => {
+  it('reads a selection pasted straight out of Excel', () => {
+    // The clipboard gives tab-separated text, which makes pasting a complete
+    // import path with no file and no spreadsheet library.
+    const pasted = 'Наименование\tЦена\nВода 1 л\t250\nХлеб\t180';
+    expect(parseSheet(pasted)).toEqual([
+      ['Наименование', 'Цена'],
+      ['Вода 1 л', '250'],
+      ['Хлеб', '180'],
+    ]);
+  });
+
+  it('reads a CSV saved by Excel in a Russian locale, which uses semicolons', () => {
+    expect(parseSheet('Наименование;Цена\nВода;250')).toEqual([
+      ['Наименование', 'Цена'],
+      ['Вода', '250'],
+    ]);
+  });
+
+  it('reads a comma-separated file too', () => {
+    expect(parseSheet('Name,Price\nWater,250')).toEqual([
+      ['Name', 'Price'],
+      ['Water', '250'],
+    ]);
+  });
+
+  it('keeps a delimiter that sits inside a quoted cell', () => {
+    expect(parseSheet('Наименование;Цена\n"Вода, 1 л";250')).toEqual([
+      ['Наименование', 'Цена'],
+      ['Вода, 1 л', '250'],
+    ]);
+  });
+
+  it('reads a doubled quote inside a quoted cell as one quote', () => {
+    expect(parseSheet('a;b\n"Сок ""Да-Да""";100')[1][0]).toBe('Сок "Да-Да"');
+  });
+
+  it('does not emit a blank row for a Windows line ending', () => {
+    expect(parseSheet('a\tb\r\n1\t2')).toHaveLength(2);
+  });
+
+  it('trims the spaces people leave around cells', () => {
+    expect(parseSheet('  Наименование \t Цена \n Вода \t 250 ')[1]).toEqual(['Вода', '250']);
+  });
+
+  it('prefers tabs over a comma inside a product name', () => {
+    // A pasted selection is unambiguous; a comma in "Вода, 1 л" would
+    // otherwise win the delimiter count on its own.
+    expect(detectDelimiter('Наименование\tЦена\nВода, 1 л\t250')).toBe('\t');
   });
 });
