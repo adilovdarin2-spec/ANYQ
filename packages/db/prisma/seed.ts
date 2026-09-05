@@ -970,8 +970,42 @@ main()
   .then(() => seedProductionDemoData())
   .then(() => seedWeightProductDemoData())
   .then(() => seedTableDemoData())
+  // Last, so it covers everything the seeders above wrote.
+  .then(() => recordOpeningBalances())
   .catch((err) => {
     console.error(err);
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
+
+// Every stock row above landed there without a movement behind it, which is
+// how a data import would do it if nobody said otherwise — and it leaves a
+// shop failing its own ledger reconciliation from its first day, with the
+// reconciliation correctly reporting "stock exists, no movements explain it".
+//
+// Opening stock is a real event: the goods were on the shelf before the system
+// arrived. Saying so as a movement is what makes every later figure traceable,
+// and it is what the product import will have to do too.
+async function recordOpeningBalances(): Promise<void> {
+  const [rows, existing] = await Promise.all([
+    prisma.stock.findMany(),
+    prisma.stockMovement.groupBy({ by: ['productId', 'locationId', 'binLocation'] }),
+  ]);
+
+  const explained = new Set(existing.map((m) => `${m.locationId}|${m.binLocation}|${m.productId}`));
+  const missing = rows.filter(
+    (row) => row.quantity !== 0 && !explained.has(`${row.locationId}|${row.binLocation}|${row.productId}`),
+  );
+  if (missing.length === 0) return;
+
+  await prisma.stockMovement.createMany({
+    data: missing.map((row) => ({
+      productId: row.productId,
+      locationId: row.locationId,
+      binLocation: row.binLocation,
+      quantity: row.quantity,
+      reason: 'opening',
+    })),
+  });
+  console.log(`Recorded opening balances for ${missing.length} stock rows`);
+}
