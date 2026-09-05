@@ -335,6 +335,7 @@ export type StockMovementReason =
   | 'table_order'
   | 'transfer_cancelled'
   | 'return'
+  | 'opening'
   | 'batch_receipt';
 
 export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
@@ -344,6 +345,7 @@ export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
   transfer_in: 'Перемещение (куда)',
   transfer_cancelled: 'Перемещение отменено',
   return: 'Возврат от покупателя',
+  opening: 'Начальный остаток',
   receipt: 'Приёмка товара',
   adjustment: 'Инвентаризация',
   production_in: 'Производство (выпуск)',

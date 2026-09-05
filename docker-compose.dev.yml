@@ -1,0 +1,29 @@
+# The development database. Separate from anything deployed, on a non-default
+# port, so a local run can never reach a real one by accident — which the
+# shared DATABASE_URL in .env.example previously invited.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   cd packages/db && npx prisma migrate deploy && npx prisma db seed
+services:
+  db:
+    image: postgres:16-bookworm
+    container_name: anyq-db
+    environment:
+      POSTGRES_USER: anyq
+      POSTGRES_PASSWORD: anyq_dev
+      POSTGRES_DB: anyq_dev
+    # 5433, not 5432: a developer with Postgres already installed should not
+    # have to choose between the two, and a typo in a connection string should
+    # not silently land on the wrong server.
+    ports:
+      - '5433:5432'
+    volumes:
+      - anyq-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U anyq -d anyq_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  anyq-db-data:

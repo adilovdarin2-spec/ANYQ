@@ -60,6 +60,7 @@ export type StockMovementReason =
   | 'transfer_cancelled'
   | 'return'
   | 'write_off'
+  | 'opening'
   | 'receipt'
   | 'adjustment'
   | 'production_in'
@@ -365,6 +366,11 @@ export async function createStockWithMovement(
       data: {
         productId: input.productId,
         locationId: input.locationId,
+        // The same shelf the row above lands on. Omitting it defaulted the
+        // movement to the unplaced pile while the goods went to a shelf, so
+        // the first delivery into any new bin credited the ledger in one place
+        // and the stock in another — and the two never agreed again.
+        binLocation: input.binLocation ?? '',
         quantity: input.quantity,
         reason: input.reason,
         documentId: input.documentId,
