@@ -69,3 +69,82 @@ export function resolveScannedBarcode(
   }
   return null;
 }
+
+/**
+ * Turns whatever landed in the box into a grid of cells.
+ *
+ * Copying a selection out of Excel puts tab-separated text on the clipboard,
+ * so pasting is a complete import path that needs no file, no upload and no
+ * spreadsheet library — which matters, because telling a shop owner to "save
+ * as CSV first" is exactly the friction that ends a one-day launch.
+ *
+ * A saved CSV is handled too. Excel in a Russian or Kazakh locale writes
+ * semicolons rather than commas, so the delimiter is worked out from the text
+ * instead of assumed.
+ */
+export function detectDelimiter(text: string): string {
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim() !== '') ?? '';
+  const counts: Record<string, number> = {
+    '\t': (firstLine.match(/\t/g) ?? []).length,
+    ';': (firstLine.match(/;/g) ?? []).length,
+    ',': (firstLine.match(/,/g) ?? []).length,
+  };
+  // Tab first: a pasted selection is unambiguous, while a comma inside a
+  // product name would otherwise win the count on its own.
+  if (counts['\t'] > 0) return '\t';
+  if (counts[';'] >= counts[',']) return counts[';'] > 0 ? ';' : ',';
+  return ',';
+}
+
+export function parseSheet(text: string, delimiter = detectDelimiter(text)): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (quoted) {
+      if (char === '"') {
+        // A doubled quote inside a quoted cell is one literal quote.
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+
+    if (char === '"' && cell === '') {
+      quoted = true;
+      continue;
+    }
+    if (char === delimiter) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+    if (char === '\n' || char === '\r') {
+      // Swallow the second half of a CRLF rather than emitting a blank row.
+      if (char === '\r' && text[i + 1] === '\n') i += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+    cell += char;
+  }
+
+  if (cell !== '' || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows.map((r) => r.map((c) => c.trim()));
+}

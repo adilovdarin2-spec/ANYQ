@@ -700,3 +700,33 @@ export interface ReconciliationReport {
   totalDrift: number;
   mismatches: LedgerMismatch[];
 }
+
+export interface ImportProblem {
+  /** The row number in the file the person is looking at, header included. */
+  line: number;
+  /** 'error' — the row cannot be imported. 'warning' — it can, but somebody should look. */
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+export interface ImportSampleRow {
+  line: number;
+  name: string;
+  barcode: string | null;
+  unit: string;
+  purchasePrice: number;
+  salePrice: number;
+  quantity: number;
+  /** Set when this row updates something that already exists. */
+  existingProductId: string | null;
+}
+
+export interface ImportPreview {
+  created: number;
+  updated: number;
+  skipped: number;
+  problems: ImportProblem[];
+  /** Total, which may exceed what is listed. */
+  problemCount: number;
+  sample: ImportSampleRow[];
+}
