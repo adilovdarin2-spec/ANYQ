@@ -4,6 +4,10 @@
 #
 #   docker compose -f docker-compose.dev.yml up -d
 #   cd packages/db && npx prisma migrate deploy && npx prisma db seed
+#
+# And for the integration suite:
+#   DATABASE_URL=...anyq_test npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+#   DATABASE_URL=...anyq_test JWT_SECRET=test npm run test:db
 services:
   db:
     image: postgres:16-bookworm
@@ -19,6 +23,10 @@ services:
       - '5433:5432'
     volumes:
       - anyq-db-data:/var/lib/postgresql/data
+      # Creates anyq_test alongside anyq_dev on first start. The integration
+      # tests truncate every table between cases, so they must never share a
+      # database with anything a person is looking at.
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U anyq -d anyq_dev']
       interval: 5s

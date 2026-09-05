@@ -12,7 +12,8 @@
     "dev:pos": "npm run dev --workspace=apps/pos",
     "dev:orders": "npm run dev --workspace=apps/orders",
     "dev:api": "npm run dev --workspace=apps/api",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:db": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {
     "railway": "^3.6.0",
