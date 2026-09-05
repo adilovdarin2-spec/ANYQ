@@ -269,6 +269,26 @@ const run = async () => {
     rec.data?.mismatched === 0,
     `checked=${rec.data?.checked} mismatched=${rec.data?.mismatched} drift=${rec.data?.totalDrift} first=${JSON.stringify(rec.data?.mismatches?.[0] ?? null)}`);
 
+  console.log('\n== revoking access ==');
+  // Bumped straight in the database rather than through an endpoint. A route
+  // that retires somebody else's token on request is a back door, and a test
+  // hook shipped in production code is the same thing with a nicer name.
+  if (!process.env.DATABASE_URL) {
+    note('revocation not exercised — set DATABASE_URL to include it');
+  } else {
+    const { PrismaClient } = await import('@prisma/client');
+    const db = new PrismaClient();
+    try {
+      await db.user.update({ where: { id: login.data.user.id }, data: { tokenVersion: { increment: 1 } } });
+      const afterRevoke = await call('GET', `/pos/replenishment?locationId=${locationId}`);
+      check('a token minted before revocation stops working', afterRevoke.status === 401, `status=${afterRevoke.status}`);
+      // Put it back, so re-running the script does not need a fresh login.
+      await db.user.update({ where: { id: login.data.user.id }, data: { tokenVersion: { decrement: 1 } } });
+    } finally {
+      await db.$disconnect();
+    }
+  }
+
   console.log('\n== summary ==');
   if (failures.length === 0) {
     console.log('  all checks passed');
