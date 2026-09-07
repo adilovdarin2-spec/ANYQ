@@ -263,6 +263,20 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
   const fiscalDevice = await prisma.fiscalDevice.findUnique({ where: { locationId } });
+
+  // Which shift rang this. Checked rather than trusted: a sale filed against
+  // another company's shift, or one that closed hours ago, would land in
+  // somebody else's cash reconciliation.
+  let shiftId: string | null = null;
+  if (typeof b.shiftId === 'string' && b.shiftId) {
+    const shift = await prisma.shift.findFirst({
+      where: { id: b.shiftId, companyId: req.posCompanyId, locationId },
+    });
+    // Silently dropped rather than refused. A register whose shift record was
+    // lost must still be able to sell — the sale is the important part, and an
+    // unattributed one is a smaller problem than a refused one.
+    shiftId = shift ? shift.id : null;
+  }
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
 
@@ -493,6 +507,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         data: {
           companyId: req.posCompanyId!,
           locationId,
+          shiftId,
           type: 'sale',
           status: 'confirmed',
           paymentMethod: b.paymentMethod,
@@ -1722,11 +1737,25 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
   // --- Cash in the drawer, per shift -----------------------------------
   const cashByShift = shifts.map<ShiftCash>((shift) => {
     const until = shift.closedAt ?? now;
-    const matches = (doc: { createdBy: string | null; paymentMethod: string | null; createdAt: Date }) =>
-      doc.paymentMethod === 'cash' &&
-      doc.createdAt >= shift.openedAt &&
-      doc.createdAt <= until &&
-      (!shift.userId || doc.createdBy === shift.userId);
+    // A sale that says which shift it belongs to is believed. Only the ones
+    // written before that link existed fall back to the time window, and that
+    // fallback is the reason this used to be wrong: an offline sale uploaded
+    // at midnight is stamped midnight, and lands in whichever shift happened
+    // to be open then.
+    const matches = (doc: {
+      createdBy: string | null;
+      paymentMethod: string | null;
+      createdAt: Date;
+      shiftId: string | null;
+    }) => {
+      if (doc.paymentMethod !== 'cash') return false;
+      if (doc.shiftId) return doc.shiftId === shift.id;
+      return (
+        doc.createdAt >= shift.openedAt &&
+        doc.createdAt <= until &&
+        (!shift.userId || doc.createdBy === shift.userId)
+      );
+    };
 
     const takings = salesDocs.filter(matches).reduce((sum, doc) => {
       const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);

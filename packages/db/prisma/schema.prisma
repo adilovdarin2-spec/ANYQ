@@ -196,6 +196,8 @@ model Shift {
   closingCashCounted Int?
   createdAt          DateTime  @default(now())
 
+  documents          Document[]
+
   @@map("shifts")
 }
 
@@ -481,6 +483,13 @@ model Document {
   counterpartyId String?
   table         Table?        @relation(fields: [tableId], references: [id])
   tableId       String?
+  // The shift this was rung on. Kept on the document rather than worked out
+  // from time ranges, because a time range is wrong in the two cases that
+  // matter most: two registers open at once, and an offline device uploading
+  // its sales hours later — those arrive stamped with the moment they synced,
+  // which is a different shift or none at all.
+  shift         Shift?        @relation(fields: [shiftId], references: [id])
+  shiftId       String?
   // Only set for type='order' placed through the public /supply storefront —
   // where the customer wants this delivered, in their own words.
   deliveryAddress String?
@@ -520,6 +529,8 @@ model Document {
   @@index([companyId, type, createdAt])
   // Every debt figure starts from "what has this counterparty been charged".
   @@index([counterpartyId, type])
+  // Cash reconciliation reads a shift's own takings.
+  @@index([shiftId])
   @@map("documents")
 }
 

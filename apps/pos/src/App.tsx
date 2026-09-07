@@ -1771,6 +1771,7 @@ export default function App() {
     const sale: Sale = {
       id: genId('sale'),
       shiftId: shift.id,
+      shiftSyncedToServer: shift.syncedToServer,
       locationId: currentLocationId ?? '',
       items: cart,
       total: cartTotal,
