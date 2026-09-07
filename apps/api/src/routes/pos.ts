@@ -264,17 +264,34 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!locationId) return;
   const fiscalDevice = await prisma.fiscalDevice.findUnique({ where: { locationId } });
 
-  // Which shift rang this. Checked rather than trusted: a sale filed against
-  // another company's shift, or one that closed hours ago, would land in
-  // somebody else's cash reconciliation.
+  // Which shift rang this. A register that was offline when the shift opened
+  // knows only the id it generated itself, so either identifier is accepted
+  // and the client-generated one is preferred — it is the one that exists from
+  // the moment of the sale rather than from the moment the shift synced.
+  //
+  // Checked rather than trusted: a sale filed against another company's shift
+  // would land in somebody else's cash reconciliation.
   let shiftId: string | null = null;
-  if (typeof b.shiftId === 'string' && b.shiftId) {
+  const shiftClientId = typeof b.shiftClientId === 'string' && b.shiftClientId ? b.shiftClientId : null;
+  const namedShiftId = typeof b.shiftId === 'string' && b.shiftId ? b.shiftId : null;
+  if (shiftClientId || namedShiftId) {
+    // Both are tried, because a sale queued before the register learned to
+    // send a client id carries only the server's. Neither matching leaves the
+    // sale unattributed rather than guessing.
     const shift = await prisma.shift.findFirst({
-      where: { id: b.shiftId, companyId: req.posCompanyId, locationId },
+      where: {
+        companyId: req.posCompanyId,
+        locationId,
+        OR: [
+          ...(shiftClientId ? [{ clientCommandId: shiftClientId }] : []),
+          ...(namedShiftId ? [{ id: namedShiftId }] : []),
+        ],
+      },
     });
-    // Silently dropped rather than refused. A register whose shift record was
-    // lost must still be able to sell — the sale is the important part, and an
-    // unattributed one is a smaller problem than a refused one.
+    // Silently dropped rather than refused. A register whose shift has not
+    // reached the server yet must still be able to sell — the sale is the
+    // important part, and an unattributed one is a smaller problem than a
+    // refused one.
     shiftId = shift ? shift.id : null;
   }
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
@@ -902,20 +919,51 @@ posRouter.post('/shifts', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
+  const clientCommandId = typeof b.clientCommandId === 'string' && b.clientCommandId.trim()
+    ? b.clientCommandId.trim()
+    : null;
+
+  // A shift opened without a network is retried until it lands, so this has to
+  // be safe to call twice. The second attempt must find the first rather than
+  // open a second shift with its own opening float — which would double the
+  // float and split a day's takings across two reconciliations.
+  if (clientCommandId) {
+    const existing = await prisma.shift.findFirst({
+      where: { companyId: req.posCompanyId, clientCommandId },
+    });
+    if (existing) {
+      res.status(200).json({
+        id: existing.id,
+        openedAt: existing.openedAt.toISOString(),
+        clientCommandId,
+      });
+      return;
+    }
+  }
+
   const user = await prisma.user.findUnique({ where: { id: req.posUserId } });
 
+  // The register knows when the shift actually opened; the server only knows
+  // when it heard about it. For a shift that spent the morning offline those
+  // are different, and the one that matters is the register's.
+  const openedAt = typeof b.openedAt === 'string' ? new Date(b.openedAt) : new Date();
   const shift = await prisma.shift.create({
     data: {
       companyId: req.posCompanyId!,
       locationId,
       cashierName: user?.name ?? 'Кассир',
       userId: req.posUserId,
-      openedAt: new Date(),
+      openedAt: Number.isNaN(openedAt.getTime()) ? new Date() : openedAt,
       openingCash,
+      clientCommandId,
     },
   });
 
-  res.status(201).json({ id: shift.id, openedAt: shift.openedAt.toISOString() });
+  res.status(201).json({
+    id: shift.id,
+    openedAt: shift.openedAt.toISOString(),
+    clientCommandId,
+  });
 });
 
 posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -926,7 +974,14 @@ posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedReques
     return;
   }
 
-  const shift = await prisma.shift.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  // By either identifier, for the same reason a sale is: a register that was
+  // offline when the shift opened knows only the id it generated.
+  const shift = await prisma.shift.findFirst({
+    where: {
+      companyId: req.posCompanyId,
+      OR: [{ id: req.params.id }, { clientCommandId: req.params.id }],
+    },
+  });
   if (!shift) {
     res.status(404).json({ error: 'Смена не найдена' });
     return;

@@ -70,13 +70,11 @@ export interface Discount {
 
 export interface Sale {
   id: string;
-  shiftId: string;
   /**
-   * Whether `shiftId` is a server id. A shift opened offline has only a local
-   * one until it reaches the server, and sending that would file the sale
-   * against nothing.
+   * The register's own id for the shift, stable from the moment it opened
+   * whether or not there was a network. The server resolves it.
    */
-  shiftSyncedToServer: boolean;
+  shiftId: string;
   locationId: string;
   items: CartLine[];
   total: number;

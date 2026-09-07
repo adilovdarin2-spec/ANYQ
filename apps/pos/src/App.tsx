@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, ImportPreview, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
 import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
@@ -298,7 +298,17 @@ export default function App() {
   const [productSaveError, setProductSaveError] = useState<string | null>(null);
 
   const install = useInstallPrompt();
-  const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(session?.token ?? null);
+  // Held in a ref and handed over as a stable callback: the hook keeps this in
+  // its dependencies, and a fresh function each render would rebuild the sync
+  // loop on every render and fire it again with it.
+  const ensureShiftRef = useRef<() => Promise<void>>(async () => {});
+  ensureShiftRef.current = () => ensureShiftSynced();
+  const ensureShiftSyncedStable = useCallback(() => ensureShiftRef.current(), []);
+
+  const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(
+    session?.token ?? null,
+    ensureShiftSyncedStable,
+  );
   const hasSupply = session?.modules?.includes('supply') ?? false;
   const hasTerminal = session?.modules?.includes('terminal') ?? false;
   const hasPharmacy = session?.modules?.includes('pharmacy') ?? false;
@@ -1595,7 +1605,11 @@ export default function App() {
   }
 
   async function openShift(openingCash: number) {
-    let s: Shift = {
+    // The register's own id, kept whatever happens next. Replacing it with the
+    // server's on success used to mean a shift opened offline had one identity
+    // and a shift opened online had another, and sales rung before the swap
+    // pointed at an id that no longer existed.
+    const s: Shift = {
       id: genId('shift'),
       openedAt: new Date().toISOString(),
       openingCash,
@@ -1604,19 +1618,39 @@ export default function App() {
       syncedToServer: false,
     };
 
-    const locationId = currentLocationId;
-    if (session && locationId) {
-      try {
-        const remote = await createRemoteShift(session.token, { locationId, openingCash });
-        s = { ...s, id: remote.id, openedAt: remote.openedAt, syncedToServer: true };
-      } catch {
-        // offline or server unavailable — shift still works fully locally
-      }
-    }
-
     saveShift(s);
     setShift(s);
     setView('sale');
+
+    // Attempted now and retried by the sync loop for as long as it takes. A
+    // shift that never reaches the server takes its whole day's sales out of
+    // the owner's cash reconciliation with it.
+    void syncShift(s);
+  }
+
+  // Idempotent on the server by clientCommandId, so calling it again after a
+  // failure finds the shift rather than opening a second one.
+  async function syncShift(current: Shift): Promise<void> {
+    if (!session || !currentLocationId || current.syncedToServer) return;
+    try {
+      await createRemoteShift(session.token, {
+        locationId: currentLocationId,
+        openingCash: current.openingCash,
+        clientCommandId: current.id,
+        openedAt: current.openedAt,
+      });
+      const synced = { ...current, syncedToServer: true };
+      saveShift(synced);
+      setShift(synced);
+    } catch {
+      // Offline or server unavailable. The shift works fully locally and the
+      // next sync attempt will carry it.
+    }
+  }
+
+  async function ensureShiftSynced(): Promise<void> {
+    const current = getShift();
+    if (current) await syncShift(current);
   }
 
   async function closeShift(closingCashCounted: number) {
@@ -1771,7 +1805,6 @@ export default function App() {
     const sale: Sale = {
       id: genId('sale'),
       shiftId: shift.id,
-      shiftSyncedToServer: shift.syncedToServer,
       locationId: currentLocationId ?? '',
       items: cart,
       total: cartTotal,

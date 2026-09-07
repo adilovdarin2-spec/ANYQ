@@ -3,7 +3,7 @@ import { getSales, saveSales } from '../storage';
 import { useOnlineStatus } from './useOnlineStatus';
 import { submitSale, ApiError } from '../api';
 
-export function useSalesSync(token: string | null) {
+export function useSalesSync(token: string | null, ensureShiftSynced: () => Promise<void>) {
   const online = useOnlineStatus();
   const [pendingCount, setPendingCount] = useState(() => getSales().filter((s) => !s.synced && !s.syncError).length);
   const [stuckCount, setStuckCount] = useState(() => getSales().filter((s) => s.syncError).length);
@@ -19,6 +19,12 @@ export function useSalesSync(token: string | null) {
     if (!token || syncingRef.current) return;
     syncingRef.current = true;
     try {
+      // The shift first, always. A sale names its shift by the id the register
+      // generated, and the server can only resolve that once the shift itself
+      // has arrived — send them the other way round and a whole offline
+      // morning's takings land in nobody's reconciliation.
+      await ensureShiftSynced();
+
       const pending = getSales().filter((s) => !s.synced);
       for (const sale of pending) {
         if (getSales().find((s) => s.id === sale.id)?.synced) continue;
@@ -27,9 +33,7 @@ export function useSalesSync(token: string | null) {
             token,
             {
               locationId: sale.locationId,
-              // Only a shift the server knows about. An offline-opened shift
-              // has a local id that would match nothing.
-              ...(sale.shiftSyncedToServer ? { shiftId: sale.shiftId } : {}),
+              shiftClientId: sale.shiftId,
               paymentMethod: sale.paymentMethod,
               items: sale.items.map((i) => ({ productId: i.productId, quantity: i.qty, price: i.price })),
               ...(sale.discount ? { discountType: sale.discount.type, discountValue: sale.discount.value } : {}),
@@ -64,7 +68,7 @@ export function useSalesSync(token: string | null) {
       syncingRef.current = false;
       refreshPendingCount();
     }
-  }, [token, refreshPendingCount]);
+  }, [token, ensureShiftSynced, refreshPendingCount]);
 
   useEffect(() => {
     if (online) void sync();

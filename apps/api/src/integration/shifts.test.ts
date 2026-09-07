@@ -133,3 +133,125 @@ describe('which shift a sale belongs to', () => {
     expect((await shiftCash(shiftId)).expected).toBe(10600);
   });
 });
+
+describe('a shift opened without a network', () => {
+  it('is opened once however many times the register retries', async () => {
+    // Every retry that opened a second shift would add a second opening float
+    // and split one day's takings across two reconciliations.
+    const clientCommandId = 'shift-local-1';
+    const body = { locationId: fx.locationId, openingCash: 15000, clientCommandId, openedAt: new Date().toISOString() };
+
+    const first = await api(fx.token, 'POST', '/pos/shifts', body);
+    const second = await api(fx.token, 'POST', '/pos/shifts', body);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    expect(await prisma.shift.count({ where: { companyId: fx.companyId } })).toBe(1);
+  });
+
+  it('keeps the time the register says it opened, not the time the server heard', async () => {
+    // A shift that spent the morning offline opened in the morning. The server
+    // learning about it at noon does not move it.
+    const openedAt = new Date(Date.now() - 5 * 60 * 60 * 1000);
+    const created = await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 0,
+      clientCommandId: 'shift-local-2',
+      openedAt: openedAt.toISOString(),
+    });
+
+    const stored = await prisma.shift.findUnique({ where: { id: created.body.id } });
+    expect(stored?.openedAt.toISOString()).toBe(openedAt.toISOString());
+  });
+
+  it('collects the sales rung on it before it reached the server', async () => {
+    // The whole point. The register names the shift by the id it generated
+    // itself, and the sync pushes the shift first so the server can resolve it.
+    const clientCommandId = 'shift-local-3';
+    await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 10000,
+      clientCommandId,
+      openedAt: new Date().toISOString(),
+    });
+
+    const sold = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftClientId: clientCommandId,
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 3, price: 200 }],
+    });
+    expect(sold.status).toBe(201);
+
+    const dashboard = await api(fx.token, 'GET', `/pos/dashboard?locationId=${fx.locationId}&days=7`);
+    const reconciled = dashboard.body.money.shifts[0];
+    expect(reconciled.expected).toBe(10600);
+  });
+
+  it('leaves a sale unattributed rather than guessing when its shift never arrived', async () => {
+    const sold = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftClientId: 'a-shift-that-never-synced',
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+    });
+
+    expect(sold.status).toBe(201);
+    const document = await prisma.document.findUnique({ where: { id: sold.body.id } });
+    expect(document?.shiftId).toBeNull();
+  });
+
+  it('still resolves a sale queued before the register sent client ids', async () => {
+    const created = await api(fx.token, 'POST', '/pos/shifts', { locationId: fx.locationId, openingCash: 0 });
+    const sold = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftId: created.body.id,
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+    });
+
+    const document = await prisma.document.findUnique({ where: { id: sold.body.id } });
+    expect(document?.shiftId).toBe(created.body.id);
+  });
+
+  it('can be closed by the id the register generated', async () => {
+    // The register that opened it offline knows no other id for it.
+    const clientCommandId = 'shift-local-4';
+    await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 5000,
+      clientCommandId,
+      openedAt: new Date().toISOString(),
+    });
+
+    const closed = await api(fx.token, 'PATCH', `/pos/shifts/${clientCommandId}/close`, {
+      closingCashCounted: 5000,
+    });
+    expect(closed.status).toBe(200);
+
+    const stored = await prisma.shift.findFirst({ where: { clientCommandId } });
+    expect(stored?.closedAt).not.toBeNull();
+  });
+
+  it('keeps two registers\u2019 own ids apart', async () => {
+    const other = await createFixture();
+    await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 1000,
+      clientCommandId: 'same-local-id',
+      openedAt: new Date().toISOString(),
+    });
+    const theirs = await api(other.token, 'POST', '/pos/shifts', {
+      locationId: other.locationId,
+      openingCash: 2000,
+      clientCommandId: 'same-local-id',
+      openedAt: new Date().toISOString(),
+    });
+
+    // Unique per company, not globally: two registers in two shops generate
+    // their ids independently and must not collide.
+    expect(theirs.status).toBe(201);
+    expect(await prisma.shift.count()).toBe(2);
+  });
+});
