@@ -27,6 +27,9 @@ export function useSalesSync(token: string | null) {
             token,
             {
               locationId: sale.locationId,
+              // Only a shift the server knows about. An offline-opened shift
+              // has a local id that would match nothing.
+              ...(sale.shiftSyncedToServer ? { shiftId: sale.shiftId } : {}),
               paymentMethod: sale.paymentMethod,
               items: sale.items.map((i) => ({ productId: i.productId, quantity: i.qty, price: i.price })),
               ...(sale.discount ? { discountType: sale.discount.type, discountValue: sale.discount.value } : {}),

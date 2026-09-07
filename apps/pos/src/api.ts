@@ -50,6 +50,13 @@ export function posLogin(pin: string): Promise<PosSession> {
 
 export interface SubmitSalePayload {
   locationId: string;
+  /**
+   * The server-side shift this was rung on, when there is one. A shift opened
+   * while offline has only a local id until it reaches the server, and a sale
+   * carrying that would be filed against nothing — so it is sent only once the
+   * shift is known to both sides.
+   */
+  shiftId?: string;
   paymentMethod: PaymentMethod;
   items: { productId: string; quantity: number; price: number }[];
   discountType?: DiscountType;

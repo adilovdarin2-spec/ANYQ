@@ -1,5 +1,10 @@
 # ANYQ — Product Vision & Engineering Constraints
 
+> **Product decision — 2026-09-05.** ANYQ is a retail, warehouse, distribution
+> and small-network platform. Restaurant/HoReCa functionality is legacy code,
+> is not sold, is not enabled for new customers, and must not receive roadmap
+> capacity. References below document earlier implementation history only.
+
 Distilled from the "Universal Business OS" strategy brief (2026-07-28). This is not a build
 spec for right now — it's the north star that future architecture decisions should be checked
 against. See [PRICING.md](PRICING.md) for the current tariff grid.
