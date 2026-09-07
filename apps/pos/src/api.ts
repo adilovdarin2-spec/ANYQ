@@ -51,12 +51,12 @@ export function posLogin(pin: string): Promise<PosSession> {
 export interface SubmitSalePayload {
   locationId: string;
   /**
-   * The server-side shift this was rung on, when there is one. A shift opened
-   * while offline has only a local id until it reaches the server, and a sale
-   * carrying that would be filed against nothing — so it is sent only once the
-   * shift is known to both sides.
+   * The id the register generated when it opened the shift. Sent always,
+   * because it exists from the moment of the sale — unlike the server's id,
+   * which does not exist until the shift syncs. The server resolves it, and
+   * the sync pushes the shift before any of its sales so that it can.
    */
-  shiftId?: string;
+  shiftClientId?: string;
   paymentMethod: PaymentMethod;
   items: { productId: string; quantity: number; price: number }[];
   discountType?: DiscountType;
@@ -101,9 +101,12 @@ export function fetchCustomerPoints(token: string, phone: string): Promise<Custo
   return request(`/pos/customers?phone=${encodeURIComponent(phone)}`, { method: 'GET' }, token);
 }
 
+// Safe to call twice with the same clientCommandId: the second attempt finds
+// the first shift rather than opening a second one with its own opening float.
+// That is what makes a shift opened without a network retryable until it lands.
 export function createRemoteShift(
   token: string,
-  payload: { locationId: string; openingCash: number },
+  payload: { locationId: string; openingCash: number; clientCommandId: string; openedAt: string },
 ): Promise<{ id: string; openedAt: string }> {
   return request('/pos/shifts', { method: 'POST', body: JSON.stringify(payload) }, token);
 }

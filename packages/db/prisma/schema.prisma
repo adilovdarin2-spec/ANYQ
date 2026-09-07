@@ -194,10 +194,20 @@ model Shift {
   openingCash        Int
   closedAt           DateTime?
   closingCashCounted Int?
+  // The id the register generated when the shift was opened, which is stable
+  // from that moment whether or not there was a network. `id` is the server's
+  // key and does not exist until the shift reaches it, so a sale rung offline
+  // has nothing else to point at.
+  //
+  // Unique per company, which is also what makes opening a shift safe to
+  // retry: a second attempt finds the first rather than opening a second
+  // shift with its own opening float.
+  clientCommandId    String?
   createdAt          DateTime  @default(now())
 
   documents          Document[]
 
+  @@unique([companyId, clientCommandId])
   @@map("shifts")
 }
 
