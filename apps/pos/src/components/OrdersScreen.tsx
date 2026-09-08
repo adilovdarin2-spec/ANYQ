@@ -10,9 +10,11 @@ interface Props {
   onRefresh: () => void;
   onFulfill: (id: string) => void;
   onReject: (id: string) => void;
+  /** Opens the pick list for this order. */
+  onPick: (id: string) => void;
 }
 
-export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefresh, onFulfill, onReject }: Props) {
+export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefresh, onFulfill, onReject, onPick }: Props) {
   const pending = orders.filter((o) => o.status === 'pending');
   const resolved = orders.filter((o) => o.status !== 'pending');
 
@@ -44,14 +46,30 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefr
                 <div className="order-items">
                   {o.items.map((it) => (
                     <div key={it.productId} className="order-item-row">
-                      <span>{it.name} × {it.quantity}</span>
+                      {/* The picked figure beside the ordered one, so somebody
+                          returning to a half-walked order can see where it got
+                          to without opening it. */}
+                      <span>
+                        {it.name} × {it.quantity}
+                        {it.pickedQuantity !== null && it.pickedQuantity < it.quantity
+                          ? ` · собрано ${it.pickedQuantity}`
+                          : ''}
+                      </span>
                       <span>{formatMoney(it.price * it.quantity)}</span>
                     </div>
                   ))}
                 </div>
+                {o.stage !== 'pending' && (
+                  <span className="order-meta">
+                    {o.stageLabel}{o.shortfall > 0 ? ` · не хватает ${o.shortfall}` : ''}
+                  </span>
+                )}
                 <div className="order-actions">
                   <button className="btn btn-secondary" disabled={busyOrder?.id === o.id} onClick={() => onReject(o.id)}>
                     {busyOrder?.id === o.id && busyOrder.action === 'reject' ? 'Отклоняем…' : 'Отклонить'}
+                  </button>
+                  <button className="btn btn-secondary" disabled={busyOrder?.id === o.id} onClick={() => onPick(o.id)}>
+                    Собрать
                   </button>
                   <button className="btn btn-primary" disabled={busyOrder?.id === o.id} onClick={() => onFulfill(o.id)}>
                     {busyOrder?.id === o.id && busyOrder.action === 'fulfill' ? 'Выдаём…' : 'Выдать'}

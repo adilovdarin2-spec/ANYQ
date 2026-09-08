@@ -779,3 +779,23 @@ export function createSupplierReturn(
     token,
   );
 }
+
+/**
+ * Records what a picker found. Safe to call repeatedly, rack by rack: a line
+ * left out keeps whatever was picked for it before.
+ */
+export function pickOrder(
+  token: string,
+  orderId: string,
+  items: { productId: string; quantity: number }[],
+): Promise<{ stage: string; stageLabel: string; complete: boolean; shortfall: number }> {
+  return request(`/pos/orders/${orderId}/pick`, { method: 'POST', body: JSON.stringify({ items }) }, token);
+}
+
+/** Ships what was picked, and releases the hold on what was not found. */
+export function shipOrder(
+  token: string,
+  orderId: string,
+): Promise<{ id: string; shipped: number; released: number; partial: boolean }> {
+  return request(`/pos/orders/${orderId}/ship`, { method: 'POST' }, token);
+}

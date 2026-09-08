@@ -688,6 +688,10 @@ model DocumentItem {
   // numbers survive — overwriting quantity with what turned up would erase
   // the discrepancy at the moment it is discovered.
   receivedQuantity Float?
+  /// What was found on the shelves, against the `quantity` ordered. Null until
+  /// somebody walked the racks for this line; zero means they looked and it was
+  /// not there, which is a finding rather than an absence.
+  pickedQuantity   Float?
   price         Int
   // Restaurant Pack KDS status. Only meaningful for dine-in table orders
   // (type='sale', tableId set) — every other document type ignores it.
