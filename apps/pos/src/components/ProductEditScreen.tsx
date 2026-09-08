@@ -35,6 +35,8 @@ export function ProductEditScreen({
   const [category, setCategory] = useState(product?.category ?? '');
   const [unit, setUnit] = useState(product?.unit ?? 'шт');
   const [barcode, setBarcode] = useState(product?.barcode ?? '');
+  const [ntinCode, setNtinCode] = useState(product?.ntinCode ?? '');
+  const [taxMode, setTaxMode] = useState(product?.taxMode ?? '');
   const [purchasePrice, setPurchasePrice] = useState(product ? String(product.purchasePrice) : '');
   const [salePrice, setSalePrice] = useState(product ? String(product.salePrice) : '');
   const [sellable, setSellable] = useState(product?.sellable ?? true);
@@ -68,6 +70,8 @@ export function ProductEditScreen({
       category: category.trim(),
       unit: unit.trim(),
       barcode: barcode.trim(),
+      ntinCode: ntinCode.trim(),
+      taxMode: taxMode.trim(),
       purchasePrice: purchase,
       salePrice: sale,
       sellable,
@@ -98,6 +102,20 @@ export function ProductEditScreen({
         <div className="form-field">
           <label htmlFor="p-barcode">Штрихкод</label>
           <input id="p-barcode" type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Необязательно" />
+        </div>
+
+        <div className="field">
+          <label htmlFor="p-ntin">Код НКТ</label>
+          <input id="p-ntin" type="text" inputMode="numeric" value={ntinCode} onChange={(e) => setNtinCode(e.target.value)} placeholder="Для маркированных товаров" />
+          {/* Not decoration: a fiscal receipt line for goods subject to
+              marking must carry this code, and one without it is a violation
+              rather than merely an incomplete record. */}
+          <span className="field-hint">Нужен в фискальном чеке для маркированных товаров.</span>
+        </div>
+
+        <div className="field">
+          <label htmlFor="p-tax">Режим НДС</label>
+          <input id="p-tax" type="text" value={taxMode} onChange={(e) => setTaxMode(e.target.value)} placeholder="Необязательно" />
         </div>
         <div className="field-row">
           <div className="field">

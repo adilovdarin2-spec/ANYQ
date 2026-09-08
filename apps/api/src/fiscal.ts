@@ -6,6 +6,16 @@ export interface FiscalLine {
   price: number;
   /** Whatever the product is configured with; providers map it to their own codes. */
   taxMode: string | null;
+  /**
+   * The goods classifier code (НКТ / ТН ВЭД).
+   *
+   * Required on a receipt line for goods subject to marking in Kazakhstan, and
+   * a receipt missing it for such goods is not merely incomplete — it is a
+   * violation. Null for everything else, and null is a different thing from
+   * absent: it says this product has no code, not that nobody filled the field
+   * in.
+   */
+  ntinCode: string | null;
 }
 
 export interface FiscalPayload {

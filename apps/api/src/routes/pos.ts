@@ -1331,6 +1331,8 @@ function serializePosProduct(
     category: string | null;
     unit: string;
     barcode: string | null;
+    ntinCode?: string | null;
+    taxMode?: string | null;
     purchasePrice: number;
     salePrice: number;
     sellable: boolean;
@@ -1344,6 +1346,8 @@ function serializePosProduct(
     category: p.category ?? '',
     unit: p.unit,
     barcode: p.barcode ?? '',
+    ntinCode: p.ntinCode ?? '',
+    taxMode: p.taxMode ?? '',
     purchasePrice: p.purchasePrice,
     salePrice: p.salePrice,
     sellable: p.sellable,
@@ -1398,6 +1402,11 @@ posRouter.post('/products', requirePosAuth, async (req: PosAuthedRequest, res) =
       category: b.category || null,
       unit: b.unit,
       barcode: b.barcode || null,
+      // The classifier code and tax mode a fiscal receipt needs. Both existed
+      // in the schema and could not be set from anywhere, which made them
+      // columns rather than facts.
+      ntinCode: typeof b.ntinCode === 'string' && b.ntinCode.trim() ? b.ntinCode.trim() : null,
+      taxMode: typeof b.taxMode === 'string' && b.taxMode.trim() ? b.taxMode.trim() : null,
       purchasePrice,
       salePrice,
       sellable: b.sellable !== false,
@@ -1438,6 +1447,8 @@ posRouter.patch('/products/:id', requirePosAuth, async (req: PosAuthedRequest, r
         category: b.category || null,
         unit: b.unit,
         barcode: b.barcode || null,
+        ntinCode: typeof b.ntinCode === 'string' && b.ntinCode.trim() ? b.ntinCode.trim() : null,
+        taxMode: typeof b.taxMode === 'string' && b.taxMode.trim() ? b.taxMode.trim() : null,
         purchasePrice,
         salePrice,
         sellable: !!b.sellable,
@@ -2011,8 +2022,10 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
       orderBy: { name: 'asc' },
       take: LIMIT,
     });
-    header = ['Название', 'Категория', 'Единица', 'Штрихкод', 'Закупочная цена', 'Цена продажи', 'В продаже'];
-    rows = products.map((p) => [p.name, p.category, p.unit, p.barcode, p.purchasePrice, p.salePrice, p.sellable]);
+    header = ['Название', 'Категория', 'Единица', 'Штрихкод', 'НКТ', 'Режим НДС', 'Закупочная цена', 'Цена продажи', 'В продаже'];
+    rows = products.map((p) => [
+      p.name, p.category, p.unit, p.barcode, p.ntinCode, p.taxMode, p.purchasePrice, p.salePrice, p.sellable,
+    ]);
   }
 
   if (dataset === 'stock') {
