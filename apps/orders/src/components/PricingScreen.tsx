@@ -95,10 +95,10 @@ const TIERS: {
   {
     key: 'enterprise',
     name: 'Индивидуально',
-    tag: 'HoReCa и крупный бизнес',
+    tag: 'Опт и крупный бизнес',
     price: CORE_BASE + SUPPLY_FIRST_WAREHOUSE,
     priceNote: 'от',
-    desc: 'HoReCa-поставщикам и крупным сетям — модуль Supply (B2B-витрина заказов) и личный менеджер.',
+    desc: 'Оптовым поставщикам и крупным сетям — модуль Supply (B2B-витрина заказов) и личный менеджер.',
     features: ['Публичная витрина заказов Supply', 'Push-уведомления о заказах', 'Личный менеджер', 'Индивидуальные условия'],
     badge: null,
     message: 'Здравствуйте! Хочу обсудить индивидуальный тариф ANYQ (Supply / крупная сеть) — подскажите точный расчёт.',
@@ -259,7 +259,7 @@ export function PricingScreen() {
           <label className="calc-toggle-row">
             <span>
               <span className="calc-row-label">Модуль Supply</span>
-              <span className="calc-row-hint">B2B-витрина для HoReCa-поставщиков и складов</span>
+              <span className="calc-row-hint">B2B-витрина для оптовых поставщиков и складов</span>
             </span>
             <input type="checkbox" checked={supplyEnabled} onChange={(e) => setSupplyEnabled(e.target.checked)} />
           </label>
