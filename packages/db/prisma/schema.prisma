@@ -20,7 +20,33 @@ model AdminUser {
   name         String
   createdAt    DateTime @default(now())
 
+  /// Confirmed second factor. Null until somebody has proved with a working
+  /// code that the secret really reached their phone.
+  totpSecret        String?
+  /// A setup started and not yet confirmed. Kept apart so an owner who scans
+  /// a QR and closes the tab has not locked themselves out.
+  pendingTotpSecret String?
+  totpEnabledAt     DateTime?
+
+  recoveryCodes AdminRecoveryCode[]
+
   @@map("admin_users")
+}
+
+/// For the day the phone is lost. Hashed, because a recovery code is a
+/// password with a longer name.
+model AdminRecoveryCode {
+  id          String    @id @default(cuid())
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  adminUserId String
+  codeHash    String
+  /// Set the moment it is spent: a code that works twice is a password that
+  /// survived being written on paper.
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([adminUserId])
+  @@map("admin_recovery_codes")
 }
 
 model Company {

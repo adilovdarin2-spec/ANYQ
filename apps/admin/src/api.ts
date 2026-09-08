@@ -5,9 +5,22 @@ export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-pr
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /**
+   * The refusal's own body.
+   *
+   * A failed login is not only a message: it also says whether a second factor
+   * is what was missing, and the screen cannot ask for a code it does not know
+   * is wanted.
+   */
+  body: Record<string, unknown>;
+  constructor(message: string, status: number, body: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
+    this.body = body;
+  }
+
+  get mfaRequired(): boolean {
+    return this.body.mfaRequired === true;
   }
 }
 
@@ -21,7 +34,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.error || 'Ошибка запроса', res.status);
+    throw new ApiError(data.error || 'Ошибка запроса', res.status, data);
   }
   return data as T;
 }
@@ -31,8 +44,43 @@ export interface LoginResult {
   user: { id: string; email: string; name: string };
 }
 
-export function login(email: string, password: string): Promise<LoginResult> {
-  return request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+// `code` is the six digits from an authenticator, or one of the recovery
+// codes. Sent on the same request as the password rather than as a second
+// step, because a two-request flow needs somewhere to keep the half-finished
+// login, and a short-lived server-side challenge is a thing to expire, to
+// store and to get wrong.
+export function login(email: string, password: string, code?: string): Promise<LoginResult> {
+  return request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, ...(code ? { code } : {}) }),
+  });
+}
+
+export interface MfaSetup {
+  secret: string;
+  otpauthUri: string;
+}
+
+export function startMfaSetup(token: string): Promise<MfaSetup> {
+  return request('/auth/mfa/setup', { method: 'POST' }, token);
+}
+
+export function enableMfa(token: string, code: string): Promise<{ enabled: boolean; recoveryCodes: string[] }> {
+  return request('/auth/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }, token);
+}
+
+export function disableMfa(token: string, password: string, code: string): Promise<{ enabled: boolean }> {
+  return request('/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) }, token);
+}
+
+export function fetchMe(token: string): Promise<{
+  id: string;
+  email: string;
+  name: string;
+  mfaEnabled: boolean;
+  recoveryCodesLeft: number;
+}> {
+  return request('/auth/me', {}, token);
 }
 
 export function getCompanies(token: string): Promise<Company[]> {

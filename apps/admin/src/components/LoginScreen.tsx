@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { login } from '../api';
+import { ApiError, login } from '../api';
 
 interface Props {
   onLogin: (token: string, user: { id: string; email: string; name: string }) => void;
@@ -9,6 +9,11 @@ interface Props {
 export function LoginScreen({ onLogin }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  // Shown only once the server has said a code is wanted, which it says only
+  // after the password is right. A code box on every login would tell anybody
+  // with a list of emails which accounts have a second factor worth attacking.
+  const [codeWanted, setCodeWanted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -17,9 +22,10 @@ export function LoginScreen({ onLogin }: Props) {
     setError(null);
     setLoading(true);
     try {
-      const result = await login(email, password);
+      const result = await login(email, password, code.trim() || undefined);
       onLogin(result.token, result.user);
     } catch (err) {
+      if (err instanceof ApiError && err.mfaRequired) setCodeWanted(true);
       setError(err instanceof Error ? err.message : 'Не удалось войти');
     } finally {
       setLoading(false);
@@ -42,6 +48,20 @@ export function LoginScreen({ onLogin }: Props) {
           <label htmlFor="password">Пароль</label>
           <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
+        {codeWanted && (
+          <div className="field" style={{ marginTop: 14 }}>
+            <label htmlFor="code">Код из приложения</label>
+            <input
+              id="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+            <span className="field-hint">Или один из кодов восстановления, если телефона нет под рукой.</span>
+          </div>
+        )}
         {error && <div className="login-error">{error}</div>}
         <button className="btn btn-primary btn-block" style={{ marginTop: 20 }} disabled={loading} type="submit">
           {loading ? 'Входим…' : 'Войти'}
