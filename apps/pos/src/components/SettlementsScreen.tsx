@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { SettlementAccount } from '../types';
 import { formatMoney } from '../utils';
 
@@ -27,6 +28,7 @@ export function SettlementsScreen({
   onPay,
   onSetCredit,
 }: Props) {
+  const { t } = useTranslation();
   const [payingId, setPayingId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [creditId, setCreditId] = useState<string | null>(null);
@@ -54,9 +56,9 @@ export function SettlementsScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Расчёты</span>
-        <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('settle.title')}</span>
+        <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>
 
       <div className="screen-body">
@@ -66,22 +68,22 @@ export function SettlementsScreen({
             className={type === 'customer' ? 'category-chip on' : 'category-chip'}
             onClick={() => onChangeType('customer')}
           >
-            Нам должны
+            {t('settle.owedToUs')}
           </button>
           <button
             type="button"
             className={type === 'supplier' ? 'category-chip on' : 'category-chip'}
             onClick={() => onChangeType('supplier')}
           >
-            Мы должны
+            {t('settle.weOwe')}
           </button>
         </div>
 
         {error && <div className="login-error">{error}</div>}
-        {loading && accounts.length === 0 && <div className="empty-state">Загрузка…</div>}
+        {loading && accounts.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
         {!loading && accounts.length === 0 && !error && (
           <div className="empty-state">
-            {type === 'customer' ? 'Никто не должен — все рассчитались' : 'Поставщикам ничего не должны'}
+            {type === 'customer' ? t('settle.allSettledCustomers') : t('settle.allSettledSuppliers')}
           </div>
         )}
 
@@ -89,14 +91,14 @@ export function SettlementsScreen({
           <div className="report-cards">
             <div className="report-card">
               <span className="value">{formatMoney(total)}</span>
-              <span className="label">{type === 'customer' ? 'Должны нам' : 'Должны мы'}</span>
+              <span className="label">{type === 'customer' ? t('owner.owedToUs') : t('owner.weOwe')}</span>
             </div>
             {/* Age, not just amount: the same sum owed since yesterday and
                 owed since spring are different situations. */}
             {overdue > 0 && (
               <div className="report-card">
                 <span className="value">{formatMoney(overdue)}</span>
-                <span className="label">Старше месяца</span>
+                <span className="label">{t('settle.olderThanMonth')}</span>
               </div>
             )}
           </div>
@@ -113,7 +115,7 @@ export function SettlementsScreen({
                   <div className="order-customer">{account.name}</div>
                   <div className="order-meta">
                     {account.phone ? `${account.phone} · ` : ''}
-                    открытых документов: {account.openCount}
+                    {t('settle.openDocuments', { count: account.openCount })}
                   </div>
                 </div>
                 <span className={account.aging.over60 > 0 ? 'pill warn' : 'pill'}>{formatMoney(account.balance)}</span>
@@ -122,25 +124,25 @@ export function SettlementsScreen({
               <div className="order-items">
                 {account.aging.current > 0 && (
                   <div className="order-item-row">
-                    <span>До недели</span>
+                    <span>{t('settle.upToWeek')}</span>
                     <span>{formatMoney(account.aging.current)}</span>
                   </div>
                 )}
                 {account.aging.days8to30 > 0 && (
                   <div className="order-item-row">
-                    <span>8–30 дней</span>
+                    <span>{t('settle.days8to30')}</span>
                     <span>{formatMoney(account.aging.days8to30)}</span>
                   </div>
                 )}
                 {account.aging.days31to60 > 0 && (
                   <div className="order-item-row">
-                    <span>31–60 дней</span>
+                    <span>{t('settle.days31to60')}</span>
                     <span>{formatMoney(account.aging.days31to60)}</span>
                   </div>
                 )}
                 {account.aging.over60 > 0 && (
                   <div className="order-item-row">
-                    <span>Больше 60 дней</span>
+                    <span>{t('settle.over60')}</span>
                     <span>{formatMoney(account.aging.over60)}</span>
                   </div>
                 )}
@@ -148,7 +150,7 @@ export function SettlementsScreen({
 
               {!paying && (
                 <button className="btn btn-primary btn-block" onClick={() => { setPayingId(account.counterpartyId); setAmount(String(Math.max(account.balance, 0))); }}>
-                  {type === 'customer' ? 'Принять оплату' : 'Оплатить поставщику'}
+                  {type === 'customer' ? t('settle.takePayment') : t('settle.payySupplier')}
                 </button>
               )}
 
@@ -156,20 +158,20 @@ export function SettlementsScreen({
                 <>
                   {/* Oldest first, always — so the aging figures above keep
                       meaning something. */}
-                  <p className="field-hint">Платёж закроет самые старые документы. Остаток останется на счёте.</p>
+                  <p className="field-hint">{t('settle.oldestFirst')}</p>
                   <div className="transfer-add-row">
                     <input
                       type="number"
                       min="0"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
-                      aria-label="Сумма платежа"
+                      aria-label={t('settle.amount')}
                     />
                     <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => pay(account)}>
-                      {submitting ? 'Проводим…' : 'Провести'}
+                      {submitting ? t('settle.posting') : t('settle.post')}
                     </button>
                   </div>
-                  <button className="btn btn-ghost btn-block" onClick={() => setPayingId(null)}>Отмена</button>
+                  <button className="btn btn-ghost btn-block" onClick={() => setPayingId(null)}>{t('common.cancel')}</button>
                 </>
               )}
 
@@ -182,7 +184,11 @@ export function SettlementsScreen({
                     setCreditLimit(String(account.creditLimit));
                   }}
                 >
-                  {account.creditAllowed ? `Долг разрешён${account.creditLimit > 0 ? ` до ${formatMoney(account.creditLimit)}` : ''}` : 'Долг не разрешён'}
+                  {account.creditAllowed
+                        ? account.creditLimit > 0
+                          ? t('settle.creditUpTo', { amount: formatMoney(account.creditLimit) })
+                          : t('settle.creditAllowed')
+                        : t('settle.creditDenied')}
                 </button>
               )}
 
@@ -190,23 +196,23 @@ export function SettlementsScreen({
                 <>
                   <label className="checkbox-row">
                     <input type="checkbox" checked={creditAllowed} onChange={(e) => setCreditAllowed(e.target.checked)} />
-                    Разрешить отпуск в долг
+                    {t('settle.allowCredit')}
                   </label>
-                  <p className="field-hint">Лимит 0 означает «без ограничения». Чтобы запретить долг — снимите галочку.</p>
+                    <p className="field-hint">{t('settle.limitWhy')}</p>
                   <div className="transfer-add-row">
                     <input
                       type="number"
                       min="0"
-                      placeholder="Лимит долга"
+                      placeholder={t('settle.creditLimit')}
                       value={creditLimit}
                       onChange={(e) => setCreditLimit(e.target.value)}
-                      aria-label="Лимит долга"
+                      aria-label={t('settle.creditLimit')}
                     />
                     <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => saveCredit(account)}>
-                      Сохранить
+                      {t('common.save')}
                     </button>
                   </div>
-                  <button className="btn btn-ghost btn-block" onClick={() => setCreditId(null)}>Отмена</button>
+                  <button className="btn btn-ghost btn-block" onClick={() => setCreditId(null)}>{t('common.cancel')}</button>
                 </>
               )}
             </div>

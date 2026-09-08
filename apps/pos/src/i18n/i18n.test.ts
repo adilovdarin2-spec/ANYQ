@@ -59,8 +59,8 @@ describe('the Kazakh dictionary', () => {
     // ANYQ Касса), or a borrowing Kazakh spells exactly as Russian does —
     // карта, чек, клиент, касса, профиль, and the job titles кассир, менеджер
     // and фармацевт, and стеллаж, which a Kazakh warehouse also calls a
-    // стеллаж. Anything else appearing here is a phrase somebody pasted
-    // and did not translate.
+    // стеллаж, plus штрихкод and карантин. Anything else appearing here is a
+    // phrase somebody pasted and did not translate.
     const sameAsRussian = (Object.entries(kk) as [keyof typeof ru, string][])
       .filter(([key, phrase]) => phrase === ru[key])
       .map(([key]) => key)
@@ -69,6 +69,7 @@ describe('the Kazakh dictionary', () => {
       'bins.rack',
       'payment.card',
       'payment.kaspi',
+      'product.barcode',
       'receipt.brand',
       'receipt.customer',
       'receipt.title',
@@ -77,6 +78,7 @@ describe('the Kazakh dictionary', () => {
       'role.pharmacist',
       'tab.profile',
       'tab.sale',
+      'writeOff.quarantine',
     ]);
   });
 });
