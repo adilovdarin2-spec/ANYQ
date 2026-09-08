@@ -61,7 +61,10 @@ export interface SubmitSalePayload {
    * the sync pushes the shift before any of its sales so that it can.
    */
   shiftClientId?: string;
-  paymentMethod: PaymentMethod;
+  /** The single method, or 'mixed'. Kept for servers that predate splits. */
+  paymentMethod: PaymentMethod | 'mixed';
+  /** One line per method. A sale settled one way is a split of one. */
+  payments?: { method: PaymentMethod; amount: number }[];
   items: { productId: string; quantity: number; price: number }[];
   discountType?: DiscountType;
   discountValue?: number;

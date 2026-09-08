@@ -43,9 +43,25 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
           )}
           <div className="receipt-divider"></div>
           <div className="receipt-total"><span>Итого</span><span>{formatMoney(sale.total)}</span></div>
-          <div className="receipt-line" style={{ marginTop: 6 }}>
-            <span>Оплата</span><span>{PAYMENT_LABELS[sale.paymentMethod]}</span>
-          </div>
+          {/* A split is printed line by line rather than as the word "mixed".
+              The customer needs to see which part went on the card, and a
+              return is argued from this slip. */}
+          {sale.payments && sale.payments.length > 1 ? (
+            sale.payments.map((line) => (
+              <div key={line.method} className="receipt-line" style={{ marginTop: 6 }}>
+                <span>{PAYMENT_LABELS[line.method]}</span><span>{formatMoney(line.amount)}</span>
+              </div>
+            ))
+          ) : (
+            <div className="receipt-line" style={{ marginTop: 6 }}>
+              <span>Оплата</span>
+              <span>
+                {sale.paymentMethod === 'mixed'
+                  ? 'Смешанная'
+                  : PAYMENT_LABELS[sale.paymentMethod]}
+              </span>
+            </div>
+          )}
           {sale.customerName && (
             <div className="receipt-line">
               <span>Клиент</span><span>{sale.customerName}</span>

@@ -59,6 +59,8 @@ import { allocateFefo, classifyExpiry } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity } from '../counts';
+import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy } from '../payments';
+import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
 import { findPriceMismatches } from '../pricing';
@@ -241,7 +243,8 @@ function saleDiscount(document: { discountType: string | null; discountValue: nu
 posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const items: SaleItemInput[] = Array.isArray(b.items) ? b.items : [];
-  if (items.length === 0 || !b.paymentMethod || hasInvalidQuantity(items)) {
+  const paidSomehow = b.paymentMethod || (Array.isArray(b.payments) && b.payments.length > 0);
+  if (items.length === 0 || !paidSomehow || hasInvalidQuantity(items)) {
     res.status(400).json({ error: 'Некорректные данные продажи' });
     return;
   }
@@ -335,7 +338,21 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   // "On credit, and only with permission." The permission is the account: a
   // cashier can let a regular the owner has set up take goods away, and cannot
   // open one for a phone number typed at the counter.
-  if (b.paymentMethod === 'credit') {
+  const creditLines = Array.isArray(b.payments)
+    ? b.payments.filter((line: { method?: unknown }) => line?.method === 'credit')
+    : [];
+  // Said here rather than left to the split check further down, so the cashier
+  // is told the real reason. Otherwise a half-credit sale falls into the credit
+  // limit check below and comes back as "this customer may not take goods on
+  // credit", which is a different objection and sends them looking for the
+  // wrong fix.
+  if (creditLines.length > 0 && Array.isArray(b.payments) && b.payments.length > 1) {
+    res.status(400).json({ error: paymentErrorMessage({ status: 'mixedCredit' }) });
+    return;
+  }
+
+  const onCredit = b.paymentMethod === 'credit' || creditLines.length > 0;
+  if (onCredit) {
     const account = customerPhone
       ? await prisma.counterparty.findFirst({
           where: { companyId: req.posCompanyId, phone: customerPhone, type: 'customer' },
@@ -517,6 +534,17 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         );
       }
 
+      // Checked here rather than at the top of the route because the amount
+      // actually collected is only known now: loyalty points come off the
+      // total, and how many the customer really has is a fact about the
+      // database, not about what the register believed at the counter. If the
+      // two disagree the split will not add up and the sale is refused, which
+      // is the right outcome — taking a different amount than the customer
+      // agreed to is worse than making them ring it again.
+      const paymentResolution = resolveSalePayments(b, finalTotal);
+      if (paymentResolution.status !== 'ok') throw new PaymentError(paymentResolution);
+      const { payments: paymentLines, method: recordedMethod } = paymentResolution;
+
       // Document is created before the stock movements so each ledger row can
       // reference it — if a shortage were found it would have thrown already,
       // so by this point the transaction is committing regardless.
@@ -527,7 +555,8 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           shiftId,
           type: 'sale',
           status: 'confirmed',
-          paymentMethod: b.paymentMethod,
+          paymentMethod: recordedMethod,
+          payments: { create: paymentLines.map((line) => ({ method: line.method, amount: line.amount })) },
           discountType: discount?.type,
           discountValue: discount?.value,
           counterpartyId: customer?.id,
@@ -579,6 +608,8 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         pointsRedeemed: redemptionAmount,
         pointsEarned,
         total: finalTotal,
+        paymentMethod: recordedMethod,
+        payments: paymentLines,
         customerPoints: customer ? customer.loyaltyPoints - redemptionAmount + pointsEarned : null,
       };
     });
@@ -587,6 +618,10 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     // it had already made gets exactly the receipt it got the first time.
     res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
+    if (err instanceof PaymentError) {
+      res.status(400).json({ error: paymentErrorMessage(err.resolution) });
+      return;
+    }
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
       return;
@@ -1089,7 +1124,7 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
       status: 'confirmed',
       createdAt: { gte: from, lte: to },
     },
-    include: { items: { include: { product: true } } },
+    include: { items: { include: { product: true } }, payments: true },
     orderBy: { createdAt: 'desc' },
     take: REPORT_SALE_LIMIT,
   });
@@ -1111,6 +1146,7 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
       id: d.id,
       createdAt: d.createdAt,
       paymentMethod: d.paymentMethod,
+      payments: d.payments.map((line) => ({ method: line.method as PaymentLine['method'], amount: line.amount })),
       createdBy: d.createdBy,
       discountAmount: computeDiscount(subtotal, saleDiscount(d)).discountAmount,
       pointsRedeemed: d.pointsRedeemed ?? undefined,
@@ -1730,7 +1766,8 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
       prisma.stock.findMany({ where: { locationId } }),
       prisma.document.findMany({
         where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
-        include: { items: true },
+        // The drawer figure needs to know which part of a split sale was cash.
+        include: { items: true, payments: true },
       }),
       prisma.document.findMany({
         where: { companyId: req.posCompanyId, locationId, type: 'return', createdAt: { gte: from } },
@@ -1797,13 +1834,11 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
     // fallback is the reason this used to be wrong: an offline sale uploaded
     // at midnight is stamped midnight, and lands in whichever shift happened
     // to be open then.
-    const matches = (doc: {
+    const belongsToShift = (doc: {
       createdBy: string | null;
-      paymentMethod: string | null;
       createdAt: Date;
       shiftId: string | null;
     }) => {
-      if (doc.paymentMethod !== 'cash') return false;
       if (doc.shiftId) return doc.shiftId === shift.id;
       return (
         doc.createdAt >= shift.openedAt &&
@@ -1811,10 +1846,22 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
         (!shift.userId || doc.createdBy === shift.userId)
       );
     };
+    const matches = (doc: {
+      createdBy: string | null;
+      paymentMethod: string | null;
+      createdAt: Date;
+      shiftId: string | null;
+    }) => doc.paymentMethod === 'cash' && belongsToShift(doc);
 
-    const takings = salesDocs.filter(matches).reduce((sum, doc) => {
+    // Only the cash half of a split sale reaches the drawer. Counting the whole
+    // total would leave the cashier short at close by exactly what the customer
+    // paid on the phone, through no fault of theirs — and a shortage the
+    // system invented is worse than no reconciliation at all, because somebody
+    // will believe it.
+    const takings = salesDocs.filter(belongsToShift).reduce((sum, doc) => {
       const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
-      return sum + subtotal - computeDiscount(subtotal, saleDiscount(doc)).discountAmount - (doc.pointsRedeemed ?? 0);
+      const total = subtotal - computeDiscount(subtotal, saleDiscount(doc)).discountAmount - (doc.pointsRedeemed ?? 0);
+      return sum + cashPortion(paymentsOrLegacy(doc.payments as PaymentLine[], doc.paymentMethod, total));
     }, 0);
     // Refunds leave the same drawer, so they belong in the same figure.
     const paidOut = returnDocs.filter(matches).reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
@@ -5319,6 +5366,16 @@ class StockError extends Error {
   constructor(shortages: StockShortage[]) {
     super('Insufficient stock');
     this.shortages = shortages;
+  }
+}
+
+// The split the register sent does not describe the sale being made — it does
+// not add up, names a method nobody recognises, or mixes credit with money.
+class PaymentError extends Error {
+  resolution: ReturnType<typeof resolveSalePayments>;
+  constructor(resolution: ReturnType<typeof resolveSalePayments>) {
+    super('Invalid payment');
+    this.resolution = resolution;
   }
 }
 

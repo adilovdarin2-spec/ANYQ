@@ -34,7 +34,12 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
             {
               locationId: sale.locationId,
               shiftClientId: sale.shiftId,
+              // Both, on purpose. `payments` is what the sale actually was;
+              // `paymentMethod` keeps a server that has not been deployed yet
+              // able to take it, which matters because the queue may be
+              // draining a morning of sales into either.
               paymentMethod: sale.paymentMethod,
+              ...(sale.payments ? { payments: sale.payments } : {}),
               items: sale.items.map((i) => ({ productId: i.productId, quantity: i.qty, price: i.price })),
               ...(sale.discount ? { discountType: sale.discount.type, discountValue: sale.discount.value } : {}),
               ...(sale.customerPhone ? { customerPhone: sale.customerPhone, customerName: sale.customerName, pointsToRedeem: sale.pointsRedeemed } : {}),

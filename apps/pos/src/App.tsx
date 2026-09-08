@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, ImportPreview, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -1879,8 +1879,12 @@ export default function App() {
     return fetchCustomerPoints(session.token, phone);
   }
 
-  function completeSale(method: PaymentMethod) {
+  function completeSale(payments: PaymentLine[]) {
     if (!shift || !session) return;
+    // One method keeps its own name, so every receipt and report written
+    // before splits existed still means what it meant. Several become 'mixed',
+    // which is honest — naming the largest would file a card payment as cash.
+    const method = payments.length === 1 ? payments[0].method : 'mixed';
     const sale: Sale = {
       id: genId('sale'),
       shiftId: shift.id,
@@ -1894,6 +1898,7 @@ export default function App() {
       pointsRedeemed: cartPointsRedeemed || undefined,
       pointsEarned: loyalty ? Math.floor((cartTotal * 5) / 100) : undefined,
       paymentMethod: method,
+      payments,
       createdAt: new Date().toISOString(),
       synced: false,
     };

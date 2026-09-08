@@ -192,6 +192,15 @@ button { cursor: pointer; }
 .btn-ghost { background: transparent; color: var(--ink-muted); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Splitting one sale across methods. The fill button does the subtraction the
+   cashier would otherwise do in their head at the counter, which is where the
+   wrong number comes from. */
+.split-fill {
+  padding: 2px 0; min-height: 0; font-size: 0.8rem; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.split-fill:disabled { opacity: 0.4; text-decoration: none; }
+
 /* payment options */
 .payment-options { display: flex; flex-direction: column; gap: 10px; }
 .payment-option {
