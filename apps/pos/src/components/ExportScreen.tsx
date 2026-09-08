@@ -1,16 +1,19 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
+import type { PhraseKey } from '../i18n';
 
 interface Props {
   onBack: () => void;
   onExport: (dataset: string) => Promise<void>;
 }
 
-const DATASETS: { key: string; label: string; hint: string }[] = [
-  { key: 'products', label: 'Товары', hint: 'Каталог с ценами закупки и продажи' },
-  { key: 'stock', label: 'Остатки', hint: 'Что и где лежит на этой точке, включая не размещённое' },
-  { key: 'sales', label: 'Продажи', hint: 'По строкам, а не по чекам — за 90 дней' },
-  { key: 'movements', label: 'Движения товара', hint: 'Журнал с причиной и автором — за 90 дней' },
-  { key: 'counterparties', label: 'Контрагенты', hint: 'Покупатели и поставщики с условиями долга' },
+// Keys rather than text, resolved at render — see the note on ROLE_PHRASES.
+const DATASETS: { key: string; label: PhraseKey; hint: PhraseKey }[] = [
+  { key: 'products', label: 'export.products', hint: 'export.productsHint' },
+  { key: 'stock', label: 'export.stock', hint: 'export.stockHint' },
+  { key: 'sales', label: 'export.sales', hint: 'export.salesHint' },
+  { key: 'movements', label: 'export.movements', hint: 'export.movementsHint' },
+  { key: 'counterparties', label: 'export.counterparties', hint: 'export.counterpartiesHint' },
 ];
 
 /**
@@ -22,6 +25,7 @@ const DATASETS: { key: string; label: string; hint: string }[] = [
  * arrive as "add a column to that report".
  */
 export function ExportScreen({ onBack, onExport }: Props) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +35,7 @@ export function ExportScreen({ onBack, onExport }: Props) {
     try {
       await onExport(dataset);
     } catch {
-      setError('Не удалось выгрузить. Проверьте связь и попробуйте ещё раз.');
+      setError(t('export.failed'));
     } finally {
       setBusy(null);
     }
@@ -40,15 +44,14 @@ export function ExportScreen({ onBack, onExport }: Props) {
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Выгрузка данных</span>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('export.title')}</span>
       </div>
 
       <div className="screen-body">
         {error && <div className="login-error">{error}</div>}
         <p className="field-hint">
-          Файлы CSV — открываются в Excel и в 1С. Это ваши данные: забирайте их когда угодно и
-          делайте с ними что угодно.
+          {t('export.why')}
         </p>
 
         {DATASETS.map((dataset) => (
@@ -60,9 +63,9 @@ export function ExportScreen({ onBack, onExport }: Props) {
             onClick={() => run(dataset.key)}
           >
             <span>
-              {dataset.label}
+              {t(dataset.label)}
               <br />
-              <span className="order-meta">{dataset.hint}</span>
+              <span className="order-meta">{t(dataset.hint)}</span>
             </span>
             <span>{busy === dataset.key ? '…' : '↓'}</span>
           </button>

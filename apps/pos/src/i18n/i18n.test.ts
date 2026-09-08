@@ -57,8 +57,9 @@ describe('the Kazakh dictionary', () => {
     // A guard against a copy-paste passing for a translation. The list below
     // is every phrase that is legitimately identical: a brand name (Kaspi QR,
     // ANYQ Касса), or a borrowing Kazakh spells exactly as Russian does —
-    // карта, чек, клиент, касса, профиль. Anything else appearing here is a
-    // phrase somebody pasted and did not translate.
+    // карта, чек, клиент, касса, профиль, and the job titles кассир, менеджер
+    // and фармацевт. Anything else appearing here is a phrase somebody pasted
+    // and did not translate.
     const sameAsRussian = (Object.entries(kk) as [keyof typeof ru, string][])
       .filter(([key, phrase]) => phrase === ru[key])
       .map(([key]) => key)
@@ -69,6 +70,9 @@ describe('the Kazakh dictionary', () => {
       'receipt.brand',
       'receipt.customer',
       'receipt.title',
+      'role.cashier',
+      'role.manager',
+      'role.pharmacist',
       'tab.profile',
       'tab.sale',
     ]);

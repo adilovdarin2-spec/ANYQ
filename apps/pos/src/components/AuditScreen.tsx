@@ -1,4 +1,5 @@
 import type { AuditEntry, PriceRoundTrip } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   entries: AuditEntry[];
@@ -28,11 +29,12 @@ function formatMoney(value: number): string {
  * changes that move money without moving anything off a shelf.
  */
 export function AuditScreen({ entries, roundTrips, days, loading, error, onBack, onChangeDays }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Журнал изменений</span>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('audit.title')}</span>
       </div>
 
       <div className="screen-body">
@@ -45,7 +47,7 @@ export function AuditScreen({ entries, roundTrips, days, loading, error, onBack,
               className={option === days ? 'chip chip-active' : 'chip'}
               onClick={() => onChangeDays(option)}
             >
-              {option} дн.
+              {t('audit.days', { count: option })}
             </button>
           ))}
         </div>
@@ -57,15 +59,19 @@ export function AuditScreen({ entries, roundTrips, days, loading, error, onBack,
                 they are the oldest trick in retail and a question worth
                 asking. Shown as a question, not an accusation — there are
                 honest reasons to reprice twice in a day. */}
-            <div className="orders-section-title">Цена опускалась и возвращалась</div>
+            <div className="orders-section-title">{t('audit.roundTrips')}</div>
             {roundTrips.map((trip, index) => (
               <div key={`${trip.productId}-${index}`} className="report-row low">
                 <span>
                   {trip.productName}
                   <br />
                   <span className="order-meta">
-                    {trip.actorName} · {formatMoney(trip.from)} → {formatMoney(trip.to)} в{' '}
-                    {formatWhen(trip.loweredAt)}, обратно в {formatWhen(trip.restoredAt)}
+                    {trip.actorName} · {t('audit.loweredAt', {
+                      from: formatMoney(trip.from),
+                      to: formatMoney(trip.to),
+                      when: formatWhen(trip.loweredAt),
+                      back: formatWhen(trip.restoredAt),
+                    })}
                   </span>
                 </span>
                 <span>?</span>
@@ -74,10 +80,10 @@ export function AuditScreen({ entries, roundTrips, days, loading, error, onBack,
           </>
         )}
 
-        <div className="orders-section-title">Все изменения</div>
-        {loading && <div className="empty-state">Загрузка…</div>}
+        <div className="orders-section-title">{t('audit.allChanges')}</div>
+        {loading && <div className="empty-state">{t('common.loading')}</div>}
         {!loading && entries.length === 0 && (
-          <div className="empty-state">За этот период цены, роли и лимиты никто не менял</div>
+          <div className="empty-state">{t('audit.nothing')}</div>
         )}
 
         {entries.map((entry) => (
