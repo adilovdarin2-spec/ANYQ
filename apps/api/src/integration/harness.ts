@@ -39,7 +39,31 @@ export async function stopTestServer(): Promise<void> {
 // Emptied rather than dropped and recreated: truncating every table in one
 // statement is a few milliseconds, and rebuilding the schema per test file
 // would cost more than the tests themselves.
+/**
+ * Refuses to empty anything that is not a test database.
+ *
+ * `resetDatabase` truncates every table. The suite is supposed to run against
+ * anyq_test, and for a while it was only a convention that it did — the
+ * connection string came from whatever the shell had, and the shell's default
+ * is the development database. It cost a seeded database before anyone noticed.
+ *
+ * The config now sets the right URL, but a config default can be walked past by
+ * running vitest directly or exporting a stray DATABASE_URL, and the failure is
+ * silent and total. So the name is checked here too, where it cannot be.
+ */
+function assertTestDatabase(): void {
+  const url = process.env.DATABASE_URL ?? '';
+  const name = url.split('/').pop()?.split('?')[0] ?? '';
+  if (!/_test$/.test(name)) {
+    throw new Error(
+      `Отказ: интеграционные тесты очищают базу целиком, а DATABASE_URL указывает на «${name || '—'}». ` +
+      'Имя базы должно заканчиваться на _test.',
+    );
+  }
+}
+
 export async function resetDatabase(): Promise<void> {
+  assertTestDatabase();
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
