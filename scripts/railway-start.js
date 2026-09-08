@@ -21,6 +21,11 @@ if (service === 'api') {
   run('npm', ['run', 'start', '--workspace=apps/pos']);
 } else if (service === 'orders') {
   run('npm', ['run', 'start', '--workspace=apps/orders']);
+} else if (service === 'maintenance') {
+  // Its own service rather than a loop inside the API: a drain competing with
+  // cashiers for the event loop costs a queue at the counter, and a receipt a
+  // minute late costs nothing. Needs API_URL and MAINTENANCE_SECRET.
+  run('node', ['scripts/maintenance.mjs', '--loop']);
 } else {
   console.error('Unknown RAILWAY_SERVICE_NAME:', JSON.stringify(service));
   process.exit(1);

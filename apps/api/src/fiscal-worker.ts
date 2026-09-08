@@ -31,6 +31,14 @@ export interface DrainSummary {
   deferred: number;
   /** Failed in a way retrying cannot fix, or out of attempts. Left for a person. */
   abandoned: number;
+  /**
+   * Set when the provider is not configured on this deployment.
+   *
+   * The queue is untouched in that case — not drained, not failed. A scheduler
+   * reading this knows the difference between "nothing to do" and "this server
+   * cannot do it", which are the same empty summary otherwise.
+   */
+  skipped?: 'not-configured';
 }
 
 export interface DrainOptions {
@@ -62,6 +70,12 @@ export async function drainFiscalQueue(
   const now = options.now ?? new Date();
   const limit = options.limit ?? 25;
   const summary: DrainSummary = { attempted: 0, registered: 0, deferred: 0, abandoned: 0 };
+
+  // Asked before anything is read. A provider that cannot be reached at all
+  // gives every receipt the same answer, so a scheduled drain against an
+  // unfinished deployment would spend the whole queue's attempts on it and
+  // leave every receipt marked failed.
+  if (provider.ready?.() === false) return { ...summary, skipped: 'not-configured' };
 
   const pending = await prisma.fiscalReceipt.findMany({
     where: { status: 'pending', provider: provider.name },

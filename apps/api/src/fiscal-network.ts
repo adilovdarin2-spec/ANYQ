@@ -13,8 +13,8 @@ import type { FiscalPayload, FiscalProvider, FiscalRegistration } from './fiscal
  * the provider's actual request shape, which needs their current documentation
  * and a test register to try it against — neither of which can be guessed at,
  * and both of which would be wrong if they were. Until the endpoint is
- * configured, this throws in a way the worker reads as permanent, so nothing
- * retries forever against a URL that does not exist.
+ * configured this refuses to send, and `ready()` says so up front, so the
+ * worker never queues a pass against a URL that does not exist.
  */
 
 export const FISCAL_ENDPOINT_ENV = 'FISCAL_API_URL';
@@ -22,16 +22,30 @@ export const FISCAL_TOKEN_ENV = 'FISCAL_API_TOKEN';
 
 /** Raised when fiscalisation over the network is not configured on this deployment. */
 export class FiscalNotConfiguredError extends Error {
-  /** 501: the worker's classifier reads a 4xx/5xx split, and this is not transient. */
+  /**
+   * 501, which the classifier reads as transient — correctly, in the general
+   * case: a 5xx is the server having a bad day. It is the wrong reading here,
+   * and the reason the worker asks `ready()` before it calls this at all. Left
+   * alone rather than forced to a 4xx, because a 4xx would mean "the OFD
+   * rejected this receipt", which is a different and much worse lie.
+   */
   status = 501;
   constructor() {
     super('Сетевая фискализация не настроена на этом сервере');
   }
 }
 
+/** Both halves of the configuration, or neither is any use. */
+export function fiscalNetworkConfigured(): boolean {
+  return Boolean(process.env[FISCAL_ENDPOINT_ENV] && process.env[FISCAL_TOKEN_ENV]);
+}
+
 export function networkFiscalProvider(name = 'webkassa'): FiscalProvider {
   return {
     name,
+    // Read per call rather than captured: a deployment can gain its credentials
+    // while the process is running, and a provider built at boot should notice.
+    ready: fiscalNetworkConfigured,
     async register(payload: FiscalPayload): Promise<FiscalRegistration> {
       const endpoint = process.env[FISCAL_ENDPOINT_ENV];
       const token = process.env[FISCAL_TOKEN_ENV];

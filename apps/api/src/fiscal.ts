@@ -105,6 +105,20 @@ export interface FiscalRegistration {
 export interface FiscalProvider {
   readonly name: string;
   register(payload: FiscalPayload): Promise<FiscalRegistration>;
+  /**
+   * Whether this deployment can talk to the provider at all.
+   *
+   * Separate from `register` throwing, because the two mean different things.
+   * A refusal from the OFD is about one receipt; missing credentials are about
+   * the server, and every receipt in the queue would get the same answer. The
+   * worker checks this first so a half-finished deployment costs nothing but a
+   * log line — rather than burning an attempt on every queued receipt, eight
+   * times each, and leaving the lot marked failed by the time somebody sets the
+   * credentials ten minutes later.
+   *
+   * Optional: a provider that is always ready need not say so.
+   */
+  ready?(): boolean;
 }
 
 // Fiscalisation switched off. Sales are recorded and never queued, which is

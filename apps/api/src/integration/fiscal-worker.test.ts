@@ -53,6 +53,12 @@ const fails = (status?: number) => provider(async () => {
   throw Object.assign(new Error('ОФД недоступен'), status === undefined ? {} : { status });
 });
 
+/** Configured nowhere. Answers `ready(): false` and must never be called. */
+const notConfigured = (): FiscalProvider & { seen: FiscalPayload[] } => ({
+  ...succeeds(),
+  ready: () => false,
+});
+
 async function sell(quantity = 2) {
   return api(fx.token, 'POST', '/pos/sales', {
     locationId: fx.locationId,
@@ -240,5 +246,39 @@ describe('draining the queue', () => {
   it('does nothing when there is nothing queued', async () => {
     const summary = await drainFiscalQueue(succeeds());
     expect(summary).toEqual({ attempted: 0, registered: 0, deferred: 0, abandoned: 0 });
+  });
+
+  it('leaves the queue alone when this server has no OFD configured', async () => {
+    // A deployment that has not been finished must cost nothing. Without this,
+    // a scheduled drain spends every receipt's eight attempts on a URL that
+    // does not exist and leaves the lot marked failed — and somebody who sets
+    // the credentials ten minutes later finds a pile that needs a person.
+    await sell();
+    const provider = notConfigured();
+    const summary = await drainFiscalQueue(provider);
+
+    expect(summary.skipped).toBe('not-configured');
+    expect(summary.attempted).toBe(0);
+    expect(provider.seen).toEqual([]);
+
+    const queued = await prisma.fiscalReceipt.findMany();
+    expect(queued).toHaveLength(1);
+    expect(queued[0].status).toBe('pending');
+    expect(queued[0].attempts).toBe(0);
+    expect(queued[0].lastError).toBeNull();
+  });
+
+  it('drains normally once the credentials arrive, having lost nothing', async () => {
+    // The point of leaving it alone: the same receipt goes through afterwards
+    // on its first attempt, rather than starting from eight used up.
+    await sell();
+    await drainFiscalQueue(notConfigured());
+    const summary = await drainFiscalQueue(succeeds());
+
+    expect(summary.skipped).toBeUndefined();
+    expect(summary.registered).toBe(1);
+    const [receipt] = await prisma.fiscalReceipt.findMany();
+    expect(receipt.status).toBe('registered');
+    expect(receipt.attempts).toBe(1);
   });
 });

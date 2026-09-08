@@ -16,7 +16,9 @@
     "test:db": "vitest run --config vitest.integration.config.ts",
     "backup": "node scripts/backup.mjs create",
     "backup:list": "node scripts/backup.mjs list",
-    "backup:verify": "node scripts/backup.mjs verify"
+    "backup:verify": "node scripts/backup.mjs verify",
+    "maintenance": "node scripts/maintenance.mjs",
+    "maintenance:loop": "node scripts/maintenance.mjs --loop"
   },
   "devDependencies": {
     "railway": "^3.6.0",
