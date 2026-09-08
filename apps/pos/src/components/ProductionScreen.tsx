@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { ProductionRecipe, ProductionRun } from '../types';
 import { formatDateTime, pluralizeRu } from '../utils';
 
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function ProductionScreen({ runs, recipes, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [productId, setProductId] = useState(recipes[0]?.productId ?? '');
   const [quantity, setQuantity] = useState('');
@@ -46,20 +48,20 @@ export function ProductionScreen({ runs, recipes, loading, error, submitting, on
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Производство</span>
+        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('production.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('create')} aria-label="Новое производство" style={{ marginLeft: 'auto' }}>+</button>
+          <button className="icon-btn" onClick={() => setView('create')} aria-label={t('production.new')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
-          <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+          <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
       </div>
 
       {view === 'list' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          {loading && runs.length === 0 && <div className="empty-state">Загрузка…</div>}
-          {!loading && runs.length === 0 && !error && <div className="empty-state">Производственных операций пока не было</div>}
+          {loading && runs.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+          {!loading && runs.length === 0 && !error && <div className="empty-state">{t('production.none')}</div>}
           {runs.map((r) => (
             <div key={r.id} className="order-card">
               <div className="order-card-head">
@@ -81,12 +83,12 @@ export function ProductionScreen({ runs, recipes, loading, error, submitting, on
       {view === 'create' && (
         <div className="screen-body">
           {recipes.length === 0 && !loading && (
-            <div className="empty-state">Нет спецификаций (BOM) для производства</div>
+            <div className="empty-state">{t('production.noRecipes')}</div>
           )}
           {recipes.length > 0 && (
             <>
               <div className="form-field">
-                <label htmlFor="production-product">Что произвести</label>
+                <label htmlFor="production-product">{t('production.what')}</label>
                 <select id="production-product" value={productId} onChange={(e) => setProductId(e.target.value)}>
                   {recipes.map((r) => (
                     <option key={r.productId} value={r.productId}>{r.productName}</option>
@@ -94,22 +96,22 @@ export function ProductionScreen({ runs, recipes, loading, error, submitting, on
                 </select>
               </div>
               <div className="form-field">
-                <label htmlFor="production-qty">Сколько единиц нужно</label>
+                <label htmlFor="production-qty">{t('production.howMany')}</label>
                 <input
                   id="production-qty"
                   type="number"
                   min="1"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="Напр. 20"
+                  placeholder={t('production.quantityPlaceholder')}
                 />
               </div>
 
               {valid && recipe && (
                 <div className="count-hint">
-                  {batches} {pluralizeRu(batches, 'партия', 'партии', 'партий')} × выход {recipe.portionYield} шт. = получится {yieldQuantity} шт.
+                  {batches} {pluralizeRu(batches, 'партия', 'партии', 'партий')} {t('production.plan', { yield: recipe.portionYield, total: yieldQuantity })}
                   <br />
-                  Расход сырья:
+                  {t('production.consumes')}
                   {recipe.ingredients.map((ing) => (
                     <div key={ing.ingredientId} className="report-row">
                       <span>{ing.name}</span>
@@ -127,7 +129,7 @@ export function ProductionScreen({ runs, recipes, loading, error, submitting, on
       {view === 'create' && recipes.length > 0 && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" disabled={!valid || submitting} onClick={handleSubmit}>
-            {submitting ? 'Производим…' : 'Запустить производство'}
+            {submitting ? t('production.running') : t('production.run')}
           </button>
         </div>
       )}

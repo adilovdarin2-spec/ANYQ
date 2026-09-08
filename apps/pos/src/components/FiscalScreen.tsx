@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { FiscalDevice, PendingFiscalReceipt } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
 
@@ -23,6 +24,7 @@ export function FiscalScreen({
   onRefresh,
   onRegister,
 }: Props) {
+  const { t } = useTranslation();
   const [numbers, setNumbers] = useState<Record<string, string>>({});
 
   async function register(documentId: string) {
@@ -35,9 +37,9 @@ export function FiscalScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Фискализация</span>
-        <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('fiscal.title')}</span>
+        <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>
 
       <div className="screen-body">
@@ -45,20 +47,17 @@ export function FiscalScreen({
 
         {!device || !device.enabled ? (
           <div className="empty-state">
-            Фискализация для этой точки не настроена. Пока она выключена, ANYQ печатает только
-            товарный чек — фискальным он не является.
+            {t('fiscal.notConfigured')}
           </div>
         ) : (
           <p className="field-hint">
-            Касса №{device.registrationNumber}. Продажа записана в ANYQ, но фискальным чек
-            становится только после кассового аппарата. Введите номер с его чека — и продажа
-            перестанет числиться нефискализированной.
+            {t('fiscal.manualWhy', { number: device.registrationNumber })}
           </p>
         )}
 
-        {loading && receipts.length === 0 && <div className="empty-state">Загрузка…</div>}
+        {loading && receipts.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
         {!loading && receipts.length === 0 && !error && device?.enabled && (
-          <div className="empty-state">Все продажи фискализированы</div>
+          <div className="empty-state">{t('fiscal.allDone')}</div>
         )}
 
         {receipts.map((receipt) => (
@@ -69,7 +68,7 @@ export function FiscalScreen({
                 <div className="order-meta">{formatDateTime(receipt.createdAt)}</div>
               </div>
               <span className="pill warn">
-                {receipt.status === 'failed' ? 'ошибка' : 'не фискализирован'}
+                {receipt.status === 'failed' ? t('fiscal.error') : t('fiscal.notFiscalised')}
               </span>
             </div>
 
@@ -81,10 +80,10 @@ export function FiscalScreen({
               <input
                 type="text"
                 inputMode="numeric"
-                placeholder="Номер фискального чека"
+                placeholder={t('fiscal.receiptNumber')}
                 value={numbers[receipt.documentId] ?? ''}
                 onChange={(e) => setNumbers((prev) => ({ ...prev, [receipt.documentId]: e.target.value }))}
-                aria-label="Номер фискального чека"
+                aria-label={t('fiscal.receiptNumber')}
               />
               <button
                 type="button"
@@ -92,7 +91,7 @@ export function FiscalScreen({
                 disabled={busyDocumentId === receipt.documentId || !(numbers[receipt.documentId] ?? '').trim()}
                 onClick={() => register(receipt.documentId)}
               >
-                {busyDocumentId === receipt.documentId ? 'Сохраняем…' : 'Сохранить'}
+                {busyDocumentId === receipt.documentId ? t('common.saving') : t('common.save')}
               </button>
             </div>
           </div>

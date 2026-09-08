@@ -1,4 +1,6 @@
 import type { LedgerMismatch, ReconciliationReport } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
+import type { Translator } from '../i18n/useLanguage';
 
 interface Props {
   report: ReconciliationReport | null;
@@ -14,51 +16,56 @@ function formatQuantity(value: number): string {
   return value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 }
 
-function describe(mismatch: LedgerMismatch): string {
-  return `${mismatch.binLocation || 'не размещено'} · журнал ${formatQuantity(mismatch.ledger)}, остаток ${formatQuantity(mismatch.cached)}`;
+// The translator is passed in: this sits outside the component and a
+// module-level function cannot use a hook.
+function describe(mismatch: LedgerMismatch, t: Translator['t']): string {
+  return t('recon.mismatchLine', {
+    bin: mismatch.binLocation || t('recon.unplaced'),
+    ledger: formatQuantity(mismatch.ledger),
+    cached: formatQuantity(mismatch.cached),
+  });
 }
 
 export function ReconciliationScreen({ report, loading, error, repairing, onBack, onRefresh, onRepair }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Сверка журнала</span>
-        <button className="icon-btn" onClick={onRefresh} aria-label="Проверить заново" style={{ marginLeft: 'auto' }}>⟳</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('recon.title')}</span>
+        <button className="icon-btn" onClick={onRefresh} aria-label={t('recon.recheck')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>
 
       <div className="screen-body">
         <p className="field-hint">
-          Остаток — это сумма всех движений по товару в ячейке. Здесь проверяется, что так оно и есть.
-          Пока сходится — любой цифре в системе можно верить, потому что её можно разложить на
-          документы. Не сойдётся — значит что-то изменило остаток мимо журнала, и это надо чинить,
-          а не пересчитывать полку.
+          {t('recon.what')}
+          {t('recon.why')}
         </p>
 
         {error && <div className="login-error">{error}</div>}
-        {loading && !report && <div className="empty-state">Проверяем…</div>}
+        {loading && !report && <div className="empty-state">{t('recon.checking')}</div>}
 
         {report && (
           <>
             <div className="report-cards">
               <div className="report-card">
                 <span className="value">{report.checked}</span>
-                <span className="label">Позиций проверено</span>
+                <span className="label">{t('recon.checked')}</span>
               </div>
               <div className="report-card">
                 <span className="value">{report.mismatched}</span>
-                <span className="label">Расхождений</span>
+                <span className="label">{t('recon.mismatched')}</span>
               </div>
               {report.totalDrift > 0 && (
                 <div className="report-card">
                   <span className="value">{formatQuantity(report.totalDrift)}</span>
-                  <span className="label">Единиц разницы</span>
+                  <span className="label">{t('recon.unitsOff')}</span>
                 </div>
               )}
             </div>
 
             {report.mismatched === 0 ? (
-              <div className="empty-state">Всё сходится. Остатки равны журналу до последней единицы.</div>
+              <div className="empty-state">{t('recon.allGood')}</div>
             ) : (
               <>
                 {report.mismatches.map((mismatch, index) => (
@@ -66,7 +73,7 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
                     <span>
                       {mismatch.name}
                       <br />
-                      <span className="order-meta">{describe(mismatch)}</span>
+                      <span className="order-meta">{describe(mismatch, t)}</span>
                       <br />
                       <span className="order-meta">{mismatch.explanation}</span>
                     </span>
@@ -86,11 +93,10 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
           {/* The ledger is right by construction, so the repair is to make the
               cached figure equal it — never the other way round. */}
           <p className="field-hint">
-            Исправление приведёт остатки к журналу и запишет документ сверки. Товар при этом не
-            двигается — исправляется цифра, а не полка.
+              {t('recon.repairWhat')}
           </p>
           <button className="btn btn-primary btn-block" disabled={repairing} onClick={onRepair}>
-            {repairing ? 'Исправляем…' : `Привести остатки к журналу (${report.mismatched})`}
+            {repairing ? t('recon.repairing') : t('recon.repair', { count: report.mismatched })}
           </button>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { PaymentMethod, ReturnRecord, ReturnableSale } from '../types';
 import { PAYMENT_LABELS } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
@@ -26,6 +27,7 @@ function returnableQuantity(line: ReturnableSale['items'][number]): number {
 }
 
 export function ReturnsScreen({ sales, returns, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'pick-sale' | 'compose'>('list');
   const [sale, setSale] = useState<ReturnableSale | null>(null);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
@@ -73,23 +75,23 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
         <button
           className="icon-btn"
           onClick={view === 'list' ? onBack : () => setView(view === 'compose' ? 'pick-sale' : 'list')}
-          aria-label="Назад"
+          aria-label={t('common.back')}
         >
           ←
         </button>
-        <span className="screen-title">Возвраты</span>
+        <span className="screen-title">{t('return.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('pick-sale')} aria-label="Новый возврат" style={{ marginLeft: 'auto' }}>+</button>
+          <button className="icon-btn" onClick={() => setView('pick-sale')} aria-label={t('return.new')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
-          <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+          <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
       </div>
 
       {view === 'list' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          {loading && returns.length === 0 && <div className="empty-state">Загрузка…</div>}
-          {!loading && returns.length === 0 && !error && <div className="empty-state">Возвратов пока не было</div>}
+          {loading && returns.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+          {!loading && returns.length === 0 && !error && <div className="empty-state">{t('return.none')}</div>}
           {returns.map((r) => (
             <div key={r.id} className="order-card">
               <div className="order-card-head">
@@ -110,7 +112,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                   </div>
                 ))}
               </div>
-              <p className="order-meta">Причина: {r.reason}</p>
+              <p className="order-meta">{t('return.reasonWas', { reason: r.reason })}</p>
             </div>
           ))}
         </div>
@@ -119,8 +121,8 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
       {view === 'pick-sale' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          <p className="order-meta">Выберите чек — возврат делается только по нему.</p>
-          {openSales.length === 0 && <div className="empty-state">Нет чеков, по которым можно сделать возврат</div>}
+          <p className="order-meta">{t('return.pickReceipt')}</p>
+          {openSales.length === 0 && <div className="empty-state">{t('return.noReceipts')}</div>}
           {openSales.map((s) => (
             <button key={s.id} className="order-card" style={{ width: '100%', textAlign: 'left' }} onClick={() => startReturn(s)}>
               <div className="order-card-head">
@@ -128,7 +130,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                   <div className="order-customer">{formatMoney(s.total)}</div>
                   <div className="order-meta">{formatDateTime(s.createdAt)}</div>
                 </div>
-                {s.refundedTotal > 0 && <span className="pill warn">возвращено {formatMoney(s.refundedTotal)}</span>}
+                {s.refundedTotal > 0 && <span className="pill warn">{t('return.alreadyReturned', { amount: formatMoney(s.refundedTotal) })}</span>}
               </div>
               <div className="order-items">
                 {s.items.map((it) => (
@@ -146,9 +148,9 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
       {view === 'compose' && sale && (
         <>
           <div className="screen-body">
-            <p className="order-meta">Чек от {formatDateTime(sale.createdAt)} на {formatMoney(sale.total)}</p>
+            <p className="order-meta">{t('return.receiptOf', { when: formatDateTime(sale.createdAt), amount: formatMoney(sale.total) })}</p>
 
-            <div className="section-title">Что возвращаем</div>
+            <div className="section-title">{t('return.whatBack')}</div>
             {sale.items.map((line) => {
               const returnable = returnableQuantity(line);
               return (
@@ -156,7 +158,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                   <span>
                     {line.name}
                     <br />
-                    <span className="order-meta">можно вернуть {returnable} из {line.quantity}</span>
+                    <span className="order-meta">{t('return.canReturn', { available: returnable, sold: line.quantity })}</span>
                   </span>
                   <input
                     type="number"
@@ -166,7 +168,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                     placeholder="0"
                     value={quantities[line.id] ?? ''}
                     onChange={(e) => setQuantities((prev) => ({ ...prev, [line.id]: e.target.value }))}
-                    aria-label={`К возврату: ${line.name}`}
+                    aria-label={t('return.lineLabel', { name: line.name })}
                   />
                 </div>
               );
@@ -176,18 +178,18 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                 reason is the part an owner actually reads when a register
                 starts giving too much back. */}
             <div className="form-field">
-              <label htmlFor="return-reason">Причина возврата</label>
+              <label htmlFor="return-reason">{t('return.reason')}</label>
               <input
                 id="return-reason"
                 type="text"
-                placeholder="Например: брак, не подошёл размер"
+                placeholder={t('return.reasonPlaceholder')}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
             </div>
 
             <div className="form-field">
-              <label htmlFor="return-payment">Чем возвращаем</label>
+              <label htmlFor="return-payment">{t('return.howBack')}</label>
               <select id="return-payment" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}>
                 {PAYMENT_METHODS.map((method) => (
                   <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>
@@ -197,7 +199,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
 
             {refundEstimate > 0 && (
               <p className="order-meta">
-                К возврату примерно {formatMoney(refundEstimate)} — точная сумма учтёт скидку и баллы этого чека.
+            {t('return.estimate', { amount: formatMoney(refundEstimate) })}
               </p>
             )}
 
@@ -210,7 +212,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
               disabled={chosenItems.length === 0 || reason.trim() === '' || submitting}
               onClick={handleSubmit}
             >
-              {submitting ? 'Оформляем…' : 'Оформить возврат'}
+              {submitting ? t('return.submitting') : t('return.submit')}
             </button>
           </div>
         </>
