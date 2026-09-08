@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ImportPreview } from '../types';
 import type { ImportSource } from '../api';
+import { useTranslation } from '../i18n/useLanguage';
 import { parseSheet } from '../utils';
 
 interface Props {
@@ -26,6 +27,7 @@ export function ImportScreen({
   onCommit,
   onReset,
 }: Props) {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   // Set when an .xlsx was chosen. Kept apart from the pasted text rather than
   // converted into it, because the server reads the spreadsheet properly and a
@@ -77,8 +79,8 @@ export function ImportScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Импорт товаров</span>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('import.title')}</span>
       </div>
 
       <div className="screen-body">
@@ -87,22 +89,22 @@ export function ImportScreen({
             <div className="report-cards">
               <div className="report-card">
                 <span className="value">{result.created}</span>
-                <span className="label">Добавлено</span>
+                <span className="label">{t('import.added')}</span>
               </div>
               <div className="report-card">
                 <span className="value">{result.updated}</span>
-                <span className="label">Обновлено</span>
+                <span className="label">{t('import.updated')}</span>
               </div>
               {result.stocked > 0 && (
                 <div className="report-card">
                   <span className="value">{result.stocked}</span>
-                  <span className="label">С остатком</span>
+                  <span className="label">{t('import.withStock')}</span>
                 </div>
               )}
               {result.skipped > 0 && (
                 <div className="report-card">
                   <span className="value">{result.skipped}</span>
-                  <span className="label">Пропущено</span>
+                  <span className="label">{t('import.skipped')}</span>
                 </div>
               )}
             </div>
@@ -110,19 +112,17 @@ export function ImportScreen({
               className="btn btn-secondary btn-block"
               onClick={() => { setText(''); setXlsx(null); onReset(); }}
             >
-              Импортировать ещё
+              {t('import.again')}
             </button>
           </>
         ) : (
           <>
             <p className="field-hint">
-              Откройте свой файл в Excel, выделите таблицу вместе с заголовками, скопируйте и
-              вставьте сюда. Или выберите сохранённый CSV. Заголовки могут называться как у вас —
-              «Наименование», «Товар», «Цена продажи»: система разберётся.
+              {t('import.pasteHow')} {t('import.headersFree')}
             </p>
 
             <div className="form-field">
-              <label htmlFor="import-file">Файл Excel или CSV</label>
+              <label htmlFor="import-file">{t('import.file')}</label>
               <input
                 id="import-file"
                 type="file"
@@ -131,13 +131,13 @@ export function ImportScreen({
               />
               {xlsx && (
                 <span className="field-hint">
-                  Выбран {xlsx.name}. Нажмите «Проверить файл» — что прочиталось, будет видно до записи.
+                  {t('import.chosen', { name: xlsx.name })}
                 </span>
               )}
             </div>
 
             <div className="form-field">
-              <label htmlFor="import-text">Или вставьте из Excel</label>
+              <label htmlFor="import-text">{t('import.orPaste')}</label>
               <textarea
                 id="import-text"
                 rows={8}
@@ -149,7 +149,7 @@ export function ImportScreen({
 
             {grid.length > 0 && (
               <p className="order-meta">
-                Распознано строк: {grid.length} (включая заголовок), столбцов: {grid[0]?.length ?? 0}
+                {t('import.recognised', { rows: grid.length, columns: grid[0]?.length ?? 0 })}
               </p>
             )}
 
@@ -160,15 +160,15 @@ export function ImportScreen({
                 and half not, with no way to tell which. */}
             {preview && (
               <>
-                <div className="orders-section-title">Что произойдёт</div>
+                <div className="orders-section-title">{t('import.whatHappens')}</div>
                 <div className="report-cards">
                   <div className="report-card">
                     <span className="value">{preview.created}</span>
-                    <span className="label">Будет добавлено</span>
+                    <span className="label">{t('import.willAdd')}</span>
                   </div>
                   <div className="report-card">
                     <span className="value">{preview.updated}</span>
-                    <span className="label">Будет обновлено</span>
+                    <span className="label">{t('import.willUpdate')}</span>
                   </div>
                   {preview.skipped > 0 && (
                     <div className="report-card">
@@ -180,16 +180,16 @@ export function ImportScreen({
 
                 {preview.sample.length > 0 && (
                   <>
-                    <div className="orders-section-title">Первые строки</div>
+                    <div className="orders-section-title">{t('import.firstRows')}</div>
                     {preview.sample.map((row) => (
                       <div key={row.line} className="report-row">
                         <span>
                           {row.name}
                           <br />
                           <span className="order-meta">
-                            строка {row.line} · {row.salePrice} ₸
-                            {row.quantity > 0 ? ` · остаток ${row.quantity}` : ''}
-                            {row.existingProductId ? ' · уже есть, обновим' : ''}
+                            {t('import.row', { number: row.line })} · {row.salePrice} ₸
+                            {row.quantity > 0 ? ` · ${t('import.stock', { count: row.quantity })}` : ''}
+                            {row.existingProductId ? ` · ${t('import.exists')}` : ''}
                           </span>
                         </span>
                       </div>
@@ -200,7 +200,7 @@ export function ImportScreen({
                 {preview.problems.length > 0 && (
                   <>
                     <div className="orders-section-title">
-                      Что не так ({preview.problemCount})
+                      {t('import.problems', { count: preview.problemCount })}
                     </div>
                     {/* Every problem carries the row number from the file the
                         person is looking at, because "ошибка импорта" is not
@@ -208,12 +208,12 @@ export function ImportScreen({
                     {preview.problems.map((problem, index) => (
                       <div key={`${problem.line}-${index}`} className={problem.severity === 'error' ? 'report-row low' : 'report-row'}>
                         <span>
-                          Строка {problem.line}
+                          {t('import.problemRow', { number: problem.line })}
                           <br />
                           <span className="order-meta">{problem.message}</span>
                         </span>
                         <span className={problem.severity === 'error' ? 'pill warn' : 'pill'}>
-                          {problem.severity === 'error' ? 'пропустим' : 'внимание'}
+                          {problem.severity === 'error' ? t('import.willSkip') : t('import.attention')}
                         </span>
                       </div>
                     ))}
@@ -221,8 +221,7 @@ export function ImportScreen({
                 )}
 
                 <p className="field-hint">
-                  Остаток заводится только для новых товаров. Повторный импорт прайса не затрёт
-                  то, что лежит на полке, — для исправления остатков есть инвентаризация.
+                  {t('import.stockOnlyNew')}
                 </p>
               </>
             )}
@@ -240,7 +239,7 @@ export function ImportScreen({
               disabled={source === null || (xlsx === null && grid.length < 2) || loading}
               onClick={() => source && onPreview(source)}
             >
-              {loading ? 'Проверяем…' : 'Проверить файл'}
+              {loading ? t('import.checking') : t('import.check')}
             </button>
           ) : (
             <>
@@ -249,10 +248,10 @@ export function ImportScreen({
                 disabled={submitting || preview.created + preview.updated === 0}
                 onClick={() => source && onCommit(source)}
               >
-                {submitting ? 'Импортируем…' : `Импортировать ${preview.created + preview.updated}`}
+                {submitting ? t('import.importing') : t('import.import', { count: preview.created + preview.updated })}
               </button>
               <button className="btn btn-ghost btn-block" disabled={submitting} onClick={onReset}>
-                Отмена
+                {t('common.cancel')}
               </button>
             </>
           )}

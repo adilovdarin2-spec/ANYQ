@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
+import type { PhraseKey } from '../i18n';
 import type { Product, PurchaseOrder, PurchaseOrderStatus, Supplier } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
 
@@ -30,13 +32,13 @@ interface Props {
   onAct: (orderId: string, action: 'approve' | 'send' | 'cancel') => void;
 }
 
-const STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
-  draft: 'Черновик',
-  approved: 'Согласован',
-  sent: 'Отправлен',
-  partially_received: 'Получен частично',
-  received: 'Получен',
-  cancelled: 'Отменён',
+const STATUS_LABELS: Record<string, PhraseKey> = {
+  draft: 'po.draft',
+  approved: 'po.approved',
+  sent: 'po.sent',
+  partially_received: 'po.partial',
+  received: 'po.received',
+  cancelled: 'po.cancelled',
 };
 
 const OPEN_STATUSES: PurchaseOrderStatus[] = ['draft', 'approved', 'sent', 'partially_received'];
@@ -60,6 +62,7 @@ export function PurchaseOrdersScreen({
   onCreate,
   onAct,
 }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [supplierId, setSupplierId] = useState(LOOSE);
   const [note, setNote] = useState('');
@@ -121,20 +124,20 @@ export function PurchaseOrdersScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Заказы поставщику</span>
+        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('po.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('create')} aria-label="Новый заказ" style={{ marginLeft: 'auto' }}>+</button>
+          <button className="icon-btn" onClick={() => setView('create')} aria-label={t('po.new')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
-          <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+          <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
       </div>
 
       {view === 'list' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          {loading && orders.length === 0 && <div className="empty-state">Загрузка…</div>}
-          {!loading && orders.length === 0 && !error && <div className="empty-state">Заказов пока не было</div>}
+          {loading && orders.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+          {!loading && orders.length === 0 && !error && <div className="empty-state">{t('po.none')}</div>}
 
           {orders.map((order) => {
             const status = order.status as PurchaseOrderStatus;
@@ -145,10 +148,10 @@ export function PurchaseOrdersScreen({
               <div key={order.id} className="order-card">
                 <div className="order-card-head">
                   <div>
-                    <div className="order-customer">{order.supplier?.name ?? 'Без поставщика'}</div>
+                    <div className="order-customer">{order.supplier?.name ?? t('po.noSupplier')}</div>
                     <div className="order-meta">
                       {formatDateTime(order.createdAt)} · {formatMoney(order.total)}
-                      {order.approvedByName ? ` · согласовал ${order.approvedByName}` : ''}
+                      {order.approvedByName ? ` · ${t('po.approvedBy', { name: order.approvedByName })}` : ''}
                     </div>
                   </div>
                   <span className={OPEN_STATUSES.includes(status) ? 'pill warn' : 'pill'}>{STATUS_LABELS[status]}</span>
@@ -165,29 +168,29 @@ export function PurchaseOrdersScreen({
                           through a document rather than a note on a phone. */}
                       <span>
                         {it.receivedQuantity > 0 && it.receivedQuantity < it.quantity
-                          ? `${formatQuantity(it.receivedQuantity)} из ${formatQuantity(it.quantity)}`
+                          ? t('owner.outOf', { received: formatQuantity(it.receivedQuantity), sent: formatQuantity(it.quantity) })
                           : formatQuantity(it.quantity)}
                       </span>
                     </div>
                   ))}
                 </div>
 
-                {short.length > 0 && <p className="order-meta">Поставщик недовёз по {short.length} позициям</p>}
+                {short.length > 0 && <p className="order-meta">{t('po.short', { count: short.length })}</p>}
                 {order.note && <p className="order-meta">{order.note}</p>}
 
                 {status === 'draft' && canApprove && (
                   <button className="btn btn-primary btn-block" disabled={busy} onClick={() => onAct(order.id, 'approve')}>
-                    Согласовать
+                    {t('po.approve')}
                   </button>
                 )}
                 {status === 'approved' && canApprove && (
                   <button className="btn btn-primary btn-block" disabled={busy} onClick={() => onAct(order.id, 'send')}>
-                    Отправить поставщику
+                    {t('po.send')}
                   </button>
                 )}
                 {OPEN_STATUSES.includes(status) && (
                   <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => onAct(order.id, 'cancel')}>
-                    Отменить заказ
+                    {t('po.cancel')}
                   </button>
                 )}
               </div>
@@ -200,9 +203,9 @@ export function PurchaseOrdersScreen({
         <>
           <div className="screen-body">
             <div className="form-field">
-              <label htmlFor="po-supplier">Поставщик</label>
+              <label htmlFor="po-supplier">{t('incoming.supplier')}</label>
               <select id="po-supplier" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-                <option value={LOOSE}>Не указан</option>
+                <option value={LOOSE}>{t('common.notSet')}</option>
                 {suppliers.map((supplier) => (
                   <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
                 ))}
@@ -210,20 +213,20 @@ export function PurchaseOrdersScreen({
             </div>
 
             <div className="form-field">
-              <label htmlFor="po-note">Комментарий</label>
-              <input id="po-note" type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Необязательно" />
+              <label htmlFor="po-note">{t('po.comment')}</label>
+              <input id="po-note" type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('common.optional')} />
             </div>
 
-            <div className="section-title">Позиции</div>
-            {lines.length === 0 && <div className="empty-state">Добавьте хотя бы одну позицию</div>}
+            <div className="section-title">{t('common.lines')}</div>
+            {lines.length === 0 && <div className="empty-state">{t('po.noLines')}</div>}
             {lines.map((l, i) => (
               <div key={`${l.productId}-${i}`} className="report-row">
                 <span>
                   {l.name} × {formatQuantity(l.quantity)}
-                  {l.packagingName ? ` ${l.packagingName.toLowerCase()}` : ''} по {formatMoney(l.price)}
+                  {l.packagingName ? ` ${l.packagingName.toLowerCase()}` : ''} × {formatMoney(l.price)}
                 </span>
                 <button className="li-remove" onClick={() => setLines((prev) => prev.filter((_, index) => index !== i))}>
-                  Удалить
+                  {t('common.delete')}
                 </button>
               </div>
             ))}
@@ -235,8 +238,8 @@ export function PurchaseOrdersScreen({
                 ))}
               </select>
               {selectedProduct && selectedProduct.packagings.length > 0 && (
-                <select value={packagingId} onChange={(e) => setPackagingId(e.target.value)} aria-label="Упаковка">
-                  <option value={LOOSE}>Поштучно</option>
+                <select value={packagingId} onChange={(e) => setPackagingId(e.target.value)} aria-label={t('po.packaging')}>
+                  <option value={LOOSE}>{t('po.loose')}</option>
                   {selectedProduct.packagings.map((pack) => (
                     <option key={pack.id} value={pack.id}>{pack.name} × {pack.unitsPerPack}</option>
                   ))}
@@ -245,18 +248,18 @@ export function PurchaseOrdersScreen({
               <input
                 type="number"
                 min="1"
-                placeholder={selectedPackaging ? 'Упаковок' : 'Кол-во'}
+                placeholder={selectedPackaging ? t('po.packs') : t('common.quantity')}
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
               />
               <input
                 type="number"
                 min="0"
-                placeholder={selectedPackaging ? 'Цена за упаковку' : 'Цена за шт.'}
+                placeholder={selectedPackaging ? t('po.packPrice') : t('po.unitPrice')}
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
               />
-              <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
+              <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
             </div>
 
             {error && <div className="login-error">{error}</div>}
@@ -266,7 +269,7 @@ export function PurchaseOrdersScreen({
             {/* Created as a draft, always. An order that appears already
                 approved is one nobody agreed to pay for. */}
             <button className="btn btn-primary btn-block" disabled={lines.length === 0 || submitting} onClick={submit}>
-              {submitting ? 'Создаём…' : 'Создать черновик заказа'}
+              {submitting ? t('common.creating') : t('po.createDraft')}
             </button>
           </div>
         </>
