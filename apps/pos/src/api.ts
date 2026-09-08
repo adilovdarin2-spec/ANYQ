@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -747,4 +747,30 @@ function filenameFrom(disposition: string | null): string | null {
   if (encoded) return decodeURIComponent(encoded[1]);
   const plain = /filename="([^"]+)"/i.exec(disposition);
   return plain ? plain[1] : null;
+}
+
+export function fetchSupplierReturns(token: string, locationId: string): Promise<SupplierReturn[]> {
+  return request(`/pos/supplier-returns?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
+export interface SupplierReturnPayload {
+  locationId: string;
+  /// Always against one delivery: a return standing on its own could send back
+  /// goods that were never delivered.
+  receiptId: string;
+  reasonCode: string;
+  note: string;
+  items: { productId: string; quantity: number }[];
+}
+
+export function createSupplierReturn(
+  token: string,
+  payload: SupplierReturnPayload,
+  idempotencyKey?: string,
+): Promise<{ id: string; createdAt: string; credit: number }> {
+  return request(
+    '/pos/supplier-returns',
+    { method: 'POST', body: JSON.stringify(payload), headers: idempotencyHeader(idempotencyKey) },
+    token,
+  );
 }

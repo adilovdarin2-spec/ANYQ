@@ -63,6 +63,7 @@ import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy
 import { recordChanges, resolveActor } from '../audit-log';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
+import { resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
 import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
@@ -1765,6 +1766,192 @@ const DEAD_STOCK_DAYS = 90;
 
 // The owner's morning. Not a page of charts — six questions with answers, each
 // one traceable to the documents underneath it.
+// Sending goods back to the supplier they came from.
+//
+// The only thing to do with a delivery that arrived broken or wrong used to be
+// a write-off, which records the goods leaving and quietly accepts the loss —
+// but the loss is not the shop's. The money is owed by the supplier, and a
+// write-off is the shop paying for their mistake and then forgetting it.
+posRouter.get('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const returns = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, locationId, type: 'supplier_return' },
+    include: { items: { include: { product: true } }, counterparty: true },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+  res.json(
+    returns.map((doc) => ({
+      id: doc.id,
+      createdAt: doc.createdAt.toISOString(),
+      receiptId: doc.originalDocumentId,
+      supplierName: doc.counterparty?.name ?? '',
+      reasonCode: doc.reasonCode,
+      note: doc.reason,
+      credit: doc.refundAmount ?? 0,
+      createdByName: doc.createdBy ? nameByUserId.get(doc.createdBy) ?? 'Удалённый сотрудник' : null,
+      items: doc.items.map((it) => ({ productId: it.productId, name: it.product.name, quantity: it.quantity })),
+    })),
+  );
+});
+
+posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const requested: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Возврат поставщику недоступен на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  // Always against one delivery. A return standing on its own could send back
+  // goods that were never delivered, which manufactures credit out of nothing.
+  const receipt = await prisma.document.findFirst({
+    where: { id: b.receiptId, companyId: req.posCompanyId, type: 'receipt' },
+    include: { items: true },
+  });
+  if (!receipt) {
+    res.status(404).json({ error: 'Поставка не найдена' });
+    return;
+  }
+
+  const note = typeof b.note === 'string' ? b.note.trim() : '';
+  if (!note) {
+    // The same rule as a customer return, for the same reason: the supplier
+    // will ask why, and "the system does not record that" is not an answer.
+    res.status(400).json({ error: 'Опишите, почему возвращаете товар' });
+    return;
+  }
+
+  const alreadyReturnedDocs = await prisma.document.findMany({
+    where: { companyId: req.posCompanyId, type: 'supplier_return', originalDocumentId: receipt.id },
+    include: { items: true },
+  });
+  const alreadyReturned = new Map<string, number>();
+  for (const doc of alreadyReturnedDocs) {
+    for (const item of doc.items) {
+      alreadyReturned.set(item.productId, (alreadyReturned.get(item.productId) ?? 0) + item.quantity);
+    }
+  }
+
+  const resolution = resolveSupplierReturn(
+    receipt.items.map((it) => ({
+      productId: it.productId,
+      quantity: it.quantity,
+      price: it.price,
+      packQuantity: it.packQuantity,
+      packPrice: it.packPrice,
+    })),
+    alreadyReturned,
+    requested,
+  );
+  if (resolution.status !== 'ok') {
+    res.status(400).json({ error: supplierReturnErrorMessage(resolution) });
+    return;
+  }
+
+  const stockRows = await prisma.stock.findMany({
+    where: { locationId, productId: { in: resolution.lines.map((l) => l.productId) } },
+  });
+  const stockByProduct = groupStockByProduct(stockRows);
+
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/supplier-returns',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
+      const created = await tx.document.create({
+        data: {
+          companyId: req.posCompanyId!,
+          locationId,
+          type: 'supplier_return',
+          status: 'confirmed',
+          originalDocumentId: receipt.id,
+          // Carried from the delivery rather than taken from the request: the
+          // credit belongs to whoever was charged, and letting the caller name
+          // the supplier would let it be credited to the wrong account.
+          counterpartyId: receipt.counterpartyId,
+          reason: note,
+          reasonCode: typeof b.reasonCode === 'string' ? b.reasonCode : 'quality',
+          // What the supplier is credited. Recorded rather than recomputed,
+          // because the delivery's prices can change afterwards and the credit
+          // agreed today must not move with them.
+          refundAmount: resolution.credit,
+          createdBy: req.posUserId!,
+          items: {
+            create: resolution.lines.map((line) => ({
+              productId: line.productId,
+              quantity: line.quantity,
+              price: line.quantity > 0 ? Math.round(line.credit / line.quantity) : 0,
+            })),
+          },
+        },
+      });
+
+      await Promise.all(
+        resolution.lines.map((line) =>
+          deductAcrossBins(tx, stockByProduct.get(line.productId) ?? [], line.quantity, 'supplier_return', {
+            documentId: created.id,
+            createdBy: req.posUserId,
+          }),
+        ),
+      );
+
+      return {
+        id: created.id,
+        createdAt: created.createdAt.toISOString(),
+        credit: resolution.credit,
+      };
+    });
+
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого возврата' });
+      return;
+    }
+    if (err instanceof StockError) {
+      res.status(409).json({ error: 'Этого товара уже нет на складе — вернуть его нельзя', shortages: err.shortages });
+      return;
+    }
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
+});
+
 // The owner's own data, in a file they can open.
 //
 // A shop that cannot get its numbers out of a system does not really own them,
@@ -3289,7 +3476,25 @@ async function loadLedgers(
     prisma.settlement.findMany({ where: { companyId, counterpartyId: { in: counterpartyIds } } }),
   ]);
 
+  // Goods sent back reduce what is owed on the delivery they came from,
+  // without any money moving. That is what a credit note is, and reading it as
+  // a settlement keeps one figure — "what we owe this supplier" — rather than
+  // two that somebody has to reconcile by hand.
+  const supplierCredits = chargeType === 'receipt'
+    ? await prisma.document.findMany({
+        where: { companyId, type: 'supplier_return', originalDocumentId: { not: null } },
+        select: { originalDocumentId: true, refundAmount: true },
+      })
+    : [];
+
   const settledByDocument = new Map<string, number>();
+  for (const credit of supplierCredits) {
+    if (!credit.originalDocumentId) continue;
+    settledByDocument.set(
+      credit.originalDocumentId,
+      (settledByDocument.get(credit.originalDocumentId) ?? 0) + (credit.refundAmount ?? 0),
+    );
+  }
   for (const settlement of settlements) {
     if (settlement.documentId) {
       settledByDocument.set(

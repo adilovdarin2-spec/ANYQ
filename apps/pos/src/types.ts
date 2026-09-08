@@ -776,3 +776,17 @@ export interface PriceRoundTrip {
   loweredAt: string;
   restoredAt: string;
 }
+
+/// Goods sent back to the supplier they came from, against one delivery.
+export interface SupplierReturn {
+  id: string;
+  createdAt: string;
+  receiptId: string | null;
+  supplierName: string;
+  reasonCode: string | null;
+  note: string | null;
+  /// What the supplier is credited. Reduces what the shop owes them.
+  credit: number;
+  createdByName: string | null;
+  items: { productId: string; name: string; quantity: number }[];
+}
