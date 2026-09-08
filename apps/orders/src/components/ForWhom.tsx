@@ -34,7 +34,7 @@ export function ForWhom() {
       <div className="section-inner">
         <div className="section-head">
           <span className="section-eyebrow">Для кого</span>
-          <h2 className="section-heading">Один продукт под разные виды бизнеса</h2>
+          <h2 className="section-heading">Один продукт для торговли, склада и опта</h2>
           <p className="section-sub">
             Модули включаются под конкретную задачу — вы платите за то, чем пользуетесь, а не за универсальный
             комбайн с лишними функциями.
