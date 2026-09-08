@@ -18,7 +18,7 @@ export function Footer() {
               <span className="order-brand-mark">A</span>
               <span className="landing-logo-text">ANYQ</span>
             </div>
-            <p>Касса, склад и заказы для магазинов, складов, аптек и HoReCa в Казахстане.</p>
+            <p>Касса, склад и заказы для магазинов, складов, аптек и оптовых поставщиков в Казахстане.</p>
           </div>
 
           <div className="footer-col">

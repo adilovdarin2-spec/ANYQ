@@ -12,7 +12,8 @@ against. See [PRICING.md](PRICING.md) for the current tariff grid.
 ## Positioning
 
 One product, one core domain — presented differently per audience. A pharmacy owner should
-never see restaurant modifiers; a HoReCa distributor should never see prescription fields. The
+never see bin-addressing for a warehouse they do not have; a distributor should never see
+prescription fields. The
 difference is feature flags and role-scoped screens, never a separate codebase or a separate
 database per vertical.
 
@@ -25,7 +26,7 @@ database per vertical.
 | Pharmacy Pack | Batch/expiry FEFO dispensing | **Built** — batches, expiry-aware sale allocation, receiving screen. `Prescription`/`ControlledSubstanceLedger` schema still has zero wiring (compliance/marking scope, deliberately deferred) |
 | Warehouse Pro Pack | Multi-warehouse transfers, receiving, cycle counts, production/BOM | **Built** (2026-07-28) — `Document.type='transfer'/'receipt'/'adjustment'/'production'`, all gated by `warehouse` module. Production reuses the same `Recipe`/`RecipeIngredient` models the Restaurant Pack already had (they were never restaurant-specific), so a company can define a BOM for any product, not just dishes |
 | Distribution Pack (B2B) | Personal pricing, credit limits, order portal, linked buyer/seller documents | **Built**, extended to a full marketplace storefront (2026-07-29) — this is the `supply` module (`apps/orders` + `/pos/orders`). Category browsing, live stock, a friendly per-supplier link (`Company.slug`, falls back to the cuid so old links never break), a delivery-address field on every order, a full installable PWA (manifest/icons/service worker), and Web Push so the owner is notified the moment an order lands — not just the 20s poll. Personal/negotiated pricing and credit limits are still not built |
-| Restaurant Pack | Recipes, ingredient deduction, food cost, stop-list, modifiers, table/floor plan, KDS | **Built** (2026-07-29) — floor plan + kitchen display, gated by `restaurant` module. Split bills (per-guest/per-item payment splitting) still not built — one table has exactly one open order and one payment, deliberately deferred as a separate, larger follow-up |
+| Restaurant Pack | Recipes, ingredient deduction, food cost, stop-list, modifiers, table/floor plan, KDS | **Built** (2026-07-29) — floor plan + kitchen display, gated by `restaurant` module. Split bills (per-guest/per-item payment splitting) still not built — one table has exactly one open order and one payment, **not** deferred: it is cancelled, along with the rest of this pack's roadmap. The 2026-09-05 decision above makes restaurant work legacy — the code stays and keeps working for anyone already on it, and nothing new is built here |
 | Terminal/reports | Desktop layout, sales analytics, receipt printing | Built (2026-07-28, MVP scope) |
 
 Keep this table honest going forward — a module only "counts" once it has real routes and UI,
