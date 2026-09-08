@@ -65,6 +65,7 @@ import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
 import { resolvePick, resolveShipment, pickErrorMessage, orderStage, orderStageLabel } from '../picking';
+import { xlsxToGrid, xlsxErrorMessage, MAX_XLSX_BYTES } from '../xlsx';
 import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
@@ -4528,12 +4529,46 @@ const MAX_IMPORT_ROWS = 20000;
 /** Enough for somebody to see the shape of what is wrong without scrolling forever. */
 const MAX_REPORTED_PROBLEMS = 200;
 
-function readGrid(body: any): string[][] | null {
-  if (!Array.isArray(body?.grid)) return null;
-  if (body.grid.length > MAX_IMPORT_ROWS) return null;
-  return body.grid.map((row: unknown) =>
-    Array.isArray(row) ? row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))) : [],
-  );
+type GridResult = { status: 'ok'; grid: string[][] } | { status: 'error'; message: string };
+
+/**
+ * The table, however it arrived.
+ *
+ * Three shapes, because a shop's price list comes three ways: pasted out of
+ * Excel, saved as CSV, or handed over as the .xlsx itself. The charter promises
+ * the third and the import only took the first two, which meant telling an
+ * owner to re-save their own file — the software's job, pushed onto them.
+ */
+function readGrid(body: any): GridResult {
+  // An .xlsx arrives base64-encoded in JSON rather than as multipart, because
+  // the whole API is JSON and a file upload parser is a dependency and a second
+  // code path for one endpoint.
+  if (typeof body?.xlsxBase64 === 'string' && body.xlsxBase64) {
+    // Checked before decoding: base64 is a third larger than the bytes it
+    // carries, so a file over the limit is refused without allocating it.
+    if (body.xlsxBase64.length > Math.ceil(MAX_XLSX_BYTES / 3) * 4 + 4) {
+      return { status: 'error', message: xlsxErrorMessage({ status: 'tooLarge' }) };
+    }
+    const parsed = xlsxToGrid(Buffer.from(body.xlsxBase64, 'base64'));
+    if (parsed.status !== 'ok') return { status: 'error', message: xlsxErrorMessage(parsed) };
+    if (parsed.grid.length > MAX_IMPORT_ROWS) {
+      return { status: 'error', message: `В файле больше ${MAX_IMPORT_ROWS} строк — разбейте на части` };
+    }
+    return { status: 'ok', grid: parsed.grid };
+  }
+
+  if (!Array.isArray(body?.grid)) {
+    return { status: 'error', message: 'Не удалось прочитать таблицу — вставьте её из Excel или приложите файл .xlsx' };
+  }
+  if (body.grid.length > MAX_IMPORT_ROWS) {
+    return { status: 'error', message: `Не больше ${MAX_IMPORT_ROWS} строк за раз` };
+  }
+  return {
+    status: 'ok',
+    grid: body.grid.map((row: unknown) =>
+      Array.isArray(row) ? row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))) : [],
+    ),
+  };
 }
 
 async function planImport(companyId: string, grid: string[][]) {
@@ -4554,13 +4589,13 @@ posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthed
     return;
   }
 
-  const grid = readGrid(req.body);
-  if (!grid) {
-    res.status(400).json({ error: `Не удалось прочитать таблицу — не больше ${MAX_IMPORT_ROWS} строк за раз` });
+  const parsed = readGrid(req.body);
+  if (parsed.status !== 'ok') {
+    res.status(400).json({ error: parsed.message });
     return;
   }
 
-  const plan = await planImport(req.posCompanyId!, grid);
+  const plan = await planImport(req.posCompanyId!, parsed.grid);
   res.json({
     created: plan.created,
     updated: plan.updated,
@@ -4579,11 +4614,12 @@ posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest,
     return;
   }
 
-  const grid = readGrid(req.body);
-  if (!grid) {
-    res.status(400).json({ error: `Не удалось прочитать таблицу — не больше ${MAX_IMPORT_ROWS} строк за раз` });
+  const parsed = readGrid(req.body);
+  if (parsed.status !== 'ok') {
+    res.status(400).json({ error: parsed.message });
     return;
   }
+  const grid = parsed.grid;
 
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },

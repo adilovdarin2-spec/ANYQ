@@ -1,3 +1,4 @@
+import { crc32, deflateRawSync } from 'node:zlib';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import {
   api,
@@ -141,5 +142,141 @@ describe('bringing a catalogue in', () => {
     const cashier = await createFixture({ role: 'cashier' });
     const refused = await api(cashier.token, 'POST', '/pos/import/products', { locationId: cashier.locationId, grid });
     expect(refused.status).toBe(403);
+  });
+});
+
+describe('bringing a catalogue in as a spreadsheet', () => {
+  /**
+   * A real .xlsx, built here rather than checked in as a fixture: the whole
+   * point is that the server parses the zip and the XML, and constructing them
+   * proves that rather than proving one file happens to work.
+   */
+  function buildXlsx(rows: string[][]): string {
+    const strings: string[] = [];
+    const index = (value: string) => {
+      const existing = strings.indexOf(value);
+      if (existing !== -1) return existing;
+      strings.push(value);
+      return strings.length - 1;
+    };
+    const escape = (value: string) =>
+      value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const sheetRows = rows
+      .map((row, r) => {
+        const cells = row
+          .map((cell, c) => {
+            const ref = `${String.fromCharCode(65 + c)}${r + 1}`;
+            // Numbers as numbers, text through the shared-string table — the
+            // two shapes Excel actually writes.
+            return /^\d+(\.\d+)?$/.test(cell)
+              ? `<c r="${ref}"><v>${cell}</v></c>`
+              : `<c r="${ref}" t="s"><v>${index(cell)}</v></c>`;
+          })
+          .join('');
+        return `<row r="${r + 1}">${cells}</row>`;
+      })
+      .join('');
+
+    const files: Record<string, string> = {
+      'xl/sharedStrings.xml': `<sst>${strings.map((v) => `<si><t>${escape(v)}</t></si>`).join('')}</sst>`,
+      'xl/worksheets/sheet1.xml': `<worksheet><sheetData>${sheetRows}</sheetData></worksheet>`,
+    };
+
+    const locals: Buffer[] = [];
+    const centrals: Buffer[] = [];
+    let offset = 0;
+    for (const [name, content] of Object.entries(files)) {
+      const raw = Buffer.from(content, 'utf8');
+      const data = deflateRawSync(raw);
+      const nameBytes = Buffer.from(name, 'utf8');
+      const checksum = crc32(raw);
+
+      const local = Buffer.alloc(30 + nameBytes.length);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt16LE(20, 4);
+      local.writeUInt16LE(8, 8);
+      local.writeUInt32LE(checksum, 14);
+      local.writeUInt32LE(data.length, 18);
+      local.writeUInt32LE(raw.length, 22);
+      local.writeUInt16LE(nameBytes.length, 26);
+      nameBytes.copy(local, 30);
+      locals.push(local, data);
+
+      const central = Buffer.alloc(46 + nameBytes.length);
+      central.writeUInt32LE(0x02014b50, 0);
+      central.writeUInt16LE(20, 4);
+      central.writeUInt16LE(20, 6);
+      central.writeUInt16LE(8, 10);
+      central.writeUInt32LE(checksum, 16);
+      central.writeUInt32LE(data.length, 20);
+      central.writeUInt32LE(raw.length, 24);
+      central.writeUInt16LE(nameBytes.length, 28);
+      central.writeUInt32LE(offset, 42);
+      nameBytes.copy(central, 46);
+      centrals.push(central);
+
+      offset += local.length + data.length;
+    }
+
+    const directory = Buffer.concat(centrals);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(centrals.length, 8);
+    end.writeUInt16LE(centrals.length, 10);
+    end.writeUInt32LE(directory.length, 12);
+    end.writeUInt32LE(offset, 16);
+
+    return Buffer.concat([...locals, directory, end]).toString('base64');
+  }
+
+  const priceList = [
+    ['Название', 'Цена', 'Закупка', 'Штрихкод'],
+    ['Сок «Дар» 1л', '890', '600', '4870000000011'],
+    ['Печенье овсяное', '450', '300', ''],
+  ];
+
+  it('reads a real .xlsx and says what it would do', async () => {
+    // The charter promises XLSX. Telling an owner to re-save their own price
+    // list as CSV is the software's job pushed onto them.
+    const res = await api(fx.token, 'POST', '/pos/import/products/preview', {
+      xlsxBase64: buildXlsx(priceList),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(2);
+    expect(res.body.sample[0].name).toBe('Сок «Дар» 1л');
+    // Nothing written by a preview.
+    expect(await prisma.product.count({ where: { companyId: fx.companyId } })).toBe(1);
+  });
+
+  it('imports from the same file', async () => {
+    const res = await api(fx.token, 'POST', '/pos/import/products', {
+      locationId: fx.locationId,
+      xlsxBase64: buildXlsx(priceList),
+    }, { 'Idempotency-Key': 'xlsx-1' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.created).toBe(2);
+    const juice = await prisma.product.findFirstOrThrow({ where: { name: 'Сок «Дар» 1л' } });
+    expect(juice).toMatchObject({ salePrice: 890, purchasePrice: 600, barcode: '4870000000011' });
+  });
+
+  it('says plainly when the file is not a spreadsheet', async () => {
+    const res = await api(fx.token, 'POST', '/pos/import/products/preview', {
+      xlsxBase64: Buffer.from('это просто текст').toString('base64'),
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('.xlsx');
+  });
+
+  it('still accepts a pasted grid', async () => {
+    // The old path has to keep working: a register already in the field sends
+    // a grid and nothing else.
+    const res = await api(fx.token, 'POST', '/pos/import/products/preview', {
+      grid: priceList,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(2);
   });
 });

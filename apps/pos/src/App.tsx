@@ -80,7 +80,7 @@ import {
   updateKitchenItemStatus,
   updateManagedProduct,
 } from './api';
-import type { DocumentFilter } from './api';
+import type { DocumentFilter, ImportSource } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
 import type { PosSession, CustomerLookupResult } from './api';
@@ -842,12 +842,12 @@ export default function App() {
     setImportError(null);
   }
 
-  async function handlePreviewImport(grid: string[][]) {
+  async function handlePreviewImport(source: ImportSource) {
     if (!session) return;
     setImportLoading(true);
     setImportError(null);
     try {
-      setImportPreview(await previewImport(session.token, grid));
+      setImportPreview(await previewImport(session.token, source));
     } catch (err) {
       setImportError(err instanceof ApiError ? err.message : 'Не удалось проверить файл');
     } finally {
@@ -855,14 +855,14 @@ export default function App() {
     }
   }
 
-  async function handleCommitImport(grid: string[][]) {
+  async function handleCommitImport(source: ImportSource) {
     if (!session || !currentLocationId) return;
     setImportSubmitting(true);
     setImportError(null);
     try {
       // A key per attempt: importing a thousand products twice because a reply
       // was lost would double the catalogue.
-      const result = await commitImport(session.token, currentLocationId, grid, genId('import'));
+      const result = await commitImport(session.token, currentLocationId, source, genId('import'));
       setImportResult(result);
       setImportPreview(null);
       // The register sells from its cached catalogue, so it has to hear about
