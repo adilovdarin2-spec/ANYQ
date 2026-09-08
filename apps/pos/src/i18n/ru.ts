@@ -908,6 +908,31 @@ export const ru = {
   'stage.shipped': 'Отгружен',
   'stage.cancelled': 'Отменён',
 
+  // --- which registers are signed in ---------------------------------------
+  //
+  // The screen somebody opens because a tablet is gone. The wording says what
+  // switching one off does and, just as importantly, what it does not do to the
+  // other tills — that is the question the person is actually asking.
+  'profile.devices': 'Устройства',
+  'devices.title': 'Устройства',
+  'devices.why': 'Кассы и планшеты, с которых входили в эту компанию. Пропал планшет — отключите здесь: перестанет работать он один, остальные кассы продолжат смену.',
+  'devices.none': 'Пока ни одного устройства не заходило',
+  'devices.thisOne': 'это устройство',
+  'devices.lastUsed': '{name} · был(а) {when}',
+  'devices.lastSeen': 'последний вход {when}',
+  'devices.revokedBy': 'отключено: {name}, {when}',
+  'devices.revokedAt': 'отключено {when}',
+  'devices.rename': 'Переименовать',
+  'devices.namePlaceholder': 'Например: касса у входа',
+  'devices.revoke': 'Отключить',
+  'devices.confirmRevoke': 'Точно отключить',
+  'devices.restore': 'Включить',
+  'devices.cannotRevokeSelf': 'Это устройство, с которого вы сейчас работаете',
+  'fail.loadDevices': 'Не удалось загрузить устройства',
+  'fail.renameDevice': 'Не удалось переименовать устройство',
+  'fail.revokeDevice': 'Не удалось отключить устройство',
+  'fail.restoreDevice': 'Не удалось включить устройство',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
   // The interface itself is fully translated. What is not, and cannot be, is

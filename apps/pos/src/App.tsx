@@ -32,6 +32,10 @@ import {
   deletePackaging,
   downloadExport,
   fetchAuditLog,
+  fetchDevices,
+  renameDevice,
+  restoreDevice,
+  revokeDevice,
   fetchBatches,
   fetchBins,
   fetchCatalog,
@@ -84,7 +88,7 @@ import {
 import type { DocumentFilter, ImportSource } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
-import type { PosSession, CustomerLookupResult } from './api';
+import type { PosSession, CustomerLookupResult, PosDevice } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
 import { ShiftBar } from './components/ShiftBar';
@@ -117,6 +121,7 @@ import { ReturnsScreen } from './components/ReturnsScreen';
 import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { AuditScreen } from './components/AuditScreen';
+import { DevicesScreen } from './components/DevicesScreen';
 import { ExportScreen } from './components/ExportScreen';
 import { SupplierReturnsScreen } from './components/SupplierReturnsScreen';
 import { PickOrderScreen } from './components/PickOrderScreen';
@@ -156,6 +161,7 @@ type View =
   | 'replenishment'
   | 'dashboard'
   | 'audit'
+  | 'devices'
   | 'export'
   | 'supplier-returns'
   | 'pick-order'
@@ -294,6 +300,10 @@ export default function App() {
   const [documentsSubtitle, setDocumentsSubtitle] = useState('');
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<PosDevice[]>([]);
+  const [devicesSubmitting, setDevicesSubmitting] = useState(false);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -429,7 +439,7 @@ export default function App() {
   const activeTab: MainTab =
     view === 'products' || view === 'product-edit' ? 'products' :
     OPERATIONS_VIEWS.has(view) ? 'operations' :
-    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' || view === 'export' || view === 'documents' ? 'profile' :
+    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' || view === 'export' || view === 'documents' || view === 'devices' ? 'profile' :
     'sale';
 
   function handleLogin(newSession: PosSession) {
@@ -1394,6 +1404,63 @@ export default function App() {
       setAuditError(err instanceof ApiError ? err.message : t('fail.loadAudit'));
     } finally {
       setAuditLoading(false);
+    }
+  }
+
+  async function loadDevices() {
+    if (!session) return;
+    setDevicesLoading(true);
+    setDevicesError(null);
+    try {
+      setDevices((await fetchDevices(session.token)).devices);
+    } catch (err) {
+      setDevicesError(err instanceof ApiError ? err.message : t('fail.loadDevices'));
+    } finally {
+      setDevicesLoading(false);
+    }
+  }
+
+  function handleShowDevices() {
+    setView('devices');
+    void loadDevices();
+  }
+
+  async function handleRenameDevice(id: string, label: string) {
+    if (!session) return;
+    setDevicesSubmitting(true);
+    try {
+      await renameDevice(session.token, id, label);
+      await loadDevices();
+    } catch (err) {
+      setDevicesError(err instanceof ApiError ? err.message : t('fail.renameDevice'));
+    } finally {
+      setDevicesSubmitting(false);
+    }
+  }
+
+  async function handleRevokeDevice(id: string) {
+    if (!session) return;
+    setDevicesSubmitting(true);
+    try {
+      await revokeDevice(session.token, id);
+      await loadDevices();
+    } catch (err) {
+      setDevicesError(err instanceof ApiError ? err.message : t('fail.revokeDevice'));
+    } finally {
+      setDevicesSubmitting(false);
+    }
+  }
+
+  async function handleRestoreDevice(id: string) {
+    if (!session) return;
+    setDevicesSubmitting(true);
+    try {
+      await restoreDevice(session.token, id);
+      await loadDevices();
+    } catch (err) {
+      setDevicesError(err instanceof ApiError ? err.message : t('fail.restoreDevice'));
+    } finally {
+      setDevicesSubmitting(false);
     }
   }
 
@@ -2547,6 +2614,20 @@ export default function App() {
         />
       )}
 
+      {view === 'devices' && (
+        <DevicesScreen
+          devices={devices}
+          loading={devicesLoading}
+          error={devicesError}
+          submitting={devicesSubmitting}
+          onBack={() => setView('profile')}
+          onRefresh={() => void loadDevices()}
+          onRename={(id, label) => void handleRenameDevice(id, label)}
+          onRevoke={(id) => void handleRevokeDevice(id)}
+          onRestore={(id) => void handleRestoreDevice(id)}
+        />
+      )}
+
       {view === 'dashboard' && (
         <OwnerDashboardScreen
           dashboard={dashboard}
@@ -2707,6 +2788,7 @@ export default function App() {
           onTogglePush={handleTogglePush}
           onShowDashboard={isOwnerOrManager ? handleShowDashboard : undefined}
           onShowAudit={isOwnerOrManager ? handleShowAudit : undefined}
+          onShowDevices={isOwnerOrManager ? handleShowDevices : undefined}
           onShowExport={isOwnerOrManager ? () => setView('export') : undefined}
           onShowReports={hasTerminal ? handleShowReports : undefined}
           onShowInstall={install.reopen}

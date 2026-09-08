@@ -90,6 +90,10 @@ const NOT_A_MESSAGE = new Set<string>([
   'Причина', 'Разрешён долг', 'Режим НДС', 'Сумма', 'Телефон', 'Тип', 'Товар', 'Цена',
   'Цена продажи', 'Чек', 'Штрихкод', 'Ячейка', 'да', 'нет', 'не размещено',
   'Удалённый сотрудник', 'Неизвестно', 'неизвестно',
+  // A device's first name before anybody renames it. Stored on the row and
+  // edited by the shop from then on, so translating it would rename their
+  // tablets under them.
+  'Устройство',
   // Document types, write-off reasons and picking stages: the register has the
   // code and says these in its own words.
   'Продажа', 'Возврат покупателю', 'Приёмка', 'Перемещение', 'Списание',

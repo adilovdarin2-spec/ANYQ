@@ -1,4 +1,5 @@
 import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import { getDeviceKey } from './storage';
 import { translate } from './i18n';
 import { translateServerMessage } from './i18n/server';
 import { getLanguage } from './i18n/useLanguage';
@@ -74,7 +75,40 @@ export function fetchCatalog(token: string, locationId: string): Promise<{ locat
 }
 
 export function posLogin(pin: string): Promise<PosSession> {
-  return request('/pos/login', { method: 'POST', body: JSON.stringify({ pin }) });
+  // The register names itself at login so the owner can switch this one off
+  // without signing the cashier out of every till in the shop.
+  return request('/pos/login', {
+    method: 'POST',
+    body: JSON.stringify({ pin, deviceKey: getDeviceKey() }),
+  });
+}
+
+export interface PosDevice {
+  id: string;
+  label: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  lastUserName: string | null;
+  revokedAt: string | null;
+  revokedByName: string | null;
+  /** The one asking. The screen refuses to switch this one off. */
+  current: boolean;
+}
+
+export function fetchDevices(token: string): Promise<{ devices: PosDevice[] }> {
+  return request('/pos/devices', {}, token);
+}
+
+export function renameDevice(token: string, id: string, label: string): Promise<{ id: string; label: string }> {
+  return request(`/pos/devices/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }, token);
+}
+
+export function revokeDevice(token: string, id: string): Promise<{ ok: true }> {
+  return request(`/pos/devices/${id}/revoke`, { method: 'POST' }, token);
+}
+
+export function restoreDevice(token: string, id: string): Promise<{ ok: true }> {
+  return request(`/pos/devices/${id}/restore`, { method: 'POST' }, token);
 }
 
 export interface SubmitSalePayload {

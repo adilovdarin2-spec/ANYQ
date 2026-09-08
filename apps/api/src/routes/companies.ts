@@ -256,6 +256,21 @@ const PIN_PATTERN = /^\d{4,6}$/;
 
 // posPin is looked up globally (not scoped by company) at /pos/login, so it
 // must be unique across every company on the platform, not just this one.
+//
+// The check below is kept because it gives a decent message; the guarantee is
+// the unique index. The check alone was a check-then-write two admins could
+// both win, and the loser's cashier would have signed into the winner's shop.
+const PIN_TAKEN = 'Этот PIN уже используется другим сотрудником';
+
+/** True when Postgres refused the write because the PIN is already spoken for. */
+function isPinConflict(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'P2002' &&
+    JSON.stringify((err as { meta?: unknown }).meta ?? '').includes('posPin')
+  );
+}
 companiesRouter.post('/:id/users', async (req, res) => {
   const b = req.body ?? {};
   if (!b.name || !b.role) {
@@ -278,15 +293,21 @@ companiesRouter.post('/:id/users', async (req, res) => {
   if (posPin) {
     const conflict = await prisma.user.findFirst({ where: { posPin } });
     if (conflict) {
-      res.status(409).json({ error: 'Этот PIN уже используется другим сотрудником' });
+      res.status(409).json({ error: PIN_TAKEN });
       return;
     }
   }
 
-  const user = await prisma.user.create({
-    data: { companyId: company.id, name: b.name, role: b.role, phone: b.phone || null, posPin: posPin || null },
-  });
-  res.status(201).json(serializeUser(user));
+  try {
+    const user = await prisma.user.create({
+      data: { companyId: company.id, name: b.name, role: b.role, phone: b.phone || null, posPin: posPin || null },
+    });
+    res.status(201).json(serializeUser(user));
+  } catch (err) {
+    if (!isPinConflict(err)) throw err;
+    // The other admin got there between the check and the insert.
+    res.status(409).json({ error: PIN_TAKEN });
+  }
 });
 
 companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
@@ -309,7 +330,7 @@ companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
   if (posPin && posPin !== existing.posPin) {
     const conflict = await prisma.user.findFirst({ where: { posPin, id: { not: existing.id } } });
     if (conflict) {
-      res.status(409).json({ error: 'Этот PIN уже используется другим сотрудником' });
+      res.status(409).json({ error: PIN_TAKEN });
       return;
     }
   }
@@ -333,27 +354,35 @@ companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
     actorName: `Администратор платформы${admin?.name ? ` (${admin.name})` : ''}`,
   };
 
-  const user = await prisma.$transaction(async (tx) => {
-    const updated = await tx.user.update({
-      where: { id: existing.id },
-      data: {
-        name: b.name,
-        role: b.role,
-        phone: b.phone || null,
-        posPin: posPin || null,
-        ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
-      },
+  try {
+    const user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: existing.id },
+        data: {
+          name: b.name,
+          role: b.role,
+          phone: b.phone || null,
+          posPin: posPin || null,
+          ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
+        },
+      });
+      await recordChanges(tx, actor, {
+        entity: 'user',
+        entityId: updated.id,
+        entityName: existing.name,
+        before: existing,
+        after: updated,
+      });
+      return updated;
     });
-    await recordChanges(tx, actor, {
-      entity: 'user',
-      entityId: updated.id,
-      entityName: existing.name,
-      before: existing,
-      after: updated,
-    });
-    return updated;
-  });
-  res.json(serializeUser(user));
+    res.json(serializeUser(user));
+  } catch (err) {
+    if (!isPinConflict(err)) throw err;
+    // Somebody else took the PIN between the check above and this write. The
+    // transaction rolled back, so no audit entry was left for a change that
+    // did not happen.
+    res.status(409).json({ error: PIN_TAKEN });
+  }
 });
 
 function serializeLocation(l: { id: string; name: string; type: string; address: string | null }) {

@@ -71,6 +71,7 @@ model Company {
   idempotencyKeys   IdempotencyKey[]
   settlements       Settlement[]
   auditEntries      AuditEntry[]
+  posDevices        PosDevice[]
 
   @@map("companies")
 }
@@ -172,7 +173,12 @@ model User {
   role      String
   phone     String?
   email     String?
-  posPin    String?
+  /// Unique across every company, not just this one: /pos/login looks a PIN up
+  /// with no company to scope it by, because there is nowhere for a cashier to
+  /// type one. Enforced here rather than by a check before the insert — that
+  /// was a race two admins could both win. Postgres treats NULLs as distinct,
+  /// so users without a PIN are unaffected.
+  posPin    String?  @unique
   // Bumped whenever this person's access changes — a new PIN, a new role, or
   // an outright revocation. Tokens carry the version they were minted at, so
   // raising it retires every token already in the wild.
@@ -186,6 +192,42 @@ model User {
   pushSubscriptions PushSubscription[]
 
   @@map("users")
+}
+
+// One row per register, so a stolen tablet can be taken away on its own.
+//
+// `User.tokenVersion` retires every session a person has. That is the right
+// tool for "this cashier has left" and the wrong one for "this tablet was
+// stolen": using it there signs the cashier out of every till in the shop, in
+// the middle of a shift, to deal with one device.
+//
+// A POS token lasts thirty days deliberately — the till has to keep selling
+// through a week with no connection — so the answer to a lost device cannot be
+// a shorter token. It has to be a device that can be named and switched off.
+model PosDevice {
+  id        String  @id @default(cuid())
+  company   Company @relation(fields: [companyId], references: [id])
+  companyId String
+  /// Generated on the device, kept in its local storage. Identifies, never
+  /// authorises: a PIN still has to be right.
+  deviceKey String
+  /// What the owner reads in the list. Guessed from the user agent, renameable.
+  label     String
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  /// Who signed in on it last — what makes a row recognisable in the list.
+  lastUserId  String?
+
+  /// Null means live. Set means no token from it is accepted and it cannot log
+  /// in again either; blocking only the token leaves the thief one
+  /// shoulder-surfed PIN away from being back.
+  revokedAt   DateTime?
+  revokedById String?
+
+  @@unique([companyId, deviceKey])
+  @@index([companyId, lastSeenAt])
+  @@map("pos_devices")
 }
 
 // One row per subscribed browser/device. A POS user can enable notifications
