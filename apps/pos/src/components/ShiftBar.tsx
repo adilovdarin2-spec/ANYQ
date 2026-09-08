@@ -1,5 +1,6 @@
 import type { Shift } from '../types';
 import { formatTime, hoursSince } from '../utils';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   shift: Shift;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function ShiftBar({ shift, cashierName, locationName, online, pendingCount, stuckCount }: Props) {
+  const { t } = useTranslation();
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
 
@@ -23,22 +25,22 @@ export function ShiftBar({ shift, cashierName, locationName, online, pendingCoun
           <div className="shift-info">
             <span className="name">{cashierName}</span>
             <span className="meta">
-              {locationName ? `${locationName} · ` : ''}смена с {formatTime(shift.openedAt)}
+              {locationName ? `${locationName} · ` : ''}{t('shift.bar.since', { time: formatTime(shift.openedAt) })}
             </span>
           </div>
         </div>
         <div className="shift-bar-right">
-          {stuckCount > 0 && <span className="pill warn">⚠ {stuckCount} требуют внимания</span>}
-          {pendingCount > 0 && <span className="pill warn">⏳ {pendingCount} не отправлено</span>}
+          {stuckCount > 0 && <span className="pill warn">⚠ {t('shift.bar.needAttention', { count: stuckCount })}</span>}
+          {pendingCount > 0 && <span className="pill warn">⏳ {t('shift.bar.notSent', { count: pendingCount })}</span>}
           <span className="pill">
             <span className={`dot ${online ? 'online' : 'offline'}`}></span>
-            {online ? 'Онлайн' : 'Офлайн'}
+            {online ? t('shift.bar.online') : t('shift.bar.offline')}
           </span>
         </div>
       </div>
       {nearLimit && (
         <div className="shift-warning">
-          Смена открыта {Math.floor(hours)} ч — рекомендуем закрыть и снять Z-отчёт до 24 часов
+          {t('shift.bar.longShift', { hours: Math.floor(hours) })}
         </div>
       )}
     </>

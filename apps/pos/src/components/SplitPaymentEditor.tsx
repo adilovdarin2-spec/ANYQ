@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { PaymentLine, PaymentMethod } from '../types';
 import { PAYMENT_LABELS } from '../types';
 import { formatMoney } from '../utils';
+import { useTranslation } from '../i18n/useLanguage';
+import type { PhraseKey } from '../i18n';
 
 interface Props {
   total: number;
@@ -17,6 +19,12 @@ const SPLITTABLE: PaymentMethod[] = ['cash', 'kaspi', 'card'];
 
 const ICONS: Record<string, string> = { cash: '💵', kaspi: '▦', card: '💳' };
 
+const METHOD_PHRASES: Record<string, PhraseKey> = {
+  cash: 'payment.cash',
+  kaspi: 'payment.kaspi',
+  card: 'payment.card',
+};
+
 /**
  * Splitting one sale across two or three methods.
  *
@@ -26,6 +34,7 @@ const ICONS: Record<string, string> = { cash: '💵', kaspi: '▦', card: '💳'
  * number they are trying to get to zero.
  */
 export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
+  const { t } = useTranslation();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
 
   const entered = SPLITTABLE.map((method) => ({
@@ -50,27 +59,26 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
   return (
     <>
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Смешанная оплата · {formatMoney(total)}</span>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('payment.split.title', { amount: formatMoney(total) })}</span>
       </div>
 
       <div className="screen-body">
         <p className="field-hint">
-          Впишите, сколько прошло каждым способом. Подтвердить можно, когда останется ноль —
-          иначе чек разойдётся с деньгами в кассе.
+          {t('payment.split.hint')}
         </p>
 
         {SPLITTABLE.map((method) => (
           <div key={method} className="count-row">
             <div>
-              <div className="li-name">{ICONS[method]} {PAYMENT_LABELS[method]}</div>
+              <div className="li-name">{ICONS[method]} {t(METHOD_PHRASES[method])}</div>
               <button
                 className="btn btn-ghost split-fill"
                 onClick={() => fillRemainder(method)}
                 // Nothing to fill in when the sale is already covered.
                 disabled={remaining <= 0 && !amounts[method]}
               >
-                весь остаток
+                {t('payment.split.fillRest')}
               </button>
             </div>
             <input
@@ -87,7 +95,11 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
 
         <div className={remaining === 0 ? 'report-row' : 'report-row low'}>
           <span>
-            {remaining > 0 ? 'Осталось внести' : remaining < 0 ? 'Введено больше суммы чека' : 'Сходится'}
+            {remaining > 0
+              ? t('payment.split.remaining')
+              : remaining < 0
+                ? t('payment.split.overpaid')
+                : t('payment.split.balanced')}
           </span>
           <span>{formatMoney(Math.abs(remaining))}</span>
         </div>
@@ -97,7 +109,7 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
           // drawer by exactly what the cashier handed back, and the shift would
           // come up short by that at close.
           <p className="field-hint">
-            Сдача не вводится: впишите сумму чека, а сдачу отдайте из кассы.
+            {t('payment.split.noChange')}
           </p>
         )}
       </div>
@@ -112,12 +124,12 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
               способа" while 290 ₸ are still missing sends the cashier looking
               for a second method they have already entered. */}
           {remaining > 0
-            ? `Осталось внести ${formatMoney(remaining)}`
+            ? t('payment.split.remainingButton', { amount: formatMoney(remaining) })
             : remaining < 0
-              ? 'Введено больше суммы чека'
+              ? t('payment.split.overpaid')
               : entered.length < 2
-                ? 'Для смешанной нужно два способа'
-                : 'Подтвердить оплату'}
+                ? t('payment.split.needTwo')
+                : t('payment.confirm')}
         </button>
       </div>
     </>

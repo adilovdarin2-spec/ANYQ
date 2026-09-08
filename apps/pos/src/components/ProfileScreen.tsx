@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { LANGUAGES } from '../i18n';
+import { useTranslation } from '../i18n/useLanguage';
 import type { Shift } from '../types';
 import { formatTime, hoursSince } from '../utils';
 
@@ -55,6 +57,7 @@ export function ProfileScreen({
   onCloseShift,
   onLogout,
 }: Props) {
+  const { t, language, setLanguage } = useTranslation();
   const [copied, setCopied] = useState(false);
   const hours = hoursSince(shift.openedAt);
 
@@ -99,6 +102,32 @@ export function ProfileScreen({
 
       {/* First, because it is the screen whoever answers for the money opens
           before anything else. */}
+      {/* Kazakhstan trades in both languages, and a cashier who reads Kazakh
+          more comfortably makes fewer mistakes in Kazakh. The coverage figure
+          is shown rather than hidden: nobody should switch expecting the whole
+          product and find the gap in the middle of a stocktake. */}
+      <div className="profile-section">
+        <div className="section-title">{t('language.title')}</div>
+        <div className="category-bar">
+          {LANGUAGES.map((option) => (
+            <button
+              key={option.code}
+              type="button"
+              className={option.code === language ? 'category-chip on' : 'category-chip'}
+              onClick={() => setLanguage(option.code)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {/* The sentence, and deliberately no fraction beside it. A count of
+            translated keys measures the dictionary, not the interface: every
+            key in the dictionary is translated, while most of the product is
+            not in the dictionary at all, so "81/81" would read as a claim
+            about the app and contradict the sentence it sits next to. */}
+        {language !== 'ru' && <div className="field-hint">{t('language.partial')}</div>}
+      </div>
+
       {onShowDashboard && (
         <button type="button" className="profile-action" onClick={onShowDashboard}>
           <span>🧭 Сводка владельца</span>
