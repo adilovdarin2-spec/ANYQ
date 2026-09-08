@@ -62,6 +62,7 @@ import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, bi
 import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy } from '../payments';
 import { recordChanges, resolveActor } from '../audit-log';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
+import { csvFile, csvFilename } from '../csv';
 import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
@@ -1764,6 +1765,157 @@ const DEAD_STOCK_DAYS = 90;
 
 // The owner's morning. Not a page of charts — six questions with answers, each
 // one traceable to the documents underneath it.
+// The owner's own data, in a file they can open.
+//
+// A shop that cannot get its numbers out of a system does not really own them,
+// and an owner deciding whether to trust a pilot with a year of trading asks
+// this question early. It is also the answer to half the requests that would
+// otherwise arrive as "can you add a column to that report": the data is there,
+// take it and do what you like with it.
+//
+// CSV rather than XLSX: it needs no parser on this side, opens in Excel and in
+// 1C, and can be read by a person with a text editor when everything else has
+// failed. The encoding decisions that make that true are in csv.ts.
+const EXPORTS = ['products', 'stock', 'sales', 'movements', 'counterparties'] as const;
+type ExportDataset = (typeof EXPORTS)[number];
+
+posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Выгрузку делает владелец или менеджер' });
+    return;
+  }
+
+  const dataset = req.params.dataset as ExportDataset;
+  if (!EXPORTS.includes(dataset)) {
+    res.status(404).json({ error: 'Неизвестная выгрузка' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const requestedDays = Number(req.query.days);
+  const days = Number.isFinite(requestedDays) && requestedDays > 0 && requestedDays <= 365
+    ? Math.round(requestedDays)
+    : 90;
+  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+  const locationNameById = new Map((company?.locations ?? []).map((l) => [l.id, l.name]));
+
+  // Bounded like every other read here. An export that quietly turns into a
+  // timeout on a busy shop is worse than one that says how much it covered.
+  const LIMIT = 20000;
+  let header: string[] = [];
+  let rows: unknown[][] = [];
+
+  if (dataset === 'products') {
+    const products = await prisma.product.findMany({
+      where: { companyId: req.posCompanyId },
+      orderBy: { name: 'asc' },
+      take: LIMIT,
+    });
+    header = ['Название', 'Категория', 'Единица', 'Штрихкод', 'Закупочная цена', 'Цена продажи', 'В продаже'];
+    rows = products.map((p) => [p.name, p.category, p.unit, p.barcode, p.purchasePrice, p.salePrice, p.sellable]);
+  }
+
+  if (dataset === 'stock') {
+    const stocks = await prisma.stock.findMany({
+      where: { locationId },
+      include: { product: true },
+      orderBy: [{ binLocation: 'asc' }],
+      take: LIMIT,
+    });
+    header = ['Товар', 'Ячейка', 'Остаток', 'Зарезервировано', 'В карантине', 'Доступно'];
+    rows = stocks.map((row) => [
+      row.product.name,
+      // The empty code is not a bin, but it is a real place: goods that arrived
+      // and were never put away. Exporting it as blank hides that pile.
+      row.binLocation || 'не размещено',
+      row.quantity,
+      row.reserved,
+      row.blocked,
+      availableQuantity(row),
+    ]);
+  }
+
+  if (dataset === 'sales') {
+    const sales = await prisma.document.findMany({
+      where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
+      include: { items: { include: { product: true } }, payments: true },
+      orderBy: { createdAt: 'desc' },
+      take: LIMIT,
+    });
+    // One row per line, not per receipt. A receipt-level export cannot answer
+    // "how much of this did we sell", which is the first thing anybody asks a
+    // spreadsheet.
+    header = ['Дата', 'Чек', 'Кассир', 'Товар', 'Количество', 'Цена', 'Сумма', 'Оплата'];
+    rows = sales.flatMap((sale) => {
+      const method = sale.payments.length > 1
+        ? sale.payments.map((line) => `${line.method} ${line.amount}`).join(' + ')
+        : sale.paymentMethod ?? '';
+      return sale.items.map((item) => [
+        sale.createdAt,
+        sale.id,
+        sale.createdBy ? nameByUserId.get(sale.createdBy) ?? 'Удалённый сотрудник' : '',
+        item.product.name,
+        item.quantity,
+        item.price,
+        Math.round(item.price * item.quantity),
+        method,
+      ]);
+    });
+  }
+
+  if (dataset === 'movements') {
+    const movements = await prisma.stockMovement.findMany({
+      where: { locationId, createdAt: { gte: from } },
+      include: { product: true },
+      orderBy: { createdAt: 'desc' },
+      take: LIMIT,
+    });
+    header = ['Дата', 'Товар', 'Ячейка', 'Изменение', 'Причина', 'Документ', 'Кто'];
+    rows = movements.map((m) => [
+      m.createdAt,
+      m.product.name,
+      m.binLocation || 'не размещено',
+      m.quantity,
+      m.reason,
+      m.documentId,
+      m.createdBy ? nameByUserId.get(m.createdBy) ?? 'Удалённый сотрудник' : '',
+    ]);
+  }
+
+  if (dataset === 'counterparties') {
+    const parties = await prisma.counterparty.findMany({
+      where: { companyId: req.posCompanyId },
+      orderBy: { name: 'asc' },
+      take: LIMIT,
+    });
+    header = ['Название', 'Тип', 'Телефон', 'Разрешён долг', 'Лимит долга', 'Баллы'];
+    rows = parties.map((c) => [c.name, c.type, c.phone, c.creditAllowed, c.creditLimit, c.loyaltyPoints]);
+  }
+
+  const filename = csvFilename(`${dataset}-${locationNameById.get(locationId) ?? ''}`.replace(/\s+/g, '-'));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  // Both forms: the plain one for old clients, the encoded one because the
+  // filename carries the location's Cyrillic name.
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="export.csv"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+  );
+  res.send(csvFile(header, rows));
+});
+
 // What was changed, by whom, and to what.
 //
 // Goods have been traceable since the ledger existed. This is the other half:
