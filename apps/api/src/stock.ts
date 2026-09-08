@@ -66,7 +66,8 @@ export type StockMovementReason =
   | 'production_in'
   | 'production_out'
   | 'table_order'
-  | 'batch_receipt';
+  | 'batch_receipt'
+  | 'supplier_return';
 
 // What a register may actually draw on. Goods reserved against an open order
 // are physically present and countable, but they are not for sale — selling
@@ -83,12 +84,20 @@ export function availableQuantity(stock: { quantity: number; reserved: number; b
 // are broken whoever was promised them, and refusing to record that leaves the
 // shelf lying rather than the order. Receipts and returns only add. Every
 // other outbound reason consumes sellable stock and must respect reservations.
+//
+// A supplier return sits with the first group rather than with write-offs, and
+// that is a decision rather than an oversight. A write-off records something
+// that has already happened to the goods; sending them back is a choice
+// somebody is making now, and making it with units already promised to a
+// customer breaks that promise silently. Better to refuse and let a person
+// decide which promise to keep.
 const RESERVATION_RESPECTING_REASONS: ReadonlySet<StockMovementReason> = new Set<StockMovementReason>([
   'sale',
   'order_fulfill',
   'transfer_out',
   'production_out',
   'table_order',
+  'supplier_return',
 ]);
 
 export function respectsReservations(reason: StockMovementReason): boolean {

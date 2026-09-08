@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -23,6 +23,7 @@ import {
   createPurchaseOrder,
   createRemoteShift,
   createReturn,
+  createSupplierReturn,
   createTable,
   createTransfer,
   deleteBin,
@@ -52,6 +53,7 @@ import {
   fetchReturns,
   fetchSettlements,
   fetchStockMovements,
+  fetchSupplierReturns,
   fetchSuppliers,
   fetchTableOrder,
   fetchTables,
@@ -109,6 +111,7 @@ import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { AuditScreen } from './components/AuditScreen';
 import { ExportScreen } from './components/ExportScreen';
+import { SupplierReturnsScreen } from './components/SupplierReturnsScreen';
 import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
@@ -145,6 +148,7 @@ type View =
   | 'dashboard'
   | 'audit'
   | 'export'
+  | 'supplier-returns'
   | 'fiscal'
   | 'purchase-orders'
   | 'write-offs'
@@ -267,6 +271,10 @@ export default function App() {
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [auditRoundTrips, setAuditRoundTrips] = useState<PriceRoundTrip[]>([]);
   const [auditDays, setAuditDays] = useState(30);
+  const [supplierReturns, setSupplierReturns] = useState<SupplierReturn[]>([]);
+  const [supplierReturnsLoading, setSupplierReturnsLoading] = useState(false);
+  const [supplierReturnsError, setSupplierReturnsError] = useState<string | null>(null);
+  const [supplierReturnSubmitting, setSupplierReturnSubmitting] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -372,6 +380,7 @@ export default function App() {
       { key: 'import', icon: '📥', label: 'Импорт товаров', onClick: handleShowImport },
       { key: 'settlements', icon: '🤝', label: 'Расчёты и долги', onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
+      { key: 'supplier-returns', icon: '📤', label: 'Возврат поставщику', onClick: handleShowSupplierReturns },
       { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
       { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
     );
@@ -1326,6 +1335,49 @@ export default function App() {
       setAuditError(err instanceof ApiError ? err.message : 'Не удалось загрузить журнал изменений');
     } finally {
       setAuditLoading(false);
+    }
+  }
+
+  async function loadSupplierReturns() {
+    if (!session || !currentLocationId) return;
+    setSupplierReturnsLoading(true);
+    setSupplierReturnsError(null);
+    try {
+      setSupplierReturns(await fetchSupplierReturns(session.token, currentLocationId));
+    } catch (err) {
+      setSupplierReturnsError(err instanceof ApiError ? err.message : 'Не удалось загрузить возвраты');
+    } finally {
+      setSupplierReturnsLoading(false);
+    }
+  }
+
+  function handleShowSupplierReturns() {
+    setView('supplier-returns');
+    void loadSupplierReturns();
+    // The list of deliveries a return can be filed against.
+    void loadReceipts();
+  }
+
+  async function handleCreateSupplierReturn(payload: {
+    receiptId: string;
+    reasonCode: string;
+    note: string;
+    items: { productId: string; quantity: number }[];
+  }) {
+    if (!session || !currentLocationId) return false;
+    setSupplierReturnSubmitting(true);
+    setSupplierReturnsError(null);
+    try {
+      await createSupplierReturn(session.token, { ...payload, locationId: currentLocationId });
+      await loadSupplierReturns();
+      // Goods left the shelf, so the register's cached grid has to hear about it.
+      await refreshCatalogAfterStockChange();
+      return true;
+    } catch (err) {
+      setSupplierReturnsError(err instanceof ApiError ? err.message : 'Не удалось оформить возврат');
+      return false;
+    } finally {
+      setSupplierReturnSubmitting(false);
     }
   }
 
@@ -2299,6 +2351,18 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadFiscal}
           onRegister={handleRegisterFiscal}
+        />
+      )}
+
+      {view === 'supplier-returns' && (
+        <SupplierReturnsScreen
+          returns={supplierReturns}
+          receipts={receipts}
+          loading={supplierReturnsLoading}
+          error={supplierReturnsError}
+          submitting={supplierReturnSubmitting}
+          onBack={() => setView('operations')}
+          onSubmit={handleCreateSupplierReturn}
         />
       )}
 
