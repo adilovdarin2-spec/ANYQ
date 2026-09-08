@@ -1,18 +1,28 @@
-// An end-to-end run against a live server and a real database, which every
-// other test in this repo is not: the 357 unit tests exercise pure functions,
-// and until this script ran, no line of database code had ever executed.
+// One shop's working day, against a server that is actually running.
 //
-// It walks one shop through a working day — sell, replay the same sale, return,
-// receive, transfer and receive short, put away, count a shelf, write off,
-// order and part-receive — and finishes by asserting the invariant everything
-// else rests on: stock equals the sum of its own movements, per shelf.
+// This was written when nothing else touched the database, and it said so: the
+// tests were pure functions, and no line of database code had ever executed.
+// That is no longer true — the integration suite resets between cases and
+// covers the routes properly — so this is not the safety net any more.
 //
-//   node scripts/smoke.mjs            # against http://localhost:4010
-//   API=http://localhost:4000 node scripts/smoke.mjs
+// What it is now is the check to run after a deployment. The integration suite
+// proves the code; this proves *this* server: its migrations ran, its
+// connection string points where it should, its environment is complete, and a
+// sale placed through the front door comes out the far side with the ledger
+// still balancing. No unit test can fail on a half-migrated production
+// database, and that is the failure worth catching on the day you deploy.
 //
-// It writes real data, so point it at a development database only. Stage 2
-// replaces it with tests that reset between cases; until then this is the only
-// thing standing between the routes and their first customer.
+// It walks a shop through a day — sell, replay the same sale, return, receive,
+// transfer and receive short, put away, count a shelf, write off, order and
+// part-receive — and finishes on the invariant everything else rests on: stock
+// equals the sum of its own movements, per shelf.
+//
+//   npm run smoke                     # against http://localhost:4010
+//   API=https://api.example npm run smoke
+//
+// It writes real data and does not clean up after itself. That is the point on
+// a fresh deployment and unacceptable on a live one: point it at a new or
+// development database, never at a shop's.
 
 const BASE = process.env.API || 'http://localhost:4010';
 
