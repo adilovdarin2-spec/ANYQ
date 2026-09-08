@@ -115,7 +115,7 @@ append-only движение и проверяемую версию состоя
 | Склад | локации, ячейки, доступность, поставщик | приёмка, move, count, transfer, write-off | scan-first, блокировка ячейки, двойное подтверждение дефицита |
 | Закупки | прогноз, min/max, поставщики, ожидаемые поставки | RFQ, PO, приёмка | approval threshold, цена выше нормы, частичная поставка |
 | Заказы/доставка | ATP (available-to-promise), клиент, тарифы | резерв, сборка, отгрузка, возврат | route/channel allocation, TTL резерва, partial fulfilment |
-| Ресторан | меню, рецепт, ingredient ATP, стол | заказ, kitchen ticket, списание/возврат | рецептурная версия, аллокация по ячейкам/партиям, стоп-лист |
+| Производство | рецепт, ingredient ATP, план выпуска | выпуск партии, списание сырья, возврат | версия рецепта, аллокация по ячейкам/партиям, себестоимость выпущенного |
 | Аптека | GTIN, партия/серия, срок, regulator state | receipt, dispense, return, quarantine | Data Matrix state machine, FEFO, запрет двойной продажи |
 | Аналитика | только подтверждённые события | сохранённые представления/alert | definition registry, data freshness, drill-down |
 | Интеграции | outbox, master data | подтверждение внешнего статуса | retry/DLQ, observability, mapping version, manual reconciliation |
@@ -232,7 +232,7 @@ terminal mode для кассы/склада, touch targets ≥44px, аппар�
 | Retail truth | касса/смена/возвраты, приёмка, bin/lot, закупка, офлайн UX, ОФД adapter | 5 пилотов продают и закрывают смену без ручной таблицы |
 | Owner loop | очередь исключений, forecast/reorder, mobile owner, support cockpit | эффект в тенге на 3 из 5 пилотов |
 | Network | transfer in-transit, централизованный каталог/цены, B2B/витрина, 1С export | клиент открывает вторую точку без повторного внедрения |
-| Verticals | pharmacy маркировка, restaurant depth, производство | каждый пакет проходит свой regulatory и lifecycle gate |
+| Verticals | pharmacy маркировка, производство, логистические ярлыки SSCC/GLN | каждый пакет проходит свой regulatory и lifecycle gate |
 
 ## Что надо сознательно не делать сейчас
 
