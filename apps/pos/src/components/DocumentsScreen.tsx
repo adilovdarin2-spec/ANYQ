@@ -1,4 +1,5 @@
 import type { LedgerDocument } from '../types';
+import { documentTypeLabel } from '../documents';
 import { useTranslation } from '../i18n/useLanguage';
 import { formatDateTime, formatMoney } from '../utils';
 
@@ -55,7 +56,7 @@ export function DocumentsScreen({ title, subtitle, documents, loading, error, on
           <div key={doc.id} className="order-card">
             <div className="order-card-head">
               <div>
-                <div className="order-customer">{doc.typeLabel}</div>
+                <div className="order-customer">{documentTypeLabel(t, doc.type, doc.typeLabel)}</div>
                 <div className="order-meta">
                   {formatDateTime(doc.createdAt)}
                   {doc.createdByName ? ` · ${doc.createdByName}` : ''}

@@ -852,6 +852,62 @@ export const ru = {
   'net.photoReadFailed': 'Не удалось прочитать фото',
   'po.fromReplenishment': 'Из списка «Что заказать»',
 
+  // --- one line of the change log ------------------------------------------
+  //
+  // Assembled on the device, not on the server, because the server does not
+  // know which language the device is set to. Russian names the thing first
+  // and Kazakh names it last, which is why `audit.subject` is a phrase of its
+  // own rather than two strings glued together at the call site.
+  'audit.subject': '{entity} «{name}»',
+  'audit.entity.product': 'Товар',
+  'audit.entity.user': 'Сотрудник',
+  'audit.entity.counterparty': 'Контрагент',
+  'audit.field.name': 'название',
+  'audit.field.salePrice': 'цена продажи',
+  'audit.field.purchasePrice': 'закупочная цена',
+  'audit.field.barcode': 'штрихкод',
+  'audit.field.ntinCode': 'код НКТ',
+  'audit.field.taxMode': 'режим НДС',
+  'audit.field.sellable': 'в продаже',
+  'audit.field.stopListed': 'стоп-лист',
+  'audit.field.role': 'роль',
+  'audit.field.posPin': 'PIN-код',
+  'audit.field.creditAllowed': 'разрешён долг',
+  'audit.field.creditLimit': 'лимит долга',
+  'audit.changed': '{what}: {field} изменён',
+  'audit.set': '{what}: {field} — задано «{after}»',
+  'audit.cleared': '{what}: {field} — снято (было «{before}»)',
+  'audit.moved': '{what}: {field} — «{before}» → «{after}»',
+  'audit.yes': 'да',
+  'audit.no': 'нет',
+
+  // --- what kind of document this is ---------------------------------------
+  //
+  // The server sends its own label beside the code, for a client that does not
+  // know the code. Where the register does know it, these win.
+  'docType.sale': 'Продажа',
+  'docType.return': 'Возврат покупателю',
+  'docType.receipt': 'Приёмка',
+  'docType.write_off': 'Списание',
+  'docType.adjustment': 'Инвентаризация',
+  'docType.transfer': 'Перемещение',
+  'docType.order': 'Заказ',
+  'docType.quarantine': 'Карантин',
+  'docType.bin_block': 'Блокировка ячейки',
+  'docType.supplier_return': 'Возврат поставщику',
+  'docType.production': 'Производство',
+  'docType.purchase_order': 'Заказ поставщику',
+
+  // --- where an order has got to -------------------------------------------
+  //
+  // Derived from the quantities rather than stored, on the server; said here,
+  // because the server writes its label without knowing the device's language.
+  'stage.pending': 'Ждёт сборки',
+  'stage.picking': 'Собирается',
+  'stage.picked': 'Собран',
+  'stage.shipped': 'Отгружен',
+  'stage.cancelled': 'Отменён',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
   // The interface itself is fully translated. What is not, and cannot be, is

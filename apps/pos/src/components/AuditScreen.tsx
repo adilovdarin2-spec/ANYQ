@@ -1,4 +1,5 @@
 import type { AuditEntry, PriceRoundTrip } from '../types';
+import { describeAuditEntry } from '../audit';
 import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
@@ -89,7 +90,7 @@ export function AuditScreen({ entries, roundTrips, days, loading, error, onBack,
         {entries.map((entry) => (
           <div key={entry.id} className={entry.sensitive ? 'report-row low' : 'report-row'}>
             <span>
-              {entry.text}
+              {describeAuditEntry(t, entry)}
               <br />
               <span className="order-meta">{entry.actorName} · {formatWhen(entry.at)}</span>
             </span>

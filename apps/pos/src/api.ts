@@ -1,5 +1,6 @@
 import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { translate } from './i18n';
+import { translateServerMessage } from './i18n/server';
 import { getLanguage } from './i18n/useLanguage';
 
 /**
@@ -12,6 +13,16 @@ import { getLanguage } from './i18n/useLanguage';
  */
 function say(key: Parameters<typeof translate>[1]): string {
   return translate(getLanguage(), key);
+}
+
+/**
+ * The server answers in Russian, because a request carries no language. Where
+ * the register recognises the sentence it says the same thing in Kazakh; where
+ * it does not, the Russian stands, which is more use than a generic failure.
+ */
+function serverSaid(message: unknown): string | undefined {
+  if (typeof message !== 'string' || message === '') return undefined;
+  return translateServerMessage(getLanguage(), message);
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -35,7 +46,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.error || say('net.requestFailed'), res.status);
+    throw new ApiError(serverSaid(data.error) || say('net.requestFailed'), res.status);
   }
   return data as T;
 }
@@ -751,7 +762,7 @@ export async function downloadExport(token: string, dataset: string, locationId:
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new ApiError(data.error || say('net.exportFailed'), res.status);
+    throw new ApiError(serverSaid(data.error) || say('net.exportFailed'), res.status);
   }
 
   const blob = await res.blob();

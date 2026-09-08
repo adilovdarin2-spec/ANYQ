@@ -66,7 +66,9 @@ describe('the Kazakh dictionary', () => {
       .map(([key]) => key)
       .sort();
     expect(sameAsRussian).toEqual([
+      'audit.moved',
       'bins.rack',
+      'docType.quarantine',
       'grid.perKg',
       'payment.card',
       'payment.kaspi',

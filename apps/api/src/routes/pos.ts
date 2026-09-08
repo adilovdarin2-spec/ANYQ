@@ -2466,7 +2466,13 @@ posRouter.get('/audit', requirePosAuth, async (req: PosAuthedRequest, res) => {
       entityId: entry.entityId,
       entityName: entry.entityName,
       field: entry.field,
-      // Written out server-side so every client says it the same way.
+      // The parts, so a register can put them in its own language's order.
+      // A secret field carries nulls on both sides: the log records that the
+      // PIN moved, never what it moved to.
+      before: entry.before,
+      after: entry.after,
+      // And the finished sentence, for a client that does not recognise the
+      // field — an older register, or the admin panel, which reads Russian.
       text: describeChange(entry.entity, entry.entityName, {
         field: entry.field,
         before: entry.before,

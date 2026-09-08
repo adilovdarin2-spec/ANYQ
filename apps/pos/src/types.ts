@@ -787,7 +787,12 @@ export interface AuditEntry {
   entityId: string;
   entityName: string;
   field: string;
-  /// Written server-side so every client says it the same way.
+  /// Both null together means a secret field: it moved, and that is all the
+  /// log is willing to say.
+  before: string | null;
+  after: string | null;
+  /// The server's own sentence, in Russian. Used only for a field this
+  /// version does not recognise.
   text: string;
   /// Worth reading before the others.
   sensitive: boolean;
