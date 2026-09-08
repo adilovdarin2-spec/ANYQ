@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Order } from '../types';
 import { formatMoney, formatTime } from '../utils';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   order: Order;
@@ -22,6 +23,7 @@ interface Props {
  * they start skipping the screen.
  */
 export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, onShip }: Props) {
+  const { t } = useTranslation();
   const [picked, setPicked] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const item of order.items) {
@@ -46,8 +48,8 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Сборка заказа</span>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('pick.title')}</span>
       </div>
 
       <div className="screen-body">
@@ -72,8 +74,8 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
             <div>
               <div className="li-name">{line.name}</div>
               <div className="li-price">
-                заказано: {line.quantity}
-                {line.shortfall > 0 ? ` · не хватает ${line.shortfall}` : ''}
+                {t('pick.ordered', { count: line.quantity })}
+                {line.shortfall > 0 ? ` · ${t('pick.missing', { count: line.shortfall })}` : ''}
               </div>
             </div>
             <input
@@ -88,7 +90,7 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
         ))}
 
         <div className={shortfall === 0 ? 'report-row' : 'report-row low'}>
-          <span>{shortfall === 0 ? 'Собрано полностью' : `Не хватает позиций: ${shortfall}`}</span>
+          <span>{shortfall === 0 ? t('pick.complete') : t('pick.missing', { count: shortfall })}</span>
           <span>{foundTotal}</span>
         </div>
       </div>
@@ -99,7 +101,7 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
             should not be something that happens because somebody pressed the
             only button on the screen. */}
         <button className="btn btn-secondary btn-block" disabled={submitting} onClick={save}>
-          Сохранить сборку
+          {t('pick.save')}
         </button>
         <button
           className="btn btn-primary btn-block"
@@ -107,10 +109,10 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
           onClick={onShip}
         >
           {foundTotal === 0
-            ? 'Собрано ноль'
+            ? t('pick.nothing')
             : shortfall > 0
-              ? 'Отгрузить неполностью'
-              : 'Отгрузить'}
+              ? t('pick.shipPartial')
+              : t('pick.ship')}
         </button>
       </div>
     </div>

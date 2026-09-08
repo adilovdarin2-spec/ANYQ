@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n/useLanguage';
 export interface OperationItem {
   key: string;
   icon: string;
@@ -11,9 +12,10 @@ interface Props {
 }
 
 export function OperationsScreen({ items }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="tab-content">
-      <div className="tab-header">Операции</div>
+      <div className="tab-header">{t('tab.operations')}</div>
       {items.length === 0 && <div className="empty-state">На вашем тарифе нет дополнительных операций</div>}
       {items.map((item) => (
         <button key={item.key} type="button" className="operations-row" onClick={item.onClick}>

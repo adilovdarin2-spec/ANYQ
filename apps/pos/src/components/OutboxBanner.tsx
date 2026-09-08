@@ -1,5 +1,6 @@
 import { commandLabel } from '../outbox';
 import type { WarehouseCommand } from '../outbox';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   pending: number;
@@ -18,12 +19,13 @@ interface Props {
  * to say.
  */
 export function OutboxBanner({ pending, blockedCommand, onRetry, onDiscard }: Props) {
+  const { t } = useTranslation();
   if (!pending && !blockedCommand) return null;
 
   if (blockedCommand) {
     return (
       <div className="login-error" style={{ margin: '12px 16px' }}>
-        <strong>{commandLabel(blockedCommand.kind)}: сервер не принял</strong>
+        <strong>{t('warehouse.blockedTitle', { kind: commandLabel(blockedCommand.kind) })}</strong>
         <br />
         {blockedCommand.error}
         <br />
@@ -31,15 +33,15 @@ export function OutboxBanner({ pending, blockedCommand, onRetry, onDiscard }: Pr
             rather than left for the storeman to work out from a count that
             has stopped moving. */}
         <span className="order-meta">
-          Остальные операции склада ждут: следующие рассчитаны на то, что эта прошла.
-          {pending > 0 ? ` В очереди ещё ${pending}.` : ''}
+          {t('warehouse.blockedWaiting')}
+          {pending > 0 ? ` ${t('warehouse.blockedQueue', { count: pending })}` : ''}
         </span>
         <div className="row-actions" style={{ marginTop: 8 }}>
           <button className="btn btn-secondary" onClick={() => onRetry(blockedCommand.id)}>
-            Повторить
+            {t('warehouse.retry')}
           </button>
           <button className="btn btn-secondary" onClick={() => onDiscard(blockedCommand.id)}>
-            Отменить операцию
+            {t('warehouse.discard')}
           </button>
         </div>
       </div>
@@ -48,7 +50,7 @@ export function OutboxBanner({ pending, blockedCommand, onRetry, onDiscard }: Pr
 
   return (
     <div className="field-hint" style={{ margin: '12px 16px' }}>
-      Операций склада ждут отправки: {pending}. Уйдут сами, когда появится связь.
+      {t('warehouse.queued', { count: pending })}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Receipt, SupplierReturn } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   returns: SupplierReturn[];
@@ -33,6 +34,7 @@ const REASONS: { code: string; label: string }[] = [
  * leaving and quietly accepts the loss — but the loss is not the shop's.
  */
 export function SupplierReturnsScreen({ returns, receipts, loading, error, submitting, onBack, onSubmit }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [receiptId, setReceiptId] = useState('');
   const [reasonCode, setReasonCode] = useState('damage');
@@ -75,7 +77,7 @@ export function SupplierReturnsScreen({ returns, receipts, loading, error, submi
           {error && <div className="login-error">{error}</div>}
 
           <div className="field">
-            <label htmlFor="receipt">Поставка</label>
+            <label htmlFor="receipt">{t('supplierReturn.delivery')}</label>
             <select id="receipt" value={receiptId} onChange={(e) => chooseReceipt(e.target.value)}>
               <option value="">— выберите поставку —</option>
               {receipts.map((r) => (
@@ -110,7 +112,7 @@ export function SupplierReturnsScreen({ returns, receipts, loading, error, submi
           {receipt && (
             <>
               <div className="field" style={{ marginTop: 14 }}>
-                <label htmlFor="reason">Причина</label>
+                <label htmlFor="reason">{t('writeOff.reason')}</label>
                 <select id="reason" value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
                   {REASONS.map((r) => (
                     <option key={r.code} value={r.code}>{r.label}</option>
@@ -119,7 +121,7 @@ export function SupplierReturnsScreen({ returns, receipts, loading, error, submi
               </div>
 
               <div className="field" style={{ marginTop: 14 }}>
-                <label htmlFor="note">Что именно произошло</label>
+                <label htmlFor="note">{t('writeOff.note')}</label>
                 <input id="note" value={note} onChange={(e) => setNote(e.target.value)} />
                 {/* Required, and worth saying why: the supplier will ask, and
                     "система такого не записывает" is not an answer. */}
@@ -150,18 +152,17 @@ export function SupplierReturnsScreen({ returns, receipts, loading, error, submi
     <div className="screen">
       <div className="screen-header">
         <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Возвраты поставщику</span>
+        <span className="screen-title">{t('supplierReturn.title')}</span>
       </div>
 
       <div className="screen-body">
         {error && <div className="login-error">{error}</div>}
         <p className="field-hint">
-          Брак и пересорт возвращаются поставщику, а не списываются: долг перед ним уменьшается
-          на стоимость возвращённого.
+          {t('supplierReturn.why')}
         </p>
 
-        {loading && <div className="empty-state">Загрузка…</div>}
-        {!loading && returns.length === 0 && <div className="empty-state">Возвратов ещё не было</div>}
+        {loading && <div className="empty-state">{t('common.loading')}</div>}
+        {!loading && returns.length === 0 && <div className="empty-state">{t('supplierReturn.none')}</div>}
 
         {returns.map((item) => (
           <div key={item.id} className="report-row">
@@ -184,7 +185,7 @@ export function SupplierReturnsScreen({ returns, receipts, loading, error, submi
 
       <div className="screen-footer">
         <button className="btn btn-primary btn-block" onClick={() => setView('create')}>
-          Оформить возврат
+          {t('supplierReturn.new')}
         </button>
       </div>
     </div>

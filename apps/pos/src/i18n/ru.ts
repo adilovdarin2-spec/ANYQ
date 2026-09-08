@@ -5,11 +5,16 @@
  * is derived from this object, so a key referenced anywhere and missing here is
  * a compile error rather than a blank on a till.
  *
- * Only the surface a cashier touches during a shift is here so far — signing
- * in, opening and closing, selling, taking payment, the receipt. The warehouse
- * and owner screens are still literal Russian in their components, and moving
- * them across is mechanical work that can happen a screen at a time without
- * anything breaking in between.
+ * What is here: the till a cashier works all shift — signing in, opening and
+ * closing, the cart, taking payment, the slip — and the warehouse a storeman
+ * works all day: the operations menu, receiving, counting by bin, picking,
+ * supplier returns, the offline queue.
+ *
+ * What is not: the owner's screens (the summary, reports, the change log, the
+ * export) and the smaller warehouse forms. Those are still literal Russian in
+ * their components, and moving them across is mechanical work that can happen a
+ * screen at a time without anything breaking in between — which is the point of
+ * the fallback.
  */
 export const ru = {
   // --- signing in ---------------------------------------------------------
@@ -105,6 +110,82 @@ export const ru = {
   'common.back': 'Назад',
   'common.cancel': 'Отмена',
   'common.loading': 'Загрузка…',
+
+  // --- the operations menu ------------------------------------------------
+  'ops.orders': 'Заказы с сайта',
+  'ops.batches': 'Партии',
+  'ops.transfers': 'Перемещения',
+  'ops.incoming': 'Приёмка',
+  'ops.counts': 'Инвентаризация',
+  'ops.returns': 'Возвраты',
+  'ops.replenishment': 'Что заказать',
+  'ops.purchaseOrders': 'Заказы поставщику',
+  'ops.bins': 'Ячейки',
+  'ops.binCount': 'Пересчёт по ячейкам',
+  'ops.reconciliation': 'Сверка журнала',
+  'ops.import': 'Импорт товаров',
+  'ops.settlements': 'Расчёты и долги',
+  'ops.writeOffs': 'Списание и карантин',
+  'ops.supplierReturns': 'Возврат поставщику',
+  'ops.fiscal': 'Фискализация',
+  'ops.production': 'Производство',
+  'ops.stockHistory': 'История склада',
+
+  // --- the warehouse ------------------------------------------------------
+  'warehouse.queued': 'Операций склада ждут отправки: {count}. Уйдут сами, когда появится связь.',
+  'warehouse.blockedTitle': '{kind}: сервер не принял',
+  'warehouse.blockedWaiting': 'Остальные операции склада ждут: следующие рассчитаны на то, что эта прошла.',
+  'warehouse.blockedQueue': 'В очереди ещё {count}.',
+  'warehouse.retry': 'Повторить',
+  'warehouse.discard': 'Отменить операцию',
+
+  'incoming.title': 'Приёмка',
+  'incoming.none': 'Приёмок пока не было',
+  'incoming.new': 'Новая приёмка',
+  'incoming.supplier': 'Поставщик',
+  'incoming.noSupplier': 'Без поставщика',
+  'incoming.photo': 'Фото накладной',
+  'incoming.submit': 'Оприходовать',
+
+  'count.title': 'Пересчёт по ячейкам',
+  'count.pickBin': 'Выберите ячейку',
+  'count.unplaced': 'Не размещённый товар',
+  'count.noBins': 'Ячеек нет — заведите их в разделе «Ячейки»',
+  'count.whole': 'Пересчитывается вся ячейка целиком: чего в ней не нашли — того в ней нет. Поэтому можно считать по одному стеллажу в день, не закрывая магазин.',
+  'count.enterFound': 'впишите, сколько нашли. Пустая строка означает «не нашли», и это тоже результат.',
+  'count.system': 'система',
+  'count.lastResult': 'Итог последнего пересчёта',
+  'count.agreed': 'Расхождений нет — ячейка сошлась',
+  'count.submit': 'Сохранить пересчёт',
+
+  'bins.title': 'Ячейки',
+  'bins.zone': 'Зона {zone}',
+  'bins.empty': 'пусто',
+  'bins.positions': 'позиций: {count}',
+  'bins.blocked': 'заблокирована',
+  'bins.block': 'Заблокировать',
+  'bins.unblock': 'Разблокировать',
+  'bins.delete': 'Удалить',
+
+  'writeOff.title': 'Списание и карантин',
+  'writeOff.reason': 'Причина',
+  'writeOff.note': 'Что произошло',
+  'writeOff.submit': 'Списать',
+
+  'supplierReturn.title': 'Возвраты поставщику',
+  'supplierReturn.none': 'Возвратов ещё не было',
+  'supplierReturn.new': 'Оформить возврат',
+  'supplierReturn.delivery': 'Поставка',
+  'supplierReturn.why': 'Брак и пересорт возвращаются поставщику, а не списываются: долг перед ним уменьшается на стоимость возвращённого.',
+
+  'pick.title': 'Сборка заказа',
+  'pick.ordered': 'заказано: {count}',
+  'pick.missing': 'не хватает {count}',
+  'pick.complete': 'Собрано полностью',
+  'pick.save': 'Сохранить сборку',
+  'pick.ship': 'Отгрузить',
+  'pick.shipPartial': 'Отгрузить неполностью',
+  'pick.nothing': 'Собрано ноль',
 
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',

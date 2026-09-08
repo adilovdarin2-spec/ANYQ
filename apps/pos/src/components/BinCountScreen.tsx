@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CountSheetLine, StorageBin } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   bins: StorageBin[];
@@ -38,6 +39,7 @@ export function BinCountScreen({
   onSubmit,
   onClearResult,
 }: Props) {
+  const { t } = useTranslation();
   const [counted, setCounted] = useState<Record<string, string>>({});
 
   function openBin(bin: string) {
@@ -63,16 +65,15 @@ export function BinCountScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={sheet ? () => onOpenBin('__none__') : onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Пересчёт по ячейкам</span>
+        <button className="icon-btn" onClick={sheet ? () => onOpenBin('__none__') : onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('count.title')}</span>
       </div>
 
       {!sheet && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
           <p className="field-hint">
-            Пересчитывается вся ячейка целиком: чего в ней не нашли — того в ней нет. Поэтому можно
-            считать по одному стеллажу в день, не закрывая магазин.
+            {t('count.whole')}
           </p>
 
           {queuedBin !== null && (
@@ -88,9 +89,9 @@ export function BinCountScreen({
 
           {lastResult && (
             <>
-              <div className="orders-section-title">Итог последнего пересчёта</div>
+              <div className="orders-section-title">{t('count.lastResult')}</div>
               {lastResult.length === 0 ? (
-                <div className="empty-state">Расхождений нет — ячейка сошлась</div>
+                <div className="empty-state">{t('count.agreed')}</div>
               ) : (
                 lastResult.map((line, index) => (
                   <div key={`${line.binLocation}-${line.name}-${index}`} className="report-row low">
@@ -109,9 +110,9 @@ export function BinCountScreen({
             </>
           )}
 
-          <div className="orders-section-title">Выберите ячейку</div>
+          <div className="orders-section-title">{t('count.pickBin')}</div>
           <button className="btn btn-secondary btn-block" onClick={() => openBin(UNPLACED)}>
-            Не размещённый товар
+            {t('count.unplaced')}
           </button>
           {bins.map((bin) => (
             <button key={bin.id} className="btn btn-secondary btn-block" onClick={() => openBin(bin.code)}>
@@ -119,7 +120,7 @@ export function BinCountScreen({
             </button>
           ))}
           {bins.length === 0 && (
-            <div className="empty-state">Ячеек нет — заведите их в разделе «Ячейки»</div>
+            <div className="empty-state">{t('count.noBins')}</div>
           )}
         </div>
       )}
@@ -128,8 +129,7 @@ export function BinCountScreen({
         <>
           <div className="screen-body">
             <div className="count-hint">
-              {sheet.bin || 'Не размещённый товар'} — впишите, сколько нашли. Пустая строка означает
-              «не нашли», и это тоже результат.
+              {sheet.bin || t('count.unplaced')} — {t('count.enterFound')}
             </div>
 
             {sheetCachedAt && (
@@ -140,7 +140,7 @@ export function BinCountScreen({
               </div>
             )}
 
-            {loading && <div className="empty-state">Загрузка…</div>}
+            {loading && <div className="empty-state">{t('common.loading')}</div>}
             {!loading && sheet.lines.length === 0 && <div className="empty-state">Система считает эту ячейку пустой</div>}
 
             {sheet.lines.map((line) => (
@@ -151,7 +151,7 @@ export function BinCountScreen({
                       box turns a count into a confirmation, and a confirmation
                       finds nothing. */}
                   <div className="li-price">
-                    система: {formatQuantity(line.systemQuantity)}
+                    {t('count.system')}: {formatQuantity(line.systemQuantity)}
                     {line.reserved > 0 ? ` · ${formatQuantity(line.reserved)} под заказ` : ''}
                     {line.blocked > 0 ? ` · ${formatQuantity(line.blocked)} в карантине` : ''}
                   </div>

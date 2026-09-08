@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, deleteDocumentPhoto, fetchDocumentPhotos, loadPhotoUrl, uploadDocumentPhoto } from '../api';
 import type { DocumentPhoto } from '../api';
 import { preparePhoto } from '../photo';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   token: string;
@@ -18,6 +19,7 @@ interface Props {
  * document nobody has any more.
  */
 export function DocumentPhotos({ token, documentId, canDelete }: Props) {
+  const { t } = useTranslation();
   const [photos, setPhotos] = useState<DocumentPhoto[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -90,7 +92,7 @@ export function DocumentPhotos({ token, documentId, canDelete }: Props) {
 
   return (
     <div className="field">
-      <label htmlFor={`photo-${documentId}`}>Фото накладной</label>
+      <label htmlFor={`photo-${documentId}`}>{t('incoming.photo')}</label>
       <input
         id={`photo-${documentId}`}
         type="file"
@@ -102,7 +104,7 @@ export function DocumentPhotos({ token, documentId, canDelete }: Props) {
         onChange={(e) => add(e.target.files?.[0])}
       />
       {error && <div className="login-error">{error}</div>}
-      {busy && <span className="field-hint">Обрабатываем…</span>}
+      {busy && <span className="field-hint">{t('common.loading')}</span>}
 
       {photos.length > 0 && (
         <div className="photo-strip">
@@ -117,7 +119,7 @@ export function DocumentPhotos({ token, documentId, canDelete }: Props) {
               )}
               {canDelete && (
                 <button className="li-remove" disabled={busy} onClick={() => remove(photo.id)}>
-                  Удалить
+                  {t('bins.delete')}
                 </button>
               )}
             </div>
