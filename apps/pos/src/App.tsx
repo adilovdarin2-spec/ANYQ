@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -8,68 +8,69 @@ import { getOutbox, outcomeOf, queueCommand } from './outbox';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
 import {
-  fetchCatalog,
-  createRemoteShift,
-  closeRemoteShift,
-  fetchOrders,
-  fulfillOrder,
-  rejectOrder,
-  fetchReports,
-  fetchBatches,
-  receiveBatch,
-  setStopListed,
-  fetchReturnableSales,
-  fetchReturns,
-  createReturn,
-  fetchReplenishment,
-  saveStockPolicy,
-  fetchOwnerDashboard,
-  fetchPendingFiscal,
-  registerFiscalManually,
-  fetchSettlements,
-  recordSettlement,
-  setCounterpartyCredit,
-  previewImport,
-  commitImport,
-  fetchReconciliation,
-  repairReconciliation,
-  fetchCountSheet,
-  fetchBins,
-  createBin,
-  deleteBin,
-  fetchWriteOffs,
-  changeQuarantine,
-  fetchSuppliers,
-  fetchPurchaseOrders,
-  createPurchaseOrder,
+  ApiError,
+  ORDERS_BASE,
   actOnPurchaseOrder,
-  fetchTransfers,
-  createTransfer,
-  receiveTransfer,
   cancelTransfer,
-  fetchReceipts,
-  fetchCounts,
+  changeQuarantine,
+  closeRemoteShift,
+  commitImport,
+  createBin,
   createCount,
+  createManagedProduct,
+  createPackaging,
+  createProduction,
+  createPurchaseOrder,
+  createRemoteShift,
+  createReturn,
+  createTable,
+  createTransfer,
+  deleteBin,
+  deletePackaging,
+  fetchAuditLog,
+  fetchBatches,
+  fetchBins,
+  fetchCatalog,
+  fetchCountSheet,
+  fetchCounts,
   fetchCustomerPoints,
+  fetchKdsTickets,
+  fetchManagedProducts,
+  fetchOrders,
+  fetchOwnerDashboard,
+  fetchPackagings,
+  fetchPendingFiscal,
   fetchProductionRecipes,
   fetchProductionRuns,
-  createProduction,
-  fetchTables,
-  createTable,
-  fetchTableOrder,
-  sendToKitchen,
-  payTable,
-  fetchKdsTickets,
-  updateKitchenItemStatus,
+  fetchPurchaseOrders,
+  fetchReceipts,
+  fetchReconciliation,
+  fetchReplenishment,
+  fetchReports,
+  fetchReturnableSales,
+  fetchReturns,
+  fetchSettlements,
   fetchStockMovements,
-  fetchManagedProducts,
-  createManagedProduct,
+  fetchSuppliers,
+  fetchTableOrder,
+  fetchTables,
+  fetchTransfers,
+  fetchWriteOffs,
+  fulfillOrder,
+  payTable,
+  previewImport,
+  receiveBatch,
+  receiveTransfer,
+  recordSettlement,
+  registerFiscalManually,
+  rejectOrder,
+  repairReconciliation,
+  saveStockPolicy,
+  sendToKitchen,
+  setCounterpartyCredit,
+  setStopListed,
+  updateKitchenItemStatus,
   updateManagedProduct,
-  fetchPackagings,
-  createPackaging,
-  deletePackaging,
-  ORDERS_BASE,
-  ApiError,
 } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
@@ -105,6 +106,7 @@ import { StockHistoryScreen } from './components/StockHistoryScreen';
 import { ReturnsScreen } from './components/ReturnsScreen';
 import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
+import { AuditScreen } from './components/AuditScreen';
 import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
@@ -139,6 +141,7 @@ type View =
   | 'returns'
   | 'replenishment'
   | 'dashboard'
+  | 'audit'
   | 'fiscal'
   | 'purchase-orders'
   | 'write-offs'
@@ -258,6 +261,11 @@ export default function App() {
   const [fiscalBusyDocumentId, setFiscalBusyDocumentId] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
   const [dashboardDays, setDashboardDays] = useState(7);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [auditRoundTrips, setAuditRoundTrips] = useState<PriceRoundTrip[]>([]);
+  const [auditDays, setAuditDays] = useState(30);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [replenishment, setReplenishment] = useState<ReplenishmentItem[]>([]);
@@ -384,7 +392,7 @@ export default function App() {
   const activeTab: MainTab =
     view === 'products' || view === 'product-edit' ? 'products' :
     OPERATIONS_VIEWS.has(view) ? 'operations' :
-    view === 'profile' || view === 'reports' || view === 'dashboard' ? 'profile' :
+    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' ? 'profile' :
     'sale';
 
   function handleLogin(newSession: PosSession) {
@@ -1301,6 +1309,31 @@ export default function App() {
     } finally {
       setDashboardLoading(false);
     }
+  }
+
+  async function loadAudit(days: number) {
+    if (!session) return;
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const data = await fetchAuditLog(session.token, days);
+      setAuditEntries(data.entries);
+      setAuditRoundTrips(data.priceRoundTrips);
+    } catch (err) {
+      setAuditError(err instanceof ApiError ? err.message : 'Не удалось загрузить журнал изменений');
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
+  function handleShowAudit() {
+    setView('audit');
+    void loadAudit(auditDays);
+  }
+
+  function handleChangeAuditDays(days: number) {
+    setAuditDays(days);
+    void loadAudit(days);
   }
 
   function handleShowDashboard() {
@@ -2261,6 +2294,18 @@ export default function App() {
         />
       )}
 
+      {view === 'audit' && (
+        <AuditScreen
+          entries={auditEntries}
+          roundTrips={auditRoundTrips}
+          days={auditDays}
+          loading={auditLoading}
+          error={auditError}
+          onBack={() => setView('profile')}
+          onChangeDays={handleChangeAuditDays}
+        />
+      )}
+
       {view === 'dashboard' && (
         <OwnerDashboardScreen
           dashboard={dashboard}
@@ -2418,6 +2463,7 @@ export default function App() {
           pushBusy={pushBusy}
           onTogglePush={handleTogglePush}
           onShowDashboard={isOwnerOrManager ? handleShowDashboard : undefined}
+          onShowAudit={isOwnerOrManager ? handleShowAudit : undefined}
           onShowReports={hasTerminal ? handleShowReports : undefined}
           onShowInstall={install.reopen}
           onCloseShift={() => setView('close-shift')}

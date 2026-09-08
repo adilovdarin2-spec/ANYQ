@@ -749,3 +749,30 @@ export interface ImportPreview {
   problemCount: number;
   sample: ImportSampleRow[];
 }
+
+/// One change to a price, a role or a credit limit — the changes that move
+/// money without moving anything off a shelf.
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actorName: string;
+  entity: string;
+  entityId: string;
+  entityName: string;
+  field: string;
+  /// Written server-side so every client says it the same way.
+  text: string;
+  /// Worth reading before the others.
+  sensitive: boolean;
+}
+
+/// A price lowered and put back by the same hand within a day.
+export interface PriceRoundTrip {
+  productId: string;
+  productName: string;
+  actorName: string;
+  from: number;
+  to: number;
+  loweredAt: string;
+  restoredAt: string;
+}

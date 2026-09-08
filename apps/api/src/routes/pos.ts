@@ -60,6 +60,8 @@ import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity } from '../counts';
 import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy } from '../payments';
+import { recordChanges, resolveActor } from '../audit-log';
+import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
@@ -1293,7 +1295,18 @@ posRouter.patch('/products/:id/stop-list', requirePosAuth, async (req: PosAuthed
     return;
   }
 
-  const updated = await prisma.product.update({ where: { id: product.id }, data: { stopListed: b.stopListed } });
+  const stopListActor = await resolveActor(req.posCompanyId!, req.posUserId);
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.product.update({ where: { id: product.id }, data: { stopListed: b.stopListed } });
+    await recordChanges(tx, stopListActor, {
+      entity: 'product',
+      entityId: row.id,
+      entityName: product.name,
+      before: product,
+      after: row,
+    });
+    return row;
+  });
   res.json({ id: updated.id, stopListed: updated.stopListed });
 });
 
@@ -1411,17 +1424,33 @@ posRouter.patch('/products/:id', requirePosAuth, async (req: PosAuthedRequest, r
     return;
   }
 
-  const product = await prisma.product.update({
-    where: { id: existing.id },
-    data: {
-      name: b.name,
-      category: b.category || null,
-      unit: b.unit,
-      barcode: b.barcode || null,
-      purchasePrice,
-      salePrice,
-      sellable: !!b.sellable,
-    },
+  const actor = await resolveActor(req.posCompanyId!, req.posUserId);
+  // The change and the record of it commit together. A log written afterwards
+  // is missing exactly the entries that mattered — the ones where something
+  // went wrong halfway through.
+  const product = await prisma.$transaction(async (tx) => {
+    const updated = await tx.product.update({
+      where: { id: existing.id },
+      data: {
+        name: b.name,
+        category: b.category || null,
+        unit: b.unit,
+        barcode: b.barcode || null,
+        purchasePrice,
+        salePrice,
+        sellable: !!b.sellable,
+      },
+    });
+    await recordChanges(tx, actor, {
+      entity: 'product',
+      entityId: updated.id,
+      // The name it had before this edit. A price change filed under the new
+      // name is unsearchable by anyone looking for the product they knew.
+      entityName: existing.name,
+      before: existing,
+      after: updated,
+    });
+    return updated;
   });
   res.json(serializePosProduct(product));
 });
@@ -1735,6 +1764,86 @@ const DEAD_STOCK_DAYS = 90;
 
 // The owner's morning. Not a page of charts — six questions with answers, each
 // one traceable to the documents underneath it.
+// What was changed, by whom, and to what.
+//
+// Goods have been traceable since the ledger existed. This is the other half:
+// the changes that move money without moving anything off a shelf — a price, a
+// role, a credit limit. Owner-facing, because a cashier who can read who
+// changed what can also learn whose account to use.
+posRouter.get('/audit', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Журнал изменений доступен владельцу и менеджеру' });
+    return;
+  }
+
+  const requestedDays = Number(req.query.days);
+  const days = Number.isFinite(requestedDays) && requestedDays > 0 && requestedDays <= 180
+    ? Math.round(requestedDays)
+    : 30;
+  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const entries = await prisma.auditEntry.findMany({
+    where: {
+      companyId: req.posCompanyId,
+      createdAt: { gte: from },
+      // Narrowed to one thing when something specific is under question.
+      ...(typeof req.query.entityId === 'string' && req.query.entityId
+        ? { entityId: req.query.entityId }
+        : {}),
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+  });
+
+  // The round trips are computed rather than stored: the pattern only exists
+  // between two entries, and deciding it at write time would mean deciding it
+  // before the second one had happened.
+  const priceMoves = entries
+    .filter((entry) => entry.entity === 'product' && entry.field === 'salePrice')
+    .map((entry) => ({
+      entityId: entry.entityId,
+      entityName: entry.entityName,
+      actorName: entry.actorName,
+      before: Number(entry.before ?? 0),
+      after: Number(entry.after ?? 0),
+      at: entry.createdAt,
+    }))
+    .filter((move) => Number.isFinite(move.before) && Number.isFinite(move.after));
+
+  res.json({
+    days,
+    entries: entries.map((entry) => ({
+      id: entry.id,
+      at: entry.createdAt.toISOString(),
+      actorName: entry.actorName,
+      entity: entry.entity,
+      entityId: entry.entityId,
+      entityName: entry.entityName,
+      field: entry.field,
+      // Written out server-side so every client says it the same way.
+      text: describeChange(entry.entity, entry.entityName, {
+        field: entry.field,
+        before: entry.before,
+        after: entry.after,
+      }),
+      sensitive: isSensitive(entry.entity, entry.field),
+    })),
+    // Shown on its own rather than left in the list to be noticed: a price
+    // dropped and put back by the same hand within a day is the oldest trick
+    // in retail, and two ordinary edits either side of a sale look like
+    // nothing when read one at a time.
+    priceRoundTrips: findPriceRoundTrips(priceMoves).map(([down, up]) => ({
+      productId: down.entityId,
+      productName: down.entityName,
+      actorName: down.actorName,
+      from: down.before,
+      to: down.after,
+      loweredAt: down.at.toISOString(),
+      restoredAt: up.at.toISOString(),
+    })),
+  });
+});
+
 posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await requireOwnerOrManager(req.posUserId))) {
     res.status(403).json({ error: 'Сводка доступна владельцу и менеджеру' });
@@ -3317,9 +3426,20 @@ posRouter.put('/counterparties/:id/credit', requirePosAuth, async (req: PosAuthe
     return;
   }
 
-  const updated = await prisma.counterparty.update({
-    where: { id: counterparty.id },
-    data: { creditAllowed: b.creditAllowed === true, creditLimit },
+  const creditActor = await resolveActor(req.posCompanyId!, req.posUserId);
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.counterparty.update({
+      where: { id: counterparty.id },
+      data: { creditAllowed: b.creditAllowed === true, creditLimit },
+    });
+    await recordChanges(tx, creditActor, {
+      entity: 'counterparty',
+      entityId: row.id,
+      entityName: counterparty.name,
+      before: counterparty,
+      after: row,
+    });
+    return row;
   });
 
   res.json({ id: updated.id, creditAllowed: updated.creditAllowed, creditLimit: updated.creditLimit });
