@@ -7,10 +7,18 @@
 // makes "restore verified" a condition of going live for exactly this reason.
 //
 //   node scripts/backup.mjs create              # write a dump
+//   node scripts/backup.mjs create --mirror D:/anyq-backups   # and copy it off
 //   node scripts/backup.mjs list                # what is on disk
 //   node scripts/backup.mjs verify              # create, restore, prove, drop
 //   node scripts/backup.mjs verify --file X     # prove an existing dump
 //   node scripts/backup.mjs restore --file X --into anyq_restored
+//
+// A dump that only exists on the machine running the database is not a backup
+// of that machine. `--mirror` (or ANYQ_BACKUP_MIRROR) copies it to a second
+// path — a mounted share or another disk on a pilot — and reads the copy back
+// to prove it is the same bytes. Not a cloud target: that needs a bucket and
+// credentials somebody has to choose, and guessing at them here would be worse
+// than saying so.
 //
 // Verification does three things, and the third is the only one that is really
 // about this product:
@@ -25,8 +33,9 @@
 // justify, which is indistinguishable from having lost the data.
 
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { createGunzip, createGzip } from 'node:zlib';
 import { createReadStream, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -34,6 +43,7 @@ import { pipeline } from 'node:stream/promises';
 
 const BACKUP_DIR = process.env.ANYQ_BACKUP_DIR || 'backups';
 const CONTAINER = process.env.ANYQ_DB_CONTAINER || 'anyq-db';
+const BACKUP_MIRROR = process.env.ANYQ_BACKUP_MIRROR || null;
 
 // Read from the same place the application reads it, so a backup can never be
 // taken from a different database than the one being run.
@@ -148,6 +158,57 @@ async function create() {
   const { size } = await stat(file);
   console.log(`Готово: ${file} (${(size / 1024 / 1024).toFixed(2)} МБ)`);
   return file;
+}
+
+/** The dump's own bytes, streamed: these files do not need to fit in memory. */
+async function digest(file) {
+  const hash = createHash('sha256');
+  await pipeline(createReadStream(file), hash);
+  return hash.digest('hex');
+}
+
+/**
+ * Puts the dump somewhere the database's own machine is not.
+ *
+ * Verified rather than assumed. A copy onto a share that silently truncated, or
+ * onto a disk that filled halfway through, looks exactly like a copy that
+ * worked — right until it is the only one left. Reading it back and comparing
+ * the hash costs a few seconds and is the difference between having a second
+ * copy and believing you have one.
+ *
+ * Throws rather than warns. A backup routine that reports success while the
+ * off-machine copy is failing every night is the precise failure this exists to
+ * prevent — and the local dump is already on disk, so nothing is lost by
+ * exiting loudly.
+ */
+async function mirror(file, destination) {
+  try {
+    await mkdir(destination, { recursive: true });
+  } catch (err) {
+    // The raw errno says EEXIST or EACCES and nothing about what the operator
+    // should do. On a pilot this is almost always a share that is not mounted
+    // this morning, and saying so is the difference between a fixed backup and
+    // a ticket.
+    throw new Error(
+      `Не удалось открыть каталог для копии вне машины «${destination}»: ${err.message}. ` +
+        'Проверьте, что диск или сетевая папка примонтированы. Локальный дамп на месте.',
+    );
+  }
+  const target = path.join(destination, path.basename(file));
+
+  const source = await digest(file);
+  await copyFile(file, target);
+  const copied = await digest(target);
+
+  if (source !== copied) {
+    throw new Error(
+      `Копия в «${target}» не совпала с оригиналом (sha256 ${copied.slice(0, 12)} против ${source.slice(0, 12)}). ` +
+        'Локальный дамп на месте; вторую копию считать не сделанной.',
+    );
+  }
+
+  console.log(`Копия вне машины: ${target} (sha256 ${source.slice(0, 12)}…)`);
+  return target;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,10 +388,16 @@ const command = process.argv[2];
 
 try {
   switch (command) {
-    case 'create':
-      await create();
+    case 'create': {
+      const written = await create();
+      // Mirrored before pruning: the old copy stays until the new one is proven
+      // to exist somewhere else, so a failed mirror never leaves fewer backups
+      // than there were an hour ago.
+      const destination = flag('mirror') === true ? BACKUP_MIRROR : flag('mirror') || BACKUP_MIRROR;
+      if (destination) await mirror(written, destination);
       if (flag('keep')) await prune(Number(flag('keep')));
       break;
+    }
     case 'list':
       await list();
       break;
