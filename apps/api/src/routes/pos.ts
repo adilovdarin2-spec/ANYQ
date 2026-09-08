@@ -2654,8 +2654,22 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
 
   const stockByProduct = groupStockByProduct(stockRows);
 
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
   try {
-    const document = await prisma.$transaction(async (tx) => {
+    // Isolating the same batch twice blocks twice as much as was ever
+    // suspect, and the second release then frees goods nobody isolated.
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: `POST /pos/quarantine/${action}`,
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
       const created = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
@@ -2696,11 +2710,15 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
         if (remaining > 0) throw new ConcurrentStockChangeError(change.productId);
       }
 
-      return created;
-    }, { timeout: 15000 });
+      return { id: created.id, action };
+    });
 
-    res.status(201).json({ id: document.id, action });
+    res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другой операции карантина' });
+      return;
+    }
     if (err instanceof ConcurrentStockChangeError) {
       res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
       return;
@@ -3146,7 +3164,25 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
   const charges = ledger.charges;
   const { allocations, unapplied } = allocatePayment(amount, charges);
 
-  const created = await prisma.$transaction(async (tx) => {
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    // Of everything a retry can duplicate, this is the one that is money
+    // rather than goods. A payment recorded twice does not show up as a wrong
+    // shelf that somebody eventually recounts — it shows up as a supplier paid
+    // twice, or a customer's debt cleared for half what they owe, and it is
+    // found weeks later during a reconciliation nobody wants to do.
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/settlements',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
     const rows = [];
     for (const allocation of allocations) {
       rows.push(
@@ -3181,23 +3217,33 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
         }),
       );
     }
-    return rows;
-  }, { timeout: 15000 });
+    const after = computeBalance(
+      charges.map((charge) => ({
+        ...charge,
+        settled: charge.settled + (allocations.find((a) => a.documentId === charge.documentId)?.amount ?? 0),
+      })),
+      ledger.unapplied + unapplied,
+    );
 
-  const after = computeBalance(
-    charges.map((charge) => ({
-      ...charge,
-      settled: charge.settled + (allocations.find((a) => a.documentId === charge.documentId)?.amount ?? 0),
-    })),
-    ledger.unapplied + unapplied,
-  );
+      // Computed inside, because a replay has to reproduce the answer this
+      // payment gave — not the balance as it stands whenever the retry lands,
+      // which by then may include somebody else's payment.
+      return {
+        settlements: rows.length,
+        applied: allocations,
+        unapplied,
+        balance: after.balance,
+      };
+    });
 
-  res.status(201).json({
-    settlements: created.length,
-    applied: allocations,
-    unapplied,
-    balance: after.balance,
-  });
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого платежа' });
+      return;
+    }
+    throw err;
+  }
 });
 
 // Whether an account may take goods away without paying, and how far. The
@@ -3896,6 +3942,18 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
 
   try {
     await prisma.$transaction(async (tx) => {
+      // Claimed before anything is deducted, and guarded on the status this
+      // request read. The check above happens outside the transaction, so on
+      // its own it lets two confirmations of one order — a double click, a
+      // retry after a lost reply, two managers on two devices — both pass and
+      // both take the goods off the shelf. Only one claim can win here; the
+      // loser finds nothing to update and leaves the stock alone.
+      const claimed = await tx.document.updateMany({
+        where: { id: order.id, status: 'pending' },
+        data: { status: 'confirmed', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+      });
+      if (claimed.count === 0) throw new OrderAlreadyHandledError();
+
       const stockRows = await tx.stock.findMany({
         where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
       });
@@ -3927,14 +3985,14 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
         });
       }
 
-      await tx.document.update({
-        where: { id: order.id },
-        data: { status: 'confirmed', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
-      });
     }, { timeout: 15000 });
 
     res.json({ id: order.id, status: 'confirmed' });
   } catch (err) {
+    if (err instanceof OrderAlreadyHandledError) {
+      res.status(409).json({ error: 'Заказ уже обработан' });
+      return;
+    }
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
       return;
@@ -3957,23 +4015,35 @@ posRouter.post('/orders/:id/reject', requirePosAuth, async (req: PosAuthedReques
     return;
   }
 
-  await prisma.$transaction(async (tx) => {
-    // The goods go back on sale the moment the order stops being one. Leaving
-    // the hold in place would quietly shrink the shelf for everyone else.
-    const stockRows = await tx.stock.findMany({
-      where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
-    });
-    const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
-    for (const item of order.items) {
-      const stock = stockByProduct.get(item.productId);
-      if (stock) await releaseStock(tx, stock.id, item.quantity);
-    }
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Claimed first, for the same reason as confirming: rejecting twice
+      // releases the hold twice, and the shelf then offers goods it does not
+      // have to whoever asks next.
+      const claimed = await tx.document.updateMany({
+        where: { id: order.id, status: 'pending' },
+        data: { status: 'cancelled', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+      });
+      if (claimed.count === 0) throw new OrderAlreadyHandledError();
 
-    await tx.document.update({
-      where: { id: order.id },
-      data: { status: 'cancelled', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+      // The goods go back on sale the moment the order stops being one. Leaving
+      // the hold in place would quietly shrink the shelf for everyone else.
+      const stockRows = await tx.stock.findMany({
+        where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
+      });
+      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      for (const item of order.items) {
+        const stock = stockByProduct.get(item.productId);
+        if (stock) await releaseStock(tx, stock.id, item.quantity);
+      }
     });
-  });
+  } catch (err) {
+    if (err instanceof OrderAlreadyHandledError) {
+      res.status(409).json({ error: 'Заказ уже обработан' });
+      return;
+    }
+    throw err;
+  }
 
   res.json({ id: order.id, status: 'cancelled' });
 });
@@ -4053,8 +4123,24 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
   }
   const { fromLocationId, toLocationId } = transfer;
 
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
   try {
-    const document = await prisma.$transaction(async (tx) => {
+    // A retried transfer is the worst of the duplicates to find later: the van
+    // left once, but the books show two shipments out of the source and two
+    // lots of goods owed at the far end, and neither location's count agrees
+    // with anything.
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/transfers',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
       const sourceStockRows = await tx.stock.findMany({
         where: { locationId: fromLocationId, productId: { in: items.map((it) => it.productId) } },
       });
@@ -4107,11 +4193,15 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
         ),
       );
 
-      return document;
-    }, { timeout: 15000 });
+      return { id: document.id, createdAt: document.createdAt.toISOString(), status: 'in_transit' };
+    });
 
-    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString(), status: 'in_transit' });
+    res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого перемещения' });
+      return;
+    }
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
       return;
@@ -4577,7 +4667,23 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
-  const document = await prisma.$transaction(async (tx) => {
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    // Applied twice, a count doubles the very discrepancy it was meant to
+    // correct: the second pass finds the shelf already adjusted and adjusts it
+    // again by the same amount.
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/counts',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
     const stockRows = await tx.stock.findMany({
       where: { locationId, productId: { in: items.map((it) => it.productId) } },
     });
@@ -4630,10 +4736,17 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     }
     await Promise.all(updates);
 
-    return document;
-  }, { timeout: 15000 });
+      return { id: document.id, createdAt: document.createdAt.toISOString() };
+    });
 
-  res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другой инвентаризации' });
+      return;
+    }
+    throw err;
+  }
 });
 
 posRouter.get('/production/recipes', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -4738,8 +4851,22 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
     return;
   }
 
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
   try {
-    const document = await prisma.$transaction(async (tx) => {
+    // A production run booked twice eats twice the raw material and claims
+    // twice the output. Neither half is visible on the shelf that day.
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/production',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
       const [ingredientStockRows, finishedStockRows] = await Promise.all([
         tx.stock.findMany({ where: { locationId, productId: { in: ingredients.map((i) => i.ingredientId) } } }),
         tx.stock.findMany({ where: { locationId, productId: recipe.productId } }),
@@ -4801,11 +4928,15 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
       }
       await Promise.all(updates);
 
-      return document;
-    }, { timeout: 15000 });
+      return { id: document.id, createdAt: document.createdAt.toISOString(), batches, yieldQuantity };
+    });
 
-    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString(), batches, yieldQuantity });
+    res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого выпуска' });
+      return;
+    }
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно сырья на складе', shortages: err.shortages });
       return;
@@ -5188,6 +5319,14 @@ class StockError extends Error {
   constructor(shortages: StockShortage[]) {
     super('Insufficient stock');
     this.shortages = shortages;
+  }
+}
+
+// Somebody else confirmed or rejected this order between the check and the
+// write — or the same person did, twice.
+class OrderAlreadyHandledError extends Error {
+  constructor() {
+    super('Order already handled');
   }
 }
 
