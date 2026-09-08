@@ -13,6 +13,21 @@
  * exactly the thing worth not doing.
  */
 
+import { translate } from './i18n';
+import { getLanguage } from './i18n/useLanguage';
+
+/**
+ * One phrase, outside React.
+ *
+ * These modules are not components and cannot use the hook, so they read the
+ * current language directly. The strings here are only ever fallbacks for when
+ * the server said nothing — which is the offline case, and the one where a
+ * cashier most needs to understand what happened.
+ */
+function say(key: Parameters<typeof translate>[1]): string {
+  return translate(getLanguage(), key);
+}
+
 /** The long edge, after shrinking. Enough to read a handwritten quantity. */
 export const MAX_PHOTO_EDGE = 1200;
 
@@ -50,7 +65,7 @@ export async function preparePhoto(file: File, edge = MAX_PHOTO_EDGE): Promise<P
   canvas.width = size.width;
   canvas.height = size.height;
   const context = canvas.getContext('2d');
-  if (!context) throw new Error('Не удалось обработать фото');
+  if (!context) throw new Error(say('net.photoProcessFailed'));
   context.drawImage(source as CanvasImageSource, 0, 0, size.width, size.height);
 
   // JPEG, whatever came in. A phone's HEIC is smaller but a browser cannot be
@@ -86,7 +101,7 @@ async function loadImage(file: File): Promise<DecodedImage> {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Не удалось прочитать фото'));
+      reject(new Error(say('net.photoReadFailed')));
     };
     image.src = url;
   });

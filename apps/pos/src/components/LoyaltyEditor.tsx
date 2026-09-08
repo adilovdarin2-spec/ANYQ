@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { LoyaltySelection } from '../types';
 import type { CustomerLookupResult } from '../api';
 import { formatMoney } from '../utils';
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function LoyaltyEditor({ netAfterDiscount, selection, onChange, onLookup }: Props) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [phone, setPhone] = useState(selection?.phone ?? '');
   const [loading, setLoading] = useState(false);
@@ -29,7 +31,7 @@ export function LoyaltyEditor({ netAfterDiscount, selection, onChange, onLookup 
       const result = await onLookup(trimmed);
       setFound({ name: result.name ?? trimmed, loyaltyPoints: result.loyaltyPoints });
     } catch {
-      setError('Не удалось найти клиента');
+      setError(t('loyalty.notFound'));
     } finally {
       setLoading(false);
     }
@@ -57,20 +59,20 @@ export function LoyaltyEditor({ netAfterDiscount, selection, onChange, onLookup 
       <div className="loyalty-editor">
         {!found ? (
           <div className="loyalty-lookup-row">
-            <input type="tel" autoFocus placeholder="Телефон клиента" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <input type="tel" autoFocus placeholder={t('loyalty.phone')} value={phone} onChange={(e) => setPhone(e.target.value)} />
             <button type="button" className="btn btn-secondary" onClick={handleLookup} disabled={loading || !phone.trim()}>
-              {loading ? '…' : 'Найти'}
+              {loading ? '…' : t('loyalty.find')}
             </button>
           </div>
         ) : (
           <>
-            <div className="loyalty-found">{found.name} · баллы: {found.loyaltyPoints}</div>
+            <div className="loyalty-found">{t('loyalty.found', { name: found.name, points: found.loyaltyPoints })}</div>
             <div className="loyalty-lookup-row">
               <input
                 type="number"
                 min="0"
                 max={Math.min(found.loyaltyPoints, netAfterDiscount)}
-                placeholder="Списать баллов"
+                placeholder={t('loyalty.redeem')}
                 value={redeemInput}
                 onChange={(e) => setRedeemInput(e.target.value)}
               />
@@ -85,15 +87,15 @@ export function LoyaltyEditor({ netAfterDiscount, selection, onChange, onLookup 
 
   return (
     <div className="summary-row loyalty-row">
-      <span>Клиент</span>
+      <span>{t('receipt.customer')}</span>
       {selection ? (
         <span>
           {selection.name}
           {selection.pointsToRedeem > 0 ? ` (−${formatMoney(selection.pointsToRedeem)})` : ''}
-          <button type="button" className="li-remove" onClick={clear}>убрать</button>
+          <button type="button" className="li-remove" onClick={clear}>{t('loyalty.remove')}</button>
         </span>
       ) : (
-        <button type="button" className="li-remove" onClick={() => setEditing(true)}>добавить</button>
+        <button type="button" className="li-remove" onClick={() => setEditing(true)}>{t('loyalty.attach')}</button>
       )}
     </div>
   );

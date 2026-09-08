@@ -128,7 +128,7 @@ export function ProfileScreen({
             key in the dictionary is translated, while most of the product is
             not in the dictionary at all, so "81/81" would read as a claim
             about the app and contradict the sentence it sits next to. */}
-        {language !== 'ru' && <div className="field-hint">{t('language.partial')}</div>}
+        {language !== 'ru' && <div className="field-hint">{t('language.caveat')}</div>}
       </div>
 
       {onShowDashboard && (

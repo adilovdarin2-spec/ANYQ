@@ -287,7 +287,8 @@ export function OwnerDashboardScreen({
                       {item.name}
                       <br />
                       <span className="order-meta">
-                        {t('owner.pieces', { count: formatQuantity(item.quantity) })} ·{' '}
+                        {formatQuantity(item.quantity)}{' '}
+                        {item.unit || t('product.unitDefault')} ·{' '}
                         {item.daysSinceLastSale === null
                           ? t('owner.neverSold')
                           : t('owner.lastSale', { days: item.daysSinceLastSale })}

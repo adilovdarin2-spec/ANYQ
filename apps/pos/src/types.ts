@@ -1,3 +1,5 @@
+import type { PhraseKey } from './i18n';
+
 export interface ProductModifierOption {
   id: string;
   name: string;
@@ -54,11 +56,18 @@ export interface CartLine {
 // only one that needs an account behind it.
 export type PaymentMethod = 'cash' | 'kaspi' | 'card' | 'credit';
 
-export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  credit: 'В долг',
-  cash: 'Наличные',
-  kaspi: 'Kaspi QR',
-  card: 'Карта',
+/**
+ * Phrase keys, not labels.
+ *
+ * A constant holding translated text is translated once, at import, and never
+ * changes when somebody switches language. Every map in this file that used to
+ * hold Russian had that bug.
+ */
+export const PAYMENT_PHRASES: Record<PaymentMethod, PhraseKey> = {
+  credit: 'payment.credit',
+  cash: 'payment.cash',
+  kaspi: 'payment.kaspi',
+  card: 'payment.card',
 };
 
 /**
@@ -368,20 +377,20 @@ export type StockMovementReason =
   | 'opening'
   | 'batch_receipt';
 
-export const STOCK_MOVEMENT_LABELS: Record<StockMovementReason, string> = {
-  sale: 'Продажа',
-  order_fulfill: 'Выдача заказа',
-  transfer_out: 'Перемещение (откуда)',
-  transfer_in: 'Перемещение (куда)',
-  transfer_cancelled: 'Перемещение отменено',
-  return: 'Возврат от покупателя',
-  opening: 'Начальный остаток',
-  receipt: 'Приёмка товара',
-  adjustment: 'Инвентаризация',
-  production_in: 'Производство (выпуск)',
-  production_out: 'Производство (расход)',
-  table_order: 'Заказ на стол',
-  batch_receipt: 'Приёмка партии',
+export const STOCK_MOVEMENT_PHRASES: Record<StockMovementReason, PhraseKey> = {
+  sale: 'movement.sale',
+  order_fulfill: 'movement.orderFulfill',
+  transfer_out: 'movement.transferOut',
+  transfer_in: 'movement.transferIn',
+  transfer_cancelled: 'movement.transferCancelled',
+  return: 'movement.return',
+  opening: 'movement.opening',
+  receipt: 'movement.receipt',
+  adjustment: 'movement.adjustment',
+  production_in: 'movement.productionIn',
+  production_out: 'movement.productionOut',
+  table_order: 'movement.tableOrder',
+  batch_receipt: 'movement.batchReceipt',
 };
 
 export interface StockMovementRecord {
@@ -487,6 +496,8 @@ export interface DeadStockItem {
   productId: string;
   name: string;
   quantity: number;
+  /** The shop's own unit. Absent on rows written before it was recorded. */
+  unit?: string;
   /** At cost — what clearing the shelf would give back. */
   value: number;
   daysSinceLastSale: number | null;
@@ -625,12 +636,12 @@ export type WriteOffReason = 'damage' | 'expiry' | 'theft' | 'quality' | 'other'
 // A code makes losses countable; the note that goes with it makes each one
 // explainable. An owner asking "do we lose more to breakage or to expiry"
 // cannot get that out of a hundred hand-typed notes.
-export const WRITE_OFF_LABELS: Record<WriteOffReason, string> = {
-  damage: 'Повреждение',
-  expiry: 'Просрочка',
-  theft: 'Недостача',
-  quality: 'Брак',
-  other: 'Другое',
+export const WRITE_OFF_PHRASES: Record<WriteOffReason, PhraseKey> = {
+  damage: 'reason.damage',
+  expiry: 'reason.expiry',
+  theft: 'reason.theft',
+  quality: 'reason.quality',
+  other: 'reason.other',
 };
 
 export interface WriteOffRecord {

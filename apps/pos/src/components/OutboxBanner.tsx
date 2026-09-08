@@ -1,4 +1,4 @@
-import { commandLabel } from '../outbox';
+import { commandPhrase } from '../outbox';
 import type { WarehouseCommand } from '../outbox';
 import { useTranslation } from '../i18n/useLanguage';
 
@@ -25,7 +25,7 @@ export function OutboxBanner({ pending, blockedCommand, onRetry, onDiscard }: Pr
   if (blockedCommand) {
     return (
       <div className="login-error" style={{ margin: '12px 16px' }}>
-        <strong>{t('warehouse.blockedTitle', { kind: commandLabel(blockedCommand.kind) })}</strong>
+        <strong>{t('warehouse.blockedTitle', { kind: t(commandPhrase(blockedCommand.kind)) })}</strong>
         <br />
         {blockedCommand.error}
         <br />

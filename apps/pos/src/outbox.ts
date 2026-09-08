@@ -1,4 +1,5 @@
 import type { BinCountPayload, CreateReceiptPayload, CreateWriteOffPayload, PutawayPayload } from './api';
+import type { PhraseKey } from './i18n';
 
 /**
  * The warehouse's outbox.
@@ -77,15 +78,22 @@ export interface BinCountCommand extends OutboxCommand {
 
 export type WarehouseCommand = ReceiptCommand | WriteOffCommand | PutawayCommand | BinCountCommand;
 
-const LABELS: Record<OutboxKind, string> = {
-  receipt: 'Приёмка',
-  writeOff: 'Списание',
-  putaway: 'Размещение',
-  binCount: 'Пересчёт',
+const KIND_PHRASES: Record<OutboxKind, PhraseKey> = {
+  receipt: 'queue.receipt',
+  writeOff: 'queue.writeOff',
+  putaway: 'queue.putaway',
+  binCount: 'queue.binCount',
 };
 
-export function commandLabel(kind: OutboxKind): string {
-  return LABELS[kind];
+/**
+ * The name of a command, for the banner that shows a stuck one.
+ *
+ * A key rather than text, resolved by the component: this module is not a
+ * component and a constant holding a translated name would be translated once,
+ * at import, and never change when somebody switches language.
+ */
+export function commandPhrase(kind: OutboxKind): PhraseKey {
+  return KIND_PHRASES[kind];
 }
 
 /** The command to send now, or null when there is nothing to do. */

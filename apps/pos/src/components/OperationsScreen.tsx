@@ -16,7 +16,7 @@ export function OperationsScreen({ items }: Props) {
   return (
     <div className="tab-content">
       <div className="tab-header">{t('tab.operations')}</div>
-      {items.length === 0 && <div className="empty-state">На вашем тарифе нет дополнительных операций</div>}
+      {items.length === 0 && <div className="empty-state">{t('ops.noneOnTariff')}</div>}
       {items.map((item) => (
         <button key={item.key} type="button" className="operations-row" onClick={item.onClick}>
           <span className="operations-icon">{item.icon}</span>

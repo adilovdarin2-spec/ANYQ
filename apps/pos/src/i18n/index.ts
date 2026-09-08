@@ -84,3 +84,23 @@ export function format(template: string, values: Record<string, string | number>
     Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : whole,
   );
 }
+
+/**
+ * Picks the right one of three counted phrases.
+ *
+ * Whole phrases rather than word stems handed to a pluraliser. Russian needs
+ * three forms of a counted noun and Kazakh needs one, so a call site that takes
+ * three stems and assembles a sentence around them cannot serve both languages
+ * — the phrase has to be the unit of translation, not the noun inside it.
+ *
+ * A Kazakh dictionary simply gives the same phrase for all three, which is
+ * exactly right rather than a workaround: the language does not inflect the
+ * noun after a numeral.
+ */
+export function pluralPhrase<T extends PhraseKey>(count: number, one: T, few: T, many: T): T {
+  const mod10 = Math.abs(count) % 10;
+  const mod100 = Math.abs(count) % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}

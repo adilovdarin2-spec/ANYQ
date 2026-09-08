@@ -1,4 +1,18 @@
 import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import { translate } from './i18n';
+import { getLanguage } from './i18n/useLanguage';
+
+/**
+ * One phrase, outside React.
+ *
+ * These modules are not components and cannot use the hook, so they read the
+ * current language directly. The strings here are only ever fallbacks for when
+ * the server said nothing — which is the offline case, and the one where a
+ * cashier most needs to understand what happened.
+ */
+function say(key: Parameters<typeof translate>[1]): string {
+  return translate(getLanguage(), key);
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -21,7 +35,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.error || 'Ошибка запроса', res.status);
+    throw new ApiError(data.error || say('net.requestFailed'), res.status);
   }
   return data as T;
 }
@@ -737,7 +751,7 @@ export async function downloadExport(token: string, dataset: string, locationId:
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new ApiError(data.error || 'Не удалось выгрузить', res.status);
+    throw new ApiError(data.error || say('net.exportFailed'), res.status);
   }
 
   const blob = await res.blob();
@@ -893,7 +907,7 @@ export async function loadPhotoUrl(token: string, photoId: string): Promise<stri
   const res = await fetch(`${API_BASE}/pos/photos/${photoId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new ApiError('Не удалось загрузить фото', res.status);
+  if (!res.ok) throw new ApiError(say('net.photoFailed'), res.status);
   return URL.createObjectURL(await res.blob());
 }
 

@@ -117,6 +117,19 @@ describe('findDeadStock', () => {
     expect(result).toHaveLength(3);
   });
 
+  it('carries the unit the shop itself uses, so cheese is not counted in pieces', () => {
+    // The owner reads this list to decide what to clear. "12.5 pieces of
+    // cheese" is not a sentence about anything; the unit has to be the one the
+    // shop weighs in.
+    const byWeight = [{ productId: 'cheese', name: 'Сыр', quantity: 12.5, unit: 'кг' }];
+    const [row] = findDeadStock(byWeight, new Map(), new Map([['cheese', 2800]]), 90);
+    expect(row.unit).toBe('кг');
+    // And a product recorded before the unit existed simply has none, rather
+    // than being given a wrong one here.
+    const [older] = findDeadStock(stocked, new Map(), cost, 90);
+    expect(older.unit).toBeUndefined();
+  });
+
   it('ignores products with nothing on the shelf — there is no money asleep there', () => {
     const empty = [{ productId: 'gone', name: 'Нет', quantity: 0 }];
     expect(findDeadStock(empty, new Map(), cost, 90)).toEqual([]);

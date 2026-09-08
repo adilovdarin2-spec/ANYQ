@@ -54,22 +54,25 @@ describe('the Kazakh dictionary', () => {
   });
 
   it('actually says something different from Russian where it claims to translate', () => {
-    // A guard against a copy-paste passing for a translation. The list below
-    // is every phrase that is legitimately identical: a brand name (Kaspi QR,
-    // ANYQ Касса), or a borrowing Kazakh spells exactly as Russian does —
-    // карта, чек, клиент, касса, профиль, and the job titles кассир, менеджер
-    // and фармацевт, and стеллаж, which a Kazakh warehouse also calls a
-    // стеллаж, plus штрихкод and карантин. Anything else appearing here is a
-    // phrase somebody pasted and did not translate.
+    // A guard against a copy-paste passing for a translation. Everything on
+    // this list is legitimately identical: a brand name (Kaspi QR, ANYQ Касса),
+    // a unit abbreviation (/кг), or a word Kazakh borrows and spells exactly as
+    // Russian does — карта, чек, клиент, касса, профиль, штрихкод, карантин,
+    // стеллаж, ингредиент, партия, and the job titles кассир, менеджер and
+    // фармацевт. Anything else appearing here is a phrase somebody pasted and
+    // did not translate.
     const sameAsRussian = (Object.entries(kk) as [keyof typeof ru, string][])
       .filter(([key, phrase]) => phrase === ru[key])
       .map(([key]) => key)
       .sort();
     expect(sameAsRussian).toEqual([
       'bins.rack',
+      'grid.perKg',
       'payment.card',
       'payment.kaspi',
       'product.barcode',
+      'production.batchesOne',
+      'products.ingredient',
       'receipt.brand',
       'receipt.customer',
       'receipt.title',
@@ -78,6 +81,7 @@ describe('the Kazakh dictionary', () => {
       'role.pharmacist',
       'tab.profile',
       'tab.sale',
+      'unit.kg',
       'writeOff.quarantine',
     ]);
   });

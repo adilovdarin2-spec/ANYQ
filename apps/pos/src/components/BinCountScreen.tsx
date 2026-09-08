@@ -82,8 +82,7 @@ export function BinCountScreen({
             // first for the second is how a storeman comes to trust a figure
             // nobody has checked.
             <div className="empty-state">
-              Пересчёт ячейки «{queuedBin || 'не размещено'}» сохранён на устройстве и уйдёт на сервер,
-              когда появится связь. Расхождения покажем после отправки.
+              {t('count.queued', { bin: queuedBin || t('count.unplacedShort') })}
             </div>
           )}
 
@@ -99,8 +98,7 @@ export function BinCountScreen({
                       {line.name}
                       <br />
                       <span className="order-meta">
-                        {line.binLocation || 'не размещено'} · было {formatQuantity(line.systemQuantity)},
-                        насчитали {formatQuantity(line.countedQuantity)}
+                        {line.binLocation || t('count.unplacedShort')} · {t('count.wasCounted', { system: formatQuantity(line.systemQuantity), counted: formatQuantity(line.countedQuantity) })}
                       </span>
                     </span>
                     <span>{line.delta > 0 ? `+${formatQuantity(line.delta)}` : formatQuantity(line.delta)}</span>
@@ -134,14 +132,12 @@ export function BinCountScreen({
 
             {sheetCachedAt && (
               <div className="field-hint">
-                Нет связи — показываем данные, сохранённые на устройстве{' '}
-                {new Date(sheetCachedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}.
-                Считать можно: расхождения сервер посчитает на момент пересчёта, а не на момент отправки.
+                {t('count.offlineSheet', { when: new Date(sheetCachedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) })}
               </div>
             )}
 
             {loading && <div className="empty-state">{t('common.loading')}</div>}
-            {!loading && sheet.lines.length === 0 && <div className="empty-state">Система считает эту ячейку пустой</div>}
+            {!loading && sheet.lines.length === 0 && <div className="empty-state">{t('count.systemSaysEmpty')}</div>}
 
             {sheet.lines.map((line) => (
               <div key={line.productId} className="count-row">
@@ -152,8 +148,8 @@ export function BinCountScreen({
                       finds nothing. */}
                   <div className="li-price">
                     {t('count.system')}: {formatQuantity(line.systemQuantity)}
-                    {line.reserved > 0 ? ` · ${formatQuantity(line.reserved)} под заказ` : ''}
-                    {line.blocked > 0 ? ` · ${formatQuantity(line.blocked)} в карантине` : ''}
+                    {line.reserved > 0 ? ` · ${t('count.reservedFor', { count: formatQuantity(line.reserved) })}` : ''}
+                    {line.blocked > 0 ? ` · ${t('count.inQuarantine', { count: formatQuantity(line.blocked) })}` : ''}
                   </div>
                 </div>
                 <input
@@ -163,7 +159,7 @@ export function BinCountScreen({
                   placeholder="0"
                   value={counted[line.productId] ?? ''}
                   onChange={(e) => setCounted((prev) => ({ ...prev, [line.productId]: e.target.value }))}
-                  aria-label={`Насчитано: ${line.name}`}
+                  aria-label={t('count.lineLabel', { name: line.name })}
                 />
               </div>
             ))}
@@ -173,7 +169,7 @@ export function BinCountScreen({
 
           <div className="screen-footer">
             <button className="btn btn-primary btn-block" disabled={submitting} onClick={submit}>
-              {submitting ? 'Сохраняем…' : 'Закрыть ячейку'}
+              {submitting ? t('common.saving') : t('count.close')}
             </button>
           </div>
         </>

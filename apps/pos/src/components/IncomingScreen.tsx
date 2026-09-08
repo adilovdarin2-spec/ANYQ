@@ -210,7 +210,7 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
               </div>
               <div className="form-field">
                 <label htmlFor="supplier-phone">{t('incoming.supplierPhone')}</label>
-                <input id="supplier-phone" type="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder="Необязательно" />
+                <input id="supplier-phone" type="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder={t('common.optional')} />
               </div>
 
               <div className="section-title">{t('transfer.products')}</div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { PaymentLine, PaymentMethod } from '../types';
-import { PAYMENT_LABELS } from '../types';
+
 import { formatMoney } from '../utils';
 import { SplitPaymentEditor } from './SplitPaymentEditor';
 import { useTranslation } from '../i18n/useLanguage';

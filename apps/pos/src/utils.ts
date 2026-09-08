@@ -1,3 +1,6 @@
+import { translate } from './i18n';
+import { getLanguage } from './i18n/useLanguage';
+
 export function genId(prefix: string): string {
   // A sale's id is what the server matches a retry against, so two registers
   // generating the same one would make the second register's sale replay the
@@ -14,7 +17,11 @@ export function formatMoney(n: number): string {
 }
 
 export function formatWeight(kg: number): string {
-  return `${kg.toLocaleString('ru-RU', { maximumFractionDigits: 3 })} кг`;
+  // Not a component, so it reads the language rather than taking a hook.
+  // The abbreviation happens to be spelled the same in both languages; it
+  // lives in the dictionary anyway so that no display text sits in code.
+  const kilograms = translate(getLanguage(), 'unit.kg');
+  return `${kg.toLocaleString('ru-RU', { maximumFractionDigits: 3 })} ${kilograms}`;
 }
 
 export function formatTime(iso: string): string {

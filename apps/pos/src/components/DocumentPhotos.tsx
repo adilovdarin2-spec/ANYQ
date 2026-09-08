@@ -42,7 +42,7 @@ export function DocumentPhotos({ token, documentId, canDelete }: Props) {
           setUrls((prev) => ({ ...prev, [photo.id]: url }));
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Не удалось загрузить фото');
+        if (!cancelled) setError(err instanceof ApiError ? err.message : t('photo.loadFailed'));
       }
     })();
 
@@ -65,7 +65,7 @@ export function DocumentPhotos({ token, documentId, canDelete }: Props) {
       setPhotos((prev) => [...prev, created]);
       setUrls((prev) => ({ ...prev, [created.id]: url }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось приложить фото');
+      setError(err instanceof ApiError ? err.message : t('photo.attachFailed'));
     } finally {
       setBusy(false);
     }
@@ -84,7 +84,7 @@ export function DocumentPhotos({ token, documentId, canDelete }: Props) {
         return rest;
       });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось удалить фото');
+      setError(err instanceof ApiError ? err.message : t('photo.deleteFailed'));
     } finally {
       setBusy(false);
     }
@@ -112,10 +112,10 @@ export function DocumentPhotos({ token, documentId, canDelete }: Props) {
             <div key={photo.id} className="photo-thumb">
               {urls[photo.id] ? (
                 <a href={urls[photo.id]} target="_blank" rel="noreferrer">
-                  <img src={urls[photo.id]} alt="Накладная" />
+                  <img src={urls[photo.id]} alt={t('photo.alt')} />
                 </a>
               ) : (
-                <span className="order-meta">загрузка…</span>
+                <span className="order-meta">{t('common.loading')}</span>
               )}
               {canDelete && (
                 <button className="li-remove" disabled={busy} onClick={() => remove(photo.id)}>

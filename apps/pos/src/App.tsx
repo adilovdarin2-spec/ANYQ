@@ -412,8 +412,8 @@ export default function App() {
   }
   if (hasRestaurant) {
     operationsItems.push(
-      { key: 'floorplan', icon: '🍽️', label: 'Столики', onClick: handleShowFloorPlan },
-      { key: 'kds', icon: '🔥', label: 'Кухня', onClick: handleShowKds },
+      { key: 'floorplan', icon: '🍽️', label: t('floor.title'), onClick: handleShowFloorPlan },
+      { key: 'kds', icon: '🔥', label: t('kds.title'), onClick: handleShowKds },
     );
   }
   if (hasTerminal) {
@@ -452,7 +452,7 @@ export default function App() {
     // booked there. Switching underneath an open shift would file the rest of
     // the day's takings against a point nobody was standing in.
     if (shift) {
-      setLocationSwitchError('Сначала закройте смену — она открыта на текущей точке');
+      setLocationSwitchError(t('fail.closeShiftFirst'));
       return;
     }
     setLocationSwitching(true);
@@ -469,7 +469,7 @@ export default function App() {
       setRememberedLocationId(nextLocationId);
       setCart([]);
     } catch (err) {
-      setLocationSwitchError(err instanceof ApiError ? err.message : 'Не удалось переключить точку — нет связи');
+      setLocationSwitchError(err instanceof ApiError ? err.message : t('fail.switchLocation'));
     } finally {
       setLocationSwitching(false);
     }
@@ -483,7 +483,7 @@ export default function App() {
       const data = await fetchOrders(session.token);
       setOrders(data);
     } catch (err) {
-      setOrdersError(err instanceof ApiError ? err.message : 'Не удалось загрузить заказы');
+      setOrdersError(err instanceof ApiError ? err.message : t('fail.loadOrders'));
     } finally {
       setOrdersLoading(false);
     }
@@ -534,7 +534,7 @@ export default function App() {
       await fulfillOrder(session.token, id);
       await loadOrders();
     } catch (err) {
-      setOrdersError(err instanceof ApiError ? err.message : 'Не удалось выдать заказ');
+      setOrdersError(err instanceof ApiError ? err.message : t('fail.issueOrder'));
     } finally {
       setBusyOrder(null);
     }
@@ -547,7 +547,7 @@ export default function App() {
       await rejectOrder(session.token, id);
       await loadOrders();
     } catch (err) {
-      setOrdersError(err instanceof ApiError ? err.message : 'Не удалось отклонить заказ');
+      setOrdersError(err instanceof ApiError ? err.message : t('fail.rejectOrder'));
     } finally {
       setBusyOrder(null);
     }
@@ -563,7 +563,7 @@ export default function App() {
       const data = await fetchReports(session.token, from.toISOString(), to.toISOString(), currentLocationId);
       setReport(data);
     } catch (err) {
-      setReportsError(err instanceof ApiError ? err.message : 'Не удалось загрузить отчёт');
+      setReportsError(err instanceof ApiError ? err.message : t('fail.loadReport'));
     } finally {
       setReportsLoading(false);
     }
@@ -587,7 +587,7 @@ export default function App() {
       const data = await fetchBatches(session.token, currentLocationId);
       setBatches(data);
     } catch (err) {
-      setBatchesError(err instanceof ApiError ? err.message : 'Не удалось загрузить партии');
+      setBatchesError(err instanceof ApiError ? err.message : t('fail.loadBatches'));
     } finally {
       setBatchesLoading(false);
     }
@@ -607,7 +607,7 @@ export default function App() {
       await loadBatches();
       return true;
     } catch (err) {
-      setBatchesError(err instanceof ApiError ? err.message : 'Не удалось принять партию');
+      setBatchesError(err instanceof ApiError ? err.message : t('fail.receiveBatch'));
       return false;
     } finally {
       setBatchSubmitting(false);
@@ -638,7 +638,7 @@ export default function App() {
       const data = await fetchTransfers(session.token);
       setTransfers(data);
     } catch (err) {
-      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось загрузить перемещения');
+      setTransfersError(err instanceof ApiError ? err.message : t('fail.loadTransfers'));
     } finally {
       setTransfersLoading(false);
     }
@@ -660,7 +660,7 @@ export default function App() {
       await loadTransfers();
       return true;
     } catch (err) {
-      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось принять перемещение');
+      setTransfersError(err instanceof ApiError ? err.message : t('fail.receiveTransfer'));
       return false;
     }
   }
@@ -673,7 +673,7 @@ export default function App() {
       await loadTransfers();
       return true;
     } catch (err) {
-      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось отменить перемещение');
+      setTransfersError(err instanceof ApiError ? err.message : t('fail.cancelTransfer'));
       return false;
     }
   }
@@ -687,7 +687,7 @@ export default function App() {
       await loadTransfers();
       return true;
     } catch (err) {
-      setTransfersError(err instanceof ApiError ? err.message : 'Не удалось отправить перемещение');
+      setTransfersError(err instanceof ApiError ? err.message : t('fail.sendTransfer'));
       return false;
     } finally {
       setTransferSubmitting(false);
@@ -702,7 +702,7 @@ export default function App() {
       const data = await fetchReceipts(session.token);
       setReceipts(data);
     } catch (err) {
-      setReceiptsError(err instanceof ApiError ? err.message : 'Не удалось загрузить приёмки');
+      setReceiptsError(err instanceof ApiError ? err.message : t('fail.loadReceipts'));
     } finally {
       setReceiptsLoading(false);
     }
@@ -750,7 +750,7 @@ export default function App() {
       if (payload.purchaseOrderId) await loadPurchaseOrders();
       return true;
     } catch (err) {
-      setReceiptsError(err instanceof ApiError ? err.message : 'Не удалось оприходовать товар');
+      setReceiptsError(err instanceof ApiError ? err.message : t('fail.receiveGoods'));
       return false;
     } finally {
       setReceiptSubmitting(false);
@@ -765,7 +765,7 @@ export default function App() {
       const data = await fetchCounts(session.token);
       setCounts(data);
     } catch (err) {
-      setCountsError(err instanceof ApiError ? err.message : 'Не удалось загрузить пересчёты');
+      setCountsError(err instanceof ApiError ? err.message : t('fail.loadCounts'));
     } finally {
       setCountsLoading(false);
     }
@@ -782,7 +782,7 @@ export default function App() {
     try {
       setEditingPackagings(await fetchPackagings(session.token, productId));
     } catch (err) {
-      setPackagingError(err instanceof ApiError ? err.message : 'Не удалось загрузить упаковки');
+      setPackagingError(err instanceof ApiError ? err.message : t('fail.loadPackagings'));
     }
   }
 
@@ -799,7 +799,7 @@ export default function App() {
       applyPackagingsToSession(editingProduct.id, [...editingPackagings, created]);
       return true;
     } catch (err) {
-      setPackagingError(err instanceof ApiError ? err.message : 'Не удалось добавить упаковку');
+      setPackagingError(err instanceof ApiError ? err.message : t('fail.addPackaging'));
       return false;
     } finally {
       setPackagingBusy(false);
@@ -816,7 +816,7 @@ export default function App() {
       setEditingPackagings(remaining);
       applyPackagingsToSession(editingProduct.id, remaining);
     } catch (err) {
-      setPackagingError(err instanceof ApiError ? err.message : 'Не удалось удалить упаковку');
+      setPackagingError(err instanceof ApiError ? err.message : t('fail.deletePackaging'));
     } finally {
       setPackagingBusy(false);
     }
@@ -851,7 +851,7 @@ export default function App() {
     try {
       setImportPreview(await previewImport(session.token, source));
     } catch (err) {
-      setImportError(err instanceof ApiError ? err.message : 'Не удалось проверить файл');
+      setImportError(err instanceof ApiError ? err.message : t('fail.checkFile'));
     } finally {
       setImportLoading(false);
     }
@@ -871,7 +871,7 @@ export default function App() {
       // a thousand new products.
       await refreshCatalogAfterStockChange();
     } catch (err) {
-      setImportError(err instanceof ApiError ? err.message : 'Не удалось импортировать');
+      setImportError(err instanceof ApiError ? err.message : t('fail.import'));
     } finally {
       setImportSubmitting(false);
     }
@@ -884,7 +884,7 @@ export default function App() {
     try {
       setReconciliation(await fetchReconciliation(session.token, currentLocationId));
     } catch (err) {
-      setReconciliationError(err instanceof ApiError ? err.message : 'Не удалось выполнить сверку');
+      setReconciliationError(err instanceof ApiError ? err.message : t('fail.reconcile'));
     } finally {
       setReconciliationLoading(false);
     }
@@ -905,7 +905,7 @@ export default function App() {
       // The corrected figures are what the register sells against.
       await refreshCatalogAfterStockChange();
     } catch (err) {
-      setReconciliationError(err instanceof ApiError ? err.message : 'Не удалось исправить остатки');
+      setReconciliationError(err instanceof ApiError ? err.message : t('fail.repairStock'));
     } finally {
       setReconciliationRepairing(false);
     }
@@ -945,7 +945,7 @@ export default function App() {
         setCountSheet({ bin: cached.bin, lines: cached.lines });
         setCountSheetCachedAt(cached.cachedAt);
       } else {
-        setBinCountError(err instanceof ApiError ? err.message : 'Не удалось загрузить ячейку');
+        setBinCountError(err instanceof ApiError ? err.message : t('fail.loadBin'));
       }
     } finally {
       setCountSheetLoading(false);
@@ -1003,7 +1003,7 @@ export default function App() {
       await loadBins();
       return true;
     } catch (err) {
-      setBinCountError(err instanceof ApiError ? err.message : 'Не удалось сохранить пересчёт');
+      setBinCountError(err instanceof ApiError ? err.message : t('fail.saveCount'));
       return false;
     } finally {
       setBinCountSubmitting(false);
@@ -1018,7 +1018,7 @@ export default function App() {
       const data = await fetchSettlements(session.token, type);
       setSettlementAccounts(data.accounts);
     } catch (err) {
-      setSettlementsError(err instanceof ApiError ? err.message : 'Не удалось загрузить расчёты');
+      setSettlementsError(err instanceof ApiError ? err.message : t('fail.loadSettlements'));
     } finally {
       setSettlementsLoading(false);
     }
@@ -1048,7 +1048,7 @@ export default function App() {
       await loadSettlements(settlementType);
       return true;
     } catch (err) {
-      setSettlementsError(err instanceof ApiError ? err.message : 'Не удалось провести платёж');
+      setSettlementsError(err instanceof ApiError ? err.message : t('fail.postPayment'));
       return false;
     } finally {
       setSettlementsSubmitting(false);
@@ -1064,7 +1064,7 @@ export default function App() {
       await loadSettlements(settlementType);
       return true;
     } catch (err) {
-      setSettlementsError(err instanceof ApiError ? err.message : 'Не удалось изменить условия долга');
+      setSettlementsError(err instanceof ApiError ? err.message : t('fail.changeCredit'));
       return false;
     } finally {
       setSettlementsSubmitting(false);
@@ -1080,7 +1080,7 @@ export default function App() {
       setBins(data.bins);
       setUnplaced(data.unplaced);
     } catch (err) {
-      setBinsError(err instanceof ApiError ? err.message : 'Не удалось загрузить ячейки');
+      setBinsError(err instanceof ApiError ? err.message : t('fail.loadBins'));
     } finally {
       setBinsLoading(false);
     }
@@ -1100,7 +1100,7 @@ export default function App() {
       await loadBins();
       return true;
     } catch (err) {
-      setBinsError(err instanceof ApiError ? err.message : 'Не удалось создать ячейку');
+      setBinsError(err instanceof ApiError ? err.message : t('fail.createBin'));
       return false;
     } finally {
       setBinsSubmitting(false);
@@ -1114,7 +1114,7 @@ export default function App() {
       await deleteBin(session.token, binId);
       await loadBins();
     } catch (err) {
-      setBinsError(err instanceof ApiError ? err.message : 'Не удалось удалить ячейку');
+      setBinsError(err instanceof ApiError ? err.message : t('fail.deleteBin'));
     }
   }
 
@@ -1130,7 +1130,7 @@ export default function App() {
       await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
-      setBinsError(err instanceof ApiError ? err.message : 'Не удалось заблокировать ячейку');
+      setBinsError(err instanceof ApiError ? err.message : t('fail.blockBin'));
       return false;
     } finally {
       setBinsSubmitting(false);
@@ -1146,7 +1146,7 @@ export default function App() {
       await loadBins();
       await refreshCatalogAfterStockChange();
     } catch (err) {
-      setBinsError(err instanceof ApiError ? err.message : 'Не удалось снять блокировку');
+      setBinsError(err instanceof ApiError ? err.message : t('fail.unblockBin'));
     } finally {
       setBinsSubmitting(false);
     }
@@ -1169,7 +1169,7 @@ export default function App() {
       await loadBins();
       return true;
     } catch (err) {
-      setBinsError(err instanceof ApiError ? err.message : 'Не удалось разместить товар');
+      setBinsError(err instanceof ApiError ? err.message : t('fail.putaway'));
       return false;
     } finally {
       setBinsSubmitting(false);
@@ -1183,7 +1183,7 @@ export default function App() {
     try {
       setWriteOffs(await fetchWriteOffs(session.token, currentLocationId));
     } catch (err) {
-      setWriteOffError(err instanceof ApiError ? err.message : 'Не удалось загрузить списания');
+      setWriteOffError(err instanceof ApiError ? err.message : t('fail.loadWriteOffs'));
     } finally {
       setWriteOffLoading(false);
     }
@@ -1231,7 +1231,7 @@ export default function App() {
       await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
-      setWriteOffError(err instanceof ApiError ? err.message : 'Не удалось списать товар');
+      setWriteOffError(err instanceof ApiError ? err.message : t('fail.writeOff'));
       return false;
     } finally {
       setWriteOffSubmitting(false);
@@ -1251,7 +1251,7 @@ export default function App() {
       await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
-      setWriteOffError(err instanceof ApiError ? err.message : 'Не удалось изменить карантин');
+      setWriteOffError(err instanceof ApiError ? err.message : t('fail.changeQuarantine'));
       return false;
     } finally {
       setWriteOffSubmitting(false);
@@ -1270,7 +1270,7 @@ export default function App() {
       setPurchaseOrders(orders);
       setSuppliers(suppliersList);
     } catch (err) {
-      setPurchaseError(err instanceof ApiError ? err.message : 'Не удалось загрузить заказы');
+      setPurchaseError(err instanceof ApiError ? err.message : t('fail.loadOrders'));
     } finally {
       setPurchaseLoading(false);
     }
@@ -1294,7 +1294,7 @@ export default function App() {
       await loadPurchaseOrders();
       return true;
     } catch (err) {
-      setPurchaseError(err instanceof ApiError ? err.message : 'Не удалось создать заказ');
+      setPurchaseError(err instanceof ApiError ? err.message : t('fail.createOrder'));
       return false;
     } finally {
       setPurchaseSubmitting(false);
@@ -1309,7 +1309,7 @@ export default function App() {
       await actOnPurchaseOrder(session.token, orderId, action);
       await loadPurchaseOrders();
     } catch (err) {
-      setPurchaseError(err instanceof ApiError ? err.message : 'Не удалось изменить статус заказа');
+      setPurchaseError(err instanceof ApiError ? err.message : t('fail.changeOrderStatus'));
     } finally {
       setBusyOrderId(null);
     }
@@ -1329,7 +1329,7 @@ export default function App() {
         packagingId: null,
       };
     });
-    const created = await handleCreatePurchaseOrder({ supplierId: null, note: 'Из списка «Что заказать»', items });
+    const created = await handleCreatePurchaseOrder({ supplierId: null, note: t('po.fromReplenishment'), items });
     if (created) setView('purchase-orders');
   }
 
@@ -1342,7 +1342,7 @@ export default function App() {
       setFiscalDevice(data.device);
       setPendingFiscal(data.receipts);
     } catch (err) {
-      setFiscalError(err instanceof ApiError ? err.message : 'Не удалось загрузить фискализацию');
+      setFiscalError(err instanceof ApiError ? err.message : t('fail.loadFiscal'));
     } finally {
       setFiscalLoading(false);
     }
@@ -1362,7 +1362,7 @@ export default function App() {
       await loadFiscal();
       return true;
     } catch (err) {
-      setFiscalError(err instanceof ApiError ? err.message : 'Не удалось сохранить номер чека');
+      setFiscalError(err instanceof ApiError ? err.message : t('fail.saveReceiptNumber'));
       return false;
     } finally {
       setFiscalBusyDocumentId(null);
@@ -1376,7 +1376,7 @@ export default function App() {
     try {
       setDashboard(await fetchOwnerDashboard(session.token, currentLocationId, days));
     } catch (err) {
-      setDashboardError(err instanceof ApiError ? err.message : 'Не удалось загрузить сводку');
+      setDashboardError(err instanceof ApiError ? err.message : t('fail.loadDashboard'));
     } finally {
       setDashboardLoading(false);
     }
@@ -1391,7 +1391,7 @@ export default function App() {
       setAuditEntries(data.entries);
       setAuditRoundTrips(data.priceRoundTrips);
     } catch (err) {
-      setAuditError(err instanceof ApiError ? err.message : 'Не удалось загрузить журнал изменений');
+      setAuditError(err instanceof ApiError ? err.message : t('fail.loadAudit'));
     } finally {
       setAuditLoading(false);
     }
@@ -1409,7 +1409,7 @@ export default function App() {
       const data = await fetchDocuments(session.token, { ...filter, locationId: currentLocationId });
       setDocuments(data.documents);
     } catch (err) {
-      setDocumentsError(err instanceof ApiError ? err.message : 'Не удалось загрузить документы');
+      setDocumentsError(err instanceof ApiError ? err.message : t('fail.loadDocuments'));
     } finally {
       setDocumentsLoading(false);
     }
@@ -1448,7 +1448,7 @@ export default function App() {
       await loadOrders();
       return true;
     } catch (err) {
-      setPickError(err instanceof ApiError ? err.message : 'Не удалось сохранить сборку');
+      setPickError(err instanceof ApiError ? err.message : t('fail.savePick'));
       return false;
     } finally {
       setPickSubmitting(false);
@@ -1468,7 +1468,7 @@ export default function App() {
       setPickingOrderId(null);
       return true;
     } catch (err) {
-      setPickError(err instanceof ApiError ? err.message : 'Не удалось отгрузить заказ');
+      setPickError(err instanceof ApiError ? err.message : t('fail.shipOrder'));
       return false;
     } finally {
       setPickSubmitting(false);
@@ -1482,7 +1482,7 @@ export default function App() {
     try {
       setSupplierReturns(await fetchSupplierReturns(session.token, currentLocationId));
     } catch (err) {
-      setSupplierReturnsError(err instanceof ApiError ? err.message : 'Не удалось загрузить возвраты');
+      setSupplierReturnsError(err instanceof ApiError ? err.message : t('fail.loadReturns'));
     } finally {
       setSupplierReturnsLoading(false);
     }
@@ -1511,7 +1511,7 @@ export default function App() {
       await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
-      setSupplierReturnsError(err instanceof ApiError ? err.message : 'Не удалось оформить возврат');
+      setSupplierReturnsError(err instanceof ApiError ? err.message : t('fail.createReturn'));
       return false;
     } finally {
       setSupplierReturnSubmitting(false);
@@ -1552,7 +1552,7 @@ export default function App() {
       setReplenishment(data.items);
       setReplenishmentWindow(data.windowDays);
     } catch (err) {
-      setReplenishmentError(err instanceof ApiError ? err.message : 'Не удалось рассчитать заказ');
+      setReplenishmentError(err instanceof ApiError ? err.message : t('fail.calculateOrder'));
     } finally {
       setReplenishmentLoading(false);
     }
@@ -1578,7 +1578,7 @@ export default function App() {
       await loadReplenishment();
       return true;
     } catch (err) {
-      setReplenishmentError(err instanceof ApiError ? err.message : 'Не удалось сохранить запас');
+      setReplenishmentError(err instanceof ApiError ? err.message : t('fail.saveStockPolicy'));
       return false;
     } finally {
       setPolicySavingProductId(null);
@@ -1599,7 +1599,7 @@ export default function App() {
       setReturnableSales(sales);
       setReturns(made);
     } catch (err) {
-      setReturnsError(err instanceof ApiError ? err.message : 'Не удалось загрузить возвраты');
+      setReturnsError(err instanceof ApiError ? err.message : t('fail.loadReturns'));
     } finally {
       setReturnsLoading(false);
     }
@@ -1626,7 +1626,7 @@ export default function App() {
       await loadReturns();
       return true;
     } catch (err) {
-      setReturnsError(err instanceof ApiError ? err.message : 'Не удалось оформить возврат');
+      setReturnsError(err instanceof ApiError ? err.message : t('fail.createReturn'));
       return false;
     } finally {
       setReturnSubmitting(false);
@@ -1642,7 +1642,7 @@ export default function App() {
       await loadCounts();
       return true;
     } catch (err) {
-      setCountsError(err instanceof ApiError ? err.message : 'Не удалось сохранить пересчёт');
+      setCountsError(err instanceof ApiError ? err.message : t('fail.saveCount'));
       return false;
     } finally {
       setCountSubmitting(false);
@@ -1658,7 +1658,7 @@ export default function App() {
       setProductionRuns(runs);
       setProductionRecipes(recipes);
     } catch (err) {
-      setProductionError(err instanceof ApiError ? err.message : 'Не удалось загрузить производство');
+      setProductionError(err instanceof ApiError ? err.message : t('fail.loadProduction'));
     } finally {
       setProductionLoading(false);
     }
@@ -1678,7 +1678,7 @@ export default function App() {
       await loadProduction();
       return true;
     } catch (err) {
-      setProductionError(err instanceof ApiError ? err.message : 'Не удалось запустить производство');
+      setProductionError(err instanceof ApiError ? err.message : t('fail.runProduction'));
       return false;
     } finally {
       setProductionSubmitting(false);
@@ -1693,7 +1693,7 @@ export default function App() {
       const data = await fetchStockMovements(session.token);
       setStockMovements(data);
     } catch (err) {
-      setStockMovementsError(err instanceof ApiError ? err.message : 'Не удалось загрузить историю склада');
+      setStockMovementsError(err instanceof ApiError ? err.message : t('fail.loadHistory'));
     } finally {
       setStockMovementsLoading(false);
     }
@@ -1712,7 +1712,7 @@ export default function App() {
       const data = await fetchManagedProducts(session.token);
       setManagedProducts(data);
     } catch (err) {
-      setManagedProductsError(err instanceof ApiError ? err.message : 'Не удалось загрузить товары');
+      setManagedProductsError(err instanceof ApiError ? err.message : t('fail.loadProducts'));
     } finally {
       setManagedProductsLoading(false);
     }
@@ -1771,7 +1771,7 @@ export default function App() {
 
       setView('products');
     } catch (err) {
-      setProductSaveError(err instanceof ApiError ? err.message : 'Не удалось сохранить товар');
+      setProductSaveError(err instanceof ApiError ? err.message : t('fail.saveProduct'));
     } finally {
       setProductSaveSubmitting(false);
     }
@@ -1785,7 +1785,7 @@ export default function App() {
       const data = await fetchTables(session.token);
       setTables(data);
     } catch (err) {
-      setTablesError(err instanceof ApiError ? err.message : 'Не удалось загрузить столики');
+      setTablesError(err instanceof ApiError ? err.message : t('fail.loadTables'));
     } finally {
       setTablesLoading(false);
     }
@@ -1811,7 +1811,7 @@ export default function App() {
       await createTable(session.token, { locationId: currentLocationId, name, seats });
       await loadTables();
     } catch (err) {
-      setTablesError(err instanceof ApiError ? err.message : 'Не удалось добавить стол');
+      setTablesError(err instanceof ApiError ? err.message : t('fail.addTable'));
     } finally {
       setTableSubmitting(false);
     }
@@ -1855,7 +1855,7 @@ export default function App() {
       const order = await sendToKitchen(session.token, selectedTable.id, { items });
       setTableOrder(order);
     } catch (err) {
-      setTablesError(err instanceof ApiError ? err.message : 'Не удалось отправить заказ на кухню');
+      setTablesError(err instanceof ApiError ? err.message : t('fail.sendToKitchen'));
     } finally {
       setTableSubmitting(false);
     }
@@ -1871,7 +1871,7 @@ export default function App() {
       setView('floorplan');
       void loadTables();
     } catch (err) {
-      setTablesError(err instanceof ApiError ? err.message : 'Не удалось провести оплату');
+      setTablesError(err instanceof ApiError ? err.message : t('fail.pay'));
     } finally {
       setTableSubmitting(false);
     }
@@ -1885,7 +1885,7 @@ export default function App() {
       const data = await fetchKdsTickets(session.token);
       setKdsTickets(data);
     } catch (err) {
-      setKdsError(err instanceof ApiError ? err.message : 'Не удалось загрузить кухонный экран');
+      setKdsError(err instanceof ApiError ? err.message : t('fail.loadKds'));
     } finally {
       setKdsLoading(false);
     }
