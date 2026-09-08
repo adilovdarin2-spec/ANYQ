@@ -34,12 +34,18 @@ button, input, select, textarea { font-family: inherit; }
 }
 .brand-name { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
+/* A button now that it navigates, so it needs the browser's own button
+   styling taken off and a pointer put back on. */
 .nav-item {
   display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
   padding: 9px 12px; border-radius: 7px;
+  border: none; background: transparent; font: inherit;
   font-size: 0.92rem; color: var(--ink-muted);
-  cursor: default;
+  cursor: pointer;
 }
+.nav-item:hover { background: var(--surface-2); }
+.nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .nav-item.active { background: var(--surface-2); color: var(--accent-strong); font-weight: 600; }
 
 /* content */

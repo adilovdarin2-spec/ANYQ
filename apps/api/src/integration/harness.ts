@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '@anyq/db';
 import { app } from '../app';
+import { resetRateLimits } from '../rateLimit';
 import { signPosToken } from '../pos-auth';
 
 /**
@@ -63,6 +64,12 @@ function assertTestDatabase(): void {
 }
 
 export async function resetDatabase(): Promise<void> {
+  // The suite logs in far more often from one address than a person ever
+  // would, and the login limiter is right to refuse that. Cleared here rather
+  // than by loosening the limit, which would be tuning security to suit the
+  // test runner.
+  resetRateLimits();
+
   assertTestDatabase();
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables

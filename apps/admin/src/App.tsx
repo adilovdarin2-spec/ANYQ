@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { CompaniesTable } from './components/CompaniesTable';
 import { CreateCompanyDrawer } from './components/CreateCompanyDrawer';
@@ -6,8 +6,23 @@ import { CompanyDetailDrawer } from './components/CompanyDetailDrawer';
 import { ProductsDrawer } from './components/ProductsDrawer';
 import { UsersDrawer } from './components/UsersDrawer';
 import { LoginScreen } from './components/LoginScreen';
+import { MfaSettings } from './components/MfaSettings';
 import { pluralizeRu } from './utils';
-import { getCompanies, createCompany, updateTariff, getShifts, getProducts, createProduct, updateProduct, createUser, updateUser, createLocation, updateLocation, ApiError } from './api';
+import {
+  ApiError,
+  createCompany,
+  createLocation,
+  createProduct,
+  createUser,
+  fetchMe,
+  getCompanies,
+  getProducts,
+  getShifts,
+  updateLocation,
+  updateProduct,
+  updateTariff,
+  updateUser,
+} from './api';
 import type { CreateCompanyPayload, TariffPayload, UserPayload, LocationPayload } from './api';
 import type { Company } from './types';
 
@@ -16,6 +31,22 @@ const USER_KEY = 'anyq_admin_user';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  const [view, setView] = useState<'companies' | 'security'>('companies');
+  const [me, setMe] = useState<{ mfaEnabled: boolean; recoveryCodesLeft: number } | null>(null);
+
+  const loadMe = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await fetchMe(token);
+      setMe({ mfaEnabled: data.mfaEnabled, recoveryCodesLeft: data.recoveryCodesLeft });
+    } catch {
+      // A failed check must not lock anybody out of the app; the sidebar
+      // simply does not mark the entry.
+      setMe(null);
+    }
+  }, [token]);
+
+  useEffect(() => { void loadMe(); }, [loadMe]);
   const [userName, setUserName] = useState<string | null>(() => localStorage.getItem(USER_KEY));
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(false);
@@ -127,8 +158,26 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar userName={userName} onLogout={handleLogout} />
+      <Sidebar
+        userName={userName}
+        view={view}
+        mfaMissing={me !== null && !me.mfaEnabled}
+        onNavigate={setView}
+        onLogout={handleLogout}
+      />
       <main className="content">
+        {view === 'security' && (
+          <div className="content-header">
+            <MfaSettings
+              token={token}
+              enabled={me?.mfaEnabled ?? false}
+              recoveryCodesLeft={me?.recoveryCodesLeft ?? 0}
+              onChanged={loadMe}
+            />
+          </div>
+        )}
+        {view === 'companies' && (
+        <>
         <div className="content-header">
           <div>
             <div className="content-title">Компании</div>
@@ -142,6 +191,8 @@ export default function App() {
         {loading && <div className="loading-note">Загрузка…</div>}
         {error && !loading && <div className="error-note">{error}</div>}
         {!loading && !error && <CompaniesTable companies={companies} onSelect={setSelectedId} />}
+        </>
+        )}
       </main>
       {createOpen && <CreateCompanyDrawer onClose={() => setCreateOpen(false)} onCreate={handleCreate} />}
       {selected && (
