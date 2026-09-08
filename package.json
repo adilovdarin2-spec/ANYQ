@@ -18,7 +18,8 @@
     "backup:list": "node scripts/backup.mjs list",
     "backup:verify": "node scripts/backup.mjs verify",
     "maintenance": "node scripts/maintenance.mjs",
-    "maintenance:loop": "node scripts/maintenance.mjs --loop"
+    "maintenance:loop": "node scripts/maintenance.mjs --loop",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "railway": "^3.6.0",
