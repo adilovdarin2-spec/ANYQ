@@ -7,6 +7,7 @@ const SHIFT_HISTORY_KEY = 'anyq_pos_shift_history';
 const SESSION_KEY = 'anyq_pos_session';
 const LOCATION_KEY = 'anyq_pos_location';
 const COUNT_SHEET_KEY = 'anyq_pos_count_sheets';
+const DEVICE_KEY = 'anyq_pos_device';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -19,6 +20,35 @@ function read<T>(key: string, fallback: T): T {
 
 function write<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+/**
+ * This register's own name for itself.
+ *
+ * Generated once and kept for the life of the install, so the owner's device
+ * list has one row per tablet rather than one per login. Not a secret and not a
+ * credential: it identifies, and a PIN still has to be right. Losing it — a
+ * cleared browser, a reinstall — costs nothing but a new row in the list.
+ *
+ * Written outside the try, deliberately: if storage is unavailable the register
+ * still gets a key for this session, it simply will not be the same one next
+ * time. A till that refuses to open because it cannot remember its own name
+ * would be a worse failure than an untidy list.
+ */
+export function getDeviceKey(): string {
+  try {
+    const existing = localStorage.getItem(DEVICE_KEY);
+    if (existing) return existing;
+  } catch {
+    // Private mode, or storage switched off. Fall through and mint one.
+  }
+  const minted = globalThis.crypto?.randomUUID?.() ?? `dev-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+  try {
+    localStorage.setItem(DEVICE_KEY, minted);
+  } catch {
+    // Same again: this session still has a key, it is just not remembered.
+  }
+  return minted;
 }
 
 export function getShift(): Shift | null {

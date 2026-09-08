@@ -86,9 +86,18 @@ export interface Fixture {
   userId: string;
   token: string;
   productId: string;
+  /** The PIN this fixture's user signs in with, for tests that log in for real. */
+  pin: string;
+  userName: string;
   /** Starting stock of `productId` at `locationId`, unplaced. */
   openingQuantity: number;
 }
+
+// PINs are unique across every company on the platform, because /pos/login
+// looks one up without a company to scope it by. Random four digits collide
+// often enough across a suite this size to be a flake nobody can reproduce, so
+// they are handed out in order and are six digits wide.
+let nextPin = 100000;
 
 interface FixtureOptions {
   modules?: string[];
@@ -126,12 +135,14 @@ export async function createFixture(options: FixtureOptions = {}): Promise<Fixtu
   });
 
   const [shop, warehouse] = company.locations;
+  const pin = String(nextPin++);
+  const userName = 'Тестовый кассир';
   const user = await prisma.user.create({
     data: {
       companyId: company.id,
-      name: 'Тестовый кассир',
+      name: userName,
       role: options.role ?? 'owner',
-      posPin: String(1000 + Math.floor(Math.random() * 8999)),
+      posPin: pin,
     },
   });
 
@@ -166,6 +177,8 @@ export async function createFixture(options: FixtureOptions = {}): Promise<Fixtu
     userId: user.id,
     token: signPosToken(user.id, company.id, user.tokenVersion),
     productId: product.id,
+    pin,
+    userName,
     openingQuantity,
   };
 }

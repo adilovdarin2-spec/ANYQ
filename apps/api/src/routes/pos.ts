@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Response } from 'express';
 import { prisma } from '@anyq/db';
+import { cleanDeviceLabel, deviceLabel, readDeviceKey } from '../devices';
 import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
@@ -104,6 +105,9 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     res.status(400).json({ error: 'Введите PIN' });
     return;
   }
+  // Read before the PIN is checked so a malformed key is simply ignored rather
+  // than turned into a second reason to refuse a correct login.
+  const deviceKey = readDeviceKey((req.body ?? {}).deviceKey);
 
   const user = await prisma.user.findFirst({
     where: { posPin: pin },
@@ -123,6 +127,35 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     return;
   }
 
+  // The device, before anything else is loaded: a register the owner has
+  // switched off is refused here as well as on every request it makes. Blocking
+  // only the token would leave a thief one shoulder-surfed PIN from being back.
+  let device: { id: string } | null = null;
+  if (deviceKey) {
+    const existing = await prisma.posDevice.findUnique({
+      where: { companyId_deviceKey: { companyId: user.companyId, deviceKey } },
+    });
+    if (existing?.revokedAt) {
+      res.status(403).json({ error: 'Это устройство отключено — обратитесь к владельцу' });
+      return;
+    }
+    device = existing
+      ? await prisma.posDevice.update({
+          where: { id: existing.id },
+          data: { lastSeenAt: new Date(), lastUserId: user.id },
+          select: { id: true },
+        })
+      : await prisma.posDevice.create({
+          data: {
+            companyId: user.companyId,
+            deviceKey,
+            label: deviceLabel(req.headers['user-agent']),
+            lastUserId: user.id,
+          },
+          select: { id: true },
+        });
+  }
+
   const modules: string[] = user.company.tariff ? JSON.parse(user.company.tariff.modules) : [];
   // The catalog carries stock, and stock only means something at one location,
   // so the register is told which one these numbers are for. It opens on this
@@ -131,7 +164,7 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   const groupedProducts = await buildPosCatalog(user.companyId, modules, catalogLocationId);
 
   res.json({
-    token: signPosToken(user.id, user.companyId, user.tokenVersion),
+    token: signPosToken(user.id, user.companyId, user.tokenVersion, device?.id),
     user: { id: user.id, name: user.name, role: user.role },
     company: { id: user.company.id, name: user.company.name, slug: user.company.slug },
     modules,
@@ -2416,6 +2449,125 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
 // the changes that move money without moving anything off a shelf — a price, a
 // role, a credit limit. Owner-facing, because a cashier who can read who
 // changed what can also learn whose account to use.
+// --- registers ------------------------------------------------------------
+//
+// The answer to a stolen tablet. `User.tokenVersion` retires every session a
+// person has, which is right for "this cashier has left" and wrong here: it
+// signs the cashier out of every till in the shop, mid-shift, to deal with one
+// device. A POS token lasts thirty days on purpose — the till has to sell
+// through a week with no connection — so the answer cannot be a shorter token.
+
+posRouter.get('/devices', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Устройства смотрит владелец или менеджер' });
+    return;
+  }
+
+  const devices = await prisma.posDevice.findMany({
+    where: { companyId: req.posCompanyId },
+    orderBy: [{ revokedAt: 'asc' }, { lastSeenAt: 'desc' }],
+    take: 200,
+  });
+
+  // Resolved in one read rather than a join per row: the list is small and the
+  // names are what make it readable.
+  const userIds = [...new Set(devices.flatMap((d) => [d.lastUserId, d.revokedById]).filter((v): v is string => !!v))];
+  const names = new Map(
+    (await prisma.user.findMany({ where: { id: { in: userIds }, companyId: req.posCompanyId }, select: { id: true, name: true } }))
+      .map((u) => [u.id, u.name]),
+  );
+
+  res.json({
+    devices: devices.map((device) => ({
+      id: device.id,
+      label: device.label,
+      firstSeenAt: device.firstSeenAt.toISOString(),
+      lastSeenAt: device.lastSeenAt.toISOString(),
+      lastUserName: device.lastUserId ? names.get(device.lastUserId) ?? null : null,
+      revokedAt: device.revokedAt ? device.revokedAt.toISOString() : null,
+      revokedByName: device.revokedById ? names.get(device.revokedById) ?? null : null,
+      // So the register can show "this one" and refuse to switch itself off by
+      // accident — which would lock the person out of the screen they are on.
+      current: device.id === req.posDeviceId,
+    })),
+  });
+});
+
+posRouter.patch('/devices/:id', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Устройства настраивает владелец или менеджер' });
+    return;
+  }
+
+  const device = await prisma.posDevice.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId },
+  });
+  if (!device) {
+    res.status(404).json({ error: 'Устройство не найдено' });
+    return;
+  }
+
+  const label = cleanDeviceLabel((req.body ?? {}).label, device.label);
+  const updated = await prisma.posDevice.update({ where: { id: device.id }, data: { label } });
+  res.json({ id: updated.id, label: updated.label });
+});
+
+posRouter.post('/devices/:id/revoke', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Отключать устройства может владелец или менеджер' });
+    return;
+  }
+
+  // Refused rather than allowed-with-a-warning. Switching off the tablet you
+  // are holding logs you out of the screen you are standing on, and the person
+  // most likely to do it by accident is the one working down a list of four
+  // identical-looking rows looking for the stolen one.
+  if (req.params.id === req.posDeviceId) {
+    res.status(400).json({ error: 'Нельзя отключить устройство, с которого вы сейчас работаете' });
+    return;
+  }
+
+  // Conditional claim, not a read then a write: two managers reaching for the
+  // same row must not both write a revocation time, or the log says it was
+  // switched off twice by two people.
+  const claimed = await prisma.posDevice.updateMany({
+    where: { id: req.params.id, companyId: req.posCompanyId, revokedAt: null },
+    data: { revokedAt: new Date(), revokedById: req.posUserId },
+  });
+  if (claimed.count === 0) {
+    const exists = await prisma.posDevice.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+    res.status(exists ? 409 : 404).json({
+      error: exists ? 'Это устройство уже отключено' : 'Устройство не найдено',
+    });
+    return;
+  }
+
+  res.json({ ok: true });
+});
+
+posRouter.post('/devices/:id/restore', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Включать устройства может владелец или менеджер' });
+    return;
+  }
+
+  const claimed = await prisma.posDevice.updateMany({
+    where: { id: req.params.id, companyId: req.posCompanyId, revokedAt: { not: null } },
+    data: { revokedAt: null, revokedById: null },
+  });
+  if (claimed.count === 0) {
+    const exists = await prisma.posDevice.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+    res.status(exists ? 409 : 404).json({
+      error: exists ? 'Это устройство и так работает' : 'Устройство не найдено',
+    });
+    return;
+  }
+
+  // The device still has to log in again: its old token was refused while it
+  // was off, and the register drops it the moment it sees a 401.
+  res.json({ ok: true });
+});
+
 posRouter.get('/audit', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await requireOwnerOrManager(req.posUserId))) {
     res.status(403).json({ error: 'Журнал изменений доступен владельцу и менеджеру' });

@@ -1,0 +1,14 @@
+-- A POS PIN has to be unique across the whole platform, and until now only the
+-- application said so.
+--
+-- `/pos/login` looks a PIN up with no company to scope it by — there is nowhere
+-- to type one, and asking a cashier which company they work for before letting
+-- them sell would be a worse product. The admin panel checked for a conflict
+-- before inserting, which is a check-then-write: two admins adding a user at
+-- the same moment both read "free" and both insert. After that, whichever row
+-- Postgres happens to return first decides which company's shop somebody signs
+-- into. One tenant's cashier, standing at another tenant's till.
+--
+-- Postgres treats NULLs as distinct in a unique index, so the many users with
+-- no PIN at all are unaffected.
+CREATE UNIQUE INDEX "users_posPin_key" ON "users"("posPin");

@@ -22,6 +22,7 @@ interface Props {
   /** Owner-facing: somebody who can read who changed what can also work out
       whose account to use. */
   onShowAudit?: () => void;
+  onShowDevices?: () => void;
   /** Owner-facing: the whole catalogue with costs is not a cashier's to carry
       out of the building. */
   onShowExport?: () => void;
@@ -55,6 +56,7 @@ export function ProfileScreen({
   onShowDashboard,
   onShowReports,
   onShowAudit,
+  onShowDevices,
   onShowExport,
   onShowInstall,
   onCloseShift,
@@ -155,6 +157,13 @@ export function ProfileScreen({
       {onShowExport && (
         <button type="button" className="profile-action" onClick={onShowExport}>
           <span>↓ {t('profile.export')}</span>
+          <span>›</span>
+        </button>
+      )}
+
+      {onShowDevices && (
+        <button type="button" className="profile-action" onClick={onShowDevices}>
+          <span>📱 {t('profile.devices')}</span>
           <span>›</span>
         </button>
       )}

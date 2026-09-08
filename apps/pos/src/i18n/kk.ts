@@ -886,6 +886,27 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'stage.shipped': 'Жіберілді',
   'stage.cancelled': 'Болдырылмады',
 
+  // --- which registers are signed in ---------------------------------------
+  'profile.devices': 'Құрылғылар',
+  'devices.title': 'Құрылғылар',
+  'devices.why': 'Осы компанияға кірген кассалар мен планшеттер. Планшет жоғалса — осында өшіріңіз: тек сол істемей қалады, қалған кассалар ауысымын жалғастырады.',
+  'devices.none': 'Әзірге бірде-бір құрылғы кірген жоқ',
+  'devices.thisOne': 'осы құрылғы',
+  'devices.lastUsed': '{name} · {when} болды',
+  'devices.lastSeen': 'соңғы кіру {when}',
+  'devices.revokedBy': 'өшірді: {name}, {when}',
+  'devices.revokedAt': '{when} өшірілді',
+  'devices.rename': 'Атын өзгерту',
+  'devices.namePlaceholder': 'Мысалы: кіреберістегі касса',
+  'devices.revoke': 'Өшіру',
+  'devices.confirmRevoke': 'Шынымен өшіру',
+  'devices.restore': 'Қосу',
+  'devices.cannotRevokeSelf': 'Бұл — сіз қазір жұмыс істеп тұрған құрылғы',
+  'fail.loadDevices': 'Құрылғыларды жүктеу мүмкін болмады',
+  'fail.renameDevice': 'Құрылғының атын өзгерту мүмкін болмады',
+  'fail.revokeDevice': 'Құрылғыны өшіру мүмкін болмады',
+  'fail.restoreDevice': 'Құрылғыны қосу мүмкін болмады',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Тіл',
   'language.caveat': 'Тауар атаулары мен сирек кездесетін сервер хабарлары қай тілде жазылса, сондай күйінде қалады.',
