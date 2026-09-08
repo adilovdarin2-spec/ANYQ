@@ -393,6 +393,24 @@ model Recipe {
   @@map("recipes")
 }
 
+/// How a sale was paid for, one row per method.
+///
+/// A single method is not a special case here — it is a split of one. Storing
+/// both shapes the same way is what lets the drawer reconciliation, the reports
+/// and the receipt each have one code path instead of two.
+model SalePayment {
+  id         String   @id @default(cuid())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String
+  method     String
+  amount     Int
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, method])
+  @@index([documentId])
+  @@map("sale_payments")
+}
+
 model RecipeIngredient {
   id           String  @id @default(cuid())
   recipe       Recipe  @relation(fields: [recipeId], references: [id])
@@ -484,7 +502,11 @@ model Document {
   toLocationId  String?
   type          String
   status        String        @default("draft")
+  /// The single method when there was one, 'mixed' when the sale was split.
+  /// Kept alongside `payments` so everything written before splits existed
+  /// still means what it meant.
   paymentMethod String?
+  payments      SalePayment[]
   discountType  String?
   discountValue Int?
   pointsEarned  Int?

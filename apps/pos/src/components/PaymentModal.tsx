@@ -1,14 +1,20 @@
 import { useState } from 'react';
-import type { PaymentMethod } from '../types';
+import type { PaymentLine, PaymentMethod } from '../types';
 import { PAYMENT_LABELS } from '../types';
 import { formatMoney } from '../utils';
+import { SplitPaymentEditor } from './SplitPaymentEditor';
 
 interface Props {
   total: number;
   /** Whether a customer is attached to this sale. Credit needs an account behind it. */
   hasCustomer: boolean;
   onCancel: () => void;
-  onConfirm: (method: PaymentMethod) => void;
+  /**
+   * Always a list, even for one method. A sale settled one way is a split of
+   * one, and the same shape everywhere is what keeps the receipt, the offline
+   * queue and the drawer count from each growing a second code path.
+   */
+  onConfirm: (payments: PaymentLine[]) => void;
 }
 
 const ICONS: Record<PaymentMethod, string> = { cash: '💵', kaspi: '▦', card: '💳', credit: '📓' };
@@ -19,6 +25,15 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
   // that the button is not there than that it fails after being pressed.
   const methods: PaymentMethod[] = hasCustomer ? ['cash', 'kaspi', 'card', 'credit'] : ['cash', 'kaspi', 'card'];
   const [selected, setSelected] = useState<PaymentMethod | null>(null);
+  const [splitting, setSplitting] = useState(false);
+
+  if (splitting) {
+    return (
+      <div className="screen">
+        <SplitPaymentEditor total={total} onBack={() => setSplitting(false)} onConfirm={onConfirm} />
+      </div>
+    );
+  }
 
   return (
     <div className="screen">
@@ -35,6 +50,13 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
                 <span>→</span>
               </button>
             ))}
+            {/* Part on the phone and the rest in cash is ordinary here. Without
+                this the only way to ring it up is as two sales, which gives the
+                customer two receipts neither of which he can return against. */}
+            <button className="payment-option" onClick={() => setSplitting(true)}>
+              <span>÷ Смешанная</span>
+              <span>→</span>
+            </button>
           </div>
         )}
 
@@ -65,7 +87,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
       </div>
       {selected !== null && (
         <div className="screen-footer">
-          <button className="btn btn-primary btn-block" onClick={() => onConfirm(selected)}>
+          <button className="btn btn-primary btn-block" onClick={() => onConfirm([{ method: selected, amount: total }])}>
             {selected === 'kaspi' ? 'Оплата получена' : selected === 'credit' ? 'Отпустить в долг' : 'Подтвердить оплату'}
           </button>
         </div>

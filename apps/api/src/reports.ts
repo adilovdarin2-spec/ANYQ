@@ -1,3 +1,6 @@
+import { paymentsOrLegacy } from './payments';
+import type { PaymentLine } from './payments';
+
 export interface SaleItem {
   productId: string;
   name: string;
@@ -9,6 +12,9 @@ export interface SaleRecord {
   id: string;
   createdAt: Date;
   paymentMethod: string | null;
+  /// One line per method. Absent on every sale written before splits existed,
+  /// which is read as the whole total paid the single way it names.
+  payments?: PaymentLine[];
   createdBy: string | null;
   items: SaleItem[];
   discountAmount?: number;
@@ -48,8 +54,16 @@ export function buildSummary(sales: SaleRecord[]): ReportSummary {
     totalDiscount += sale.discountAmount ?? 0;
     totalPointsRedeemed += sale.pointsRedeemed ?? 0;
     totalPointsEarned += sale.pointsEarned ?? 0;
-    const method = sale.paymentMethod ?? 'unknown';
-    byPaymentMethod[method] = (byPaymentMethod[method] ?? 0) + total;
+    // Each half of a split lands under its own method. Filing the whole sale
+    // under one of them would tell an owner comparing card takings against the
+    // terminal's own report that the two do not agree, when they do.
+    const lines = paymentsOrLegacy(sale.payments, sale.paymentMethod, total);
+    if (lines.length === 0) {
+      byPaymentMethod.unknown = (byPaymentMethod.unknown ?? 0) + total;
+    }
+    for (const line of lines) {
+      byPaymentMethod[line.method] = (byPaymentMethod[line.method] ?? 0) + line.amount;
+    }
   }
 
   return {

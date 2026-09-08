@@ -61,6 +61,18 @@ export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   card: 'Карта',
 };
 
+/**
+ * One part of what a customer paid with.
+ *
+ * A sale settled one way is a split of one, and keeping the same shape either
+ * way is what stops the receipt, the offline queue and the drawer count from
+ * each growing a second code path.
+ */
+export interface PaymentLine {
+  method: PaymentMethod;
+  amount: number;
+}
+
 export type DiscountType = 'percent' | 'fixed';
 
 export interface Discount {
@@ -84,7 +96,10 @@ export interface Sale {
   customerName?: string;
   pointsRedeemed?: number;
   pointsEarned?: number;
-  paymentMethod: PaymentMethod;
+  /** The single method, or 'mixed'. */
+  paymentMethod: PaymentMethod | 'mixed';
+  /** How it was actually paid. Absent on sales queued by an older build. */
+  payments?: PaymentLine[];
   createdAt: string;
   synced: boolean;
   syncError?: string;
