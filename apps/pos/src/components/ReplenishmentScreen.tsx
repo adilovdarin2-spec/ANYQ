@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
+import type { Translator } from '../i18n/useLanguage';
 import type { ReplenishmentItem } from '../types';
 
 interface Props {
@@ -24,15 +26,17 @@ function formatQuantity(value: number): string {
 // The sentence an owner acts on. Everything in it is a number they can check,
 // which is the difference between a recommendation and a guess they are being
 // asked to trust.
-function explain(item: ReplenishmentItem): string {
+// The translator is passed in rather than reached for: this sits outside the
+// component, and a module-level function cannot use a hook.
+function explain(item: ReplenishmentItem, t: Translator['t']): string {
   if (item.trigger === 'below_min') {
     if (item.demandPerDay === null) {
-      return `Осталось ${formatQuantity(item.available)} при минимуме ${formatQuantity(item.minQuantity)}`;
+      return `${t('common.left')} ${formatQuantity(item.available)} ${t('repl.atMinimum', { count: formatQuantity(item.minQuantity) })}`;
     }
-    return `Осталось ${formatQuantity(item.available)} при минимуме ${formatQuantity(item.minQuantity)}, продаёте ${formatQuantity(item.demandPerDay)}/день`;
+    return `${t('common.left')} ${formatQuantity(item.available)} ${t('repl.atMinimum', { count: formatQuantity(item.minQuantity) })}, ${t('repl.sellingRate', { rate: formatQuantity(item.demandPerDay) })}`;
   }
   const cover = item.daysOfCover === null ? '—' : formatQuantity(item.daysOfCover);
-  return `Продаёте ${formatQuantity(item.demandPerDay ?? 0)}/день, запаса на ${cover} дн., поставка ${item.leadTimeDays} дн.`;
+  return t('repl.coverage', { rate: formatQuantity(item.demandPerDay ?? 0), days: cover, lead: item.leadTimeDays });
 }
 
 export function ReplenishmentScreen({
@@ -47,6 +51,7 @@ export function ReplenishmentScreen({
   onOrderEverything,
   ordering,
 }: Props) {
+  const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [minQuantity, setMinQuantity] = useState('');
   const [targetQuantity, setTargetQuantity] = useState('');
@@ -71,16 +76,16 @@ export function ReplenishmentScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Что заказать</span>
-        <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('repl.title')}</span>
+        <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>
 
       <div className="screen-body">
         {error && <div className="login-error">{error}</div>}
-        {loading && items.length === 0 && <div className="empty-state">Считаем…</div>}
+        {loading && items.length === 0 && <div className="empty-state">{t('common.counting')}</div>}
         {!loading && items.length === 0 && !error && (
-          <div className="empty-state">Заказывать пока нечего — запаса хватает по всем товарам</div>
+          <div className="empty-state">{t('repl.nothing')}</div>
         )}
 
         {items.map((item) => {
@@ -92,7 +97,7 @@ export function ReplenishmentScreen({
               <div className="order-card-head">
                 <div>
                   <div className="order-customer">{item.name}</div>
-                  <div className="order-meta">{explain(item)}</div>
+                  <div className="order-meta">{explain(item, t)}</div>
                 </div>
                 <span className={item.trigger === 'below_min' ? 'pill warn' : 'pill'}>
                   {formatQuantity(item.recommended)} {item.unit}
@@ -101,12 +106,12 @@ export function ReplenishmentScreen({
 
               <div className="order-items">
                 <div className="order-item-row">
-                  <span>Свободно на точке</span>
+                  <span>{t('repl.freeHere')}</span>
                   <span>{formatQuantity(item.available)}</span>
                 </div>
                 {item.inTransit > 0 && (
                   <div className="order-item-row">
-                    <span>Уже в пути</span>
+                    <span>{t('repl.inTransit')}</span>
                     <span>{formatQuantity(item.inTransit)}</span>
                   </div>
                 )}
@@ -114,7 +119,7 @@ export function ReplenishmentScreen({
                     is as worth seeing as the reason it is large. */}
                 {item.onOrder > 0 && (
                   <div className="order-item-row">
-                    <span>Заказано у поставщика</span>
+                    <span>{t('repl.onOrder')}</span>
                     <span>{formatQuantity(item.onOrder)}</span>
                   </div>
                 )}
@@ -123,61 +128,60 @@ export function ReplenishmentScreen({
                     measured on very few days. */}
                 {item.daysOutOfStock > 0 && (
                   <div className="order-item-row">
-                    <span>Не было в наличии</span>
-                    <span>{item.daysOutOfStock} из {windowDays} дн.</span>
+                    <span>{t('repl.wasOutOfStock')}</span>
+                    <span>{t('owner.outOf', { received: item.daysOutOfStock, sent: windowDays })}</span>
                   </div>
                 )}
                 {item.unitsPerPack !== null && (
                   <div className="order-item-row">
-                    <span>Округлено до упаковок</span>
-                    <span>по {formatQuantity(item.unitsPerPack)}</span>
+                    <span>{t('repl.roundedToPacks')}</span>
+                    <span>× {formatQuantity(item.unitsPerPack)}</span>
                   </div>
                 )}
               </div>
 
               {!editing && (
                 <button className="btn btn-ghost btn-block" onClick={() => startEditing(item)}>
-                  Задать свой запас
+                  {t('repl.setOwn')}
                 </button>
               )}
 
               {editing && (
                 <>
                   <p className="field-hint">
-                    Ноль означает «решай сам по продажам». Свои цифры имеют приоритет над расчётом —
-                    по редким товарам вы знаете то, чего история продаж не покажет.
+                    {t('repl.setOwnWhy')}
                   </p>
                   <div className="transfer-add-row">
                     <input
                       type="number"
                       min="0"
-                      placeholder="Минимум"
+                      placeholder={t('repl.minimum')}
                       value={minQuantity}
                       onChange={(e) => setMinQuantity(e.target.value)}
-                      aria-label="Минимальный запас"
+                      aria-label={t('repl.minimumStock')}
                     />
                     <input
                       type="number"
                       min="0"
-                      placeholder="Целевой"
+                      placeholder={t('repl.target')}
                       value={targetQuantity}
                       onChange={(e) => setTargetQuantity(e.target.value)}
-                      aria-label="Целевой запас"
+                      aria-label={t('repl.targetStock')}
                     />
                     <input
                       type="number"
                       min="0"
-                      placeholder="Дней поставки"
+                      placeholder={t('repl.leadDays')}
                       value={leadTimeDays}
                       onChange={(e) => setLeadTimeDays(e.target.value)}
-                      aria-label="Дней на поставку"
+                      aria-label={t('repl.leadDaysField')}
                     />
                     <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => savePolicy(item)}>
-                      {busy ? 'Сохраняем…' : 'Сохранить'}
+                      {busy ? t('common.saving') : t('common.save')}
                     </button>
                   </div>
                   <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => setEditingId(null)}>
-                    Отмена
+                    {t('common.cancel')}
                   </button>
                 </>
               )}
@@ -190,7 +194,7 @@ export function ReplenishmentScreen({
       {items.length > 0 && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" disabled={ordering} onClick={onOrderEverything}>
-            {ordering ? 'Создаём заказ…' : 'Оформить черновик заказа на всё'}
+            {ordering ? t('repl.creatingOrder') : t('repl.draftForAll')}
           </button>
         </div>
       )}
