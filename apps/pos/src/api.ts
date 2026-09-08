@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -814,4 +814,34 @@ export function blockBin(
 
 export function unblockBin(token: string, binId: string): Promise<{ binCode: string; released: number }> {
   return request(`/pos/bins/${binId}/unblock`, { method: 'POST' }, token);
+}
+
+export interface DocumentFilter {
+  locationId: string;
+  /// Comma-separated document types, or omitted for all of them.
+  type?: string;
+  /// One shift's own documents — the drill-down the cash reconciliation needs.
+  shiftId?: string;
+  createdBy?: string;
+  productId?: string;
+  days?: number;
+}
+
+/**
+ * The documents a figure was computed from.
+ *
+ * One endpoint with filters rather than one per figure, because every one of
+ * those questions is the same question.
+ */
+export function fetchDocuments(
+  token: string,
+  filter: DocumentFilter,
+): Promise<{ days: number; documents: LedgerDocument[] }> {
+  const query = new URLSearchParams({ locationId: filter.locationId });
+  if (filter.type) query.set('type', filter.type);
+  if (filter.shiftId) query.set('shiftId', filter.shiftId);
+  if (filter.createdBy) query.set('createdBy', filter.createdBy);
+  if (filter.productId) query.set('productId', filter.productId);
+  if (filter.days) query.set('days', String(filter.days));
+  return request(`/pos/documents?${query.toString()}`, { method: 'GET' }, token);
 }

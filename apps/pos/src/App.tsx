@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -37,6 +37,7 @@ import {
   fetchCountSheet,
   fetchCounts,
   fetchCustomerPoints,
+  fetchDocuments,
   fetchKdsTickets,
   fetchManagedProducts,
   fetchOrders,
@@ -79,6 +80,7 @@ import {
   updateKitchenItemStatus,
   updateManagedProduct,
 } from './api';
+import type { DocumentFilter } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
 import type { PosSession, CustomerLookupResult } from './api';
@@ -117,6 +119,7 @@ import { AuditScreen } from './components/AuditScreen';
 import { ExportScreen } from './components/ExportScreen';
 import { SupplierReturnsScreen } from './components/SupplierReturnsScreen';
 import { PickOrderScreen } from './components/PickOrderScreen';
+import { DocumentsScreen } from './components/DocumentsScreen';
 import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
@@ -155,6 +158,7 @@ type View =
   | 'export'
   | 'supplier-returns'
   | 'pick-order'
+  | 'documents'
   | 'fiscal'
   | 'purchase-orders'
   | 'write-offs'
@@ -284,6 +288,11 @@ export default function App() {
   const [pickingOrderId, setPickingOrderId] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const [pickSubmitting, setPickSubmitting] = useState(false);
+  const [documents, setDocuments] = useState<LedgerDocument[]>([]);
+  const [documentsTitle, setDocumentsTitle] = useState('');
+  const [documentsSubtitle, setDocumentsSubtitle] = useState('');
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -418,7 +427,7 @@ export default function App() {
   const activeTab: MainTab =
     view === 'products' || view === 'product-edit' ? 'products' :
     OPERATIONS_VIEWS.has(view) ? 'operations' :
-    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' || view === 'export' ? 'profile' :
+    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' || view === 'export' || view === 'documents' ? 'profile' :
     'sale';
 
   function handleLogin(newSession: PosSession) {
@@ -1384,6 +1393,42 @@ export default function App() {
     } finally {
       setAuditLoading(false);
     }
+  }
+
+  async function openDocuments(title: string, subtitle: string, filter: Omit<DocumentFilter, 'locationId'>) {
+    if (!session || !currentLocationId) return;
+    setDocumentsTitle(title);
+    setDocumentsSubtitle(subtitle);
+    setDocuments([]);
+    setDocumentsError(null);
+    setDocumentsLoading(true);
+    setView('documents');
+    try {
+      const data = await fetchDocuments(session.token, { ...filter, locationId: currentLocationId });
+      setDocuments(data.documents);
+    } catch (err) {
+      setDocumentsError(err instanceof ApiError ? err.message : 'Не удалось загрузить документы');
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }
+
+  function handleShowShiftDocuments(shiftId: string, cashierName: string) {
+    void openDocuments(
+      `Смена · ${cashierName}`,
+      'Всё, из чего посчитана касса этой смены: продажи и возвраты, по одному документу.',
+      // Sales and returns, because both move the drawer and the reconciliation
+      // is built from the two together.
+      { shiftId, type: 'sale,return' },
+    );
+  }
+
+  function handleShowUserDocuments(userId: string, name: string) {
+    void openDocuments(
+      `Возвраты и списания · ${name}`,
+      'Документы, из-за которых этот сотрудник попал в «на что посмотреть». Это вопрос, не обвинение.',
+      { createdBy: userId, type: 'return,write_off', days: dashboardDays },
+    );
   }
 
   function handleShowPickOrder(orderId: string) {
@@ -2447,6 +2492,17 @@ export default function App() {
         />
       )}
 
+      {view === 'documents' && (
+        <DocumentsScreen
+          title={documentsTitle}
+          subtitle={documentsSubtitle}
+          documents={documents}
+          loading={documentsLoading}
+          error={documentsError}
+          onBack={() => setView('dashboard')}
+        />
+      )}
+
       {view === 'pick-order' && pickingOrder && (
         <PickOrderScreen
           key={pickingOrder.id}
@@ -2497,6 +2553,8 @@ export default function App() {
           onChangeDays={handleChangeDashboardDays}
           onRefresh={() => loadDashboard(dashboardDays)}
           onShowReplenishment={handleShowReplenishment}
+          onShowShiftDocuments={handleShowShiftDocuments}
+          onShowUserDocuments={handleShowUserDocuments}
         />
       )}
 

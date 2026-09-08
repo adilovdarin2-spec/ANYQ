@@ -10,6 +10,10 @@ interface Props {
   onChangeDays: (days: number) => void;
   onRefresh: () => void;
   onShowReplenishment: () => void;
+  /** Opens the documents behind one shift's cash figure. */
+  onShowShiftDocuments: (shiftId: string, cashierName: string) => void;
+  /** Opens the returns and discounts behind a flagged cashier. */
+  onShowUserDocuments: (userId: string, name: string) => void;
 }
 
 const RANGES = [1, 7, 30];
@@ -33,6 +37,8 @@ export function OwnerDashboardScreen({
   onChangeDays,
   onRefresh,
   onShowReplenishment,
+  onShowShiftDocuments,
+  onShowUserDocuments,
 }: Props) {
   return (
     <div className="screen">
@@ -129,7 +135,15 @@ export function OwnerDashboardScreen({
               <>
                 <div className="orders-section-title">Касса по сменам</div>
                 {dashboard.money.shifts.map((shift) => (
-                  <div key={shift.shiftId} className="report-row">
+                  // A row rather than a card, and a button rather than a div:
+                  // the number is the question and the documents are the
+                  // answer, so getting from one to the other should be a tap.
+                  <button
+                    key={shift.shiftId}
+                    type="button"
+                    className="report-row report-row-link"
+                    onClick={() => onShowShiftDocuments(shift.shiftId, shift.cashierName)}
+                  >
                     <span>
                       {shift.cashierName}
                       <br />
@@ -150,7 +164,7 @@ export function OwnerDashboardScreen({
                         </span>
                       )}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </>
             )}
@@ -166,7 +180,12 @@ export function OwnerDashboardScreen({
               <>
                 <div className="orders-section-title">На что посмотреть</div>
                 {dashboard.flags.map((flag, index) => (
-                  <div key={`${flag.userId}-${flag.kind}-${index}`} className="report-row">
+                  <button
+                    key={`${flag.userId}-${flag.kind}-${index}`}
+                    type="button"
+                    className="report-row report-row-link"
+                    onClick={() => onShowUserDocuments(flag.userId, flag.name)}
+                  >
                     <span>
                       {flag.name}
                       <br />
@@ -176,7 +195,7 @@ export function OwnerDashboardScreen({
                       </span>
                     </span>
                     <span className="pill warn">{formatMoney(flag.amount)}</span>
-                  </div>
+                  </button>
                 ))}
               </>
             )}
