@@ -303,6 +303,15 @@ button { cursor: pointer; }
 .report-row-link:hover { background: var(--surface-2); }
 .report-row-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
+/* Photographs attached to a document — a delivery note, almost always. Small
+   enough to glance at, tappable to open full size. */
+.photo-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.photo-thumb { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.photo-thumb img {
+  width: 96px; height: 96px; object-fit: cover;
+  border-radius: 8px; border: 1px solid var(--border);
+}
+
 .row-actions { display: flex; gap: 8px; margin-top: 12px; }
 .row-actions .btn { flex: 1; padding: 10px; font-size: 0.86rem; }
 

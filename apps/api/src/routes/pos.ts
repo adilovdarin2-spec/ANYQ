@@ -66,6 +66,7 @@ import { csvFile, csvFilename } from '../csv';
 import { resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
 import { resolvePick, resolveShipment, pickErrorMessage, orderStage, orderStageLabel } from '../picking';
 import { xlsxToGrid, xlsxErrorMessage, MAX_XLSX_BYTES } from '../xlsx';
+import { readPhoto, photoErrorMessage } from '../photos';
 import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
@@ -1995,6 +1996,145 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
   }
 });
 
+// A photograph of the paper a document came from.
+//
+// A delivery note is the only record of what the driver actually brought, and it
+// leaves with him. Every argument about a short delivery is an argument about a
+// document nobody has any more.
+posRouter.post('/documents/:id/photos', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const document = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId },
+    select: { id: true, _count: { select: { photos: true } } },
+  });
+  if (!document) {
+    res.status(404).json({ error: 'Документ не найден' });
+    return;
+  }
+
+  const photo = readPhoto((req.body ?? {}).base64, document._count.photos);
+  if (photo.status !== 'ok') {
+    res.status(400).json({ error: photoErrorMessage(photo) });
+    return;
+  }
+
+  const width = Number.isFinite(Number(req.body?.width)) ? Math.round(Number(req.body.width)) : null;
+  const height = Number.isFinite(Number(req.body?.height)) ? Math.round(Number(req.body.height)) : null;
+
+  const created = await prisma.documentPhoto.create({
+    data: {
+      documentId: document.id,
+      mimeType: photo.mimeType,
+      // Copied into a plain Uint8Array: Prisma's Bytes column wants one backed
+      // by an ArrayBuffer, and Node's Buffer is declared over ArrayBufferLike.
+      bytes: new Uint8Array(photo.bytes),
+      byteSize: photo.bytes.length,
+      width,
+      height,
+      createdBy: req.posUserId,
+    },
+    select: { id: true, mimeType: true, byteSize: true, width: true, height: true, createdAt: true },
+  });
+
+  res.status(201).json({
+    id: created.id,
+    mimeType: created.mimeType,
+    byteSize: created.byteSize,
+    width: created.width,
+    height: created.height,
+    createdAt: created.createdAt.toISOString(),
+  });
+});
+
+// What is attached, without the bytes. A list that carried them would make
+// opening a delivery cost megabytes for a screen that shows thumbnails.
+posRouter.get('/documents/:id/photos', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const document = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId },
+    select: { id: true },
+  });
+  if (!document) {
+    res.status(404).json({ error: 'Документ не найден' });
+    return;
+  }
+
+  const photos = await prisma.documentPhoto.findMany({
+    where: { documentId: document.id },
+    select: { id: true, mimeType: true, byteSize: true, width: true, height: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  res.json(
+    photos.map((photo) => ({
+      id: photo.id,
+      mimeType: photo.mimeType,
+      byteSize: photo.byteSize,
+      width: photo.width,
+      height: photo.height,
+      createdAt: photo.createdAt.toISOString(),
+    })),
+  );
+});
+
+// One photograph, as the bytes that were stored.
+posRouter.get('/photos/:id', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const photo = await prisma.documentPhoto.findFirst({
+    // Scoped through the document to the company, so an id from somewhere else
+    // is not found rather than served.
+    where: { id: req.params.id, document: { companyId: req.posCompanyId } },
+  });
+  if (!photo) {
+    res.status(404).json({ error: 'Фото не найдено' });
+    return;
+  }
+
+  // The type detected from the bytes at upload, never one the caller declared,
+  // and nosniff on top — which together are what stop an upload from becoming a
+  // stored cross-site scripting hole.
+  res.setHeader('Content-Type', photo.mimeType);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Served inline as an attachment-safe download name: a browser asked to
+  // display it will, and one that decides to save it gets something sensible.
+  res.setHeader('Content-Disposition', `inline; filename="${photo.id}"`);
+  // Immutable: the bytes for an id never change, so a till on a slow connection
+  // fetches a delivery note once.
+  res.setHeader('Cache-Control', 'private, max-age=604800, immutable');
+  // end, not send: Express's send appends a charset to the content type and
+  // negotiates an encoding, and a photograph wants neither — the bytes go out
+  // exactly as they came in.
+  res.end(photo.bytes);
+});
+
+posRouter.delete('/photos/:id', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    // Deleting the evidence behind a short delivery is not a storeman's
+    // decision, and it is the one thing somebody would want to do quietly.
+    res.status(403).json({ error: 'Удалить фото может владелец или менеджер' });
+    return;
+  }
+
+  const photo = await prisma.documentPhoto.findFirst({
+    where: { id: req.params.id, document: { companyId: req.posCompanyId } },
+    select: { id: true },
+  });
+  if (!photo) {
+    res.status(404).json({ error: 'Фото не найдено' });
+    return;
+  }
+
+  await prisma.documentPhoto.delete({ where: { id: photo.id } });
+  res.json({ ok: true });
+});
+
 // The documents behind a figure.
 //
 // The summary answers "is something wrong"; this answers "what exactly". Until
@@ -2064,7 +2204,14 @@ posRouter.get('/documents', requirePosAuth, async (req: PosAuthedRequest, res) =
       ...(createdBy ? { createdBy } : {}),
       ...(productId ? { items: { some: { productId } } } : {}),
     },
-    include: { items: { include: { product: true } }, payments: true, counterparty: true },
+    include: {
+      items: { include: { product: true } },
+      payments: true,
+      counterparty: true,
+      // A count, never the bytes: a listing that carried them would cost
+      // megabytes for a screen that shows a paperclip.
+      _count: { select: { photos: true } },
+    },
     orderBy: { createdAt: 'desc' },
     take: 200,
   });
@@ -2087,6 +2234,7 @@ posRouter.get('/documents', requirePosAuth, async (req: PosAuthedRequest, res) =
         reason: doc.reason,
         reasonCode: doc.reasonCode,
         binLocation: doc.binLocation,
+        photoCount: doc._count.photos,
         subtotal,
         discountAmount,
         pointsRedeemed: doc.pointsRedeemed ?? 0,

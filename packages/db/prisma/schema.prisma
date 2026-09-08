@@ -619,6 +619,7 @@ model Document {
   fulfilledAt   DateTime?
 
   items          DocumentItem[]
+  photos         DocumentPhoto[]
   stockMovements StockMovement[]
   fiscalReceipt  FiscalReceipt?
   settlements    Settlement[]
@@ -709,6 +710,31 @@ model DocumentItem {
 
   @@index([originalItemId])
   @@map("document_items")
+}
+
+/// A photograph of the paper a document came from — almost always a delivery
+/// note, which is the only record of what the driver actually brought and which
+/// leaves with him.
+///
+/// In its own table so no query that reads a document drags the bytes along.
+/// In the database rather than object storage, which is a pilot-stage trade: one
+/// fewer service to configure, hold credentials for, back up and have fall over,
+/// at the cost of a few megabytes a month once the image is shrunk on the phone.
+model DocumentPhoto {
+  id         String   @id @default(cuid())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String
+  mimeType   String
+  bytes      Bytes
+  /// Kept alongside the bytes so a listing can show sizes without loading them.
+  byteSize   Int
+  width      Int?
+  height     Int?
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+  @@map("document_photos")
 }
 
 model Counterparty {

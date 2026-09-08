@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Product, PurchaseOrder, Receipt } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
+import { DocumentPhotos } from './DocumentPhotos';
 
 interface ReceiptLine {
   productId: string;
@@ -22,6 +23,10 @@ interface Props {
   products: Product[];
   /** Orders still awaiting delivery. A receipt filed against one turns a short delivery into a visible fact. */
   openOrders: PurchaseOrder[];
+  /** For fetching the delivery-note photographs, which need the session. */
+  token: string;
+  /** Removing evidence behind a short delivery is not a storeman's decision. */
+  canManage: boolean;
   loading: boolean;
   error: string | null;
   submitting: boolean;
@@ -35,7 +40,7 @@ interface Props {
   }) => Promise<boolean>;
 }
 
-export function IncomingScreen({ receipts, products, openOrders, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
+export function IncomingScreen({ receipts, products, openOrders, token, canManage, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
   const [view, setView] = useState<'list' | 'create'>('list');
   const [purchaseOrderId, setPurchaseOrderId] = useState(LOOSE);
   const [supplierName, setSupplierName] = useState('');
@@ -168,6 +173,10 @@ export function IncomingScreen({ receipts, products, openOrders, loading, error,
                   </div>
                 ))}
               </div>
+              {/* The photograph of the paper. The driver takes the original
+                  away, and every argument about a short delivery is an argument
+                  about a document nobody has any more. */}
+              <DocumentPhotos token={token} documentId={r.id} canDelete={canManage} />
             </div>
           ))}
         </div>

@@ -2344,6 +2344,8 @@ export default function App() {
 
       {view === 'incoming' && (
         <IncomingScreen
+          token={session.token}
+          canManage={isOwnerOrManager}
           receipts={receipts}
           products={session.products}
           loading={receiptsLoading}
