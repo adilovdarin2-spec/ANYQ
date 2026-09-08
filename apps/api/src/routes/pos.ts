@@ -1325,6 +1325,29 @@ async function requireOwnerOrManager(userId: string | undefined): Promise<boolea
   return user?.role === 'owner' || user?.role === 'manager';
 }
 
+// What a document is, in the words an owner uses. Kept in one place because
+// three screens were each about to grow their own copy of this map, and a type
+// that reads "adjustment" on one screen and "Инвентаризация" on another is the
+// kind of thing that makes somebody distrust both.
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  sale: 'Продажа',
+  return: 'Возврат покупателю',
+  receipt: 'Приёмка',
+  write_off: 'Списание',
+  adjustment: 'Инвентаризация',
+  transfer: 'Перемещение',
+  order: 'Заказ',
+  quarantine: 'Карантин',
+  bin_block: 'Блокировка ячейки',
+  supplier_return: 'Возврат поставщику',
+  production: 'Производство',
+  purchase_order: 'Заказ поставщику',
+};
+
+function documentTypeLabel(type: string): string {
+  return DOCUMENT_TYPE_LABELS[type] ?? type;
+}
+
 function serializePosProduct(
   p: {
     id: string;
@@ -1969,6 +1992,120 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
     }
     throw err;
   }
+});
+
+// The documents behind a figure.
+//
+// The summary answers "is something wrong"; this answers "what exactly". Until
+// now an owner looking at a shift 3 000 ₸ short, or at a cashier whose refunds
+// are twice everybody else's, could see the number and nothing underneath it —
+// which turns a real finding into a suspicion, and a suspicion into an argument
+// nobody can settle.
+//
+// One endpoint with filters rather than one per figure, because every one of
+// those questions is the same question: show me the documents this number was
+// computed from.
+posRouter.get('/documents', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Документы смотрит владелец или менеджер' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true, users: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const requestedDays = Number(req.query.days);
+  const days = Number.isFinite(requestedDays) && requestedDays > 0 && requestedDays <= 180
+    ? Math.round(requestedDays)
+    : 30;
+  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const types = typeof req.query.type === 'string' && req.query.type
+    ? req.query.type.split(',').map((t) => t.trim()).filter(Boolean)
+    : null;
+
+  // A shift id narrows to one shift's own takings, which is the drill-down the
+  // cash reconciliation needs. Scoped to the company first, so an id from
+  // somewhere else finds nothing rather than somebody else's shift.
+  let shiftId: string | null = null;
+  if (typeof req.query.shiftId === 'string' && req.query.shiftId) {
+    const shift = await prisma.shift.findFirst({
+      where: { companyId: req.posCompanyId, OR: [{ id: req.query.shiftId }, { clientCommandId: req.query.shiftId }] },
+      select: { id: true },
+    });
+    if (!shift) {
+      res.json({ days, documents: [] });
+      return;
+    }
+    shiftId = shift.id;
+  }
+
+  const createdBy = typeof req.query.createdBy === 'string' && req.query.createdBy ? req.query.createdBy : null;
+  const productId = typeof req.query.productId === 'string' && req.query.productId ? req.query.productId : null;
+
+  const documents = await prisma.document.findMany({
+    where: {
+      companyId: req.posCompanyId,
+      locationId,
+      createdAt: { gte: from },
+      ...(types ? { type: { in: types } } : {}),
+      ...(shiftId ? { shiftId } : {}),
+      ...(createdBy ? { createdBy } : {}),
+      ...(productId ? { items: { some: { productId } } } : {}),
+    },
+    include: { items: { include: { product: true } }, payments: true, counterparty: true },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+  });
+
+  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+
+  res.json({
+    days,
+    documents: documents.map((doc) => {
+      const subtotal = doc.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
+      const discountAmount = computeDiscount(subtotal, saleDiscount(doc)).discountAmount;
+      return {
+        id: doc.id,
+        type: doc.type,
+        typeLabel: documentTypeLabel(doc.type),
+        status: doc.status,
+        createdAt: doc.createdAt.toISOString(),
+        createdByName: doc.createdBy ? nameByUserId.get(doc.createdBy) ?? 'Удалённый сотрудник' : null,
+        counterpartyName: doc.counterparty?.name ?? null,
+        reason: doc.reason,
+        reasonCode: doc.reasonCode,
+        binLocation: doc.binLocation,
+        subtotal,
+        discountAmount,
+        pointsRedeemed: doc.pointsRedeemed ?? 0,
+        refundAmount: doc.refundAmount ?? 0,
+        // What was actually collected, which is the figure every summary above
+        // this is built from.
+        total: doc.type === 'return' || doc.type === 'supplier_return'
+          ? doc.refundAmount ?? 0
+          : subtotal - discountAmount - (doc.pointsRedeemed ?? 0),
+        payments: doc.payments.map((line) => ({ method: line.method, amount: line.amount })),
+        paymentMethod: doc.paymentMethod,
+        items: doc.items.map((it) => ({
+          productId: it.productId,
+          name: it.product.name,
+          quantity: it.quantity,
+          price: it.price,
+        })),
+      };
+    }),
+  });
 });
 
 // The owner's own data, in a file they can open.

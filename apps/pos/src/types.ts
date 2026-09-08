@@ -806,3 +806,26 @@ export interface SupplierReturn {
   createdByName: string | null;
   items: { productId: string; name: string; quantity: number }[];
 }
+
+/// One document behind a figure on the owner's summary.
+export interface LedgerDocument {
+  id: string;
+  type: string;
+  typeLabel: string;
+  status: string;
+  createdAt: string;
+  createdByName: string | null;
+  counterpartyName: string | null;
+  reason: string | null;
+  reasonCode: string | null;
+  binLocation: string | null;
+  subtotal: number;
+  discountAmount: number;
+  pointsRedeemed: number;
+  refundAmount: number;
+  /// What was actually collected — the figure every summary is built from.
+  total: number;
+  payments: { method: string; amount: number }[];
+  paymentMethod: string | null;
+  items: { productId: string; name: string; quantity: number; price: number }[];
+}
