@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Product, PurchaseOrder, Receipt } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
 import { DocumentPhotos } from './DocumentPhotos';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface ReceiptLine {
   productId: string;
@@ -41,6 +42,7 @@ interface Props {
 }
 
 export function IncomingScreen({ receipts, products, openOrders, token, canManage, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [purchaseOrderId, setPurchaseOrderId] = useState(LOOSE);
   const [supplierName, setSupplierName] = useState('');
@@ -130,9 +132,9 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
     <div className="screen">
       <div className="screen-header">
         <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Приёмка</span>
+        <span className="screen-title">{t('incoming.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('create')} aria-label="Новая приёмка" style={{ marginLeft: 'auto' }}>+</button>
+          <button className="icon-btn" onClick={() => setView('create')} aria-label={t('incoming.new')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
           <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
         )}
@@ -141,13 +143,13 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
       {view === 'list' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          {loading && receipts.length === 0 && <div className="empty-state">Загрузка…</div>}
-          {!loading && receipts.length === 0 && !error && <div className="empty-state">Приёмок пока не было</div>}
+          {loading && receipts.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+          {!loading && receipts.length === 0 && !error && <div className="empty-state">{t('incoming.none')}</div>}
           {receipts.map((r) => (
             <div key={r.id} className="order-card">
               <div className="order-card-head">
                 <div>
-                  <div className="order-customer">{r.supplierName ?? 'Без поставщика'}</div>
+                  <div className="order-customer">{r.supplierName ?? t('incoming.noSupplier')}</div>
                   <div className="order-meta">{formatDateTime(r.createdAt)}</div>
                 </div>
               </div>
@@ -195,7 +197,7 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
                     <option value={LOOSE}>Без заказа</option>
                     {openOrders.map((order) => (
                       <option key={order.id} value={order.id}>
-                        {order.supplier?.name ?? 'Без поставщика'} · {formatDateTime(order.createdAt)}
+                        {order.supplier?.name ?? t('incoming.noSupplier')} · {formatDateTime(order.createdAt)}
                       </option>
                     ))}
                   </select>
@@ -203,7 +205,7 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
               )}
 
               <div className="form-field">
-                <label htmlFor="supplier-name">Поставщик</label>
+                <label htmlFor="supplier-name">{t('incoming.supplier')}</label>
                 <input id="supplier-name" type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Необязательно" />
               </div>
               <div className="form-field">
@@ -267,7 +269,7 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
       {view === 'create' && products.length > 0 && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" disabled={lines.length === 0 || submitting} onClick={handleSubmit}>
-            {submitting ? 'Отправляем…' : 'Оприходовать'}
+            {submitting ? t('common.loading') : t('incoming.submit')}
           </button>
         </div>
       )}

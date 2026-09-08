@@ -5,6 +5,7 @@ import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useOutboxSync } from './hooks/useOutboxSync';
 import { getOutbox, outcomeOf, queueCommand } from './outbox';
+import { useTranslation } from './i18n/useLanguage';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
 import {
@@ -350,6 +351,7 @@ export default function App() {
   // opposite rules on refusal: a rejected sale is skipped so it cannot strand
   // the day's takings, a rejected warehouse command stops the queue because
   // everything behind it was given against the world it was meant to make.
+  const { t } = useTranslation();
   const outbox = useOutboxSync(session?.token ?? null);
 
   const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(
@@ -384,28 +386,28 @@ export default function App() {
 
   const operationsItems: OperationItem[] = [];
   if (hasSupply) {
-    operationsItems.push({ key: 'orders', icon: '📦', label: 'Заказы с сайта', badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
+    operationsItems.push({ key: 'orders', icon: '📦', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
   }
   if (hasPharmacy) {
-    operationsItems.push({ key: 'batches', icon: '💊', label: 'Партии', badge: expiringBatchesCount, onClick: handleShowBatches });
+    operationsItems.push({ key: 'batches', icon: '💊', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
   }
   if (hasWarehouse) {
     operationsItems.push(
-      { key: 'transfers', icon: '🔄', label: 'Перемещения', onClick: handleShowTransfers },
-      { key: 'incoming', icon: '📥', label: 'Приёмка', onClick: handleShowIncoming },
-      { key: 'counts', icon: '📋', label: 'Инвентаризация', onClick: handleShowCounts },
-      { key: 'returns', icon: '↩️', label: 'Возвраты', onClick: handleShowReturns },
-      { key: 'replenishment', icon: '🛒', label: 'Что заказать', onClick: handleShowReplenishment },
-      { key: 'purchase-orders', icon: '📄', label: 'Заказы поставщику', onClick: handleShowPurchaseOrders },
-      { key: 'bins', icon: '🗄️', label: 'Ячейки', onClick: handleShowBins },
-      { key: 'bin-count', icon: '🔢', label: 'Пересчёт по ячейкам', onClick: handleShowBinCount },
-      { key: 'reconciliation', icon: '⚖️', label: 'Сверка журнала', onClick: handleShowReconciliation },
-      { key: 'import', icon: '📥', label: 'Импорт товаров', onClick: handleShowImport },
-      { key: 'settlements', icon: '🤝', label: 'Расчёты и долги', onClick: handleShowSettlements },
-      { key: 'write-offs', icon: '🗑️', label: 'Списание и карантин', onClick: handleShowWriteOffs },
-      { key: 'supplier-returns', icon: '📤', label: 'Возврат поставщику', onClick: handleShowSupplierReturns },
-      { key: 'fiscal', icon: '🧾', label: 'Фискализация', onClick: handleShowFiscal },
-      { key: 'production', icon: '🏭', label: 'Производство', onClick: handleShowProduction },
+      { key: 'transfers', icon: '🔄', label: t('ops.transfers'), onClick: handleShowTransfers },
+      { key: 'incoming', icon: '📥', label: t('ops.incoming'), onClick: handleShowIncoming },
+      { key: 'counts', icon: '📋', label: t('ops.counts'), onClick: handleShowCounts },
+      { key: 'returns', icon: '↩️', label: t('ops.returns'), onClick: handleShowReturns },
+      { key: 'replenishment', icon: '🛒', label: t('ops.replenishment'), onClick: handleShowReplenishment },
+      { key: 'purchase-orders', icon: '📄', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders },
+      { key: 'bins', icon: '🗄️', label: t('ops.bins'), onClick: handleShowBins },
+      { key: 'bin-count', icon: '🔢', label: t('ops.binCount'), onClick: handleShowBinCount },
+      { key: 'reconciliation', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
+      { key: 'import', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
+      { key: 'settlements', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
+      { key: 'write-offs', icon: '🗑️', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
+      { key: 'supplier-returns', icon: '📤', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
+      { key: 'fiscal', icon: '🧾', label: t('ops.fiscal'), onClick: handleShowFiscal },
+      { key: 'production', icon: '🏭', label: t('ops.production'), onClick: handleShowProduction },
     );
   }
   if (hasRestaurant) {
@@ -415,7 +417,7 @@ export default function App() {
     );
   }
   if (hasTerminal) {
-    operationsItems.push({ key: 'stock-history', icon: '📜', label: 'История склада', onClick: handleShowStockHistory });
+    operationsItems.push({ key: 'stock-history', icon: '📜', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
   }
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 
