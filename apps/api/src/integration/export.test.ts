@@ -31,7 +31,7 @@ describe('taking the data out', () => {
     const res = await exportCsv('products');
     expect(res.status).toBe(200);
     const [header, ...rows] = lines(res.body);
-    expect(header).toBe('Название;Категория;Единица;Штрихкод;Закупочная цена;Цена продажи;В продаже');
+    expect(header).toBe('Название;Категория;Единица;Штрихкод;НКТ;Режим НДС;Закупочная цена;Цена продажи;В продаже');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toContain('Вода 1 л');
   });

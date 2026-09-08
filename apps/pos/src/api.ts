@@ -307,6 +307,9 @@ export interface ManagedProduct {
   category: string;
   unit: string;
   barcode: string;
+  /** Goods classifier code (НКТ). Required on a fiscal receipt line for marked goods. */
+  ntinCode: string;
+  taxMode: string;
   purchasePrice: number;
   salePrice: number;
   sellable: boolean;
@@ -319,6 +322,8 @@ export interface ManagedProductPayload {
   category: string;
   unit: string;
   barcode: string;
+  ntinCode: string;
+  taxMode: string;
   purchasePrice: number;
   salePrice: number;
   sellable: boolean;

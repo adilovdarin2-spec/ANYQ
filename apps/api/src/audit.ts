@@ -64,7 +64,7 @@ export function diffFields(
 }
 
 export const WATCHED_FIELDS = {
-  product: ['name', 'salePrice', 'purchasePrice', 'barcode', 'sellable', 'stopListed'],
+  product: ['name', 'salePrice', 'purchasePrice', 'barcode', 'ntinCode', 'taxMode', 'sellable', 'stopListed'],
   user: ['role', 'posPin', 'name'],
   counterparty: ['creditAllowed', 'creditLimit'],
 } as const;
@@ -76,6 +76,8 @@ const FIELD_LABELS: Record<string, string> = {
   salePrice: 'цена продажи',
   purchasePrice: 'закупочная цена',
   barcode: 'штрихкод',
+  ntinCode: 'код НКТ',
+  taxMode: 'режим НДС',
   sellable: 'в продаже',
   stopListed: 'стоп-лист',
   role: 'роль',

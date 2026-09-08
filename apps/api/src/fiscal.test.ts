@@ -18,7 +18,7 @@ describe('buildFiscalPayload', () => {
       registrationNumber: 'РНМ-123',
       createdAt: new Date('2026-09-04T10:00:00Z'),
       paymentMethod: 'cash',
-      lines: [{ name: 'Вода', quantity: 2, price: 200, taxMode: null }],
+      lines: [{ name: 'Вода', quantity: 2, price: 200, taxMode: null , ntinCode: null }],
       total: 400,
       discount: 0,
       pointsRedeemed: 0,
@@ -108,5 +108,40 @@ describe('manual registration', () => {
     expect(isValidManualEntry('')).toBe(false);
     expect(isValidManualEntry(undefined)).toBe(false);
     expect(isValidManualEntry('x'.repeat(65))).toBe(false);
+  });
+});
+
+describe('the goods classifier code', () => {
+  it('is carried through to the provider', () => {
+    // Required on a receipt line for goods subject to marking in Kazakhstan,
+    // and a receipt missing it for such goods is not merely incomplete — it is
+    // a violation.
+    const payload = buildFiscalPayload({
+      documentId: 'doc_1',
+      registrationNumber: 'РНМ-123',
+      createdAt: new Date('2026-09-08T10:00:00Z'),
+      paymentMethod: 'cash',
+      lines: [{ name: 'Сигареты', quantity: 1, price: 900, taxMode: 'vat12', ntinCode: '2402209000' }],
+      total: 900,
+      discount: 0,
+      pointsRedeemed: 0,
+    });
+    expect(payload.lines[0].ntinCode).toBe('2402209000');
+  });
+
+  it('says null for goods that have none, rather than leaving the field out', () => {
+    // Null and absent are different claims: one says this product has no code,
+    // the other says nobody filled the field in.
+    const payload = buildFiscalPayload({
+      documentId: 'doc_1',
+      registrationNumber: 'РНМ-123',
+      createdAt: new Date('2026-09-08T10:00:00Z'),
+      paymentMethod: 'cash',
+      lines: [{ name: 'Хлеб', quantity: 1, price: 250, taxMode: null, ntinCode: null }],
+      total: 250,
+      discount: 0,
+      pointsRedeemed: 0,
+    });
+    expect(payload.lines[0]).toHaveProperty('ntinCode', null);
   });
 });
