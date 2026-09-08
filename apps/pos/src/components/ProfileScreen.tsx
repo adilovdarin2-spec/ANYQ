@@ -19,6 +19,9 @@ interface Props {
   /** Owner-facing: somebody who can read who changed what can also work out
       whose account to use. */
   onShowAudit?: () => void;
+  /** Owner-facing: the whole catalogue with costs is not a cashier's to carry
+      out of the building. */
+  onShowExport?: () => void;
   onShowInstall: () => void;
   onCloseShift: () => void;
   onLogout: () => void;
@@ -47,6 +50,7 @@ export function ProfileScreen({
   onShowDashboard,
   onShowReports,
   onShowAudit,
+  onShowExport,
   onShowInstall,
   onCloseShift,
   onLogout,
@@ -112,6 +116,13 @@ export function ProfileScreen({
       {onShowAudit && (
         <button type="button" className="profile-action" onClick={onShowAudit}>
           <span>📝 Журнал изменений</span>
+          <span>›</span>
+        </button>
+      )}
+
+      {onShowExport && (
+        <button type="button" className="profile-action" onClick={onShowExport}>
+          <span>↓ Выгрузка данных</span>
           <span>›</span>
         </button>
       )}

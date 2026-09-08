@@ -707,3 +707,44 @@ export function fetchAuditLog(
 ): Promise<{ days: number; entries: AuditEntry[]; priceRoundTrips: PriceRoundTrip[] }> {
   return request(`/pos/audit?days=${days}`, { method: 'GET' }, token);
 }
+
+/**
+ * Pulls one dataset down as a file the browser saves.
+ *
+ * Not `request`: the response is a CSV, not JSON, and the point is to get it
+ * onto the owner's disk. Fetched with the token rather than linked to, because
+ * a plain link cannot carry an Authorization header and putting the token in a
+ * query string would leave it in browser history and in every proxy log.
+ */
+export async function downloadExport(token: string, dataset: string, locationId: string): Promise<void> {
+  const query = `locationId=${encodeURIComponent(locationId)}`;
+  const res = await fetch(`${API_BASE}/pos/export/${dataset}?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.error || 'Не удалось выгрузить', res.status);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filenameFrom(res.headers.get('content-disposition')) ?? `${dataset}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Released on the next tick: revoking it synchronously cancels the download
+  // in some browsers before it has started reading the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function filenameFrom(disposition: string | null): string | null {
+  if (!disposition) return null;
+  // The encoded form first: the name carries the location's Cyrillic name, and
+  // the plain `filename=` beside it is deliberately ASCII for old clients.
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (encoded) return decodeURIComponent(encoded[1]);
+  const plain = /filename="([^"]+)"/i.exec(disposition);
+  return plain ? plain[1] : null;
+}

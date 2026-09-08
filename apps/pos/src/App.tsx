@@ -27,6 +27,7 @@ import {
   createTransfer,
   deleteBin,
   deletePackaging,
+  downloadExport,
   fetchAuditLog,
   fetchBatches,
   fetchBins,
@@ -107,6 +108,7 @@ import { ReturnsScreen } from './components/ReturnsScreen';
 import { ReplenishmentScreen } from './components/ReplenishmentScreen';
 import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { AuditScreen } from './components/AuditScreen';
+import { ExportScreen } from './components/ExportScreen';
 import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
@@ -142,6 +144,7 @@ type View =
   | 'replenishment'
   | 'dashboard'
   | 'audit'
+  | 'export'
   | 'fiscal'
   | 'purchase-orders'
   | 'write-offs'
@@ -392,7 +395,7 @@ export default function App() {
   const activeTab: MainTab =
     view === 'products' || view === 'product-edit' ? 'products' :
     OPERATIONS_VIEWS.has(view) ? 'operations' :
-    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' ? 'profile' :
+    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' || view === 'export' ? 'profile' :
     'sale';
 
   function handleLogin(newSession: PosSession) {
@@ -1324,6 +1327,11 @@ export default function App() {
     } finally {
       setAuditLoading(false);
     }
+  }
+
+  async function handleExport(dataset: string) {
+    if (!session || !currentLocationId) return;
+    await downloadExport(session.token, dataset, currentLocationId);
   }
 
   function handleShowAudit() {
@@ -2294,6 +2302,10 @@ export default function App() {
         />
       )}
 
+      {view === 'export' && (
+        <ExportScreen onBack={() => setView('profile')} onExport={handleExport} />
+      )}
+
       {view === 'audit' && (
         <AuditScreen
           entries={auditEntries}
@@ -2464,6 +2476,7 @@ export default function App() {
           onTogglePush={handleTogglePush}
           onShowDashboard={isOwnerOrManager ? handleShowDashboard : undefined}
           onShowAudit={isOwnerOrManager ? handleShowAudit : undefined}
+          onShowExport={isOwnerOrManager ? () => setView('export') : undefined}
           onShowReports={hasTerminal ? handleShowReports : undefined}
           onShowInstall={install.reopen}
           onCloseShift={() => setView('close-shift')}
