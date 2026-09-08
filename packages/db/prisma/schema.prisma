@@ -342,6 +342,11 @@ model StorageBin {
   rack       String   @default("")
   shelf      String   @default("")
   bin        String   @default("")
+  /// Set while the whole shelf is held out of sale — a dropped pallet, water
+  /// damage, a zone kept for an inspection. The amounts live in Stock.blocked,
+  /// so availability arithmetic is unchanged.
+  blockedAt     DateTime?
+  blockedReason String?
   createdAt  DateTime @default(now())
 
   @@unique([locationId, code])
@@ -589,6 +594,11 @@ model Document {
   // 'quality', 'other'. Free text alone can't answer "do we lose more to
   // breakage or to expiry"; a code can, and the note explains the instance.
   reasonCode    String?
+  /// Which shelf this document is about, for the ones that are about one shelf.
+  /// Lets unblocking release exactly what this block held rather than a product
+  /// somebody quarantined separately — the two are indistinguishable in
+  /// Stock.blocked otherwise.
+  binLocation   String?
   // When the goods are promised, on a purchase order. The date a lead time is
   // measured against, and the one that makes "late" answerable.
   expectedAt    DateTime?

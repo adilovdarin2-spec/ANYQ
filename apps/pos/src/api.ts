@@ -799,3 +799,19 @@ export function shipOrder(
 ): Promise<{ id: string; shipped: number; released: number; partial: boolean }> {
   return request(`/pos/orders/${orderId}/ship`, { method: 'POST' }, token);
 }
+
+/**
+ * Holds a whole shelf out of sale — a dropped pallet, water damage, a zone kept
+ * for an inspection. The goods stay on the books; they stop being sellable.
+ */
+export function blockBin(
+  token: string,
+  binId: string,
+  payload: { note: string; reasonCode: string },
+): Promise<{ binCode: string; blockedLines: number; blockedQuantity: number }> {
+  return request(`/pos/bins/${binId}/block`, { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function unblockBin(token: string, binId: string): Promise<{ binCode: string; released: number }> {
+  return request(`/pos/bins/${binId}/unblock`, { method: 'POST' }, token);
+}

@@ -1778,6 +1778,13 @@ const DEAD_STOCK_DAYS = 90;
 
 // The owner's morning. Not a page of charts — six questions with answers, each
 // one traceable to the documents underneath it.
+// Somebody else blocked or released this shelf between the check and the write.
+class BinAlreadyBlockedError extends Error {
+  constructor() {
+    super('Bin already in that state');
+  }
+}
+
 // Sending goods back to the supplier they came from.
 //
 // The only thing to do with a delivery that arrived broken or wrong used to be
@@ -3287,6 +3294,9 @@ posRouter.get('/bins', requirePosAuth, async (req: PosAuthedRequest, res) => {
       rack: bin.rack,
       shelf: bin.shelf,
       bin: bin.bin,
+      blocked: bin.blockedAt !== null,
+      blockedAt: bin.blockedAt ? bin.blockedAt.toISOString() : null,
+      blockedReason: bin.blockedReason,
       contents: contentsByCode.get(bin.code) ?? [],
     })),
   });
@@ -3355,6 +3365,205 @@ posRouter.delete('/bins/:id', requirePosAuth, async (req: PosAuthedRequest, res)
 // Putting goods away, or moving them between shelves. Nothing enters or leaves
 // the building, so the location's total is unchanged — which is exactly why it
 // is one operation rather than two movements that could each fail alone.
+// Holding a whole shelf out of sale.
+//
+// Quarantine worked per product, which covers a suspect batch and not the case a
+// warehouse actually hits: a pallet was dropped, a shelf got wet, a zone is kept
+// for an inspection. Everything on that shelf stops being sellable at once,
+// whatever it happens to be.
+//
+// The amounts go into the same `blocked` column a product quarantine uses, so
+// availability arithmetic is unchanged and nothing downstream learns about bins.
+// What makes the two kinds of hold separable is the document: it records exactly
+// what this block took, and releasing reads that back rather than emptying the
+// column. Without it, unblocking a shelf would quietly release a batch somebody
+// quarantined for an entirely different reason.
+posRouter.post('/bins/:id/block', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Блокировать ячейку может владелец или менеджер' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const note = typeof b.note === 'string' ? b.note.trim() : '';
+  if (!note) {
+    // A shelf nobody may sell from, for no recorded reason, is a shelf the next
+    // shift will unblock because it looks like a mistake.
+    res.status(400).json({ error: 'Опишите, почему ячейка блокируется' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Адресное хранение недоступно на вашем тарифе' });
+    return;
+  }
+
+  const locationIds = new Set((company?.locations ?? []).map((l) => l.id));
+  const bin = await prisma.storageBin.findUnique({ where: { id: req.params.id } });
+  if (!bin || !locationIds.has(bin.locationId)) {
+    res.status(404).json({ error: 'Ячейка не найдена' });
+    return;
+  }
+  if (bin.blockedAt) {
+    res.status(409).json({ error: 'Ячейка уже заблокирована' });
+    return;
+  }
+
+  const rows = await prisma.stock.findMany({
+    where: { locationId: bin.locationId, binLocation: bin.code, quantity: { gt: 0 } },
+  });
+  // What is free to hold: anything already reserved for an order stays reserved
+  // and is not double-counted, and anything already in quarantine stays there.
+  const toBlock = rows
+    .map((row) => ({ row, quantity: availableQuantity(row) }))
+    .filter((entry) => entry.quantity > 0);
+
+  try {
+    const document = await prisma.$transaction(async (tx) => {
+      // Claimed on the unblocked state, so two managers blocking the same shelf
+      // at once cannot both write a block document and hold the goods twice.
+      const claimed = await tx.storageBin.updateMany({
+        where: { id: bin.id, blockedAt: null },
+        data: { blockedAt: new Date(), blockedReason: note },
+      });
+      if (claimed.count === 0) throw new BinAlreadyBlockedError();
+
+      const created = await tx.document.create({
+        data: {
+          companyId: req.posCompanyId!,
+          locationId: bin.locationId,
+          type: 'bin_block',
+          status: 'confirmed',
+          binLocation: bin.code,
+          reason: note,
+          reasonCode: typeof b.reasonCode === 'string' ? b.reasonCode : 'quality',
+          createdBy: req.posUserId!,
+          items: {
+            create: toBlock.map((entry) => ({
+              productId: entry.row.productId,
+              quantity: entry.quantity,
+              price: 0,
+            })),
+          },
+        },
+      });
+
+      for (const entry of toBlock) {
+        await blockStock(tx, entry.row, entry.quantity);
+      }
+
+      return created;
+    }, { timeout: 15000 });
+
+    res.status(201).json({
+      id: document.id,
+      binCode: bin.code,
+      blockedLines: toBlock.length,
+      blockedQuantity: toBlock.reduce((sum, entry) => sum + entry.quantity, 0),
+    });
+  } catch (err) {
+    if (err instanceof BinAlreadyBlockedError) {
+      res.status(409).json({ error: 'Ячейка уже заблокирована' });
+      return;
+    }
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток в ячейке изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
+});
+
+posRouter.post('/bins/:id/unblock', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Снять блокировку может владелец или менеджер' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const locationIds = new Set((company?.locations ?? []).map((l) => l.id));
+  const bin = await prisma.storageBin.findUnique({ where: { id: req.params.id } });
+  if (!bin || !locationIds.has(bin.locationId)) {
+    res.status(404).json({ error: 'Ячейка не найдена' });
+    return;
+  }
+  if (!bin.blockedAt) {
+    res.status(409).json({ error: 'Ячейка не заблокирована' });
+    return;
+  }
+
+  // Exactly what this block took, read back from its own document. Emptying the
+  // blocked column instead would release a batch somebody quarantined
+  // separately, for a reason that has nothing to do with this shelf.
+  const blocks = await prisma.document.findMany({
+    where: {
+      companyId: req.posCompanyId,
+      type: 'bin_block',
+      status: 'confirmed',
+      binLocation: bin.code,
+      locationId: bin.locationId,
+    },
+    include: { items: true },
+  });
+
+  const held = new Map<string, number>();
+  for (const block of blocks) {
+    for (const item of block.items) {
+      held.set(item.productId, (held.get(item.productId) ?? 0) + item.quantity);
+    }
+  }
+
+  const rows = await prisma.stock.findMany({
+    where: { locationId: bin.locationId, binLocation: bin.code },
+  });
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.storageBin.updateMany({
+        where: { id: bin.id, blockedAt: { not: null } },
+        data: { blockedAt: null, blockedReason: null },
+      });
+      if (claimed.count === 0) throw new BinAlreadyBlockedError();
+
+      // Marked spent, so a second release has nothing to read and cannot invent
+      // availability that is not on the shelf.
+      await tx.document.updateMany({
+        where: { id: { in: blocks.map((block) => block.id) } },
+        data: { status: 'released' },
+      });
+
+      for (const row of rows) {
+        const amount = held.get(row.productId) ?? 0;
+        if (amount <= 0) continue;
+        // Floored against what is actually still blocked: goods from this shelf
+        // may since have been written off, which takes their hold with them.
+        const releasable = Math.min(amount, row.blocked);
+        if (releasable > 0) await unblockStock(tx, row, releasable);
+      }
+    }, { timeout: 15000 });
+
+    res.json({ binCode: bin.code, released: [...held.values()].reduce((sum, n) => sum + n, 0) });
+  } catch (err) {
+    if (err instanceof BinAlreadyBlockedError) {
+      res.status(409).json({ error: 'Ячейка уже разблокирована' });
+      return;
+    }
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток в ячейке изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
+});
+
 posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const quantity = Number(b.quantity);

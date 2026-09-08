@@ -663,6 +663,11 @@ export interface StorageBin {
   shelf: string;
   bin: string;
   contents: BinContent[];
+  /// Set while the whole shelf is held out of sale. The goods are still there
+  /// and still the shop's — simply not sellable until somebody decides.
+  blocked: boolean;
+  blockedAt: string | null;
+  blockedReason: string | null;
 }
 
 export interface AgingBuckets {

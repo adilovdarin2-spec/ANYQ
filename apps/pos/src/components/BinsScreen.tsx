@@ -13,6 +13,8 @@ interface Props {
   onCreateBin: (address: { zone: string; rack: string; shelf: string; bin: string }) => Promise<boolean>;
   onDeleteBin: (binId: string) => void;
   onPutaway: (payload: { productId: string; quantity: number; fromBin: string; toBin: string }) => Promise<boolean>;
+  onBlockBin: (binId: string, note: string) => Promise<boolean>;
+  onUnblockBin: (binId: string) => void;
 }
 
 function formatQuantity(value: number): string {
@@ -31,6 +33,8 @@ export function BinsScreen({
   onCreateBin,
   onDeleteBin,
   onPutaway,
+  onBlockBin,
+  onUnblockBin,
 }: Props) {
   const [view, setView] = useState<'map' | 'new-bin'>('map');
   const [zone, setZone] = useState('');
@@ -43,6 +47,10 @@ export function BinsScreen({
   const [moving, setMoving] = useState<{ productId: string; name: string; fromBin: string; max: number } | null>(null);
   const [moveQuantity, setMoveQuantity] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
+  // The shelf being blocked, while the reason is typed. A block with no
+  // recorded reason is one the next shift undoes because it looks like a slip.
+  const [blocking, setBlocking] = useState<StorageBin | null>(null);
+  const [blockNote, setBlockNote] = useState('');
 
   const zones = [...new Set(bins.map((b) => b.zone))].sort();
 
@@ -113,6 +121,33 @@ export function BinsScreen({
             </>
           )}
 
+          {blocking && (
+            <div className="order-card">
+              <div className="order-customer">Заблокировать {blocking.code}</div>
+              <p className="field-hint">
+                Всё, что стоит в ячейке, перестанет продаваться. Товар остаётся на складе и в
+                остатках — просто не для продажи, пока кто-то не решит.
+              </p>
+              <div className="field">
+                <label htmlFor="block-note">Что произошло</label>
+                <input id="block-note" value={blockNote} onChange={(e) => setBlockNote(e.target.value)} />
+              </div>
+              <div className="row-actions">
+                <button className="btn btn-secondary" onClick={() => setBlocking(null)}>Отмена</button>
+                <button
+                  className="btn btn-primary"
+                  disabled={submitting || !blockNote.trim()}
+                  onClick={async () => {
+                    const done = await onBlockBin(blocking.id, blockNote.trim());
+                    if (done) setBlocking(null);
+                  }}
+                >
+                  Заблокировать
+                </button>
+              </div>
+            </div>
+          )}
+
           {zones.map((zoneName) => (
             <div key={zoneName}>
               <div className="orders-section-title">Зона {zoneName}</div>
@@ -126,9 +161,29 @@ export function BinsScreen({
                         <div className="order-meta">
                           {b.contents.length === 0 ? 'пусто' : `позиций: ${b.contents.length}`}
                         </div>
+                        {b.blocked && (
+                          <div className="order-meta">
+                            🚫 заблокирована{b.blockedReason ? ` · ${b.blockedReason}` : ''}
+                          </div>
+                        )}
                       </div>
-                      {canManage && b.contents.length === 0 && (
+                      {canManage && b.contents.length === 0 && !b.blocked && (
                         <button className="li-remove" onClick={() => onDeleteBin(b.id)}>Удалить</button>
+                      )}
+                      {canManage && (
+                        b.blocked ? (
+                          <button className="li-remove" onClick={() => onUnblockBin(b.id)}>Разблокировать</button>
+                        ) : (
+                          <button
+                            className="li-remove"
+                            onClick={() => {
+                              setBlocking(b);
+                              setBlockNote('');
+                            }}
+                          >
+                            Заблокировать
+                          </button>
+                        )
                       )}
                     </div>
                     {b.contents.length > 0 && (
