@@ -1,4 +1,5 @@
 import type { Order } from '../types';
+import { orderStageLabel } from '../documents';
 import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney, formatTime } from '../utils';
 
@@ -63,7 +64,7 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefr
                 </div>
                 {o.stage !== 'pending' && (
                   <span className="order-meta">
-                    {o.stageLabel}{o.shortfall > 0 ? ` · ${t('pick.missing', { count: o.shortfall })}` : ''}
+                    {orderStageLabel(t, o.stage, o.stageLabel)}{o.shortfall > 0 ? ` · ${t('pick.missing', { count: o.shortfall })}` : ''}
                   </span>
                 )}
                 <div className="order-actions">
