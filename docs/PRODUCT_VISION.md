@@ -4,6 +4,13 @@
 > and small-network platform. Restaurant/HoReCa functionality is legacy code,
 > is not sold, is not enabled for new customers, and must not receive roadmap
 > capacity. References below document earlier implementation history only.
+>
+> **Enforced since 2026-09-09**, in `apps/admin/src/types.ts`: the create-company
+> form offers `OFFERABLE_MODULES`, which excludes it, and the detail drawer shows
+> it only for a company that already has it — so an existing customer can still
+> be switched off, and nobody new can be switched on. Until then this paragraph
+> was the whole of the enforcement, and it sat beside a checkbox labelled
+> «Кафе/Ресторан» next to «Магазин».
 
 Distilled from the "Universal Business OS" strategy brief (2026-07-28). This is not a build
 spec for right now — it's the north star that future architecture decisions should be checked

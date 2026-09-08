@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { LocationType, ModuleKey, SupportLevel } from '../types';
-import { MODULE_LABELS, SUPPORT_LABELS } from '../types';
+import { OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, SUPPORT_LABELS } from '../types';
 import { newValidUntil, formatDate } from '../utils';
 import type { DurationPreset } from '../utils';
 import { DURATION_LABELS } from '../utils';
@@ -11,8 +11,10 @@ interface Props {
   onCreate: (payload: CreateCompanyPayload) => Promise<void>;
 }
 
-const LOCATION_TYPES: LocationType[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'restaurant'];
-const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal', 'restaurant', 'retail'];
+// The offerable sets, not every set the type allows: a new company cannot be
+// put on a module that is no longer sold. See LEGACY_MODULES.
+const LOCATION_TYPES = OFFERABLE_LOCATION_TYPES;
+const ALL_MODULES = OFFERABLE_MODULES;
 const ALL_DURATIONS: DurationPreset[] = ['1m', '3m', '6m', '1y'];
 
 function parseLimit(v: string): number | null {
