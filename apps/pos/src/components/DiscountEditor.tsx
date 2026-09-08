@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { Discount, DiscountType } from '../types';
 import { formatMoney } from '../utils';
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function DiscountEditor({ discount, discountAmount, onChange }: Props) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [type, setType] = useState<DiscountType>(discount?.type ?? 'percent');
   const [value, setValue] = useState(discount ? String(discount.value) : '');
@@ -44,7 +46,7 @@ export function DiscountEditor({ discount, discountAmount, onChange }: Props) {
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder={type === 'percent' ? 'Напр. 10' : 'Напр. 500'}
+          placeholder={type === 'percent' ? t('discount.percentPlaceholder') : t('discount.fixedPlaceholder')}
         />
         <button type="button" className="btn btn-secondary" onClick={apply}>OK</button>
       </div>
@@ -53,14 +55,14 @@ export function DiscountEditor({ discount, discountAmount, onChange }: Props) {
 
   return (
     <div className="summary-row discount-row">
-      <span>Скидка</span>
+      <span>{t('discount.title')}</span>
       {discount ? (
         <span>
           −{formatMoney(discountAmount)} ({discount.type === 'percent' ? `${discount.value}%` : formatMoney(discount.value)})
-          <button type="button" className="li-remove" onClick={clear}>убрать</button>
+          <button type="button" className="li-remove" onClick={clear}>{t('loyalty.remove')}</button>
         </span>
       ) : (
-        <button type="button" className="li-remove" onClick={openEditor}>добавить</button>
+        <button type="button" className="li-remove" onClick={openEditor}>{t('loyalty.attach')}</button>
       )}
     </div>
   );

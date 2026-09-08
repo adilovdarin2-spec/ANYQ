@@ -143,7 +143,7 @@ export function ImportScreen({
                 rows={8}
                 value={text}
                 onChange={(e) => { setText(e.target.value); onReset(); }}
-                placeholder={'Наименование\tЦена\tОстаток\nВода 1 л\t250\t40'}
+                placeholder={`${t('product.name')}\t${t('product.salePrice')}\t${t('common.left')}`}
               />
             </div>
 
@@ -173,7 +173,7 @@ export function ImportScreen({
                   {preview.skipped > 0 && (
                     <div className="report-card">
                       <span className="value">{preview.skipped}</span>
-                      <span className="label">Пропущено</span>
+                      <span className="label">{t('import.skipped')}</span>
                     </div>
                   )}
                 </div>

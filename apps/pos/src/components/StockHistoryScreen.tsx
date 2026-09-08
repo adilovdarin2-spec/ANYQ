@@ -1,5 +1,6 @@
 import type { StockMovementRecord } from '../types';
-import { STOCK_MOVEMENT_LABELS } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
+import { STOCK_MOVEMENT_PHRASES } from '../types';
 import { formatDateTime } from '../utils';
 
 interface Props {
@@ -11,17 +12,18 @@ interface Props {
 }
 
 export function StockHistoryScreen({ movements, loading, error, onBack, onRefresh }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">История склада</span>
-        <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('history.title')}</span>
+        <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>
       <div className="screen-body">
         {error && <div className="login-error">{error}</div>}
-        {loading && movements.length === 0 && <div className="empty-state">Загрузка…</div>}
-        {!loading && movements.length === 0 && !error && <div className="empty-state">Движений по складу пока нет</div>}
+        {loading && movements.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+        {!loading && movements.length === 0 && !error && <div className="empty-state">{t('history.none')}</div>}
 
         {movements.map((m) => (
           <div key={m.id} className="stock-move-row">
@@ -35,7 +37,7 @@ export function StockHistoryScreen({ movements, loading, error, onBack, onRefres
               {/* The author is the point of the screen: a reason says what
                   happened, this says who to ask about it. */}
               <span>
-                {STOCK_MOVEMENT_LABELS[m.reason]} · {m.locationName}
+                {t(STOCK_MOVEMENT_PHRASES[m.reason])} · {m.locationName}
                 {m.binLocation ? ` · ${m.binLocation}` : ''}
                 {m.createdByName ? ` · ${m.createdByName}` : ''}
               </span>

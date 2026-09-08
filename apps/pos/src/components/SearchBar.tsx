@@ -1,3 +1,5 @@
+import { useTranslation } from '../i18n/useLanguage';
+
 interface Props {
   query: string;
   onQueryChange: (value: string) => void;
@@ -8,19 +10,20 @@ interface Props {
 }
 
 export function SearchBar({ query, onQueryChange, onEnter, categories, activeCategory, onCategoryChange }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="search-bar">
       <input
         type="text"
         inputMode="search"
-        placeholder="Название или штрихкод"
+        placeholder={t('search.placeholder')}
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') onEnter();
         }}
       />
-      <div className="search-hint">Штрихкод-сканер работает как клавиатура — просто наведите и нажмите</div>
+      <div className="search-hint">{t('search.scannerHint')}</div>
       {categories.length > 1 && (
         <div className="category-bar">
           <button
@@ -28,7 +31,7 @@ export function SearchBar({ query, onQueryChange, onEnter, categories, activeCat
             className={`category-chip${activeCategory === null ? ' on' : ''}`}
             onClick={() => onCategoryChange(null)}
           >
-            Все
+            {t('search.all')}
           </button>
           {categories.map((c) => (
             <button

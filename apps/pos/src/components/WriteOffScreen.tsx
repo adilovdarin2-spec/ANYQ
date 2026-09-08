@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { Product, WriteOffRecord, WriteOffReason } from '../types';
-import { WRITE_OFF_LABELS } from '../types';
+import { WRITE_OFF_PHRASES } from '../types';
 import { formatDateTime } from '../utils';
 
 interface Line {
@@ -109,7 +109,9 @@ export function WriteOffScreen({
                       ? record.reasonCode === 'release'
                         ? t('writeOff.fromQuarantine')
                         : t('writeOff.quarantine')
-                      : WRITE_OFF_LABELS[record.reasonCode as WriteOffReason] ?? t('ops.writeOffs')}
+                      : record.reasonCode && WRITE_OFF_PHRASES[record.reasonCode as WriteOffReason]
+                        ? t(WRITE_OFF_PHRASES[record.reasonCode as WriteOffReason])
+                        : t('ops.writeOffs')}
                   </div>
                   <div className="order-meta">
                     {formatDateTime(record.createdAt)}
@@ -174,7 +176,7 @@ export function WriteOffScreen({
                 <label htmlFor="wo-reason">{t('writeOff.reason')}</label>
                 <select id="wo-reason" value={reasonCode} onChange={(e) => setReasonCode(e.target.value as WriteOffReason)}>
                   {REASONS.map((reason) => (
-                    <option key={reason} value={reason}>{WRITE_OFF_LABELS[reason]}</option>
+                    <option key={reason} value={reason}>{t(WRITE_OFF_PHRASES[reason])}</option>
                   ))}
                 </select>
               </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { ProductionRecipe, ProductionRun } from '../types';
-import { formatDateTime, pluralizeRu } from '../utils';
+import { formatDateTime } from '../utils';
+import { pluralPhrase } from '../i18n';
 
 interface Props {
   runs: ProductionRun[];
@@ -109,7 +110,8 @@ export function ProductionScreen({ runs, recipes, loading, error, submitting, on
 
               {valid && recipe && (
                 <div className="count-hint">
-                  {batches} {pluralizeRu(batches, 'партия', 'партии', 'партий')} {t('production.plan', { yield: recipe.portionYield, total: yieldQuantity })}
+                  {t(pluralPhrase(batches, 'production.batchesOne', 'production.batchesFew', 'production.batchesMany'), { count: batches })}{' '}
+                  {t('production.plan', { yield: recipe.portionYield, total: yieldQuantity })}
                   <br />
                   {t('production.consumes')}
                   {recipe.ingredients.map((ing) => (

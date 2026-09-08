@@ -2517,7 +2517,7 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
 
   const [products, stockRows, salesDocs, returnDocs, adjustmentDocs, receiptLines, lastSales, batches, shifts] =
     await Promise.all([
-      prisma.product.findMany({ where: { companyId: req.posCompanyId }, select: { id: true, name: true, purchasePrice: true } }),
+      prisma.product.findMany({ where: { companyId: req.posCompanyId }, select: { id: true, name: true, unit: true, purchasePrice: true } }),
       prisma.stock.findMany({ where: { locationId } }),
       prisma.document.findMany({
         where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
@@ -2561,6 +2561,7 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
 
   const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
   const nameByProductId = new Map(products.map((p) => [p.id, p.name]));
+  const unitByProductId = new Map(products.map((p) => [p.id, p.unit]));
   const costByProduct = buildAverageCost(
     receiptLines,
     new Map(products.map((p) => [p.id, p.purchasePrice])),
@@ -2692,6 +2693,7 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
       productId,
       name: nameByProductId.get(productId) ?? '—',
       quantity,
+      unit: unitByProductId.get(productId),
     })),
     lastSaleDaysAgo,
     costByProduct,

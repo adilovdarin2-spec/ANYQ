@@ -65,8 +65,7 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
         </div>
 
         <p className="field-hint">
-          Впишите, сколько нашли. Ноль — значит на складе этого нет, и это тоже результат:
-          отгрузить можно и неполный заказ, а недостача останется видна.
+          {t('pick.enterFound')}
         </p>
 
         {lines.map((line) => (

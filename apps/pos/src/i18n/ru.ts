@@ -150,6 +150,7 @@ export const ru = {
   'count.title': 'Пересчёт по ячейкам',
   'count.pickBin': 'Выберите ячейку',
   'count.unplaced': 'Не размещённый товар',
+  'count.unplacedShort': 'не размещено',
   'count.noBins': 'Ячеек нет — заведите их в разделе «Ячейки»',
   'count.whole': 'Пересчитывается вся ячейка целиком: чего в ней не нашли — того в ней нет. Поэтому можно считать по одному стеллажу в день, не закрывая магазин.',
   'count.enterFound': 'впишите, сколько нашли. Пустая строка означает «не нашли», и это тоже результат.',
@@ -257,7 +258,6 @@ export const ru = {
   'owner.deadStockWhy': 'Товар на полке, который не продавался 90 дней и дольше. Отсортирован по деньгам, а не по сроку: убирать надо ту полку, на которой они лежат.',
   'owner.neverSold': 'ни разу не продавался',
   'owner.lastSale': 'последняя продажа {days} дн. назад',
-  'owner.pieces': '{count} шт',
   'owner.allClear': 'Ничего, что требует вашего решения. Хороший день.',
 
   'flag.refundRate': 'Много возвратов',
@@ -594,7 +594,267 @@ export const ru = {
   'incoming.supplierPhone': 'Телефон поставщика',
   'incoming.toStock': 'на склад',
 
+  // --- the whole-location count --------------------------------------------
+  'cycle.title': 'Инвентаризация',
+  'cycle.new': 'Новый пересчёт',
+  'cycle.none': 'Пересчётов пока не было',
+  'cycle.onlyCounted': 'Введите фактическое количество только для товаров, которые пересчитали — остальные останутся без изменений.',
+  'cycle.oneInvalid': 'Одно значение не похоже на число — оно не сохранится.',
+  'cycle.manyInvalid': 'не похожи на числа — они не сохранятся.',
+  'cycle.submit': 'Сохранить пересчёт ({count})',
+
+  // --- orders from the storefront ------------------------------------------
+  'orders.title': 'Заказы с сайта',
+  'orders.none': 'Заказов пока нет',
+  'orders.awaiting': 'Ожидают выдачи ({count})',
+  'orders.picked': 'собрано {count}',
+  'orders.rejecting': 'Отклоняем…',
+  'orders.reject': 'Отклонить',
+  'orders.pick': 'Собрать',
+  'orders.issuing': 'Выдаём…',
+  'orders.issue': 'Выдать',
+  'orders.history': 'История',
+  'orders.issued': 'Выдан',
+  'orders.rejected': 'Отклонён',
+
+  // --- supplier returns, the rest ------------------------------------------
+  'supplierReturn.reasonDamage': 'Привезли битым',
+  'supplierReturn.reasonQuality': 'Не то качество',
+  'supplierReturn.reasonExpiry': 'Истекающий срок',
+  'supplierReturn.reasonWrong': 'Привезли не то',
+  'supplierReturn.reasonOther': 'Другое',
+  'supplierReturn.one': 'Возврат поставщику',
+  'supplierReturn.pickDelivery': '— выберите поставку —',
+  'supplierReturn.noSupplier': 'без поставщика',
+  'supplierReturn.alwaysAgainst': 'Возврат всегда по конкретной поставке — иначе можно вернуть то, чего не привозили.',
+  'supplierReturn.delivered': 'привезли: {count}',
+  'supplierReturn.recordAnswer': 'Поставщик спросит — пусть ответ будет записан.',
+  'supplierReturn.sayWhat': 'Укажите, что возвращаете',
+  'supplierReturn.sayWhy': 'Опишите причину',
+
+  // --- counting a bin, the rest --------------------------------------------
+  'count.queued': 'Пересчёт ячейки «{bin}» сохранён на устройстве и уйдёт на сервер, когда появится связь. Расхождения покажем после отправки.',
+  'count.wasCounted': 'было {system}, насчитали {counted}',
+  'count.offlineSheet': 'Нет связи — показываем данные, сохранённые на устройстве {when}. Считать можно: расхождения сервер посчитает на момент пересчёта, а не на момент отправки.',
+  'count.systemSaysEmpty': 'Система считает эту ячейку пустой',
+  'count.reservedFor': '{count} под заказ',
+  'count.inQuarantine': '{count} в карантине',
+  'count.lineLabel': 'Насчитано: {name}',
+  'count.close': 'Закрыть ячейку',
+
+  // --- installing the app ---------------------------------------------------
+  'install.dialog': 'Установка приложения',
+  'install.title': 'Поставьте ANYQ Касса на экран',
+  'install.close': 'Закрыть',
+  'install.why': 'Откроется как обычное приложение, без Safari сверху, и будет работать офлайн.',
+  'install.iosShare': 'Нажмите «Поделиться» внизу экрана Safari',
+  'install.iosScroll': 'Пролистайте вниз и выберите «На экран «Домой»»',
+  'install.iosConfirm': 'Подтвердите «Добавить»',
+  'install.offlineWhy': 'Работает офлайн и открывается как обычное приложение — без магазина приложений.',
+  'install.button': 'Установить приложение',
+  'install.manual': 'Откройте меню браузера и выберите «Установить приложение» или «Добавить на главный экран».',
+
+  // --- managing products ----------------------------------------------------
+  'products.title': 'Товары',
+  'products.search': 'Поиск по названию или штрихкоду',
+  'products.none': 'Товаров пока нет — добавьте первый кнопкой ниже',
+  'products.nothingFound': 'Ничего не найдено по запросу «{query}»',
+  'products.noCategory': 'Без категории',
+  'products.ingredient': 'Ингредиент',
+  'products.hidden': 'Скрыт',
+  'products.stopListed': 'Стоп-лист',
+  'products.addProduct': '+ Добавить товар',
+
+  // --- weight, discount, loyalty, the grid ---------------------------------
+  'weight.perKgInStock': '{price} за кг · в наличии {stock}',
+  'weight.label': 'Вес, кг',
+  'weight.placeholder': 'Напр. 0.350',
+  'weight.notEnough': 'Недостаточно товара — в наличии {stock}',
+  'weight.aboveZero': 'Введите вес больше нуля',
+  'weight.addToCart': 'Добавить в корзину',
+
+  'loyalty.notFound': 'Не удалось найти клиента',
+  'loyalty.phone': 'Телефон клиента',
+  'loyalty.find': 'Найти',
+  'loyalty.found': '{name} · баллы: {points}',
+  'loyalty.redeem': 'Списать баллов',
+  'loyalty.remove': 'убрать',
+  'loyalty.attach': 'добавить',
+
+  'discount.title': 'Скидка',
+  'discount.percentPlaceholder': 'Напр. 10',
+  'discount.fixedPlaceholder': 'Напр. 500',
+
+  'grid.nothingFound': 'Ничего не найдено',
+  'grid.perKg': '/кг',
+  'unit.kg': 'кг',
+  'grid.stopListed': 'стоп-лист',
+  'grid.outOfStock': 'нет в наличии',
+  'grid.leftWeight': 'ост. {amount}',
+  'grid.removeFromStopList': 'Убрать из стоп-листа',
+  'grid.addToStopList': 'В стоп-лист',
+
+  'photo.loadFailed': 'Не удалось загрузить фото',
+  'photo.attachFailed': 'Не удалось приложить фото',
+  'photo.deleteFailed': 'Не удалось удалить фото',
+  'photo.alt': 'Накладная',
+
+  'history.title': 'История склада',
+  'history.none': 'Движений по складу пока нет',
+
+  'modifier.none': 'Без модификатора',
+  'search.placeholder': 'Название или штрихкод',
+  'search.scannerHint': 'Штрихкод-сканер работает как клавиатура — просто наведите и нажмите',
+  'search.all': 'Все',
+  'ops.noneOnTariff': 'На вашем тарифе нет дополнительных операций',
+  'pick.enterFound': 'Впишите, сколько нашли. Ноль — значит на складе этого нет, и это тоже результат: отгрузить можно и неполный заказ, а недостача останется видна.',
+
+  // --- counted nouns -------------------------------------------------------
+  //
+  // Whole phrases rather than word stems handed to a Russian pluraliser.
+  // Russian needs three forms and Kazakh needs one, so a shared call site that
+  // takes three stems cannot serve both — the phrase has to be the unit of
+  // translation, not the noun inside it.
+  'cycle.invalidOne': '{count} значение не похоже на число — оно не сохранится.',
+  'cycle.invalidFew': '{count} значения не похожи на числа — они не сохранятся.',
+  'cycle.invalidMany': '{count} значений не похожи на числа — они не сохранятся.',
+  'production.batchesOne': '{count} партия',
+  'production.batchesFew': '{count} партии',
+  'production.batchesMany': '{count} партий',
+
+  // --- the restaurant floor ------------------------------------------------
+  'floor.title': 'Столики',
+  'floor.none': 'Столов пока нет',
+  'floor.seats': '{count} мест',
+  'floor.addTable': 'Добавить стол',
+  'floor.tableName': 'Название (Стол 5)',
+  'floor.seatsField': 'Мест',
+
+  'kds.title': 'Кухня',
+  'kds.none': 'Нет активных заказов',
+  'kds.done': 'Готово',
+
+  'table.cooking': 'Готовится',
+  'table.ready': 'Готово',
+  'table.title': 'Заказ (кухня)',
+  'table.addDishes': 'Добавить блюда',
+  'table.toPay': 'К оплате',
+  'table.sending': 'Отправляем…',
+  'table.sendToKitchen': 'Отправить на кухню',
+  'table.pay': 'Оплатить',
+  'table.pickDishes': 'Выберите блюда для заказа',
+
+  // --- what could not be done ----------------------------------------------
+  //
+  // These fire only when the server could not be reached, or answered without a
+  // message of its own — which is exactly the offline case a cashier hits on a
+  // bad connection. Leaving them untranslated would mean the app speaks Kazakh
+  // until something goes wrong.
+  'fail.switchLocation': 'Не удалось переключить точку — нет связи',
+  'fail.loadOrders': 'Не удалось загрузить заказы',
+  'fail.issueOrder': 'Не удалось выдать заказ',
+  'fail.rejectOrder': 'Не удалось отклонить заказ',
+  'fail.loadReport': 'Не удалось загрузить отчёт',
+  'fail.loadBatches': 'Не удалось загрузить партии',
+  'fail.receiveBatch': 'Не удалось принять партию',
+  'fail.loadTransfers': 'Не удалось загрузить перемещения',
+  'fail.receiveTransfer': 'Не удалось принять перемещение',
+  'fail.cancelTransfer': 'Не удалось отменить перемещение',
+  'fail.sendTransfer': 'Не удалось отправить перемещение',
+  'fail.loadReceipts': 'Не удалось загрузить приёмки',
+  'fail.receiveGoods': 'Не удалось оприходовать товар',
+  'fail.loadCounts': 'Не удалось загрузить пересчёты',
+  'fail.loadPackagings': 'Не удалось загрузить упаковки',
+  'fail.addPackaging': 'Не удалось добавить упаковку',
+  'fail.deletePackaging': 'Не удалось удалить упаковку',
+  'fail.checkFile': 'Не удалось проверить файл',
+  'fail.import': 'Не удалось импортировать',
+  'fail.reconcile': 'Не удалось выполнить сверку',
+  'fail.repairStock': 'Не удалось исправить остатки',
+  'fail.loadBin': 'Не удалось загрузить ячейку',
+  'fail.saveCount': 'Не удалось сохранить пересчёт',
+  'fail.loadSettlements': 'Не удалось загрузить расчёты',
+  'fail.postPayment': 'Не удалось провести платёж',
+  'fail.changeCredit': 'Не удалось изменить условия долга',
+  'fail.loadBins': 'Не удалось загрузить ячейки',
+  'fail.createBin': 'Не удалось создать ячейку',
+  'fail.deleteBin': 'Не удалось удалить ячейку',
+  'fail.blockBin': 'Не удалось заблокировать ячейку',
+  'fail.unblockBin': 'Не удалось снять блокировку',
+  'fail.putaway': 'Не удалось разместить товар',
+  'fail.loadWriteOffs': 'Не удалось загрузить списания',
+  'fail.writeOff': 'Не удалось списать товар',
+  'fail.changeQuarantine': 'Не удалось изменить карантин',
+  'fail.createOrder': 'Не удалось создать заказ',
+  'fail.changeOrderStatus': 'Не удалось изменить статус заказа',
+  'fail.loadFiscal': 'Не удалось загрузить фискализацию',
+  'fail.saveReceiptNumber': 'Не удалось сохранить номер чека',
+  'fail.loadDashboard': 'Не удалось загрузить сводку',
+  'fail.loadAudit': 'Не удалось загрузить журнал изменений',
+  'fail.loadDocuments': 'Не удалось загрузить документы',
+  'fail.savePick': 'Не удалось сохранить сборку',
+  'fail.shipOrder': 'Не удалось отгрузить заказ',
+  'fail.loadReturns': 'Не удалось загрузить возвраты',
+  'fail.createReturn': 'Не удалось оформить возврат',
+  'fail.calculateOrder': 'Не удалось рассчитать заказ',
+  'fail.saveStockPolicy': 'Не удалось сохранить запас',
+  'fail.loadProduction': 'Не удалось загрузить производство',
+  'fail.runProduction': 'Не удалось запустить производство',
+  'fail.loadHistory': 'Не удалось загрузить историю склада',
+  'fail.loadProducts': 'Не удалось загрузить товары',
+  'fail.saveProduct': 'Не удалось сохранить товар',
+  'fail.loadTables': 'Не удалось загрузить столики',
+  'fail.addTable': 'Не удалось добавить стол',
+  'fail.sendToKitchen': 'Не удалось отправить заказ на кухню',
+  'fail.pay': 'Не удалось провести оплату',
+  'fail.loadKds': 'Не удалось загрузить кухонный экран',
+  'fail.closeShiftFirst': 'Сначала закройте смену — она открыта на текущей точке',
+
+  // --- the crash screen ----------------------------------------------------
+  'crash.title': 'Что-то пошло не так',
+  'crash.body': 'Произошла непредвиденная ошибка кассы. Уже пробитые продажи сохранены — но текущую корзину придётся собрать заново.',
+  'crash.reload': 'Перезагрузить кассу',
+
+  // --- what a ledger row was for -------------------------------------------
+  'movement.sale': 'Продажа',
+  'movement.orderFulfill': 'Выдача заказа',
+  'movement.transferOut': 'Перемещение (откуда)',
+  'movement.transferIn': 'Перемещение (куда)',
+  'movement.transferCancelled': 'Перемещение отменено',
+  'movement.return': 'Возврат от покупателя',
+  'movement.opening': 'Начальный остаток',
+  'movement.receipt': 'Приёмка товара',
+  'movement.adjustment': 'Инвентаризация',
+  'movement.productionIn': 'Производство (выпуск)',
+  'movement.productionOut': 'Производство (расход)',
+  'movement.tableOrder': 'Заказ на стол',
+  'movement.batchReceipt': 'Приёмка партии',
+  'movement.supplierReturn': 'Возврат поставщику',
+
+  // --- why goods left the books --------------------------------------------
+  'reason.damage': 'Повреждение',
+  'reason.expiry': 'Просрочка',
+  'reason.theft': 'Недостача',
+  'reason.quality': 'Брак',
+  'reason.other': 'Другое',
+
+  // --- the offline queue's own names ----------------------------------------
+  'queue.receipt': 'Приёмка',
+  'queue.writeOff': 'Списание',
+  'queue.putaway': 'Размещение',
+  'queue.binCount': 'Пересчёт',
+
+  // --- the network layer ----------------------------------------------------
+  'net.requestFailed': 'Ошибка запроса',
+  'net.exportFailed': 'Не удалось выгрузить',
+  'net.photoFailed': 'Не удалось загрузить фото',
+  'net.photoProcessFailed': 'Не удалось обработать фото',
+  'net.photoReadFailed': 'Не удалось прочитать фото',
+  'po.fromReplenishment': 'Из списка «Что заказать»',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
-  'language.partial': 'Отдельные редкие экраны пока на русском — они просто показываются по-русски, ничего не ломается.',
+  // The interface itself is fully translated. What is not, and cannot be, is
+  // the shop's own data and the handful of messages the server writes.
+  'language.caveat': 'Названия товаров и редкие сообщения сервера остаются на том языке, на котором записаны.',
 } as const;

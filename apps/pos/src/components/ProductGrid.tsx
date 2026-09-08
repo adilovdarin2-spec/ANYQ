@@ -1,4 +1,5 @@
 import type { Product } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney, formatWeight } from '../utils';
 
 interface Props {
@@ -10,8 +11,9 @@ interface Props {
 }
 
 export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopList, onToggleStopList }: Props) {
+  const { t } = useTranslation();
   if (products.length === 0) {
-    return <div className="empty-state">Ничего не найдено</div>;
+    return <div className="empty-state">{t('grid.nothingFound')}</div>;
   }
 
   return (
@@ -24,12 +26,14 @@ export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopL
             <button className={`product-tile${out ? ' out' : ''}`} disabled={out} onClick={() => onPick(p)}>
               <span className="p-name">{p.name}</span>
               <span className="p-footer">
-                <span className="p-price">{formatMoney(p.price)}{p.saleUnit === 'weight' ? '/кг' : ''}</span>
+                <span className="p-price">{formatMoney(p.price)}{p.saleUnit === 'weight' ? t('grid.perKg') : ''}</span>
                 {p.stopListed ? (
-                  <span className="p-stock low">стоп-лист</span>
+                  <span className="p-stock low">{t('grid.stopListed')}</span>
                 ) : (
                   <span className={`p-stock${remaining <= 5 ? ' low' : ''}`}>
-                    {out ? 'нет в наличии' : p.saleUnit === 'weight' ? `ост. ${formatWeight(remaining)}` : `ост. ${remaining}`}
+                    {out
+                    ? t('grid.outOfStock')
+                    : t('grid.leftWeight', { amount: p.saleUnit === 'weight' ? formatWeight(remaining) : remaining })}
                   </span>
                 )}
               </span>
@@ -42,7 +46,7 @@ export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopL
                   e.stopPropagation();
                   onToggleStopList(p);
                 }}
-                aria-label={p.stopListed ? 'Убрать из стоп-листа' : 'В стоп-лист'}
+                aria-label={p.stopListed ? t('grid.removeFromStopList') : t('grid.addToStopList')}
               >
                 {p.stopListed ? '✓' : '⛔'}
               </button>

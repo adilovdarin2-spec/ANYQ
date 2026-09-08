@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { Product } from '../types';
 import { formatMoney, formatWeight } from '../utils';
 
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function WeightEntryModal({ product, initialKg, onConfirm, onCancel }: Props) {
+  const { t } = useTranslation();
   const [value, setValue] = useState(initialKg ? String(initialKg) : '');
   const kg = Number(value.replace(',', '.'));
   const valid = Number.isFinite(kg) && kg > 0 && kg <= product.stock;
@@ -18,13 +20,13 @@ export function WeightEntryModal({ product, initialKg, onConfirm, onCancel }: Pr
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onCancel} aria-label="Назад">←</button>
+        <button className="icon-btn" onClick={onCancel} aria-label={t('common.back')}>←</button>
         <span className="screen-title">{product.name}</span>
       </div>
       <div className="screen-body">
-        <div className="count-hint">{formatMoney(product.price)} за кг · в наличии {formatWeight(product.stock)}</div>
+        <div className="count-hint">{t('weight.perKgInStock', { price: formatMoney(product.price), stock: formatWeight(product.stock) })}</div>
         <div className="field">
-          <label htmlFor="weight-kg">Вес, кг</label>
+          <label htmlFor="weight-kg">{t('weight.label')}</label>
           <input
             id="weight-kg"
             type="number"
@@ -33,19 +35,19 @@ export function WeightEntryModal({ product, initialKg, onConfirm, onCancel }: Pr
             autoFocus
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Напр. 0.350"
+            placeholder={t('weight.placeholder')}
           />
         </div>
         {value.trim() !== '' && !valid && (
           <div className="login-error">
-            {kg > product.stock ? `Недостаточно товара — в наличии ${formatWeight(product.stock)}` : 'Введите вес больше нуля'}
+            {kg > product.stock ? t('weight.notEnough', { stock: formatWeight(product.stock) }) : t('weight.aboveZero')}
           </div>
         )}
-        {valid && <div className="summary-row total"><span>Итого</span><span>{formatMoney(total)}</span></div>}
+        {valid && <div className="summary-row total"><span>{t('cart.total')}</span><span>{formatMoney(total)}</span></div>}
       </div>
       <div className="screen-footer">
         <button className="btn btn-primary btn-block" disabled={!valid} onClick={() => onConfirm(kg)}>
-          Добавить в корзину
+          {t('weight.addToCart')}
         </button>
       </div>
     </div>

@@ -35,7 +35,7 @@ export function ProductEditScreen({
   const [packBarcode, setPackBarcode] = useState('');
   const [name, setName] = useState(product?.name ?? '');
   const [category, setCategory] = useState(product?.category ?? '');
-  const [unit, setUnit] = useState(product?.unit ?? 'шт');
+  const [unit, setUnit] = useState(product?.unit ?? t('product.unitDefault'));
   const [barcode, setBarcode] = useState(product?.barcode ?? '');
   const [ntinCode, setNtinCode] = useState(product?.ntinCode ?? '');
   const [taxMode, setTaxMode] = useState(product?.taxMode ?? '');
@@ -94,16 +94,16 @@ export function ProductEditScreen({
         <div className="field-row">
           <div className="field">
             <label htmlFor="p-category">{t('product.category')}</label>
-            <input id="p-category" type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Необязательно" />
+            <input id="p-category" type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t('common.optional')} />
           </div>
           <div className="field">
             <label htmlFor="p-unit">{t('product.unit')}</label>
-            <input id="p-unit" type="text" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="шт" />
+            <input id="p-unit" type="text" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder={t('product.unitDefault')} />
           </div>
         </div>
         <div className="form-field">
           <label htmlFor="p-barcode">{t('product.barcode')}</label>
-          <input id="p-barcode" type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Необязательно" />
+          <input id="p-barcode" type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder={t('common.optional')} />
         </div>
 
         <div className="field">
@@ -117,7 +117,7 @@ export function ProductEditScreen({
 
         <div className="field">
           <label htmlFor="p-tax">{t('product.taxMode')}</label>
-          <input id="p-tax" type="text" value={taxMode} onChange={(e) => setTaxMode(e.target.value)} placeholder="Необязательно" />
+          <input id="p-tax" type="text" value={taxMode} onChange={(e) => setTaxMode(e.target.value)} placeholder={t('common.optional')} />
         </div>
         <div className="field-row">
           <div className="field">

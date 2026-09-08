@@ -1,4 +1,5 @@
 import type { Order } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney, formatTime } from '../utils';
 
 interface Props {
@@ -15,24 +16,25 @@ interface Props {
 }
 
 export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefresh, onFulfill, onReject, onPick }: Props) {
+  const { t } = useTranslation();
   const pending = orders.filter((o) => o.status === 'pending');
   const resolved = orders.filter((o) => o.status !== 'pending');
 
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Заказы с сайта</span>
-        <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('orders.title')}</span>
+        <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>
       <div className="screen-body">
         {error && <div className="login-error">{error}</div>}
-        {loading && orders.length === 0 && <div className="empty-state">Загрузка…</div>}
-        {!loading && orders.length === 0 && !error && <div className="empty-state">Заказов пока нет</div>}
+        {loading && orders.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+        {!loading && orders.length === 0 && !error && <div className="empty-state">{t('orders.none')}</div>}
 
         {pending.length > 0 && (
           <>
-            <div className="orders-section-title">Ожидают выдачи ({pending.length})</div>
+            <div className="orders-section-title">{t('orders.awaiting', { count: pending.length })}</div>
             {pending.map((o) => (
               <div key={o.id} className="order-card">
                 <div className="order-card-head">
@@ -52,7 +54,7 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefr
                       <span>
                         {it.name} × {it.quantity}
                         {it.pickedQuantity !== null && it.pickedQuantity < it.quantity
-                          ? ` · собрано ${it.pickedQuantity}`
+                          ? ` · ${t('orders.picked', { count: it.pickedQuantity })}`
                           : ''}
                       </span>
                       <span>{formatMoney(it.price * it.quantity)}</span>
@@ -61,18 +63,18 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefr
                 </div>
                 {o.stage !== 'pending' && (
                   <span className="order-meta">
-                    {o.stageLabel}{o.shortfall > 0 ? ` · не хватает ${o.shortfall}` : ''}
+                    {o.stageLabel}{o.shortfall > 0 ? ` · ${t('pick.missing', { count: o.shortfall })}` : ''}
                   </span>
                 )}
                 <div className="order-actions">
                   <button className="btn btn-secondary" disabled={busyOrder?.id === o.id} onClick={() => onReject(o.id)}>
-                    {busyOrder?.id === o.id && busyOrder.action === 'reject' ? 'Отклоняем…' : 'Отклонить'}
+                    {busyOrder?.id === o.id && busyOrder.action === 'reject' ? t('orders.rejecting') : t('orders.reject')}
                   </button>
                   <button className="btn btn-secondary" disabled={busyOrder?.id === o.id} onClick={() => onPick(o.id)}>
-                    Собрать
+                    {t('orders.pick')}
                   </button>
                   <button className="btn btn-primary" disabled={busyOrder?.id === o.id} onClick={() => onFulfill(o.id)}>
-                    {busyOrder?.id === o.id && busyOrder.action === 'fulfill' ? 'Выдаём…' : 'Выдать'}
+                    {busyOrder?.id === o.id && busyOrder.action === 'fulfill' ? t('orders.issuing') : t('orders.issue')}
                   </button>
                 </div>
               </div>
@@ -82,7 +84,7 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefr
 
         {resolved.length > 0 && (
           <>
-            <div className="orders-section-title">История</div>
+            <div className="orders-section-title">{t('orders.history')}</div>
             {resolved.map((o) => (
               <div key={o.id} className="order-card resolved">
                 <div className="order-card-head">
@@ -92,7 +94,7 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefr
                   </div>
                   <div className="order-total">{formatMoney(o.total)}</div>
                 </div>
-                <span className={`chip-status ${o.status}`}>{o.status === 'confirmed' ? 'Выдан' : 'Отклонён'}</span>
+                <span className={`chip-status ${o.status}`}>{o.status === 'confirmed' ? t('orders.issued') : t('orders.rejected')}</span>
               </div>
             ))}
           </>

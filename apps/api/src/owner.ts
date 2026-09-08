@@ -69,12 +69,16 @@ export interface StockedProduct {
   productId: string;
   name: string;
   quantity: number;
+  /** As the shop records it: kg for cheese, pieces for shirts. */
+  unit?: string;
 }
 
 export interface DeadStockItem {
   productId: string;
   name: string;
   quantity: number;
+  /** The shop's own unit. Absent on rows written before it was recorded. */
+  unit?: string;
   /** Money sitting on the shelf, at cost — what the owner would get back by clearing it. */
   value: number;
   /** Null when it has never sold at all, which is worse news than a large number. */
@@ -98,6 +102,7 @@ export function findDeadStock(
         productId: item.productId,
         name: item.name,
         quantity: item.quantity,
+        unit: item.unit,
         value: Math.round((costByProduct.get(item.productId) ?? 0) * item.quantity),
         daysSinceLastSale: daysAgo ?? null,
       };

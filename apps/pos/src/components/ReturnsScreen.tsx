@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PaymentMethod, ReturnRecord, ReturnableSale } from '../types';
-import { PAYMENT_LABELS } from '../types';
+import { PAYMENT_PHRASES } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
 
 interface Props {
@@ -102,7 +102,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                     {r.createdByName ? ` · ${r.createdByName}` : ''}
                   </div>
                 </div>
-                <span className="pill">{r.paymentMethod ? PAYMENT_LABELS[r.paymentMethod as PaymentMethod] : '—'}</span>
+                <span className="pill">{r.paymentMethod ? t(PAYMENT_PHRASES[r.paymentMethod as PaymentMethod]) : '—'}</span>
               </div>
               <div className="order-items">
                 {r.items.map((it) => (
@@ -192,7 +192,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
               <label htmlFor="return-payment">{t('return.howBack')}</label>
               <select id="return-payment" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}>
                 {PAYMENT_METHODS.map((method) => (
-                  <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>
+                  <option key={method} value={method}>{t(PAYMENT_PHRASES[method])}</option>
                 ))}
               </select>
             </div>
