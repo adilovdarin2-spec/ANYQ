@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
+import type { PhraseKey } from '../i18n';
 import type { Batch, ExpiryStatus, Product } from '../types';
 import { formatDate } from '../utils';
 
-const STATUS_LABELS: Record<ExpiryStatus, string> = {
-  expired: 'Просрочено',
-  expiring_soon: 'Истекает',
-  ok: 'В норме',
+const STATUS_PHRASES: Record<ExpiryStatus, PhraseKey> = {
+  expired: 'batch.expired',
+  expiring_soon: 'batch.expiringSoon',
+  ok: 'batch.ok',
 };
 
 interface Props {
@@ -20,6 +22,7 @@ interface Props {
 }
 
 export function BatchesScreen({ batches, products, loading, error, submitting, onBack, onRefresh, onReceive }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'receive'>('list');
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [batchNumber, setBatchNumber] = useState('');
@@ -45,24 +48,24 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={view === 'receive' ? () => setView('list') : onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Партии</span>
+        <button className="icon-btn" onClick={view === 'receive' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('batch.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('receive')} aria-label="Принять партию" style={{ marginLeft: 'auto' }}>+</button>
+          <button className="icon-btn" onClick={() => setView('receive')} aria-label={t('batch.receive')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
-          <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+          <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
       </div>
 
       {view === 'list' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          {loading && batches.length === 0 && <div className="empty-state">Загрузка…</div>}
-          {!loading && batches.length === 0 && !error && <div className="empty-state">Партий пока нет — примите первую</div>}
+          {loading && batches.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+          {!loading && batches.length === 0 && !error && <div className="empty-state">{t('batch.none')}</div>}
 
           {expired.length > 0 && (
             <>
-              <div className="orders-section-title">Просрочено ({expired.length})</div>
+              <div className="orders-section-title">{t('batch.expiredCount', { count: expired.length })}</div>
               {expired.map((b) => (
                 <BatchRow key={b.id} batch={b} />
               ))}
@@ -70,7 +73,7 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
           )}
           {soon.length > 0 && (
             <>
-              <div className="orders-section-title">Истекает в ближайшие 30 дней ({soon.length})</div>
+              <div className="orders-section-title">{t('batch.soonCount', { count: soon.length })}</div>
               {soon.map((b) => (
                 <BatchRow key={b.id} batch={b} />
               ))}
@@ -78,7 +81,7 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
           )}
           {ok.length > 0 && (
             <>
-              <div className="orders-section-title">В норме ({ok.length})</div>
+              <div className="orders-section-title">{t('batch.okCount', { count: ok.length })}</div>
               {ok.map((b) => (
                 <BatchRow key={b.id} batch={b} />
               ))}
@@ -90,11 +93,11 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
       {view === 'receive' && (
         <div className="screen-body">
           {products.length === 0 ? (
-            <div className="empty-state">Сначала добавьте товары в «Товары»</div>
+            <div className="empty-state">{t('transfer.addProductsFirst')}</div>
           ) : (
             <>
               <div className="form-field">
-                <label htmlFor="batch-product">Товар</label>
+                <label htmlFor="batch-product">{t('ops.batches')}</label>
                 <select id="batch-product" value={productId} onChange={(e) => setProductId(e.target.value)}>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -102,15 +105,15 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
                 </select>
               </div>
               <div className="form-field">
-                <label htmlFor="batch-number">Номер партии / серии</label>
-                <input id="batch-number" type="text" value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="Например, LOT-2026-0034" />
+                <label htmlFor="batch-number">{t('batch.number')}</label>
+                <input id="batch-number" type="text" value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder={t('batch.numberPlaceholder')} />
               </div>
               <div className="form-field">
-                <label htmlFor="batch-expiry">Срок годности</label>
+                <label htmlFor="batch-expiry">{t('batch.expiryDate')}</label>
                 <input id="batch-expiry" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
               </div>
               <div className="form-field">
-                <label htmlFor="batch-qty">Количество</label>
+                <label htmlFor="batch-qty">{t('common.quantity')}</label>
                 <input id="batch-qty" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
               </div>
             </>
@@ -122,7 +125,7 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
       {view === 'receive' && products.length > 0 && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" disabled={!formValid || submitting} onClick={handleSubmit}>
-            {submitting ? 'Принимаем…' : 'Принять партию'}
+            {submitting ? t('batch.receiving') : t('batch.receive')}
           </button>
         </div>
       )}
@@ -131,16 +134,17 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
 }
 
 function BatchRow({ batch }: { batch: Batch }) {
+  const { t } = useTranslation();
   return (
     <div className="order-card">
       <div className="order-card-head">
         <div>
           <div className="order-customer">{batch.productName}</div>
-          <div className="order-meta">Партия {batch.batchNumber} · годен до {formatDate(batch.expiryDate)}</div>
+          <div className="order-meta">{t('batch.line', { number: batch.batchNumber, date: formatDate(batch.expiryDate) })}</div>
         </div>
         <div className="order-total">{batch.quantity} {batch.unit}</div>
       </div>
-      <span className={`chip-status ${batch.status === 'ok' ? 'confirmed' : 'cancelled'}`}>{STATUS_LABELS[batch.status]}</span>
+      <span className={`chip-status ${batch.status === 'ok' ? 'confirmed' : 'cancelled'}`}>{t(STATUS_PHRASES[batch.status])}</span>
     </div>
   );
 }

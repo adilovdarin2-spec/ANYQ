@@ -131,12 +131,12 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label="Назад">←</button>
+        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
         <span className="screen-title">{t('incoming.title')}</span>
         {view === 'list' ? (
           <button className="icon-btn" onClick={() => setView('create')} aria-label={t('incoming.new')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
-          <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+          <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
       </div>
 
@@ -187,14 +187,14 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
       {view === 'create' && (
         <div className="screen-body">
           {products.length === 0 ? (
-            <div className="empty-state">Сначала добавьте товары в «Товары»</div>
+            <div className="empty-state">{t('transfer.addProductsFirst')}</div>
           ) : (
             <>
               {openOrders.length > 0 && (
                 <div className="form-field">
-                  <label htmlFor="receipt-order">По заказу поставщику</label>
+                  <label htmlFor="receipt-order">{t('incoming.againstOrder')}</label>
                   <select id="receipt-order" value={purchaseOrderId} onChange={(e) => pickOrder(e.target.value)}>
-                    <option value={LOOSE}>Без заказа</option>
+                    <option value={LOOSE}>{t('incoming.noOrder')}</option>
                     {openOrders.map((order) => (
                       <option key={order.id} value={order.id}>
                         {order.supplier?.name ?? t('incoming.noSupplier')} · {formatDateTime(order.createdAt)}
@@ -206,25 +206,25 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
 
               <div className="form-field">
                 <label htmlFor="supplier-name">{t('incoming.supplier')}</label>
-                <input id="supplier-name" type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Необязательно" />
+                <input id="supplier-name" type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder={t('common.optional')} />
               </div>
               <div className="form-field">
-                <label htmlFor="supplier-phone">Телефон поставщика</label>
+                <label htmlFor="supplier-phone">{t('incoming.supplierPhone')}</label>
                 <input id="supplier-phone" type="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder="Необязательно" />
               </div>
 
-              <div className="section-title">Товары</div>
-              {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
+              <div className="section-title">{t('transfer.products')}</div>
+              {lines.length === 0 && <div className="empty-state">{t('transfer.addAtLeastOne')}</div>}
               {lines.map((l, i) => (
                 <div key={`${l.productId}-${i}`} className="report-row">
                   <span>
                     {l.name} × {l.quantity}
-                    {l.packagingName ? ` ${l.packagingName.toLowerCase()}` : ''} по {formatMoney(l.price)}
+                    {l.packagingName ? ` ${l.packagingName.toLowerCase()}` : ''} × {formatMoney(l.price)}
                     {/* The resolved figure is shown next to what was typed, so
                         a wrong coefficient is caught here and not on the shelf. */}
-                    {l.packagingId && <span className="order-meta"> → {l.quantity * l.unitsPerPack} на склад</span>}
+                    {l.packagingId && <span className="order-meta"> → {l.quantity * l.unitsPerPack} {t('incoming.toStock')}</span>}
                   </span>
-                  <button className="li-remove" onClick={() => removeLine(i)}>Удалить</button>
+                  <button className="li-remove" onClick={() => removeLine(i)}>{t('common.delete')}</button>
                 </div>
               ))}
 
@@ -237,8 +237,8 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
                 {/* Only offered for goods that actually come in packs, so a
                     shop selling nothing by the case never sees the control. */}
                 {selectedProduct && selectedProduct.packagings.length > 0 && (
-                  <select value={packagingId} onChange={(e) => setPackagingId(e.target.value)} aria-label="Упаковка">
-                    <option value={LOOSE}>Поштучно</option>
+                  <select value={packagingId} onChange={(e) => setPackagingId(e.target.value)} aria-label={t('po.packaging')}>
+                    <option value={LOOSE}>{t('po.loose')}</option>
                     {selectedProduct.packagings.map((pack) => (
                       <option key={pack.id} value={pack.id}>{pack.name} × {pack.unitsPerPack}</option>
                     ))}
@@ -247,18 +247,18 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
                 <input
                   type="number"
                   min="1"
-                  placeholder={selectedPackaging ? 'Упаковок' : 'Кол-во'}
+                  placeholder={selectedPackaging ? t('po.packs') : t('common.quantity')}
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                 />
                 <input
                   type="number"
                   min="0"
-                  placeholder={selectedPackaging ? 'Цена за упаковку' : 'Цена за шт.'}
+                  placeholder={selectedPackaging ? t('po.packPrice') : t('po.unitPrice')}
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                 />
-                <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
+                <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
               </div>
             </>
           )}
