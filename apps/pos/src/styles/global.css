@@ -290,6 +290,12 @@ button { cursor: pointer; }
 .order-total { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .order-items { margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--border); }
 .order-item-row { display: flex; justify-content: space-between; font-size: 0.84rem; padding: 3px 0; color: var(--ink-muted); }
+/* Two or three buttons sitting side by side inside a card — a blocked shelf's
+   confirm/cancel, a stuck warehouse command's retry/discard. Same shape as
+   .order-actions, named apart because these are not about an order. */
+.row-actions { display: flex; gap: 8px; margin-top: 12px; }
+.row-actions .btn { flex: 1; padding: 10px; font-size: 0.86rem; }
+
 .order-actions { display: flex; gap: 8px; margin-top: 12px; }
 .order-actions .btn { flex: 1; padding: 10px; font-size: 0.86rem; }
 .chip-status { display: inline-block; margin-top: 10px; font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }

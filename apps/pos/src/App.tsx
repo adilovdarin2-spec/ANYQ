@@ -11,6 +11,7 @@ import {
   ApiError,
   ORDERS_BASE,
   actOnPurchaseOrder,
+  blockBin,
   cancelTransfer,
   changeQuarantine,
   closeRemoteShift,
@@ -74,6 +75,7 @@ import {
   setCounterpartyCredit,
   setStopListed,
   shipOrder,
+  unblockBin,
   updateKitchenItemStatus,
   updateManagedProduct,
 } from './api';
@@ -1102,6 +1104,40 @@ export default function App() {
       await loadBins();
     } catch (err) {
       setBinsError(err instanceof ApiError ? err.message : 'Не удалось удалить ячейку');
+    }
+  }
+
+  async function handleBlockBin(binId: string, note: string) {
+    if (!session) return false;
+    setBinsSubmitting(true);
+    setBinsError(null);
+    try {
+      await blockBin(session.token, binId, { note, reasonCode: 'quality' });
+      await loadBins();
+      // Blocked goods stop being sellable, so the register's cached grid has to
+      // hear about it.
+      await refreshCatalogAfterStockChange();
+      return true;
+    } catch (err) {
+      setBinsError(err instanceof ApiError ? err.message : 'Не удалось заблокировать ячейку');
+      return false;
+    } finally {
+      setBinsSubmitting(false);
+    }
+  }
+
+  async function handleUnblockBin(binId: string) {
+    if (!session) return;
+    setBinsSubmitting(true);
+    setBinsError(null);
+    try {
+      await unblockBin(session.token, binId);
+      await loadBins();
+      await refreshCatalogAfterStockChange();
+    } catch (err) {
+      setBinsError(err instanceof ApiError ? err.message : 'Не удалось снять блокировку');
+    } finally {
+      setBinsSubmitting(false);
     }
   }
 
@@ -2362,6 +2398,8 @@ export default function App() {
           onCreateBin={handleCreateBin}
           onDeleteBin={handleDeleteBin}
           onPutaway={handlePutaway}
+          onBlockBin={handleBlockBin}
+          onUnblockBin={handleUnblockBin}
         />
       )}
 
