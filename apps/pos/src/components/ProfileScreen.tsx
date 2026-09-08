@@ -16,6 +16,9 @@ interface Props {
   onTogglePush: () => void;
   onShowDashboard?: () => void;
   onShowReports?: () => void;
+  /** Owner-facing: somebody who can read who changed what can also work out
+      whose account to use. */
+  onShowAudit?: () => void;
   onShowInstall: () => void;
   onCloseShift: () => void;
   onLogout: () => void;
@@ -43,6 +46,7 @@ export function ProfileScreen({
   onTogglePush,
   onShowDashboard,
   onShowReports,
+  onShowAudit,
   onShowInstall,
   onCloseShift,
   onLogout,
@@ -101,6 +105,13 @@ export function ProfileScreen({
       {onShowReports && (
         <button type="button" className="profile-action" onClick={onShowReports}>
           <span>📊 Отчёты</span>
+          <span>›</span>
+        </button>
+      )}
+
+      {onShowAudit && (
+        <button type="button" className="profile-action" onClick={onShowAudit}>
+          <span>📝 Журнал изменений</span>
           <span>›</span>
         </button>
       )}

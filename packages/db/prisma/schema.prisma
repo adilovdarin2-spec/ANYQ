@@ -44,6 +44,7 @@ model Company {
   pushSubscriptions PushSubscription[]
   idempotencyKeys   IdempotencyKey[]
   settlements       Settlement[]
+  auditEntries      AuditEntry[]
 
   @@map("companies")
 }
@@ -409,6 +410,34 @@ model SalePayment {
   @@unique([documentId, method])
   @@index([documentId])
   @@map("sale_payments")
+}
+
+/// Who changed what, and to what.
+///
+/// Goods have carried an author and a reason since the ledger existed; prices,
+/// roles and credit limits did not. Those are the changes that move money
+/// without moving anything off a shelf.
+model AuditEntry {
+  id         String  @id @default(cuid())
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId  String
+  /// 'product' | 'user' | 'counterparty'
+  entity     String
+  entityId   String
+  /// Copied in at the time of the change, so the log still reads after a
+  /// rename or a deletion — which is exactly when it is being read.
+  entityName String
+  field      String
+  /// Null on both sides for a secret: only that it moved is recorded.
+  before     String?
+  after      String?
+  actorId    String?
+  actorName  String
+  createdAt  DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_entries")
 }
 
 model RecipeIngredient {

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { prisma, Prisma } from '@anyq/db';
 import { requireAuth } from '../auth';
+import type { AuthedRequest } from '../auth';
+import { recordChanges } from '../audit-log';
 
 export const companiesRouter = Router();
 companiesRouter.use(requireAuth);
@@ -287,7 +289,7 @@ companiesRouter.post('/:id/users', async (req, res) => {
   res.status(201).json(serializeUser(user));
 });
 
-companiesRouter.patch('/:id/users/:userId', async (req, res) => {
+companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
   const b = req.body ?? {};
   const existing = await prisma.user.findFirst({ where: { id: req.params.userId, companyId: req.params.id } });
   if (!existing) {
@@ -319,15 +321,37 @@ companiesRouter.patch('/:id/users/:userId', async (req, res) => {
   // sign them out mid-shift.
   const accessChanged = b.role !== existing.role || (posPin || null) !== existing.posPin;
 
-  const user = await prisma.user.update({
-    where: { id: existing.id },
-    data: {
-      name: b.name,
-      role: b.role,
-      phone: b.phone || null,
-      posPin: posPin || null,
-      ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
-    },
+  // Named as what it is rather than by a name the owner would not recognise.
+  // A role changed from outside the company is a different fact from one their
+  // own manager changed, and that distinction is the point of the entry.
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.adminUserId }, select: { name: true } });
+  const actor = {
+    companyId: req.params.id,
+    // Deliberately null: this person is not in the company's own user list, and
+    // pointing the column at them would make the log look like an inside change.
+    actorId: null,
+    actorName: `Администратор платформы${admin?.name ? ` (${admin.name})` : ''}`,
+  };
+
+  const user = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id: existing.id },
+      data: {
+        name: b.name,
+        role: b.role,
+        phone: b.phone || null,
+        posPin: posPin || null,
+        ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
+      },
+    });
+    await recordChanges(tx, actor, {
+      entity: 'user',
+      entityId: updated.id,
+      entityName: existing.name,
+      before: existing,
+      after: updated,
+    });
+    return updated;
   });
   res.json(serializeUser(user));
 });

@@ -1,4 +1,4 @@
-import type { Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, FiscalDevice, ImportPreview, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, Replenishment, ReturnRecord, ReturnableSale, DiscountType, KdsTicket, KitchenStatus, Order, PaymentMethod, Product, ProductionRecipe, ProductionRun, Receipt, Report, RestaurantTable, StockMovementRecord, TableOrder, Transfer } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
@@ -698,4 +698,12 @@ export function commitImport(
     { method: 'POST', body: JSON.stringify({ locationId, grid }), headers: { 'Idempotency-Key': idempotencyKey } },
     token,
   );
+}
+
+// The other half of the ledger: what was changed, by whom, and to what.
+export function fetchAuditLog(
+  token: string,
+  days: number,
+): Promise<{ days: number; entries: AuditEntry[]; priceRoundTrips: PriceRoundTrip[] }> {
+  return request(`/pos/audit?days=${days}`, { method: 'GET' }, token);
 }
