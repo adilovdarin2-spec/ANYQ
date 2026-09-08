@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
+import type { PhraseKey } from '../i18n';
 import type { CompanyLocation, Product, Transfer } from '../types';
 import { formatDateTime } from '../utils';
 
@@ -23,10 +25,10 @@ interface Props {
   onCancel: (transferId: string) => Promise<boolean>;
 }
 
-const STATUS_LABELS: Record<Transfer['status'], string> = {
-  in_transit: 'В пути',
-  confirmed: 'Принято',
-  cancelled: 'Отменено',
+const STATUS_PHRASES: Record<Transfer['status'], PhraseKey> = {
+  in_transit: 'transfer.inTransit',
+  confirmed: 'transfer.confirmed',
+  cancelled: 'transfer.cancelled',
 };
 
 function hasShortfall(transfer: Transfer): boolean {
@@ -47,6 +49,7 @@ export function TransfersScreen({
   onReceive,
   onCancel,
 }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [toLocationId, setToLocationId] = useState(otherLocations[0]?.id ?? '');
   const [lines, setLines] = useState<TransferLine[]>([]);
@@ -111,42 +114,42 @@ export function TransfersScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Перемещения</span>
+        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('transfer.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('create')} aria-label="Новое перемещение" style={{ marginLeft: 'auto' }}>+</button>
+          <button className="icon-btn" onClick={() => setView('create')} aria-label={t('transfer.new')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
-          <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+          <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
       </div>
 
       {view === 'list' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          {loading && transfers.length === 0 && <div className="empty-state">Загрузка…</div>}
-          {!loading && transfers.length === 0 && !error && <div className="empty-state">Перемещений пока не было</div>}
-          {transfers.map((t) => {
-            const incoming = t.toLocationId === currentLocationId;
-            const outgoing = t.fromLocationId === currentLocationId;
-            const inTransit = t.status === 'in_transit';
-            const counting = receivingId === t.id;
-            const busy = busyId === t.id;
+          {loading && transfers.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+          {!loading && transfers.length === 0 && !error && <div className="empty-state">{t('transfer.none')}</div>}
+          {transfers.map((transfer) => {
+            const incoming = transfer.toLocationId === currentLocationId;
+            const outgoing = transfer.fromLocationId === currentLocationId;
+            const inTransit = transfer.status === 'in_transit';
+            const counting = receivingId === transfer.id;
+            const busy = busyId === transfer.id;
 
             return (
-              <div key={t.id} className="order-card">
+              <div key={transfer.id} className="order-card">
                 <div className="order-card-head">
                   <div>
-                    <div className="order-customer">{t.fromLocationName} → {t.toLocationName}</div>
-                    <div className="order-meta">{formatDateTime(t.createdAt)}</div>
+                    <div className="order-customer">{transfer.fromLocationName} → {transfer.toLocationName}</div>
+                    <div className="order-meta">{formatDateTime(transfer.createdAt)}</div>
                   </div>
-                  <span className={inTransit || hasShortfall(t) ? 'pill warn' : 'pill'}>
-                    {STATUS_LABELS[t.status]}
-                    {hasShortfall(t) ? ' · недостача' : ''}
+                  <span className={inTransit || hasShortfall(transfer) ? 'pill warn' : 'pill'}>
+                    {t(STATUS_PHRASES[transfer.status])}
+                    {hasShortfall(transfer) ? ` · ${t('transfer.shortfall')}` : ''}
                   </span>
                 </div>
 
                 <div className="order-items">
-                  {t.items.map((it) => (
+                  {transfer.items.map((it) => (
                     <div key={it.productId} className="order-item-row">
                       <span>{it.name}</span>
                       {counting ? (
@@ -156,12 +159,12 @@ export function TransfersScreen({
                           max={it.quantity}
                           value={counted[it.productId] ?? ''}
                           onChange={(e) => setCounted((prev) => ({ ...prev, [it.productId]: e.target.value }))}
-                          aria-label={`Принято: ${it.name}`}
+                          aria-label={t('transfer.receivedLabel', { name: it.name })}
                         />
                       ) : (
                         <span>
                           {it.receivedQuantity !== null && it.receivedQuantity !== it.quantity
-                            ? `принято ${it.receivedQuantity} из ${it.quantity}`
+                            ? t('transfer.receivedOf', { received: it.receivedQuantity, sent: it.quantity })
                             : it.quantity}
                         </span>
                       )}
@@ -172,24 +175,24 @@ export function TransfersScreen({
                 {/* Only the far end signs for what turned up — that is the whole
                     point of the goods being in transit rather than delivered. */}
                 {inTransit && incoming && !counting && (
-                  <button className="btn btn-primary btn-block" disabled={busy} onClick={() => startReceiving(t)}>
-                    Принять
+                  <button className="btn btn-primary btn-block" disabled={busy} onClick={() => startReceiving(transfer)}>
+                    {t('transfer.receive')}
                   </button>
                 )}
                 {inTransit && incoming && counting && (
                   <>
-                    <p className="order-meta">Проверьте количество по каждой позиции — расхождение сохранится в документе.</p>
-                    <button className="btn btn-primary btn-block" disabled={busy} onClick={() => confirmReceive(t)}>
-                      {busy ? 'Принимаем…' : 'Подтвердить приёмку'}
+                    <p className="order-meta">{t('transfer.checkEach')}</p>
+                    <button className="btn btn-primary btn-block" disabled={busy} onClick={() => confirmReceive(transfer)}>
+                      {busy ? t('transfer.receiving') : t('transfer.confirmReceipt')}
                     </button>
                     <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => setReceivingId(null)}>
-                      Отмена
+                      {t('common.cancel')}
                     </button>
                   </>
                 )}
                 {inTransit && outgoing && !counting && (
-                  <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => confirmCancel(t)}>
-                    {busy ? 'Возвращаем…' : 'Вернуть на точку отправления'}
+                  <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => confirmCancel(transfer)}>
+                    {busy ? t('transfer.returning') : t('transfer.returnToSource')}
                   </button>
                 )}
               </div>
@@ -201,11 +204,11 @@ export function TransfersScreen({
       {view === 'create' && (
         <div className="screen-body">
           {otherLocations.length === 0 ? (
-            <div className="empty-state">У компании только одна точка — перемещать некуда</div>
+            <div className="empty-state">{t('transfer.oneLocation')}</div>
           ) : (
             <>
               <div className="form-field">
-                <label htmlFor="transfer-dest">Куда</label>
+                <label htmlFor="transfer-dest">{t('transfer.destination')}</label>
                 <select id="transfer-dest" value={toLocationId} onChange={(e) => setToLocationId(e.target.value)}>
                   {otherLocations.map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
@@ -213,16 +216,16 @@ export function TransfersScreen({
                 </select>
               </div>
 
-              <div className="section-title">Товары</div>
+              <div className="section-title">{t('transfer.products')}</div>
               {products.length === 0 ? (
-                <div className="empty-state">Сначала добавьте товары в «Товары»</div>
+                <div className="empty-state">{t('transfer.addProductsFirst')}</div>
               ) : (
                 <>
-                  {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
+                  {lines.length === 0 && <div className="empty-state">{t('transfer.addAtLeastOne')}</div>}
                   {lines.map((l) => (
                     <div key={l.productId} className="report-row">
                       <span>{l.name} × {l.quantity}</span>
-                      <button className="li-remove" onClick={() => removeLine(l.productId)}>Удалить</button>
+                      <button className="li-remove" onClick={() => removeLine(l.productId)}>{t('common.delete')}</button>
                     </div>
                   ))}
 
@@ -232,8 +235,8 @@ export function TransfersScreen({
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
-                    <input type="number" min="1" placeholder="Кол-во" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-                    <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
+                    <input type="number" min="1" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                    <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
                   </div>
                 </>
               )}
@@ -247,7 +250,7 @@ export function TransfersScreen({
       {view === 'create' && otherLocations.length > 0 && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" disabled={lines.length === 0 || !toLocationId || submitting} onClick={handleSubmit}>
-            {submitting ? 'Отправляем…' : 'Отправить перемещение'}
+            {submitting ? t('transfer.sending') : t('transfer.send')}
           </button>
         </div>
       )}

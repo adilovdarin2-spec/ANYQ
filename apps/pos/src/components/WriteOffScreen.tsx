@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { Product, WriteOffRecord, WriteOffReason } from '../types';
 import { WRITE_OFF_LABELS } from '../types';
 import { formatDateTime } from '../utils';
@@ -45,6 +46,7 @@ export function WriteOffScreen({
   onWriteOff,
   onQuarantine,
 }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   // Three things a storeman does with damaged goods, and they are genuinely
   // different: destroy it, set it aside pending a decision, or put a set-aside
@@ -83,20 +85,20 @@ export function WriteOffScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Списание и карантин</span>
+        <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('writeOff.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('create')} aria-label="Новое списание" style={{ marginLeft: 'auto' }}>+</button>
+          <button className="icon-btn" onClick={() => setView('create')} aria-label={t('writeOff.new')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
-          <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+          <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
       </div>
 
       {view === 'list' && (
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
-          {loading && records.length === 0 && <div className="empty-state">Загрузка…</div>}
-          {!loading && records.length === 0 && !error && <div className="empty-state">Списаний пока не было</div>}
+          {loading && records.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
+          {!loading && records.length === 0 && !error && <div className="empty-state">{t('writeOff.none')}</div>}
 
           {records.map((record) => (
             <div key={record.id} className="order-card">
@@ -105,9 +107,9 @@ export function WriteOffScreen({
                   <div className="order-customer">
                     {record.type === 'quarantine'
                       ? record.reasonCode === 'release'
-                        ? 'Возврат из карантина'
-                        : 'Карантин'
-                      : WRITE_OFF_LABELS[record.reasonCode as WriteOffReason] ?? 'Списание'}
+                        ? t('writeOff.fromQuarantine')
+                        : t('writeOff.quarantine')
+                      : WRITE_OFF_LABELS[record.reasonCode as WriteOffReason] ?? t('ops.writeOffs')}
                   </div>
                   <div className="order-meta">
                     {formatDateTime(record.createdAt)}
@@ -115,7 +117,7 @@ export function WriteOffScreen({
                   </div>
                 </div>
                 <span className={record.type === 'write_off' ? 'pill warn' : 'pill'}>
-                  {record.type === 'write_off' ? 'списано' : 'изолировано'}
+                  {record.type === 'write_off' ? t('writeOff.written') : t('writeOff.isolated')}
                 </span>
               </div>
               <div className="order-items">
@@ -141,35 +143,35 @@ export function WriteOffScreen({
                 className={mode === 'write_off' ? 'category-chip on' : 'category-chip'}
                 onClick={() => setMode('write_off')}
               >
-                Списать
+                {t('writeOff.submit')}
               </button>
               <button
                 type="button"
                 className={mode === 'block' ? 'category-chip on' : 'category-chip'}
                 onClick={() => setMode('block')}
               >
-                В карантин
+                {t('writeOff.toQuarantine')}
               </button>
               <button
                 type="button"
                 className={mode === 'release' ? 'category-chip on' : 'category-chip'}
                 onClick={() => setMode('release')}
               >
-                Вернуть в продажу
+                {t('writeOff.backToSale')}
               </button>
             </div>
 
             <p className="field-hint">
               {mode === 'write_off'
-                ? 'Товар уходит с баланса. Причина и описание обязательны — по ним владелец потом видит, на чём теряются деньги.'
+                ? t('writeOff.writeOffWhy')
                 : mode === 'block'
-                  ? 'Товар остаётся на балансе, но не продаётся, пока не решите, что с ним делать.'
-                  : 'Товар из карантина снова становится доступен к продаже.'}
+                  ? t('writeOff.quarantineWhy')
+                  : t('writeOff.releaseWhy')}
             </p>
 
             {mode === 'write_off' && (
               <div className="form-field">
-                <label htmlFor="wo-reason">Причина</label>
+                <label htmlFor="wo-reason">{t('writeOff.reason')}</label>
                 <select id="wo-reason" value={reasonCode} onChange={(e) => setReasonCode(e.target.value as WriteOffReason)}>
                   {REASONS.map((reason) => (
                     <option key={reason} value={reason}>{WRITE_OFF_LABELS[reason]}</option>
@@ -180,24 +182,24 @@ export function WriteOffScreen({
 
             {noteRequired && (
               <div className="form-field">
-                <label htmlFor="wo-note">Что произошло</label>
+                <label htmlFor="wo-note">{t('common.whatHappened')}</label>
                 <input
                   id="wo-note"
                   type="text"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="Например: разбили при разгрузке"
+                  placeholder={t('writeOff.notePlaceholder')}
                 />
               </div>
             )}
 
-            <div className="section-title">Товары</div>
-            {lines.length === 0 && <div className="empty-state">Добавьте хотя бы один товар</div>}
+            <div className="section-title">{t('transfer.products')}</div>
+            {lines.length === 0 && <div className="empty-state">{t('transfer.addAtLeastOne')}</div>}
             {lines.map((l, i) => (
               <div key={`${l.productId}-${i}`} className="report-row">
                 <span>{l.name} × {formatQuantity(l.quantity)}</span>
                 <button className="li-remove" onClick={() => setLines((prev) => prev.filter((_, index) => index !== i))}>
-                  Удалить
+                  {t('common.delete')}
                 </button>
               </div>
             ))}
@@ -208,8 +210,8 @@ export function WriteOffScreen({
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
-              <input type="number" min="0" step="any" placeholder="Кол-во" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-              <button type="button" className="btn btn-secondary" onClick={addLine}>Добавить</button>
+              <input type="number" min="0" step="any" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
             </div>
 
             {error && <div className="login-error">{error}</div>}
@@ -218,12 +220,12 @@ export function WriteOffScreen({
           <div className="screen-footer">
             <button className="btn btn-primary btn-block" disabled={!canSubmit} onClick={submit}>
               {submitting
-                ? 'Сохраняем…'
+                ? t('common.saving')
                 : mode === 'write_off'
-                  ? 'Списать'
+                  ? t('writeOff.submit')
                   : mode === 'block'
-                    ? 'Отправить в карантин'
-                    : 'Вернуть в продажу'}
+                    ? t('writeOff.sendToQuarantine')
+                    : t('writeOff.backToSale')}
             </button>
           </div>
         </>

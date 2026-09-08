@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '../i18n/useLanguage';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from '../api';
 import type { Packaging } from '../types';
 
@@ -28,6 +29,7 @@ export function ProductEditScreen({
   onAddPackaging,
   onDeletePackaging,
 }: Props) {
+  const { t } = useTranslation();
   const [packName, setPackName] = useState('');
   const [packUnits, setPackUnits] = useState('');
   const [packBarcode, setPackBarcode] = useState('');
@@ -81,77 +83,73 @@ export function ProductEditScreen({
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">{product ? 'Изменить товар' : 'Новый товар'}</span>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{product ? t('product.edit') : t('product.new')}</span>
       </div>
       <div className="screen-body">
         <div className="form-field">
-          <label htmlFor="p-name">Название</label>
-          <input id="p-name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Хлеб белый" />
+          <label htmlFor="p-name">{t('product.name')}</label>
+          <input id="p-name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('product.namePlaceholder')} />
         </div>
         <div className="field-row">
           <div className="field">
-            <label htmlFor="p-category">Категория</label>
+            <label htmlFor="p-category">{t('product.category')}</label>
             <input id="p-category" type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Необязательно" />
           </div>
           <div className="field">
-            <label htmlFor="p-unit">Единица</label>
+            <label htmlFor="p-unit">{t('product.unit')}</label>
             <input id="p-unit" type="text" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="шт" />
           </div>
         </div>
         <div className="form-field">
-          <label htmlFor="p-barcode">Штрихкод</label>
+          <label htmlFor="p-barcode">{t('product.barcode')}</label>
           <input id="p-barcode" type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Необязательно" />
         </div>
 
         <div className="field">
-          <label htmlFor="p-ntin">Код НКТ</label>
-          <input id="p-ntin" type="text" inputMode="numeric" value={ntinCode} onChange={(e) => setNtinCode(e.target.value)} placeholder="Для маркированных товаров" />
+          <label htmlFor="p-ntin">{t('product.ntin')}</label>
+          <input id="p-ntin" type="text" inputMode="numeric" value={ntinCode} onChange={(e) => setNtinCode(e.target.value)} placeholder={t('product.ntinPlaceholder')} />
           {/* Not decoration: a fiscal receipt line for goods subject to
               marking must carry this code, and one without it is a violation
               rather than merely an incomplete record. */}
-          <span className="field-hint">Нужен в фискальном чеке для маркированных товаров.</span>
+          <span className="field-hint">{t('product.ntinWhy')}</span>
         </div>
 
         <div className="field">
-          <label htmlFor="p-tax">Режим НДС</label>
+          <label htmlFor="p-tax">{t('product.taxMode')}</label>
           <input id="p-tax" type="text" value={taxMode} onChange={(e) => setTaxMode(e.target.value)} placeholder="Необязательно" />
         </div>
         <div className="field-row">
           <div className="field">
-            <label htmlFor="p-purchase">Закупочная цена</label>
+            <label htmlFor="p-purchase">{t('product.purchasePrice')}</label>
             <input id="p-purchase" type="number" min="0" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
           </div>
           <div className="field">
-            <label htmlFor="p-sale">Цена продажи</label>
+            <label htmlFor="p-sale">{t('product.salePrice')}</label>
             <input id="p-sale" type="number" min="0" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
           </div>
         </div>
         {product?.isIngredient && (
           <p className="field-hint">
-            Это ингредиент рецепта — он списывается со склада автоматически при продаже блюда.
-            Включайте показ в кассе, только если хотите продавать его и отдельно (например, «сыр
-            дополнительно»).
+            {t('product.ingredientWhy')}
           </p>
         )}
         {product && (
           <label className="checkbox-row">
             <input type="checkbox" checked={sellable} onChange={(e) => setSellable(e.target.checked)} />
-            Показывать в кассе (снимите галочку, чтобы скрыть товар)
+            {t('product.showInTill')}
           </label>
         )}
         {/* Packagings hang off a saved product, so a brand-new one is asked to
             be saved first rather than shown a section that can't work yet. */}
         {product && (
           <>
-            <div className="section-title">Упаковки</div>
+            <div className="section-title">{t('product.packagings')}</div>
             <p className="field-hint">
-              Как товар приходит и уезжает: ящик, блок, паллета. На складе он всё равно считается
-              в «{unit.trim() || 'шт'}» — упаковка только умножает. Штрихкод ящика можно
-              отсканировать на приёмке и на кассе.
+          {t('product.packagingsWhy', { unit: unit.trim() || t('product.unitDefault') })}
             </p>
 
-            {packagings.length === 0 && <div className="empty-state">Упаковок нет — товар только поштучно</div>}
+            {packagings.length === 0 && <div className="empty-state">{t('product.noPackagings')}</div>}
             {packagings.map((pack) => (
               <div key={pack.id} className="report-row">
                 <span>
@@ -159,24 +157,24 @@ export function ProductEditScreen({
                   {pack.barcode ? <span className="order-meta"> · {pack.barcode}</span> : null}
                 </span>
                 <button className="li-remove" disabled={packagingBusy} onClick={() => onDeletePackaging(pack.id)}>
-                  Удалить
+                  {t('common.delete')}
                 </button>
               </div>
             ))}
 
             <div className="transfer-add-row">
-              <input type="text" placeholder="Название (Ящик)" value={packName} onChange={(e) => setPackName(e.target.value)} />
+              <input type="text" placeholder={t('product.packName')} value={packName} onChange={(e) => setPackName(e.target.value)} />
               <input
                 type="number"
                 min="0"
                 step="any"
-                placeholder="Единиц в упаковке"
+                placeholder={t('product.unitsPerPack')}
                 value={packUnits}
                 onChange={(e) => setPackUnits(e.target.value)}
               />
-              <input type="text" placeholder="Штрихкод" value={packBarcode} onChange={(e) => setPackBarcode(e.target.value)} />
+              <input type="text" placeholder={t('product.barcode')} value={packBarcode} onChange={(e) => setPackBarcode(e.target.value)} />
               <button type="button" className="btn btn-secondary" disabled={!packValid || packagingBusy} onClick={handleAddPackaging}>
-                Добавить
+                {t('common.add')}
               </button>
             </div>
 
@@ -188,7 +186,7 @@ export function ProductEditScreen({
       </div>
       <div className="screen-footer">
         <button className="btn btn-primary btn-block" disabled={!valid || submitting} onClick={handleSave}>
-          {submitting ? 'Сохраняем…' : 'Сохранить'}
+          {submitting ? t('common.saving') : t('common.save')}
         </button>
       </div>
     </div>
