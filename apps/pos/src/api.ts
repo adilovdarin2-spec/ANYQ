@@ -26,6 +26,10 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   return data as T;
 }
 
+function idempotencyHeader(key?: string): Record<string, string> {
+  return key ? { 'Idempotency-Key': key } : {};
+}
+
 export interface PosSession {
   token: string;
   user: { id: string; name: string; role: string };
@@ -208,8 +212,16 @@ export interface CreateReceiptPayload {
   items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
 }
 
-export function createReceipt(token: string, payload: CreateReceiptPayload): Promise<{ id: string; createdAt: string }> {
-  return request('/pos/receipts', { method: 'POST', body: JSON.stringify(payload) }, token);
+// The key is the queued command's own id, unchanged across every retry. A
+// warehouse device on a bad connection cannot tell a command the server never
+// received from one it applied before the reply was lost; without the key, a
+// retry over a dropped connection receives the same delivery twice.
+export function createReceipt(
+  token: string,
+  payload: CreateReceiptPayload,
+  idempotencyKey?: string,
+): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/receipts', { method: 'POST', body: JSON.stringify(payload), headers: idempotencyHeader(idempotencyKey) }, token);
 }
 
 export function fetchCounts(token: string): Promise<Count[]> {
@@ -485,8 +497,16 @@ export interface CreateWriteOffPayload {
 // Stock leaving the books because it is broken, expired or gone. Carries a
 // countable reason and a written one: the code makes losses addable up, the
 // note explains the instance.
-export function createWriteOff(token: string, payload: CreateWriteOffPayload): Promise<{ id: string; createdAt: string }> {
-  return request('/pos/write-offs', { method: 'POST', body: JSON.stringify(payload) }, token);
+// The key is the queued command's own id, unchanged across every retry. A
+// warehouse device on a bad connection cannot tell a command the server never
+// received from one it applied before the reply was lost; without the key, a
+// retry over a dropped connection writes the same goods off twice.
+export function createWriteOff(
+  token: string,
+  payload: CreateWriteOffPayload,
+  idempotencyKey?: string,
+): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/write-offs', { method: 'POST', body: JSON.stringify(payload), headers: idempotencyHeader(idempotencyKey) }, token);
 }
 
 export interface QuarantinePayload {
@@ -542,8 +562,17 @@ export interface PutawayPayload {
 
 // Moving goods between shelves inside one building. Nothing enters or leaves,
 // so the location's total is unchanged.
-export function putawayStock(token: string, payload: PutawayPayload): Promise<{ productId: string }> {
-  return request('/pos/bins/putaway', { method: 'POST', body: JSON.stringify(payload) }, token);
+// The key is the queued command's own id, unchanged across every retry. A
+// warehouse device on a bad connection cannot tell a command the server never
+// received from one it applied before the reply was lost; without the key, a
+// retry over a dropped connection takes the goods off the source
+// shelf twice and leaves both shelves wrong.
+export function putawayStock(
+  token: string,
+  payload: PutawayPayload,
+  idempotencyKey?: string,
+): Promise<{ productId: string }> {
+  return request('/pos/bins/putaway', { method: 'POST', body: JSON.stringify(payload), headers: idempotencyHeader(idempotencyKey) }, token);
 }
 
 export function fetchSettlements(
@@ -600,13 +629,27 @@ export interface BinCountPayload {
   /** The shelves that were walked. Everything on them that isn't counted is missing. */
   bins: string[];
   items: { productId: string; binLocation: string; countedQuantity: number }[];
+  /**
+   * When the shelves were actually walked. A count taken without a network is a
+   * statement about a particular moment and may not arrive for hours; the
+   * server rewinds its ledger to this time so the count becomes the difference
+   * it asserted rather than an absolute figure that would undo everything
+   * traded in between.
+   */
+  countedAt?: string;
 }
 
+// The key is the queued command's own id, unchanged across every retry. A
+// warehouse device on a bad connection cannot tell a command the server never
+// received from one it applied before the reply was lost; without the key, a
+// retry over a dropped connection applies the same
+// correction twice, doubling the discrepancy it was meant to fix.
 export function submitBinCount(
   token: string,
   payload: BinCountPayload,
+  idempotencyKey?: string,
 ): Promise<{ id: string; bins: string[]; adjustments: BinCountAdjustmentResult[] }> {
-  return request('/pos/counts/by-bin', { method: 'POST', body: JSON.stringify(payload) }, token);
+  return request('/pos/counts/by-bin', { method: 'POST', body: JSON.stringify(payload), headers: idempotencyHeader(idempotencyKey) }, token);
 }
 
 // Checks that stock still equals the sum of its own movements. The invariant

@@ -58,8 +58,8 @@ import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
-import { computeCountAdjustments, computeBinCountAdjustments, binCountKey, hasInvalidCountedQuantity } from '../counts';
-import type { BinCountLine, BinSystemQuantity } from '../counts';
+import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity } from '../counts';
+import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
 import { findPriceMismatches } from '../pricing';
 import type { DiscountType } from '../discounts';
@@ -2499,8 +2499,20 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
 
   const stockByProduct = groupStockByProduct(stockRows);
 
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
   try {
-    const document = await prisma.$transaction(async (tx) => {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/write-offs',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
       const created = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
@@ -2541,11 +2553,15 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
         }
       }
 
-      return created;
-    }, { timeout: 15000 });
+      return { id: created.id, createdAt: created.createdAt.toISOString() };
+    });
 
-    res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+    res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого списания' });
+      return;
+    }
     if (err instanceof ConcurrentStockChangeError) {
       res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
       return;
@@ -2861,8 +2877,20 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
     return;
   }
 
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
   try {
-    await prisma.$transaction(async (tx) => {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/bins/putaway',
+      requestHash: hashRequestBody(b),
+      statusCode: 200,
+    }, async (tx) => {
       await applyStockDelta(tx, source!, -quantity, 'adjustment', { createdBy: req.posUserId });
 
       const destinationRow = await tx.stock.findFirst({ where: { productId: b.productId, locationId, binLocation: toBin } });
@@ -2878,16 +2906,22 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
           binLocation: toBin,
         });
       }
-    }, { timeout: 15000 });
+
+      return { productId: b.productId as string, fromBin, toBin, quantity };
+    });
+
+    res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого размещения' });
+      return;
+    }
     if (err instanceof ConcurrentStockChangeError) {
       res.status(409).json({ error: 'Остаток в ячейке изменился — обновите и повторите' });
       return;
     }
     throw err;
   }
-
-  res.json({ productId: b.productId, fromBin, toBin, quantity });
 });
 
 export interface CounterpartyLedger {
@@ -3293,16 +3327,50 @@ posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, r
   const scope = [...new Set([...walkedBins, ...counted.map((line) => line.binLocation)])];
 
   const stockRows = await prisma.stock.findMany({ where: { locationId, binLocation: { in: scope } } });
-  const system: BinSystemQuantity[] = stockRows.map((row) => ({
+  const current: BinSystemQuantity[] = stockRows.map((row) => ({
     productId: row.productId,
     binLocation: row.binLocation,
     quantity: row.quantity,
   }));
 
+  // When the shelf was actually walked. A count taken without a network may not
+  // arrive for hours, and applying it as an absolute figure on arrival would
+  // undo everything that happened in between — a shelf counted at twelve, three
+  // sold from it, and the count landing later would put the three back.
+  //
+  // So the ledger is rewound to that moment and the count becomes the
+  // difference it asserted, which is then applied to today's figure.
+  const countedAtRaw = typeof b.countedAt === 'string' ? new Date(b.countedAt) : null;
+  const countedAt = countedAtRaw && !Number.isNaN(countedAtRaw.getTime()) && countedAtRaw <= new Date()
+    ? countedAtRaw
+    : null;
+
+  let system = current;
+  if (countedAt) {
+    const since = await prisma.stockMovement.findMany({
+      where: { locationId, binLocation: { in: scope }, createdAt: { gt: countedAt } },
+      select: { productId: true, binLocation: true, quantity: true },
+    });
+    system = balancesAtTime(current, since as MovementSince[]);
+  }
+
   const adjustments = computeBinCountAdjustments(counted, system, scope);
   const rowByKey = new Map(stockRows.map((row) => [binCountKey(row.productId, row.binLocation), row]));
 
-  const document = await prisma.$transaction(async (tx) => {
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/counts/by-bin',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
     const created = await tx.document.create({
       data: {
         companyId: req.posCompanyId!,
@@ -3343,21 +3411,32 @@ posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, r
       }
     }
 
-    return created;
-  }, { timeout: 15000 });
+      return {
+        id: created.id,
+        createdAt: created.createdAt.toISOString(),
+        bins: scope,
+        adjustments: adjustments.map((adjustment) => ({
+          productId: adjustment.productId,
+          binLocation: adjustment.binLocation,
+          systemQuantity: adjustment.systemQuantity,
+          countedQuantity: adjustment.countedQuantity,
+          delta: adjustment.delta,
+        })),
+      };
+    });
 
-  res.status(201).json({
-    id: document.id,
-    createdAt: document.createdAt.toISOString(),
-    bins: scope,
-    adjustments: adjustments.map((adjustment) => ({
-      productId: adjustment.productId,
-      binLocation: adjustment.binLocation,
-      systemQuantity: adjustment.systemQuantity,
-      countedQuantity: adjustment.countedQuantity,
-      delta: adjustment.delta,
-    })),
-  });
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого пересчёта' });
+      return;
+    }
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
 });
 
 // Stock.quantity is a cache over the movement ledger, and the promise that
@@ -4340,7 +4419,20 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
   // transfer's are.
   const orderItemIdByProduct = new Map((purchaseOrder?.items ?? []).map((item) => [item.productId, item.id]));
 
-  const document = await prisma.$transaction(async (tx) => {
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/receipts',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
     const stockRows = await tx.stock.findMany({
       where: { locationId, productId: { in: items.map((it) => it.productId) } },
     });
@@ -4413,10 +4505,21 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     }
     await Promise.all(updates);
 
-    return document;
-  }, { timeout: 15000 });
+      return { id: document.id, createdAt: document.createdAt.toISOString() };
+    });
 
-  res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другой приёмки' });
+      return;
+    }
+    if (err instanceof ConcurrentStockChangeError) {
+      res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
+      return;
+    }
+    throw err;
+  }
 });
 
 posRouter.get('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {

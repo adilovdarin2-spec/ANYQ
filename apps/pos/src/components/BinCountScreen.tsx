@@ -8,6 +8,10 @@ interface Props {
   error: string | null;
   submitting: boolean;
   lastResult: { binLocation: string; name: string; systemQuantity: number; countedQuantity: number; delta: number }[] | null;
+  /** The shelf whose count is written down but has not yet reached the server. */
+  queuedBin: string | null;
+  /** When the sheet on screen was taken from the server, if it came from the device. */
+  sheetCachedAt: string | null;
   onBack: () => void;
   onOpenBin: (bin: string) => void;
   onSubmit: (bin: string, lines: { productId: string; countedQuantity: number }[]) => Promise<boolean>;
@@ -27,6 +31,8 @@ export function BinCountScreen({
   error,
   submitting,
   lastResult,
+  queuedBin,
+  sheetCachedAt,
   onBack,
   onOpenBin,
   onSubmit,
@@ -68,6 +74,17 @@ export function BinCountScreen({
             Пересчитывается вся ячейка целиком: чего в ней не нашли — того в ней нет. Поэтому можно
             считать по одному стеллажу в день, не закрывая магазин.
           </p>
+
+          {queuedBin !== null && (
+            // Deliberately not an empty discrepancy table: "no discrepancies"
+            // and "we do not know yet" are different answers, and showing the
+            // first for the second is how a storeman comes to trust a figure
+            // nobody has checked.
+            <div className="empty-state">
+              Пересчёт ячейки «{queuedBin || 'не размещено'}» сохранён на устройстве и уйдёт на сервер,
+              когда появится связь. Расхождения покажем после отправки.
+            </div>
+          )}
 
           {lastResult && (
             <>
@@ -114,6 +131,14 @@ export function BinCountScreen({
               {sheet.bin || 'Не размещённый товар'} — впишите, сколько нашли. Пустая строка означает
               «не нашли», и это тоже результат.
             </div>
+
+            {sheetCachedAt && (
+              <div className="field-hint">
+                Нет связи — показываем данные, сохранённые на устройстве{' '}
+                {new Date(sheetCachedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}.
+                Считать можно: расхождения сервер посчитает на момент пересчёта, а не на момент отправки.
+              </div>
+            )}
 
             {loading && <div className="empty-state">Загрузка…</div>}
             {!loading && sheet.lines.length === 0 && <div className="empty-state">Система считает эту ячейку пустой</div>}
