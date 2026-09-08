@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Company, CompanyLocation, LocationType, ModuleKey, SupportLevel, Tariff } from '../types';
-import { MODULE_LABELS, SUPPORT_LABELS, ROLE_LABELS } from '../types';
+import { LEGACY_MODULES, OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, SUPPORT_LABELS, ROLE_LABELS } from '../types';
 import { StatusChip } from './StatusChip';
 import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS } from '../utils';
 import type { DurationPreset } from '../utils';
@@ -24,9 +24,15 @@ interface Props {
   onUpdateLocation: (companyId: string, locationId: string, payload: LocationPayload) => Promise<CompanyLocation>;
 }
 
-const ALL_MODULES: ModuleKey[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'terminal', 'restaurant', 'retail'];
+// A legacy module appears here only for a company that already has it — so it
+// can be switched off, and so nobody adds it to a company that does not.
+function offeredModules(current: ModuleKey[]): ModuleKey[] {
+  return [...OFFERABLE_MODULES, ...LEGACY_MODULES.filter((m) => current.includes(m))];
+}
 const ALL_DURATIONS: DurationPreset[] = ['1m', '3m', '6m', '1y'];
-const LOCATION_TYPES: LocationType[] = ['shop', 'warehouse', 'pharmacy', 'supply', 'restaurant'];
+// Same again for locations: an existing restaurant location keeps its label,
+// and a new one cannot be created.
+const LOCATION_TYPES = OFFERABLE_LOCATION_TYPES;
 const emptyLocationForm: LocationPayload = { name: '', type: 'shop', address: '' };
 
 function parseLimit(v: string): number | null {
@@ -317,7 +323,7 @@ export function CompanyDetailDrawer({
           <div className="field">
             <label>Модули</label>
             <div className="module-toggles">
-              {ALL_MODULES.map((m) => (
+              {offeredModules(tariff.modules).map((m) => (
                 <button type="button" key={m} className={tariff.modules.includes(m) ? 'module-toggle on' : 'module-toggle'} onClick={() => toggleModule(m)}>
                   {MODULE_LABELS[m]}
                 </button>
