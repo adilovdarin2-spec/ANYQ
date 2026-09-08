@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, FiscalDevice, ImportPreview, ReconciliationReport, OwnerDashboard, Packaging, PendingFiscalReceipt, PurchaseOrder, SettlementAccount, StorageBin, Supplier, WriteOffRecord, WriteOffReason, ReplenishmentItem, ReturnRecord, ReturnableSale, Discount, KdsTicket, LoyaltySelection, Order, PaymentMethod, Product, ProductModifierOption, ProductionRecipe, ProductionRun, ProductVariantOption, Receipt, Report, RestaurantTable, Sale, Shift, StockMovementRecord, TableOrder, Transfer } from './types';
-import { getShift, saveShift, addSale, salesForShift, addClosedShift, getSession, saveSession, getCurrentLocationId, saveCurrentLocationId } from './storage';
+import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
+import { useOutboxSync } from './hooks/useOutboxSync';
+import { getOutbox, outcomeOf, queueCommand } from './outbox';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
 import {
@@ -32,13 +34,10 @@ import {
   fetchReconciliation,
   repairReconciliation,
   fetchCountSheet,
-  submitBinCount,
   fetchBins,
   createBin,
   deleteBin,
-  putawayStock,
   fetchWriteOffs,
-  createWriteOff,
   changeQuarantine,
   fetchSuppliers,
   fetchPurchaseOrders,
@@ -49,7 +48,6 @@ import {
   receiveTransfer,
   cancelTransfer,
   fetchReceipts,
-  createReceipt,
   fetchCounts,
   createCount,
   fetchCustomerPoints,
@@ -112,6 +110,7 @@ import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
 import { BinsScreen } from './components/BinsScreen';
 import { BinCountScreen } from './components/BinCountScreen';
+import { OutboxBanner } from './components/OutboxBanner';
 import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { ImportScreen } from './components/ImportScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
@@ -232,6 +231,11 @@ export default function App() {
   const [binCountResult, setBinCountResult] = useState<
     { binLocation: string; name: string; systemQuantity: number; countedQuantity: number; delta: number }[] | null
   >(null);
+  // The shelf whose count is written down but not yet accepted by the server.
+  // Distinct from a result of zero discrepancies, which means the shelf agreed.
+  const [binCountQueued, setBinCountQueued] = useState<string | null>(null);
+  // Set when the sheet on screen came from the device rather than the server.
+  const [countSheetCachedAt, setCountSheetCachedAt] = useState<string | null>(null);
   const [bins, setBins] = useState<StorageBin[]>([]);
   const [unplaced, setUnplaced] = useState<BinContent[]>([]);
   const [binsLoading, setBinsLoading] = useState(false);
@@ -304,6 +308,12 @@ export default function App() {
   const ensureShiftRef = useRef<() => Promise<void>>(async () => {});
   ensureShiftRef.current = () => ensureShiftSynced();
   const ensureShiftSyncedStable = useCallback(() => ensureShiftRef.current(), []);
+
+  // The warehouse's own queue. Separate from the till's because the two obey
+  // opposite rules on refusal: a rejected sale is skipped so it cannot strand
+  // the day's takings, a rejected warehouse command stops the queue because
+  // everything behind it was given against the world it was meant to make.
+  const outbox = useOutboxSync(session?.token ?? null);
 
   const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(
     session?.token ?? null,
@@ -674,7 +684,21 @@ export default function App() {
     setReceiptSubmitting(true);
     setReceiptsError(null);
     try {
-      await createReceipt(session.token, { ...payload, locationId: currentLocationId });
+      // Written down first, sent second. A dock with a thick wall between it
+      // and the router is offline several times an hour without anyone
+      // deciding it was, so there is no "are we online" branch here — the
+      // command is recorded either way and leaves when it can.
+      const command = queueCommand('receipt', { ...payload, locationId: currentLocationId });
+      await outbox.drain();
+      const outcome = outcomeOf(getOutbox(), command.id);
+      // A refusal has to be said here, on the screen holding the form that can
+      // fix it. Only what is genuinely still waiting is left to the queue.
+      if (outcome.status === 'refused') {
+        setReceiptsError(outcome.error);
+        return false;
+      }
+      if (outcome.status === 'queued') return true;
+
       await loadReceipts();
       // A delivery against an order changes that order's status, so the list
       // the receipt screen offers has to stop offering what is now complete.
@@ -860,9 +884,24 @@ export default function App() {
     setCountSheetLoading(true);
     setBinCountError(null);
     try {
-      setCountSheet(await fetchCountSheet(session.token, currentLocationId, bin));
+      const sheet = await fetchCountSheet(session.token, currentLocationId, bin);
+      saveCachedCountSheet(currentLocationId, sheet);
+      setCountSheet(sheet);
+      setCountSheetCachedAt(null);
     } catch (err) {
-      setBinCountError(err instanceof ApiError ? err.message : 'Не удалось загрузить ячейку');
+      // A stock room is exactly where the signal isn't, so falling back to the
+      // sheet this device last saw is the difference between counting the
+      // shelf and standing in front of it unable to. The figures may be old;
+      // the count is still a statement about the shelf, and the server works
+      // out the discrepancy against its own ledger as it stood when the shelf
+      // was walked.
+      const cached = getCachedCountSheet(currentLocationId, bin);
+      if (cached) {
+        setCountSheet({ bin: cached.bin, lines: cached.lines });
+        setCountSheetCachedAt(cached.cachedAt);
+      } else {
+        setBinCountError(err instanceof ApiError ? err.message : 'Не удалось загрузить ячейку');
+      }
     } finally {
       setCountSheetLoading(false);
     }
@@ -873,11 +912,36 @@ export default function App() {
     setBinCountSubmitting(true);
     setBinCountError(null);
     try {
-      const result = await submitBinCount(session.token, {
+      const command = queueCommand('binCount', {
         locationId: currentLocationId,
         bins: [bin],
         items: lines.map((line) => ({ ...line, binLocation: bin })),
+        // Stamped now, when the shelf was actually walked — not when this
+        // reaches the server, which may be hours later. The server rewinds its
+        // ledger to this moment so the count applies the difference it
+        // asserted instead of an absolute figure that would undo the
+        // afternoon's trade.
+        countedAt: new Date().toISOString(),
       });
+      const results = await outbox.drain();
+      const result = results.get(command.id) as { adjustments: BinCountAdjustmentResult[] } | undefined;
+      setCountSheet(null);
+
+      if (!result) {
+        const outcome = outcomeOf(getOutbox(), command.id);
+        if (outcome.status === 'refused') {
+          setBinCountError(outcome.error);
+          return false;
+        }
+        // It is queued, not applied. Showing an empty discrepancy table here
+        // would read as "the shelf agreed", which is the one thing we do not
+        // yet know.
+        setBinCountResult(null);
+        setBinCountQueued(bin);
+        return true;
+      }
+
+      setBinCountQueued(null);
       const nameByProductId = new Map(session.products.map((p) => [p.id, p.name]));
       setBinCountResult(
         result.adjustments.map((adjustment: BinCountAdjustmentResult) => ({
@@ -888,7 +952,6 @@ export default function App() {
           delta: adjustment.delta,
         })),
       );
-      setCountSheet(null);
       // A count changes what the register may sell, so its cached grid has to
       // hear about it.
       await refreshCatalogAfterStockChange();
@@ -1015,7 +1078,15 @@ export default function App() {
     setBinsSubmitting(true);
     setBinsError(null);
     try {
-      await putawayStock(session.token, { ...payload, locationId: currentLocationId });
+      const command = queueCommand('putaway', { ...payload, locationId: currentLocationId });
+      await outbox.drain();
+      const outcome = outcomeOf(getOutbox(), command.id);
+      if (outcome.status === 'refused') {
+        setBinsError(outcome.error);
+        return false;
+      }
+      if (outcome.status === 'queued') return true;
+
       await loadBins();
       return true;
     } catch (err) {
@@ -1068,7 +1139,15 @@ export default function App() {
     setWriteOffSubmitting(true);
     setWriteOffError(null);
     try {
-      await createWriteOff(session.token, { ...payload, locationId: currentLocationId });
+      const command = queueCommand('writeOff', { ...payload, locationId: currentLocationId });
+      await outbox.drain();
+      const outcome = outcomeOf(getOutbox(), command.id);
+      if (outcome.status === 'refused') {
+        setWriteOffError(outcome.error);
+        return false;
+      }
+      if (outcome.status === 'queued') return true;
+
       await loadWriteOffs();
       await refreshCatalogAfterStockChange();
       return true;
@@ -2105,10 +2184,15 @@ export default function App() {
           error={binCountError}
           submitting={binCountSubmitting}
           lastResult={binCountResult}
+          queuedBin={binCountQueued}
+          sheetCachedAt={countSheetCachedAt}
           onBack={() => setView('operations')}
           onOpenBin={handleOpenCountBin}
           onSubmit={handleSubmitBinCount}
-          onClearResult={() => setBinCountResult(null)}
+          onClearResult={() => {
+            setBinCountResult(null);
+            setBinCountQueued(null);
+          }}
         />
       )}
 
@@ -2303,7 +2387,17 @@ export default function App() {
         />
       )}
 
-      {view === 'operations' && <OperationsScreen items={operationsItems} />}
+      {view === 'operations' && (
+        <>
+          <OutboxBanner
+            pending={outbox.pending}
+            blockedCommand={outbox.blockedCommand}
+            onRetry={outbox.retry}
+            onDiscard={outbox.discard}
+          />
+          <OperationsScreen items={operationsItems} />
+        </>
+      )}
 
       {view === 'profile' && (
         <ProfileScreen

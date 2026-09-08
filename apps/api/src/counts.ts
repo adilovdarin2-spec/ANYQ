@@ -123,3 +123,59 @@ export function computeBinCountAdjustments(
 
   return adjustments.filter((adjustment) => adjustment.delta !== 0);
 }
+
+export interface MovementSince {
+  productId: string;
+  binLocation: string;
+  /** Signed, as in the ledger. */
+  quantity: number;
+}
+
+/**
+ * What the system believed a shelf held at the moment it was counted.
+ *
+ * A count taken without a network is a statement about a shelf at a particular
+ * time, and it may not reach the server for hours. Applying it as an absolute
+ * figure on arrival undoes everything that happened in between: a shelf counted
+ * at 12 in the afternoon, three units sold from it at three, and the count
+ * syncing at five would put the shelf back to 12 and resurrect the three.
+ *
+ * So the count is turned into the difference it actually asserted — "the system
+ * said fifteen, I found twelve, so minus three" — by rewinding the ledger to
+ * the moment of counting. That difference is then applied to today's figure,
+ * which lands on nine: twelve found, three sold.
+ *
+ * It also gets the awkward case right for free. Goods that arrived on the shelf
+ * *after* the count held zero at the time of it, so a count that did not
+ * mention them asserts nothing about them, and a delivery is not erased by a
+ * count taken before it.
+ */
+export function balancesAtTime(
+  current: BinSystemQuantity[],
+  movementsSince: MovementSince[],
+): BinSystemQuantity[] {
+  const rewound = new Map<string, BinSystemQuantity>();
+  for (const row of current) {
+    rewound.set(binCountKey(row.productId, row.binLocation), { ...row });
+  }
+
+  for (const movement of movementsSince) {
+    const key = binCountKey(movement.productId, movement.binLocation);
+    const existing = rewound.get(key);
+    if (existing) {
+      existing.quantity -= movement.quantity;
+      continue;
+    }
+    // Everything that has happened to this shelf happened after the count, so
+    // at the time of counting it held the opposite of all of it.
+    rewound.set(key, {
+      productId: movement.productId,
+      binLocation: movement.binLocation,
+      quantity: -movement.quantity,
+    });
+  }
+
+  // A shelf that rewinds to nothing was empty when it was counted, and an empty
+  // shelf is not something a count can find a shortfall on.
+  return [...rewound.values()].filter((row) => row.quantity !== 0);
+}

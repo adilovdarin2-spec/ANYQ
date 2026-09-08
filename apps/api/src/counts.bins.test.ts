@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeBinCountAdjustments } from './counts';
+import { computeBinCountAdjustments, balancesAtTime } from './counts';
 import type { BinSystemQuantity } from './counts';
 
 const system: BinSystemQuantity[] = [
@@ -127,5 +127,75 @@ describe('computeBinCountAdjustments', () => {
   it('ignores a shelf the system records as holding zero', () => {
     const empty: BinSystemQuantity[] = [{ productId: 'water', binLocation: 'A-01', quantity: 0 }];
     expect(computeBinCountAdjustments([], empty, ['A-01'])).toEqual([]);
+  });
+});
+
+describe('balancesAtTime', () => {
+  const nowRows: BinSystemQuantity[] = [{ productId: 'water', binLocation: 'A-01', quantity: 12 }];
+
+  it('rewinds a shelf to what the system believed when it was counted', () => {
+    // 12 on the shelf now, 3 sold since the count: the system believed 15 then.
+    const rewound = balancesAtTime(nowRows, [{ productId: 'water', binLocation: 'A-01', quantity: -3 }]);
+    expect(rewound).toEqual([{ productId: 'water', binLocation: 'A-01', quantity: 15 }]);
+  });
+
+  it('turns a stale count into the difference it actually asserted', () => {
+    // Counted 12 while the system said 15, so the count asserts minus three.
+    // Applied to today's 12 that lands on 9 — twelve found, three sold — rather
+    // than putting the shelf back to 12 and resurrecting the three.
+    const rewound = balancesAtTime(nowRows, [{ productId: 'water', binLocation: 'A-01', quantity: -3 }]);
+    const adjustments = computeBinCountAdjustments(
+      [{ productId: 'water', binLocation: 'A-01', countedQuantity: 12 }],
+      rewound,
+      ['A-01'],
+    );
+    expect(adjustments).toEqual([
+      { productId: 'water', binLocation: 'A-01', systemQuantity: 15, countedQuantity: 12, delta: -3 },
+    ]);
+  });
+
+  it('leaves goods delivered after the count alone', () => {
+    // They held nothing when the shelf was walked, so a count that did not
+    // mention them asserts nothing about them — and a delivery is not erased by
+    // a count taken before it.
+    const afterDelivery: BinSystemQuantity[] = [
+      { productId: 'water', binLocation: 'A-01', quantity: 12 },
+      { productId: 'bread', binLocation: 'A-01', quantity: 20 },
+    ];
+    const rewound = balancesAtTime(afterDelivery, [{ productId: 'bread', binLocation: 'A-01', quantity: 20 }]);
+    expect(rewound).toEqual([{ productId: 'water', binLocation: 'A-01', quantity: 12 }]);
+
+    const adjustments = computeBinCountAdjustments(
+      [{ productId: 'water', binLocation: 'A-01', countedQuantity: 12 }],
+      rewound,
+      ['A-01'],
+    );
+    expect(adjustments).toEqual([]);
+  });
+
+  it('reconstructs a shelf that has since been emptied entirely', () => {
+    const rewound = balancesAtTime([], [{ productId: 'water', binLocation: 'A-01', quantity: -8 }]);
+    expect(rewound).toEqual([{ productId: 'water', binLocation: 'A-01', quantity: 8 }]);
+  });
+
+  it('changes nothing when the count reaches the server straight away', () => {
+    expect(balancesAtTime(nowRows, [])).toEqual(nowRows);
+  });
+
+  it('keeps the same product on two shelves apart while rewinding', () => {
+    const twoShelves: BinSystemQuantity[] = [
+      { productId: 'water', binLocation: 'A-01', quantity: 12 },
+      { productId: 'water', binLocation: 'B-02', quantity: 6 },
+    ];
+    const rewound = balancesAtTime(twoShelves, [{ productId: 'water', binLocation: 'B-02', quantity: -4 }]);
+    expect(rewound).toEqual([
+      { productId: 'water', binLocation: 'A-01', quantity: 12 },
+      { productId: 'water', binLocation: 'B-02', quantity: 10 },
+    ]);
+  });
+
+  it('drops a shelf that rewinds to nothing, since an empty shelf has no shortfall', () => {
+    // Everything on it arrived after the count.
+    expect(balancesAtTime(nowRows, [{ productId: 'water', binLocation: 'A-01', quantity: 12 }])).toEqual([]);
   });
 });
