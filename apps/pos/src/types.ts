@@ -125,10 +125,17 @@ export interface OrderItem {
   productId: string;
   name: string;
   quantity: number;
+  /// What was found on the shelves. Null means nobody has looked at this line
+  /// yet, which is a different claim from having looked and found none.
+  pickedQuantity: number | null;
   price: number;
 }
 
 export type OrderStatus = 'pending' | 'confirmed' | 'cancelled';
+
+/// Where an order stands. Derived on the server from the quantities rather than
+/// stored beside them, because a stored stage and stored figures can disagree.
+export type OrderStage = 'pending' | 'picking' | 'picked' | 'shipped' | 'cancelled';
 
 export interface Order {
   id: string;
@@ -140,6 +147,10 @@ export interface Order {
   deliveryAddress: string;
   items: OrderItem[];
   total: number;
+  stage: OrderStage;
+  stageLabel: string;
+  /// How much the customer is short, once the pick has started.
+  shortfall: number;
 }
 
 export interface ReportSummary {

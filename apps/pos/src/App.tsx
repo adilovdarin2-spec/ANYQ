@@ -61,6 +61,7 @@ import {
   fetchWriteOffs,
   fulfillOrder,
   payTable,
+  pickOrder,
   previewImport,
   receiveBatch,
   receiveTransfer,
@@ -72,6 +73,7 @@ import {
   sendToKitchen,
   setCounterpartyCredit,
   setStopListed,
+  shipOrder,
   updateKitchenItemStatus,
   updateManagedProduct,
 } from './api';
@@ -112,6 +114,7 @@ import { OwnerDashboardScreen } from './components/OwnerDashboardScreen';
 import { AuditScreen } from './components/AuditScreen';
 import { ExportScreen } from './components/ExportScreen';
 import { SupplierReturnsScreen } from './components/SupplierReturnsScreen';
+import { PickOrderScreen } from './components/PickOrderScreen';
 import { FiscalScreen } from './components/FiscalScreen';
 import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen';
 import { WriteOffScreen } from './components/WriteOffScreen';
@@ -149,6 +152,7 @@ type View =
   | 'audit'
   | 'export'
   | 'supplier-returns'
+  | 'pick-order'
   | 'fiscal'
   | 'purchase-orders'
   | 'write-offs'
@@ -275,6 +279,9 @@ export default function App() {
   const [supplierReturnsLoading, setSupplierReturnsLoading] = useState(false);
   const [supplierReturnsError, setSupplierReturnsError] = useState<string | null>(null);
   const [supplierReturnSubmitting, setSupplierReturnSubmitting] = useState(false);
+  const [pickingOrderId, setPickingOrderId] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [pickSubmitting, setPickSubmitting] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -358,6 +365,11 @@ export default function App() {
 
   const pendingOrdersCount = orders.filter((o) => o.status === 'pending').length;
   const expiringBatchesCount = batches.filter((b) => b.status !== 'ok').length;
+
+  // Resolved from the list rather than held as its own copy: the list is
+  // reloaded after every pick, and a second copy would go stale the moment it
+  // was.
+  const pickingOrder = orders.find((o) => o.id === pickingOrderId) ?? null;
 
   const operationsItems: OperationItem[] = [];
   if (hasSupply) {
@@ -1338,6 +1350,48 @@ export default function App() {
     }
   }
 
+  function handleShowPickOrder(orderId: string) {
+    setPickingOrderId(orderId);
+    setPickError(null);
+    setView('pick-order');
+  }
+
+  async function handleSavePick(items: { productId: string; quantity: number }[]) {
+    if (!session || !pickingOrderId) return false;
+    setPickSubmitting(true);
+    setPickError(null);
+    try {
+      await pickOrder(session.token, pickingOrderId, items);
+      await loadOrders();
+      return true;
+    } catch (err) {
+      setPickError(err instanceof ApiError ? err.message : 'Не удалось сохранить сборку');
+      return false;
+    } finally {
+      setPickSubmitting(false);
+    }
+  }
+
+  async function handleShipOrder() {
+    if (!session || !pickingOrderId) return false;
+    setPickSubmitting(true);
+    setPickError(null);
+    try {
+      await shipOrder(session.token, pickingOrderId);
+      await loadOrders();
+      // Goods left the shelf, so the register's cached grid has to hear about it.
+      await refreshCatalogAfterStockChange();
+      setView('orders');
+      setPickingOrderId(null);
+      return true;
+    } catch (err) {
+      setPickError(err instanceof ApiError ? err.message : 'Не удалось отгрузить заказ');
+      return false;
+    } finally {
+      setPickSubmitting(false);
+    }
+  }
+
   async function loadSupplierReturns() {
     if (!session || !currentLocationId) return;
     setSupplierReturnsLoading(true);
@@ -2161,6 +2215,7 @@ export default function App() {
           onRefresh={loadOrders}
           onFulfill={handleFulfillOrder}
           onReject={handleRejectOrder}
+          onPick={handleShowPickOrder}
         />
       )}
 
@@ -2351,6 +2406,18 @@ export default function App() {
           onBack={() => setView('operations')}
           onRefresh={loadFiscal}
           onRegister={handleRegisterFiscal}
+        />
+      )}
+
+      {view === 'pick-order' && pickingOrder && (
+        <PickOrderScreen
+          key={pickingOrder.id}
+          order={pickingOrder}
+          submitting={pickSubmitting}
+          error={pickError}
+          onBack={() => setView('orders')}
+          onSavePick={handleSavePick}
+          onShip={handleShipOrder}
         />
       )}
 

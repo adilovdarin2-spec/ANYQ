@@ -1,0 +1,11 @@
+-- What was actually found on the shelves, against the quantity that was
+-- ordered. Null until somebody has walked the racks for this line.
+--
+-- Kept apart from "quantity" for the same reason receivedQuantity is kept apart
+-- on a transfer: overwriting the order with what was found erases the shortfall
+-- at the moment it is discovered, which is the only moment anybody can do
+-- something about it.
+--
+-- Zero is a finding, not an absence: it is how a picker says "this is not
+-- there", which is a different claim from never having looked.
+ALTER TABLE "document_items" ADD COLUMN "pickedQuantity" DOUBLE PRECISION;

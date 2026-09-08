@@ -64,6 +64,7 @@ import { recordChanges, resolveActor } from '../audit-log';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
+import { resolvePick, resolveShipment, pickErrorMessage, orderStage, orderStageLabel } from '../picking';
 import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
@@ -4444,23 +4445,215 @@ posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
   });
 
   res.json(
-    orders.map((o) => ({
-      id: o.id,
-      status: o.status,
-      createdAt: o.createdAt.toISOString(),
-      fulfilledAt: o.fulfilledAt ? o.fulfilledAt.toISOString() : null,
-      customerName: o.counterparty?.name ?? 'Клиент',
-      customerPhone: o.counterparty?.phone ?? '',
-      deliveryAddress: o.deliveryAddress ?? '',
-      items: o.items.map((it) => ({
-        productId: it.productId,
-        name: it.product.name,
-        quantity: it.quantity,
-        price: it.price,
-      })),
-      total: o.items.reduce((sum, it) => sum + it.price * it.quantity, 0),
-    })),
+    orders.map((o) => {
+      // Derived from the quantities rather than stored beside them: a stored
+      // stage and stored figures can disagree, and when they do nobody knows
+      // which to believe. The quantities are the facts.
+      const stage = orderStage(o.status, o.items);
+      return {
+        id: o.id,
+        status: o.status,
+        stage,
+        stageLabel: orderStageLabel(stage),
+        createdAt: o.createdAt.toISOString(),
+        fulfilledAt: o.fulfilledAt ? o.fulfilledAt.toISOString() : null,
+        customerName: o.counterparty?.name ?? 'Клиент',
+        customerPhone: o.counterparty?.phone ?? '',
+        deliveryAddress: o.deliveryAddress ?? '',
+        items: o.items.map((it) => ({
+          productId: it.productId,
+          name: it.product.name,
+          quantity: it.quantity,
+          // Null before anybody walked the racks for this line; zero means they
+          // looked and it was not there.
+          pickedQuantity: it.pickedQuantity,
+          price: it.price,
+        })),
+        total: o.items.reduce((sum, it) => sum + it.price * it.quantity, 0),
+        // What the customer is short, if the pick has started.
+        shortfall: o.items.reduce(
+          (sum, it) => sum + Math.max(it.quantity - (it.pickedQuantity ?? it.quantity), 0),
+          0,
+        ),
+      };
+    }),
   );
+});
+
+// Walking the shelves with the list.
+//
+// Recorded rather than assumed: before this, an order was confirmed in full or
+// rejected in full, and a warehouse that finds nine of ten crates had to choose
+// between shipping a lie and sending the customer nothing.
+//
+// Safe to call repeatedly, rack by rack. A line left out of the request keeps
+// whatever was picked for it before, so a picker can submit rack A and then
+// rack B without rack A being forgotten.
+posRouter.post('/orders/:id/pick', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const b = req.body ?? {};
+  const picked: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+
+  const order = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' },
+    include: { items: true },
+  });
+  if (!order) {
+    res.status(404).json({ error: 'Заказ не найден' });
+    return;
+  }
+  if (order.status !== 'pending') {
+    res.status(409).json({ error: 'Заказ уже обработан' });
+    return;
+  }
+
+  const stockRows = await prisma.stock.findMany({
+    where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
+  });
+  const stockByProduct = groupStockByProduct(stockRows);
+
+  const resolution = resolvePick(
+    order.items.map((it) => ({
+      productId: it.productId,
+      quantity: it.quantity,
+      pickedQuantity: it.pickedQuantity,
+      // Physically present, reservations included: the units this order will
+      // take are the ones it reserved when it was placed.
+      onHand: totalOnHand(stockByProduct.get(it.productId) ?? []),
+    })),
+    picked,
+  );
+  if (resolution.status !== 'ok') {
+    res.status(400).json({ error: pickErrorMessage(resolution) });
+    return;
+  }
+
+  // Only the lines somebody has actually looked at. Writing a zero for an
+  // untouched line would record "looked and found none" for a shelf nobody
+  // visited, and the picker resuming tomorrow could not tell what is left.
+  const pickedByProduct = new Map(
+    resolution.lines.filter((line) => line.touched).map((line) => [line.productId, line.picked]),
+  );
+  await prisma.$transaction(async (tx) => {
+    await Promise.all(
+      order.items
+        .filter((item) => pickedByProduct.has(item.productId))
+        .map((item) =>
+          tx.documentItem.update({
+            where: { id: item.id },
+            data: { pickedQuantity: pickedByProduct.get(item.productId) as number },
+          }),
+        ),
+    );
+  });
+
+  res.json({
+    id: order.id,
+    stage: resolution.complete ? 'picked' : 'picking',
+    stageLabel: orderStageLabel(resolution.complete ? 'picked' : 'picking'),
+    complete: resolution.complete,
+    shortfall: resolution.shortfall,
+    lines: resolution.lines,
+  });
+});
+
+// Shipping what was picked, which may be less than what was ordered.
+//
+// Two things at once: the picked units leave, and the hold on the units that
+// were not found is released. Doing only the first leaves the shelf quietly
+// smaller than it is — goods held for an order that has already shipped and
+// will never claim them, invisible until a count disagrees with what the
+// register will sell.
+posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const order = await prisma.document.findFirst({
+    where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' },
+    include: { items: true },
+  });
+  if (!order) {
+    res.status(404).json({ error: 'Заказ не найден' });
+    return;
+  }
+  if (order.status !== 'pending') {
+    res.status(409).json({ error: 'Заказ уже обработан' });
+    return;
+  }
+
+  const lines = order.items.map((it) => ({
+    productId: it.productId,
+    ordered: it.quantity,
+    // An unpicked line ships in full: shipping without walking the shelves at
+    // all is the old behaviour, and it has to keep working for a shop that
+    // does not pick.
+    picked: it.pickedQuantity ?? it.quantity,
+    shortfall: Math.max(it.quantity - (it.pickedQuantity ?? it.quantity), 0),
+    touched: it.pickedQuantity !== null,
+  }));
+
+  const shipment = resolveShipment(lines);
+  if (shipment.status !== 'ok') {
+    // An empty shipment is not a shipment; it is a cancellation somebody has
+    // to decide on, and deciding it for them would lose the order silently.
+    res.status(400).json({ error: 'Собрано ноль — отгружать нечего, отклоните заказ' });
+    return;
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.document.updateMany({
+        where: { id: order.id, status: 'pending' },
+        data: { status: 'confirmed', fulfilledBy: req.posUserId, fulfilledAt: new Date() },
+      });
+      if (claimed.count === 0) throw new OrderAlreadyHandledError();
+
+      const stockRows = await tx.stock.findMany({
+        where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
+      });
+      const stockByProduct = groupStockByProduct(stockRows);
+      const quantityByProduct = new Map(
+        [...stockByProduct.entries()].map(([productId, rows]) => [productId, totalOnHand(rows)]),
+      );
+
+      const shortages = findStockShortages(
+        shipment.lines.map((line) => ({ productId: line.productId, quantity: line.picked, price: 0 })),
+        quantityByProduct,
+      );
+      if (shortages.length > 0) throw new StockError(shortages);
+
+      for (const item of order.items) {
+        const rows = stockByProduct.get(item.productId) ?? [];
+        if (!rows[0]) continue;
+        // The hold covered the whole ordered quantity, so all of it comes off —
+        // the part that ships because the deduction respects reservations and
+        // this order's own hold would block it, and the part that does not
+        // because nothing is coming for it.
+        await releaseStock(tx, rows[0].id, item.quantity);
+      }
+
+      for (const line of shipment.lines) {
+        await deductAcrossBins(tx, stockByProduct.get(line.productId) ?? [], line.picked, 'order_fulfill', {
+          documentId: order.id,
+          createdBy: req.posUserId,
+        });
+      }
+    }, { timeout: 15000 });
+
+    res.json({
+      id: order.id,
+      status: 'confirmed',
+      shipped: shipment.shipped,
+      released: shipment.released,
+      partial: shipment.released > 0,
+    });
+  } catch (err) {
+    if (err instanceof OrderAlreadyHandledError) {
+      res.status(409).json({ error: 'Заказ уже обработан' });
+      return;
+    }
+    if (err instanceof StockError) {
+      res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
+      return;
+    }
+    throw err;
+  }
 });
 
 posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedRequest, res) => {
