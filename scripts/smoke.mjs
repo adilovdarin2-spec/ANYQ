@@ -29,6 +29,11 @@ const BASE = process.env.API || 'http://localhost:4010';
 let token = null;
 const failures = [];
 const notes = [];
+// Checks that could not be run here, as opposed to checks that passed. A run
+// that skipped one has not proved everything, and saying "all checks passed"
+// is the difference between a deployment somebody verified and one somebody
+// watched go green.
+const skipped = [];
 
 async function call(method, path, body, headers = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -62,6 +67,11 @@ function check(name, condition, detail) {
 function note(text) {
   notes.push(text);
   console.log(`  ..   ${text}`);
+}
+
+function skip(name, why) {
+  skipped.push(name);
+  console.log(`  SKIP ${name} — ${why}`);
 }
 
 const run = async () => {
@@ -284,7 +294,7 @@ const run = async () => {
   // that retires somebody else's token on request is a back door, and a test
   // hook shipped in production code is the same thing with a nicer name.
   if (!process.env.DATABASE_URL) {
-    note('revocation not exercised — set DATABASE_URL to include it');
+    skip('a token minted before revocation stops working', 'set DATABASE_URL to include it');
   } else {
     const { PrismaClient } = await import('@prisma/client');
     const db = new PrismaClient();
@@ -299,16 +309,43 @@ const run = async () => {
     }
   }
 
-  console.log('\n== summary ==');
-  if (failures.length === 0) {
-    console.log('  all checks passed');
-  } else {
-    console.log(`  ${failures.length} failed:`);
-    for (const f of failures) console.log(`    - ${f}`);
-  }
 };
 
-run().catch((err) => {
-  console.error('smoke run threw:', err);
-  process.exitCode = 1;
-});
+/**
+ * What happened, and the exit code that says so.
+ *
+ * Outside `run`, and called from a `finally`, because `run` gives up early when
+ * there is no login and when there is nothing sellable — and a summary printed
+ * at the bottom of `run` is a summary those two paths skip. That was the whole
+ * failure: the server answers, login is broken, one FAIL is printed, and the
+ * script exits 0. Anything reading the status — a deploy pipeline, a person's
+ * `&&` — was told the deployment was fine.
+ */
+function summarise(crash) {
+  console.log('\n== summary ==');
+  if (crash) {
+    // Said first and on its own. A run that stopped before its checks ran has
+    // an empty failure list, and reporting that as "all checks passed" beside a
+    // non-zero exit code is worse than saying nothing.
+    console.log(`  run did not finish: ${crash instanceof Error ? crash.message : crash}`);
+    console.log(`  ${failures.length} failed and ${skipped.length} skipped before it stopped`);
+  } else if (failures.length > 0) {
+    console.log(`  ${failures.length} failed:`);
+    for (const failure of failures) console.log(`    - ${failure}`);
+  } else if (skipped.length > 0) {
+    console.log(`  checks passed, but ${skipped.length} could not be run:`);
+    for (const name of skipped) console.log(`    - ${name}`);
+  } else {
+    console.log('  all checks passed');
+  }
+  if (failures.length > 0) process.exitCode = 1;
+}
+
+let crashed = null;
+run()
+  .catch((err) => {
+    crashed = err;
+    console.error('smoke run threw:', err);
+    process.exitCode = 1;
+  })
+  .finally(() => summarise(crashed));
