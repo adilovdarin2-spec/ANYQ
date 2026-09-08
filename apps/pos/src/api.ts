@@ -854,3 +854,49 @@ export function fetchDocuments(
   if (filter.days) query.set('days', String(filter.days));
   return request(`/pos/documents?${query.toString()}`, { method: 'GET' }, token);
 }
+
+export interface DocumentPhoto {
+  id: string;
+  mimeType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  createdAt: string;
+}
+
+/**
+ * Attaches a photograph of the paper a document came from.
+ *
+ * The image is shrunk on the phone first — see photo.ts. Sending the original
+ * would cost a warehouse its connection for no gain.
+ */
+export function uploadDocumentPhoto(
+  token: string,
+  documentId: string,
+  photo: { base64: string; width: number; height: number },
+): Promise<DocumentPhoto> {
+  return request(`/pos/documents/${documentId}/photos`, { method: 'POST', body: JSON.stringify(photo) }, token);
+}
+
+export function fetchDocumentPhotos(token: string, documentId: string): Promise<DocumentPhoto[]> {
+  return request(`/pos/documents/${documentId}/photos`, { method: 'GET' }, token);
+}
+
+/**
+ * Fetches the bytes and returns an object URL for an <img>.
+ *
+ * Fetched rather than linked, because a plain <img src> cannot carry an
+ * Authorization header and putting the token in a query string would leave it in
+ * browser history and in every proxy log. The caller revokes the URL.
+ */
+export async function loadPhotoUrl(token: string, photoId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/pos/photos/${photoId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new ApiError('Не удалось загрузить фото', res.status);
+  return URL.createObjectURL(await res.blob());
+}
+
+export function deleteDocumentPhoto(token: string, photoId: string): Promise<{ ok: boolean }> {
+  return request(`/pos/photos/${photoId}`, { method: 'DELETE' }, token);
+}
