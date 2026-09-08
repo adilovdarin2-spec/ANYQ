@@ -4,6 +4,8 @@ import cors from 'cors';
 import { pruneIdempotencyKeys } from './idempotency';
 import { writeRateLimit } from './rateLimit';
 import { metricsMiddleware, report } from './metrics-store';
+import { drainFiscalQueue } from './fiscal-worker';
+import { networkFiscalProvider } from './fiscal-network';
 import { authRouter } from './routes/auth';
 import { companiesRouter } from './routes/companies';
 import { posRouter } from './routes/pos';
@@ -74,6 +76,19 @@ app.get('/metrics', (req, res) => {
 // Housekeeping the deployment's scheduler calls. Guarded by a shared secret
 // rather than a user session: there is no user behind a cron job, and giving
 // one an account is worse than a header.
+// Drains the fiscal queue. Called on a schedule rather than run as a loop
+// inside the API process: a loop in the web process competes with cashiers for
+// the event loop, and a receipt that is a minute late costs nothing while a
+// register that stutters costs a queue at the counter.
+app.post('/maintenance/drain-fiscal-queue', async (req, res) => {
+  const secret = process.env.MAINTENANCE_SECRET;
+  if (!secret || req.header('x-maintenance-secret') !== secret) {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  res.json(await drainFiscalQueue(networkFiscalProvider()));
+});
+
 app.post('/maintenance/prune-idempotency-keys', async (req, res) => {
   const secret = process.env.MAINTENANCE_SECRET;
   if (!secret || req.header('x-maintenance-secret') !== secret) {
