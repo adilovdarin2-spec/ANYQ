@@ -1,4 +1,5 @@
 import type { LedgerDocument } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
 import { formatDateTime, formatMoney } from '../utils';
 
 interface Props {
@@ -24,12 +25,13 @@ function formatQuantity(value: number): string {
  * into an argument nobody can settle.
  */
 export function DocumentsScreen({ title, subtitle, documents, loading, error, onBack }: Props) {
+  const { t } = useTranslation();
   const total = documents.reduce((sum, doc) => sum + doc.total, 0);
 
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
         <span className="screen-title">{title}</span>
       </div>
 
@@ -37,14 +39,14 @@ export function DocumentsScreen({ title, subtitle, documents, loading, error, on
         {error && <div className="login-error">{error}</div>}
         <p className="field-hint">{subtitle}</p>
 
-        {loading && <div className="empty-state">Загрузка…</div>}
+        {loading && <div className="empty-state">{t('common.loading')}</div>}
         {!loading && documents.length === 0 && !error && (
-          <div className="empty-state">За этот период таких документов нет</div>
+          <div className="empty-state">{t('documents.none')}</div>
         )}
 
         {documents.length > 0 && (
           <div className="report-row">
-            <span>Документов: {documents.length}</span>
+            <span>{t('documents.count', { count: documents.length })}</span>
             <span>{formatMoney(total)}</span>
           </div>
         )}
@@ -58,7 +60,7 @@ export function DocumentsScreen({ title, subtitle, documents, loading, error, on
                   {formatDateTime(doc.createdAt)}
                   {doc.createdByName ? ` · ${doc.createdByName}` : ''}
                   {doc.counterpartyName ? ` · ${doc.counterpartyName}` : ''}
-                  {doc.binLocation ? ` · ячейка ${doc.binLocation}` : ''}
+                  {doc.binLocation ? ` · ${t('documents.bin', { code: doc.binLocation })}` : ''}
                 </div>
                 {/* The written reason, where there is one. It is the part that
                     answers "why", and a list of amounts without it is exactly
@@ -93,9 +95,9 @@ export function DocumentsScreen({ title, subtitle, documents, loading, error, on
 
             {(doc.discountAmount > 0 || doc.pointsRedeemed > 0) && (
               <div className="order-meta">
-                {doc.discountAmount > 0 ? `скидка ${formatMoney(doc.discountAmount)}` : ''}
+                {doc.discountAmount > 0 ? t('documents.discount', { amount: formatMoney(doc.discountAmount) }) : ''}
                 {doc.discountAmount > 0 && doc.pointsRedeemed > 0 ? ' · ' : ''}
-                {doc.pointsRedeemed > 0 ? `баллами ${formatMoney(doc.pointsRedeemed)}` : ''}
+                {doc.pointsRedeemed > 0 ? t('documents.points', { amount: formatMoney(doc.pointsRedeemed) }) : ''}
               </div>
             )}
           </div>

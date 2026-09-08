@@ -5,16 +5,16 @@
  * is derived from this object, so a key referenced anywhere and missing here is
  * a compile error rather than a blank on a till.
  *
- * What is here: the till a cashier works all shift — signing in, opening and
- * closing, the cart, taking payment, the slip — and the warehouse a storeman
- * works all day: the operations menu, receiving, counting by bin, picking,
- * supplier returns, the offline queue.
+ * What is here: everything anybody uses daily. The till a cashier works all
+ * shift; the warehouse a storeman works all day; and the screens whoever
+ * answers for the money opens — the summary, reports, the change log, the
+ * export, and the walk from a figure to the documents behind it.
  *
- * What is not: the owner's screens (the summary, reports, the change log, the
- * export) and the smaller warehouse forms. Those are still literal Russian in
- * their components, and moving them across is mechanical work that can happen a
- * screen at a time without anything breaking in between — which is the point of
- * the fallback.
+ * What is not: the long tail of occasional forms — purchase orders, transfers,
+ * settlements, batches, the import wizard. Those are still literal Russian in
+ * their components and simply appear in Russian, which is the point of the
+ * fallback: the translation grows a screen at a time and at no moment is the
+ * till broken.
  */
 export const ru = {
   // --- signing in ---------------------------------------------------------
@@ -187,7 +187,135 @@ export const ru = {
   'pick.shipPartial': 'Отгрузить неполностью',
   'pick.nothing': 'Собрано ноль',
 
+  // --- the profile --------------------------------------------------------
+  'profile.shift': 'Смена',
+  'profile.shiftSince': 'с {time} · {hours} ч',
+  'profile.sync': 'Синхронизация',
+  'profile.syncPending': 'ждут отправки: {count}',
+  'profile.needAttention': 'Требуют внимания',
+  'profile.stuck': '{count} — обратитесь к владельцу, продажа не проведена',
+  'profile.dashboard': 'Сводка владельца',
+  'profile.reports': 'Отчёты',
+  'profile.audit': 'Журнал изменений',
+  'profile.export': 'Выгрузка данных',
+  'profile.storefront': 'Ссылка магазина для клиентов',
+  'profile.copyLink': 'Скопировать ссылку',
+  'profile.copied': 'Скопировано ✓',
+  'profile.push': 'Уведомления о заказах',
+  'profile.pushOn': 'Включены',
+  'profile.pushOff': 'Выключены',
+  'profile.install': 'Установить приложение',
+  'profile.closeShift': 'Закрыть смену',
+  'profile.switchCashier': 'Сменить кассира',
+
+  'role.owner': 'Владелец',
+  'role.manager': 'Менеджер',
+  'role.cashier': 'Кассир',
+  'role.warehouse': 'Кладовщик',
+  'role.pharmacist': 'Фармацевт',
+
+  // --- ranges, shared by the summary and the reports -----------------------
+  'range.today': 'Сегодня',
+  'range.week': 'Неделя',
+  'range.month': 'Месяц',
+  'range.allTime': 'Всё время',
+  'range.days': '{count} дней',
+  'common.refresh': 'Обновить',
+  'common.counting': 'Считаем…',
+  'common.nothing': 'Продаж за период нет',
+
+  // --- the owner's summary -------------------------------------------------
+  'owner.title': 'Сводка',
+  'owner.money': 'Деньги',
+  'owner.netRevenue': 'Выручка за вычетом возвратов',
+  'owner.grossMargin': 'Валовая маржа',
+  'owner.ledgerMismatch': 'Остатки не сходятся с журналом',
+  'owner.unfiscalised': 'Не фискализировано чеков',
+  'owner.owedToUs': 'Должны нам',
+  'owner.overdue': '{amount} старше месяца',
+  'owner.weOwe': 'Должны мы',
+  'owner.refunds': 'Возвраты',
+  'owner.discounts': 'Скидки',
+  'owner.shifts': 'Касса по сменам',
+  'owner.shiftOpen': 'смена открыта',
+  'owner.expected': 'ожидается {amount}',
+  'owner.matches': 'сходится',
+  'owner.whatToBuy': 'Что закупить',
+  'owner.openOrderList': 'Открыть список заказа',
+  'owner.lookAt': 'На что посмотреть',
+  'owner.shareOfRevenue': '{percent}% от выручки',
+  'owner.discrepancies': 'Расхождения',
+  'owner.count': 'Инвентаризация',
+  'owner.transferShort': 'Недостача в пути',
+  'owner.receivedBy': 'принял {name}',
+  'owner.outOf': '{received} из {sent}',
+  'owner.expiry': 'Сроки годности',
+  'owner.batch': 'партия {number} · {quantity} шт',
+  'owner.expired': 'просрочено',
+  'owner.expiringSoon': 'скоро истечёт',
+  'owner.deadStock': 'Лежит без движения',
+  'owner.deadStockWhy': 'Товар на полке, который не продавался 90 дней и дольше. Отсортирован по деньгам, а не по сроку: убирать надо ту полку, на которой они лежат.',
+  'owner.neverSold': 'ни разу не продавался',
+  'owner.lastSale': 'последняя продажа {days} дн. назад',
+  'owner.pieces': '{count} шт',
+  'owner.allClear': 'Ничего, что требует вашего решения. Хороший день.',
+
+  'flag.refundRate': 'Много возвратов',
+  'flag.discountRate': 'Много скидок',
+  'flag.writeOff': 'Списания',
+
+  // --- reports -------------------------------------------------------------
+  'reports.title': 'Отчёты',
+  'reports.truncated': 'Продаж за период больше, чем помещается в один отчёт — цифры ниже описывают только самые свежие. Возьмите период короче.',
+  'reports.revenue': 'Выручка',
+  'reports.salesCount': 'Продаж',
+  'reports.averageCheck': 'Средний чек',
+  'reports.returns': 'Возвраты · {count}',
+  'reports.byPaymentMethod': 'По способу оплаты',
+  'reports.unknownMethod': 'Не указан',
+  'reports.topProducts': 'Топ товаров',
+  'reports.dishMargin': 'Маржа по блюдам',
+  'reports.byCashier': 'По кассирам',
+  'reports.salesBy': '{count} продаж',
+  'reports.lowStock': 'Заканчивается на складе',
+  'reports.stockedUp': 'Все товары в достатке',
+  'reports.left': 'ост. {count}',
+
+  // --- the change log ------------------------------------------------------
+  'audit.title': 'Журнал изменений',
+  'audit.roundTrips': 'Цена опускалась и возвращалась',
+  'audit.allChanges': 'Все изменения',
+  'audit.nothing': 'За этот период цены, роли и лимиты никто не менял',
+  'audit.days': '{count} дн.',
+  'audit.loweredAt': '{from} → {to} в {when}, обратно в {back}',
+
+  // --- the export ----------------------------------------------------------
+  'export.title': 'Выгрузка данных',
+  'export.why': 'Файлы CSV — открываются в Excel и в 1С. Это ваши данные: забирайте их когда угодно и делайте с ними что угодно.',
+  'export.failed': 'Не удалось выгрузить. Проверьте связь и попробуйте ещё раз.',
+  'export.products': 'Товары',
+  'export.productsHint': 'Каталог с ценами закупки и продажи',
+  'export.stock': 'Остатки',
+  'export.stockHint': 'Что и где лежит на этой точке, включая не размещённое',
+  'export.sales': 'Продажи',
+  'export.salesHint': 'По строкам, а не по чекам — за 90 дней',
+  'export.movements': 'Движения товара',
+  'export.movementsHint': 'Журнал с причиной и автором — за 90 дней',
+  'export.counterparties': 'Контрагенты',
+  'export.counterpartiesHint': 'Покупатели и поставщики с условиями долга',
+
+  // --- the documents behind a figure ---------------------------------------
+  'documents.count': 'Документов: {count}',
+  'documents.none': 'За этот период таких документов нет',
+  'documents.bin': 'ячейка {code}',
+  'documents.shiftTitle': 'Смена · {name}',
+  'documents.shiftWhy': 'Всё, из чего посчитана касса этой смены: продажи и возвраты, по одному документу.',
+  'documents.userTitle': 'Возвраты и списания · {name}',
+  'documents.userWhy': 'Документы, из-за которых этот сотрудник попал в «на что посмотреть». Это вопрос, не обвинение.',
+  'documents.discount': 'скидка {amount}',
+  'documents.points': 'баллами {amount}',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
-  'language.partial': 'Складские и владельческие экраны пока на русском.',
+  'language.partial': 'Отдельные редкие экраны пока на русском — они просто показываются по-русски, ничего не ломается.',
 } as const;

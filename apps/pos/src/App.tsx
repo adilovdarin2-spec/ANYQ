@@ -1417,8 +1417,8 @@ export default function App() {
 
   function handleShowShiftDocuments(shiftId: string, cashierName: string) {
     void openDocuments(
-      `Смена · ${cashierName}`,
-      'Всё, из чего посчитана касса этой смены: продажи и возвраты, по одному документу.',
+      t('documents.shiftTitle', { name: cashierName }),
+      t('documents.shiftWhy'),
       // Sales and returns, because both move the drawer and the reconciliation
       // is built from the two together.
       { shiftId, type: 'sale,return' },
@@ -1427,8 +1427,8 @@ export default function App() {
 
   function handleShowUserDocuments(userId: string, name: string) {
     void openDocuments(
-      `Возвраты и списания · ${name}`,
-      'Документы, из-за которых этот сотрудник попал в «на что посмотреть». Это вопрос, не обвинение.',
+      t('documents.userTitle', { name }),
+      t('documents.userWhy'),
       { createdBy: userId, type: 'return,write_off', days: dashboardDays },
     );
   }

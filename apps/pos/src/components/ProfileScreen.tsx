@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { LANGUAGES } from '../i18n';
+import type { PhraseKey } from '../i18n';
 import { useTranslation } from '../i18n/useLanguage';
 import type { Shift } from '../types';
 import { formatTime, hoursSince } from '../utils';
@@ -29,12 +30,14 @@ interface Props {
   onLogout: () => void;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Владелец',
-  manager: 'Менеджер',
-  cashier: 'Кассир',
-  warehouse_staff: 'Кладовщик',
-  pharmacist: 'Фармацевт',
+// Phrase keys, not labels: a constant holding translated text is translated
+// once, at import, and never changes when somebody switches language.
+const ROLE_PHRASES: Record<string, PhraseKey> = {
+  owner: 'role.owner',
+  manager: 'role.manager',
+  cashier: 'role.cashier',
+  warehouse_staff: 'role.warehouse',
+  pharmacist: 'role.pharmacist',
 };
 
 export function ProfileScreen({
@@ -71,32 +74,32 @@ export function ProfileScreen({
 
   return (
     <div className="tab-content">
-      <div className="tab-header">Профиль</div>
+      <div className="tab-header">{t('tab.profile')}</div>
 
       <div className="profile-card">
         <div className="profile-avatar">{cashierName.charAt(0)}</div>
         <div>
           <div className="profile-name">{cashierName}</div>
-          <div className="profile-role">{ROLE_LABELS[role] ?? role}</div>
+          <div className="profile-role">{ROLE_PHRASES[role] ? t(ROLE_PHRASES[role]) : role}</div>
         </div>
       </div>
 
       <div className="profile-row">
-        <span>Смена</span>
-        <span>с {formatTime(shift.openedAt)} · {Math.floor(hours)} ч</span>
+        <span>{t('profile.shift')}</span>
+        <span>{t('profile.shiftSince', { time: formatTime(shift.openedAt), hours: Math.floor(hours) })}</span>
       </div>
       <div className="profile-row">
-        <span>Синхронизация</span>
+        <span>{t('profile.sync')}</span>
         <span>
           <span className={`dot ${online ? 'online' : 'offline'}`}></span>{' '}
-          {online ? 'Онлайн' : 'Офлайн'}
-          {pendingCount > 0 ? ` · ждут отправки: ${pendingCount}` : ''}
+          {online ? t('shift.bar.online') : t('shift.bar.offline')}
+          {pendingCount > 0 ? ` · ${t('profile.syncPending', { count: pendingCount })}` : ''}
         </span>
       </div>
       {stuckCount > 0 && (
         <div className="profile-row">
-          <span>⚠ Требуют внимания</span>
-          <span>{stuckCount} — обратитесь к владельцу, продажа не проведена</span>
+          <span>⚠ {t('profile.needAttention')}</span>
+          <span>{t('profile.stuck', { count: stuckCount })}</span>
         </div>
       )}
 
@@ -130,39 +133,39 @@ export function ProfileScreen({
 
       {onShowDashboard && (
         <button type="button" className="profile-action" onClick={onShowDashboard}>
-          <span>🧭 Сводка владельца</span>
+          <span>🧭 {t('profile.dashboard')}</span>
           <span>›</span>
         </button>
       )}
 
       {onShowReports && (
         <button type="button" className="profile-action" onClick={onShowReports}>
-          <span>📊 Отчёты</span>
+          <span>📊 {t('profile.reports')}</span>
           <span>›</span>
         </button>
       )}
 
       {onShowAudit && (
         <button type="button" className="profile-action" onClick={onShowAudit}>
-          <span>📝 Журнал изменений</span>
+          <span>📝 {t('profile.audit')}</span>
           <span>›</span>
         </button>
       )}
 
       {onShowExport && (
         <button type="button" className="profile-action" onClick={onShowExport}>
-          <span>↓ Выгрузка данных</span>
+          <span>↓ {t('profile.export')}</span>
           <span>›</span>
         </button>
       )}
 
       {storefrontUrl && (
         <div className="profile-section">
-          <div className="section-title">Ссылка магазина для клиентов</div>
+          <div className="section-title">{t('profile.storefront')}</div>
           <div className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
             <div style={{ fontSize: '0.85rem', wordBreak: 'break-all', color: 'var(--ink-muted)' }}>{storefrontUrl}</div>
             <button type="button" className="btn btn-secondary" onClick={copyLink}>
-              {copied ? 'Скопировано ✓' : 'Скопировать ссылку'}
+              {copied ? t('profile.copied') : t('profile.copyLink')}
             </button>
           </div>
         </div>
@@ -170,19 +173,19 @@ export function ProfileScreen({
 
       {pushSupported && (
         <button type="button" className="profile-action" onClick={onTogglePush} disabled={pushBusy}>
-          <span>{pushEnabled ? '🔔' : '🔕'} Уведомления о заказах</span>
-          <span>{pushEnabled ? 'Включены' : 'Выключены'}</span>
+          <span>{pushEnabled ? '🔔' : '🔕'} {t('profile.push')}</span>
+          <span>{pushEnabled ? t('profile.pushOn') : t('profile.pushOff')}</span>
         </button>
       )}
 
       <button type="button" className="profile-action" onClick={onShowInstall}>
-        <span>⬇ Установить приложение</span>
+        <span>⬇ {t('profile.install')}</span>
         <span>›</span>
       </button>
 
       <div className="profile-section">
-        <button type="button" className="btn btn-secondary btn-block" onClick={onCloseShift}>Закрыть смену</button>
-        <button type="button" className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={onLogout}>Сменить кассира</button>
+        <button type="button" className="btn btn-secondary btn-block" onClick={onCloseShift}>{t('profile.closeShift')}</button>
+        <button type="button" className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={onLogout}>{t('profile.switchCashier')}</button>
       </div>
     </div>
   );

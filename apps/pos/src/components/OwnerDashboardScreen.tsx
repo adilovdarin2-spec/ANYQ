@@ -1,5 +1,7 @@
 import type { OwnerDashboard, OwnerFlag } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
+import { useTranslation } from '../i18n/useLanguage';
+import type { PhraseKey } from '../i18n';
 
 interface Props {
   dashboard: OwnerDashboard | null;
@@ -18,10 +20,12 @@ interface Props {
 
 const RANGES = [1, 7, 30];
 
-const FLAG_LABELS: Record<OwnerFlag['kind'], string> = {
-  refund_rate: 'Много возвратов',
-  discount_rate: 'Много скидок',
-  write_off: 'Списания',
+// Keys rather than text: a constant holding a translated label is translated
+// once, at import, and never changes when somebody switches language.
+const FLAG_PHRASES: Record<OwnerFlag['kind'], PhraseKey> = {
+  refund_rate: 'flag.refundRate',
+  discount_rate: 'flag.discountRate',
+  write_off: 'flag.writeOff',
 };
 
 function formatQuantity(value: number): string {
@@ -40,12 +44,13 @@ export function OwnerDashboardScreen({
   onShowShiftDocuments,
   onShowUserDocuments,
 }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label="Назад">←</button>
-        <span className="screen-title">Сводка</span>
-        <button className="icon-btn" onClick={onRefresh} aria-label="Обновить" style={{ marginLeft: 'auto' }}>⟳</button>
+        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('owner.title')}</span>
+        <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refresh')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>
 
       <div className="screen-body">
@@ -57,27 +62,27 @@ export function OwnerDashboardScreen({
               className={range === days ? 'category-chip on' : 'category-chip'}
               onClick={() => onChangeDays(range)}
             >
-              {range === 1 ? 'Сегодня' : `${range} дней`}
+              {range === 1 ? t('range.today') : t('range.days', { count: range })}
             </button>
           ))}
         </div>
 
         {error && <div className="login-error">{error}</div>}
-        {loading && !dashboard && <div className="empty-state">Считаем…</div>}
+        {loading && !dashboard && <div className="empty-state">{t('common.counting')}</div>}
 
         {dashboard && (
           <>
             {/* 1. Где деньги */}
-            <div className="orders-section-title">Деньги</div>
+            <div className="orders-section-title">{t('owner.money')}</div>
             <div className="report-cards">
               <div className="report-card">
                 <span className="value">{formatMoney(dashboard.money.netRevenue)}</span>
-                <span className="label">Выручка за вычетом возвратов</span>
+                <span className="label">{t('owner.netRevenue')}</span>
               </div>
               <div className="report-card">
                 <span className="value">{formatMoney(dashboard.money.grossMargin)}</span>
                 <span className="label">
-                  Валовая маржа{dashboard.money.marginPercent !== null ? ` · ${dashboard.money.marginPercent}%` : ''}
+                  {t('owner.grossMargin')}{dashboard.money.marginPercent !== null ? ` · ${dashboard.money.marginPercent}%` : ''}
                 </span>
               </div>
               {/* Beside the money, because it is the figure that turns into a
@@ -88,13 +93,13 @@ export function OwnerDashboardScreen({
               {dashboard.ledgerCheck.mismatched > 0 && (
                 <div className="report-card">
                   <span className="value">{dashboard.ledgerCheck.mismatched}</span>
-                  <span className="label">Остатки не сходятся с журналом</span>
+                  <span className="label">{t('owner.ledgerMismatch')}</span>
                 </div>
               )}
               {dashboard.unfiscalised.count > 0 && (
                 <div className="report-card">
                   <span className="value">{dashboard.unfiscalised.count}</span>
-                  <span className="label">Не фискализировано чеков</span>
+                  <span className="label">{t('owner.unfiscalised')}</span>
                 </div>
               )}
               {/* A till figure answers "what did we take today"; these answer
@@ -103,9 +108,9 @@ export function OwnerDashboardScreen({
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.debts.receivable.total)}</span>
                   <span className="label">
-                    Должны нам
+                    {t('owner.owedToUs')}
                     {dashboard.debts.receivable.overdue > 0
-                      ? ` · ${formatMoney(dashboard.debts.receivable.overdue)} старше месяца`
+                      ? ` · ${t('owner.overdue', { amount: formatMoney(dashboard.debts.receivable.overdue) })}`
                       : ''}
                   </span>
                 </div>
@@ -113,19 +118,19 @@ export function OwnerDashboardScreen({
               {dashboard.debts.payable.total > 0 && (
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.debts.payable.total)}</span>
-                  <span className="label">Должны мы</span>
+                  <span className="label">{t('owner.weOwe')}</span>
                 </div>
               )}
               {dashboard.money.refunds > 0 && (
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.money.refunds)}</span>
-                  <span className="label">Возвраты</span>
+                  <span className="label">{t('owner.refunds')}</span>
                 </div>
               )}
               {dashboard.money.discounts > 0 && (
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.money.discounts)}</span>
-                  <span className="label">Скидки</span>
+                  <span className="label">{t('owner.discounts')}</span>
                 </div>
               )}
             </div>
@@ -133,7 +138,7 @@ export function OwnerDashboardScreen({
             {/* Касса: единственная цифра, которую владелец проверяет первой */}
             {dashboard.money.shifts.length > 0 && (
               <>
-                <div className="orders-section-title">Касса по сменам</div>
+                <div className="orders-section-title">{t('owner.shifts')}</div>
                 {dashboard.money.shifts.map((shift) => (
                   // A row rather than a card, and a button rather than a div:
                   // the number is the question and the documents are the
@@ -149,14 +154,14 @@ export function OwnerDashboardScreen({
                       <br />
                       <span className="order-meta">
                         {formatDateTime(shift.openedAt)}
-                        {shift.closedAt ? '' : ' · смена открыта'}
+                        {shift.closedAt ? '' : ` · ${t('owner.shiftOpen')}`}
                       </span>
                     </span>
                     <span>
                       {shift.difference === null ? (
-                        <span className="order-meta">ожидается {formatMoney(shift.expected)}</span>
+                        <span className="order-meta">{t('owner.expected', { amount: formatMoney(shift.expected) })}</span>
                       ) : shift.difference === 0 ? (
-                        <span className="pill">сходится</span>
+                        <span className="pill">{t('owner.matches')}</span>
                       ) : (
                         <span className="pill warn">
                           {shift.difference > 0 ? '+' : ''}
@@ -170,15 +175,15 @@ export function OwnerDashboardScreen({
             )}
 
             {/* 2. Что закончится — считается отдельно, поэтому ссылкой, а не копией */}
-            <div className="orders-section-title">Что закупить</div>
+            <div className="orders-section-title">{t('owner.whatToBuy')}</div>
             <button className="btn btn-secondary btn-block" onClick={onShowReplenishment}>
-              Открыть список заказа
+              {t('owner.openOrderList')}
             </button>
 
             {/* 3. Кто выбивается — не «кто ворует», а куда потратить десять минут */}
             {dashboard.flags.length > 0 && (
               <>
-                <div className="orders-section-title">На что посмотреть</div>
+                <div className="orders-section-title">{t('owner.lookAt')}</div>
                 {dashboard.flags.map((flag, index) => (
                   <button
                     key={`${flag.userId}-${flag.kind}-${index}`}
@@ -190,8 +195,8 @@ export function OwnerDashboardScreen({
                       {flag.name}
                       <br />
                       <span className="order-meta">
-                        {FLAG_LABELS[flag.kind]}
-                        {flag.sharePercent > 0 ? ` · ${flag.sharePercent}% от выручки` : ''}
+                        {t(FLAG_PHRASES[flag.kind])}
+                        {flag.sharePercent > 0 ? ` · ${t('owner.shareOfRevenue', { percent: flag.sharePercent })}` : ''}
                       </span>
                     </span>
                     <span className="pill warn">{formatMoney(flag.amount)}</span>
@@ -202,13 +207,13 @@ export function OwnerDashboardScreen({
 
             {/* 4. Расхождения — инвентаризация и приёмка перемещений */}
             {(dashboard.discrepancies.counts.length > 0 || dashboard.discrepancies.transfers.length > 0) && (
-              <div className="orders-section-title">Расхождения</div>
+              <div className="orders-section-title">{t('owner.discrepancies')}</div>
             )}
             {dashboard.discrepancies.counts.map((count) => (
               <div key={count.documentId} className="order-card">
                 <div className="order-card-head">
                   <div>
-                    <div className="order-customer">Инвентаризация</div>
+                    <div className="order-customer">{t('owner.count')}</div>
                     <div className="order-meta">
                       {formatDateTime(count.createdAt)}
                       {count.createdByName ? ` · ${count.createdByName}` : ''}
@@ -230,10 +235,10 @@ export function OwnerDashboardScreen({
               <div key={transfer.documentId} className="order-card">
                 <div className="order-card-head">
                   <div>
-                    <div className="order-customer">Недостача в пути · {transfer.fromLocationName}</div>
+                    <div className="order-customer">{t('owner.transferShort')} · {transfer.fromLocationName}</div>
                     <div className="order-meta">
                       {transfer.receivedAt ? formatDateTime(transfer.receivedAt) : ''}
-                      {transfer.receivedByName ? ` · принял ${transfer.receivedByName}` : ''}
+                      {transfer.receivedByName ? ` · ${t('owner.receivedBy', { name: transfer.receivedByName })}` : ''}
                     </div>
                   </div>
                 </div>
@@ -242,7 +247,7 @@ export function OwnerDashboardScreen({
                     <div key={`${transfer.documentId}-${index}`} className="order-item-row">
                       <span>{line.name}</span>
                       <span>
-                        {formatQuantity(line.received)} из {formatQuantity(line.sent)}
+                        {t('owner.outOf', { received: formatQuantity(line.received), sent: formatQuantity(line.sent) })}
                       </span>
                     </div>
                   ))}
@@ -253,16 +258,16 @@ export function OwnerDashboardScreen({
             {/* 5. Просрочка */}
             {dashboard.expiring.length > 0 && (
               <>
-                <div className="orders-section-title">Сроки годности</div>
+                <div className="orders-section-title">{t('owner.expiry')}</div>
                 {dashboard.expiring.map((batch) => (
                   <div key={batch.batchId} className="report-row">
                     <span>
                       {batch.productName}
                       <br />
-                      <span className="order-meta">партия {batch.batchNumber} · {formatQuantity(batch.quantity)} шт</span>
+                      <span className="order-meta">{t('owner.batch', { number: batch.batchNumber, quantity: formatQuantity(batch.quantity) })}</span>
                     </span>
                     <span className="pill warn">
-                      {batch.status === 'expired' ? 'просрочено' : 'скоро истечёт'} · {formatMoney(batch.value)}
+                      {batch.status === 'expired' ? t('owner.expired') : t('owner.expiringSoon')} · {formatMoney(batch.value)}
                     </span>
                   </div>
                 ))}
@@ -272,10 +277,9 @@ export function OwnerDashboardScreen({
             {/* 6. Деньги, спящие на полке */}
             {dashboard.deadStock.length > 0 && (
               <>
-                <div className="orders-section-title">Лежит без движения</div>
+                <div className="orders-section-title">{t('owner.deadStock')}</div>
                 <p className="field-hint">
-                  Товар на полке, который не продавался 90 дней и дольше. Отсортирован по деньгам,
-                  а не по сроку: убирать надо ту полку, на которой они лежат.
+                  {t('owner.deadStockWhy')}
                 </p>
                 {dashboard.deadStock.map((item) => (
                   <div key={item.productId} className="report-row">
@@ -283,10 +287,10 @@ export function OwnerDashboardScreen({
                       {item.name}
                       <br />
                       <span className="order-meta">
-                        {formatQuantity(item.quantity)} шт ·{' '}
+                        {t('owner.pieces', { count: formatQuantity(item.quantity) })} ·{' '}
                         {item.daysSinceLastSale === null
-                          ? 'ни разу не продавался'
-                          : `последняя продажа ${item.daysSinceLastSale} дн. назад`}
+                          ? t('owner.neverSold')
+                          : t('owner.lastSale', { days: item.daysSinceLastSale })}
                       </span>
                     </span>
                     <span className="pill">{formatMoney(item.value)}</span>
@@ -300,7 +304,7 @@ export function OwnerDashboardScreen({
               dashboard.expiring.length === 0 &&
               dashboard.discrepancies.counts.length === 0 &&
               dashboard.discrepancies.transfers.length === 0 && (
-                <div className="empty-state">Ничего, что требует вашего решения. Хороший день.</div>
+                <div className="empty-state">{t('owner.allClear')}</div>
               )}
           </>
         )}
