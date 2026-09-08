@@ -13,7 +13,10 @@
     "dev:orders": "npm run dev --workspace=apps/orders",
     "dev:api": "npm run dev --workspace=apps/api",
     "test": "vitest run",
-    "test:db": "vitest run --config vitest.integration.config.ts"
+    "test:db": "vitest run --config vitest.integration.config.ts",
+    "backup": "node scripts/backup.mjs create",
+    "backup:list": "node scripts/backup.mjs list",
+    "backup:verify": "node scripts/backup.mjs verify"
   },
   "devDependencies": {
     "railway": "^3.6.0",

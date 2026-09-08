@@ -10,3 +10,6 @@ packages/db/generated/
 *.db
 *.db-journal
 *.tsbuildinfo
+
+# Database dumps. Real customer data — never in the repository.
+backups/
