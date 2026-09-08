@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { pruneIdempotencyKeys } from './idempotency';
 import { writeRateLimit } from './rateLimit';
+import { metricsMiddleware, report } from './metrics-store';
 import { authRouter } from './routes/auth';
 import { companiesRouter } from './routes/companies';
 import { posRouter } from './routes/pos';
@@ -30,6 +31,10 @@ app.use(
     },
   }),
 );
+// Before everything that can fail, so a request that is rejected by CORS, by
+// the rate limiter or by a parse error is still counted. Metrics that only
+// cover the requests which went well describe a server nobody is running.
+app.use(metricsMiddleware);
 app.use(express.json());
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -50,6 +55,21 @@ app.use((req, res, next) => {
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// The two numbers the pilot charter is written in, and the routes missing
+// them. Guarded by the same shared secret as the maintenance hooks rather than
+// a user session: this is for whoever runs the server, and latency figures per
+// route are a map of where to push if somebody wanted to.
+app.get('/metrics', (req, res) => {
+  const secret = process.env.MAINTENANCE_SECRET;
+  if (!secret || req.header('x-maintenance-secret') !== secret) {
+    // 404 rather than 403: an endpoint that answers "wrong secret" has
+    // confirmed it exists.
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  res.json(report());
+});
 
 // Housekeeping the deployment's scheduler calls. Guarded by a shared secret
 // rather than a user session: there is no user behind a cron job, and giving
