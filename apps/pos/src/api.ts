@@ -680,8 +680,17 @@ export function repairReconciliation(
 // Says what an import would do and changes nothing. The whole file is judged
 // before any of it is written, because an import that stops at the first bad
 // row leaves a catalogue half in and half not.
-export function previewImport(token: string, grid: string[][]): Promise<ImportPreview> {
-  return request('/pos/import/products/preview', { method: 'POST', body: JSON.stringify({ grid }) }, token);
+/**
+ * Either a grid the client parsed, or the .xlsx itself.
+ *
+ * An .xlsx is sent base64-encoded in JSON rather than as multipart: the whole
+ * API is JSON, and a file-upload parser would be a dependency and a second code
+ * path for one endpoint.
+ */
+export type ImportSource = { grid: string[][] } | { xlsxBase64: string };
+
+export function previewImport(token: string, source: ImportSource): Promise<ImportPreview> {
+  return request('/pos/import/products/preview', { method: 'POST', body: JSON.stringify(source) }, token);
 }
 
 export interface ImportResult {
@@ -695,12 +704,12 @@ export interface ImportResult {
 export function commitImport(
   token: string,
   locationId: string,
-  grid: string[][],
+  source: ImportSource,
   idempotencyKey: string,
 ): Promise<ImportResult> {
   return request(
     '/pos/import/products',
-    { method: 'POST', body: JSON.stringify({ locationId, grid }), headers: { 'Idempotency-Key': idempotencyKey } },
+    { method: 'POST', body: JSON.stringify({ locationId, ...source }), headers: { 'Idempotency-Key': idempotencyKey } },
     token,
   );
 }

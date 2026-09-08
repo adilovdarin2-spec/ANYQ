@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ImportPreview } from '../types';
+import type { ImportSource } from '../api';
 import { parseSheet } from '../utils';
 
 interface Props {
@@ -9,8 +10,8 @@ interface Props {
   submitting: boolean;
   result: { created: number; updated: number; stocked: number; skipped: number } | null;
   onBack: () => void;
-  onPreview: (grid: string[][]) => void;
-  onCommit: (grid: string[][]) => void;
+  onPreview: (source: ImportSource) => void;
+  onCommit: (source: ImportSource) => void;
   onReset: () => void;
 }
 
@@ -26,14 +27,45 @@ export function ImportScreen({
   onReset,
 }: Props) {
   const [text, setText] = useState('');
+  // Set when an .xlsx was chosen. Kept apart from the pasted text rather than
+  // converted into it, because the server reads the spreadsheet properly and a
+  // client-side conversion would be a second, worse parser.
+  const [xlsx, setXlsx] = useState<{ name: string; base64: string } | null>(null);
   const grid = text.trim() ? parseSheet(text) : [];
+  const source: ImportSource | null = xlsx
+    ? { xlsxBase64: xlsx.base64 }
+    : grid.length > 0
+      ? { grid }
+      : null;
 
   function loadFile(file: File | undefined) {
     if (!file) return;
+    onReset();
+
+    // An .xlsx goes to the server as bytes. Excel's own format is a zip of XML
+    // and reading it here would mean a second parser in the browser, worse than
+    // the one the server already has.
+    if (/\.xlsx$/i.test(file.name)) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const bytes = new Uint8Array(reader.result as ArrayBuffer);
+        let binary = '';
+        // In chunks: String.fromCharCode(...bytes) on a megabyte blows the
+        // argument limit and throws.
+        for (let i = 0; i < bytes.length; i += 8192) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        }
+        setText('');
+        setXlsx({ name: file.name, base64: btoa(binary) });
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
+      setXlsx(null);
       setText(String(reader.result ?? ''));
-      onReset();
     };
     // Excel on Windows still saves CSV in the system codepage more often than
     // not, but UTF-8 is what a modern export gives and what a paste always is.
@@ -74,7 +106,10 @@ export function ImportScreen({
                 </div>
               )}
             </div>
-            <button className="btn btn-secondary btn-block" onClick={() => { setText(''); onReset(); }}>
+            <button
+              className="btn btn-secondary btn-block"
+              onClick={() => { setText(''); setXlsx(null); onReset(); }}
+            >
               Импортировать ещё
             </button>
           </>
@@ -87,8 +122,18 @@ export function ImportScreen({
             </p>
 
             <div className="form-field">
-              <label htmlFor="import-file">Файл CSV</label>
-              <input id="import-file" type="file" accept=".csv,text/csv,text/plain" onChange={(e) => loadFile(e.target.files?.[0])} />
+              <label htmlFor="import-file">Файл Excel или CSV</label>
+              <input
+                id="import-file"
+                type="file"
+                accept=".xlsx,.csv,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(e) => loadFile(e.target.files?.[0])}
+              />
+              {xlsx && (
+                <span className="field-hint">
+                  Выбран {xlsx.name}. Нажмите «Проверить файл» — что прочиталось, будет видно до записи.
+                </span>
+              )}
             </div>
 
             <div className="form-field">
@@ -188,7 +233,13 @@ export function ImportScreen({
       {!result && (
         <div className="screen-footer">
           {!preview ? (
-            <button className="btn btn-primary btn-block" disabled={grid.length < 2 || loading} onClick={() => onPreview(grid)}>
+            <button
+              className="btn btn-primary btn-block"
+              // A chosen .xlsx is enough on its own; a pasted table needs a
+              // header row and at least one line under it.
+              disabled={source === null || (xlsx === null && grid.length < 2) || loading}
+              onClick={() => source && onPreview(source)}
+            >
               {loading ? 'Проверяем…' : 'Проверить файл'}
             </button>
           ) : (
@@ -196,7 +247,7 @@ export function ImportScreen({
               <button
                 className="btn btn-primary btn-block"
                 disabled={submitting || preview.created + preview.updated === 0}
-                onClick={() => onCommit(grid)}
+                onClick={() => source && onCommit(source)}
               >
                 {submitting ? 'Импортируем…' : `Импортировать ${preview.created + preview.updated}`}
               </button>
