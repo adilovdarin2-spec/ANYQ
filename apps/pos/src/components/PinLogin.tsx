@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { posLogin } from '../api';
+import { useTranslation } from '../i18n/useLanguage';
 import type { PosSession } from '../api';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
 
 export function PinLogin({ onLogin }: Props) {
+  const { t } = useTranslation();
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,7 +23,7 @@ export function PinLogin({ onLogin }: Props) {
       const session = await posLogin(value);
       onLogin(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось войти');
+      setError(err instanceof Error ? err.message : t('login.failed'));
       setPin('');
     } finally {
       setLoading(false);
@@ -40,8 +42,8 @@ export function PinLogin({ onLogin }: Props) {
   return (
     <div className="pos-shell">
       <div className="form-card">
-        <h1>Вход в кассу</h1>
-        <p className="sub">Введите PIN-код кассира</p>
+        <h1>{t('login.title')}</h1>
+        <p className="sub">{t('login.prompt')}</p>
         <div className="pin-display">{pin ? pin.split('').map(() => '•').join(' ') : '—'}</div>
         {error && <div className="login-error">{error}</div>}
         <div className="pin-pad">
@@ -61,7 +63,7 @@ export function PinLogin({ onLogin }: Props) {
           disabled={loading || pin.length === 0}
           onClick={() => submit(pin)}
         >
-          {loading ? 'Входим…' : 'Войти'}
+          {loading ? t('login.submitting') : t('login.submit')}
         </button>
       </div>
     </div>

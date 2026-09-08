@@ -3,6 +3,8 @@ import type { PaymentLine, PaymentMethod } from '../types';
 import { PAYMENT_LABELS } from '../types';
 import { formatMoney } from '../utils';
 import { SplitPaymentEditor } from './SplitPaymentEditor';
+import { useTranslation } from '../i18n/useLanguage';
+import type { PhraseKey } from '../i18n';
 
 interface Props {
   total: number;
@@ -19,7 +21,17 @@ interface Props {
 
 const ICONS: Record<PaymentMethod, string> = { cash: '💵', kaspi: '▦', card: '💳', credit: '📓' };
 
+// Phrase keys rather than labels: a constant holding translated text is
+// translated once, at import, and never changes when the language does.
+const METHOD_PHRASES: Record<PaymentMethod, PhraseKey> = {
+  cash: 'payment.cash',
+  kaspi: 'payment.kaspi',
+  card: 'payment.card',
+  credit: 'payment.credit',
+};
+
 export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props) {
+  const { t } = useTranslation();
   // Offered only once a customer is attached: selling on credit to nobody in
   // particular is giving goods away, and the server refuses it anyway — better
   // that the button is not there than that it fails after being pressed.
@@ -38,15 +50,15 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={() => (selected ? setSelected(null) : onCancel())} aria-label="Назад">←</button>
-        <span className="screen-title">Оплата {formatMoney(total)}</span>
+        <button className="icon-btn" onClick={() => (selected ? setSelected(null) : onCancel())} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('payment.title', { amount: formatMoney(total) })}</span>
       </div>
       <div className="screen-body">
         {selected === null && (
           <div className="payment-options">
             {methods.map((m) => (
               <button key={m} className="payment-option" onClick={() => setSelected(m)}>
-                <span>{ICONS[m]} {PAYMENT_LABELS[m]}</span>
+                <span>{ICONS[m]} {t(METHOD_PHRASES[m])}</span>
                 <span>→</span>
               </button>
             ))}
@@ -54,7 +66,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
                 this the only way to ring it up is as two sales, which gives the
                 customer two receipts neither of which he can return against. */}
             <button className="payment-option" onClick={() => setSplitting(true)}>
-              <span>÷ Смешанная</span>
+              <span>÷ {t('payment.mixed')}</span>
               <span>→</span>
             </button>
           </div>
@@ -64,7 +76,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
           <>
             <div className="qr-box">▦ Kaspi QR</div>
             <p style={{ textAlign: 'center', color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
-              Покажите QR клиенту в приложении Kaspi.kz. Когда увидите подтверждение оплаты — нажмите кнопку ниже.
+              {t('payment.kaspiHint')}
             </p>
           </>
         )}
@@ -73,7 +85,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
           <div style={{ textAlign: 'center', marginTop: 40 }}>
             <div style={{ fontSize: '2.4rem' }}>📓</div>
             <p style={{ color: 'var(--ink-muted)' }}>
-              Товар уходит в долг клиенту на {formatMoney(total)}. Долг появится в разделе «Расчёты».
+              {t('payment.creditHint', { amount: formatMoney(total) })}
             </p>
           </div>
         )}
@@ -81,14 +93,18 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
         {(selected === 'cash' || selected === 'card') && (
           <div style={{ textAlign: 'center', marginTop: 40 }}>
             <div style={{ fontSize: '2.4rem' }}>{ICONS[selected]}</div>
-            <p style={{ color: 'var(--ink-muted)' }}>{PAYMENT_LABELS[selected]} · {formatMoney(total)}</p>
+            <p style={{ color: 'var(--ink-muted)' }}>{t(METHOD_PHRASES[selected])} · {formatMoney(total)}</p>
           </div>
         )}
       </div>
       {selected !== null && (
         <div className="screen-footer">
           <button className="btn btn-primary btn-block" onClick={() => onConfirm([{ method: selected, amount: total }])}>
-            {selected === 'kaspi' ? 'Оплата получена' : selected === 'credit' ? 'Отпустить в долг' : 'Подтвердить оплату'}
+            {selected === 'kaspi'
+              ? t('payment.received')
+              : selected === 'credit'
+                ? t('payment.giveOnCredit')
+                : t('payment.confirm')}
           </button>
         </div>
       )}

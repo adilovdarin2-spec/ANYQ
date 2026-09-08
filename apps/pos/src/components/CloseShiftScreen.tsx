@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Sale, Shift } from '../types';
 import { formatMoney, formatTime } from '../utils';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   shift: Shift;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
+  const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
   const cashSum = sales.filter((s) => s.paymentMethod === 'cash').reduce((sum, s) => sum + s.total, 0);
@@ -24,24 +26,24 @@ export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="icon-btn" onClick={onCancel} aria-label="Назад">←</button>
-        <span className="screen-title">Z-отчёт и закрытие смены</span>
+        <button className="icon-btn" onClick={onCancel} aria-label={t('common.back')}>←</button>
+        <span className="screen-title">{t('shift.close.title')}</span>
       </div>
       <div className="screen-body">
-        <div className="summary-row"><span className="sr-muted">Смена открыта</span><span>{formatTime(shift.openedAt)}</span></div>
-        <div className="summary-row"><span className="sr-muted">Продаж за смену</span><span>{sales.length}</span></div>
-        <div className="summary-row"><span className="sr-muted">Наличные</span><span>{formatMoney(cashSum)}</span></div>
-        <div className="summary-row"><span className="sr-muted">Kaspi QR</span><span>{formatMoney(kaspiSum)}</span></div>
-        <div className="summary-row"><span className="sr-muted">Карта</span><span>{formatMoney(cardSum)}</span></div>
-        <div className="summary-row total"><span>Итого продаж</span><span>{formatMoney(total)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('shift.close.openedAt')}</span><span>{formatTime(shift.openedAt)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('shift.close.salesCount')}</span><span>{sales.length}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('payment.cash')}</span><span>{formatMoney(cashSum)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('payment.kaspi')}</span><span>{formatMoney(kaspiSum)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('payment.card')}</span><span>{formatMoney(cardSum)}</span></div>
+        <div className="summary-row total"><span>{t('shift.close.total')}</span><span>{formatMoney(total)}</span></div>
 
         <div className="summary-row" style={{ marginTop: 18 }}>
-          <span className="sr-muted">Наличными должно быть в кассе</span>
+          <span className="sr-muted">{t('shift.close.expectedCash')}</span>
           <span>{formatMoney(expectedCash)}</span>
         </div>
 
         <div className="form-field" style={{ marginTop: 10 }}>
-          <label htmlFor="counted-cash">Пересчитано наличными фактически</label>
+          <label htmlFor="counted-cash">{t('shift.close.countedCash')}</label>
           <input
             id="counted-cash"
             type="number"
@@ -54,18 +56,22 @@ export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
 
         {diff !== null && (
           <div className={`reconcile-diff ${diff === 0 ? 'ok' : diff < 0 ? 'short' : 'over'}`}>
-            {diff === 0 ? 'Сходится' : diff < 0 ? `Недостача ${formatMoney(Math.abs(diff))}` : `Излишек ${formatMoney(diff)}`}
+            {diff === 0
+              ? t('shift.close.matches')
+              : diff < 0
+                ? t('shift.close.short', { amount: formatMoney(Math.abs(diff)) })
+                : t('shift.close.over', { amount: formatMoney(diff) })}
           </div>
         )}
       </div>
       <div className="screen-footer">
-        <button className="btn btn-secondary btn-block" onClick={onCancel}>Отмена</button>
+        <button className="btn btn-secondary btn-block" onClick={onCancel}>{t('common.cancel')}</button>
         <button
           className="btn btn-primary btn-block"
           disabled={countedValue === null}
           onClick={() => countedValue !== null && onConfirm(countedValue)}
         >
-          Закрыть смену
+          {t('shift.close.submit')}
         </button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CompanyLocation } from '../types';
+import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   locations: CompanyLocation[];
@@ -18,6 +19,7 @@ export function OpenShiftScreen({
   onSwitchLocation,
   onOpen,
 }: Props) {
+  const { t } = useTranslation();
   const [cash, setCash] = useState('0');
   const value = Number(cash);
   const valid = Number.isFinite(value) && value >= 0 && !!currentLocationId && !switchingLocation;
@@ -25,15 +27,15 @@ export function OpenShiftScreen({
   return (
     <div className="pos-shell">
       <div className="form-card">
-        <h1>Открыть смену</h1>
-        <p className="sub">Без открытой смены продажи не проводятся — это требование кассовой дисциплины.</p>
+        <h1>{t('shift.open.title')}</h1>
+        <p className="sub">{t('shift.open.why')}</p>
 
         {/* Only a company with somewhere to choose between sees a choice. The
             point is picked before the shift opens, not during it: the shift,
             its sales and its cash all belong to one location. */}
         {locations.length > 1 && (
           <div className="form-field">
-            <label>Точка</label>
+            <label>{t('shift.open.location')}</label>
             <div className="category-bar">
               {locations.map((location) => (
                 <button
@@ -51,10 +53,10 @@ export function OpenShiftScreen({
         )}
 
         {locationError && <div className="login-error">{locationError}</div>}
-        {locations.length === 0 && <div className="login-error">У компании не настроена точка — обратитесь к владельцу</div>}
+        {locations.length === 0 && <div className="login-error">{t('shift.open.noLocation')}</div>}
 
         <div className="form-field">
-          <label htmlFor="opening-cash">Наличные в кассе на начало смены</label>
+          <label htmlFor="opening-cash">{t('shift.open.cash')}</label>
           <input
             id="opening-cash"
             type="number"
@@ -65,7 +67,7 @@ export function OpenShiftScreen({
           />
         </div>
         <button className="btn btn-primary btn-block" disabled={!valid} onClick={() => onOpen(value)}>
-          {switchingLocation ? 'Загружаем товары точки…' : 'Открыть смену'}
+          {switchingLocation ? t('shift.open.loading') : t('shift.open.submit')}
         </button>
       </div>
     </div>

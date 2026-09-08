@@ -1,6 +1,7 @@
 import type { CartLine, Discount, LoyaltySelection } from '../types';
 import type { CustomerLookupResult } from '../api';
 import { formatMoney, formatWeight } from '../utils';
+import { useTranslation } from '../i18n/useLanguage';
 import { DiscountEditor } from './DiscountEditor';
 import { LoyaltyEditor } from './LoyaltyEditor';
 
@@ -39,25 +40,26 @@ export function CartPanel({
   onRemove,
   onCheckout,
 }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="cart-panel">
-      <div className="cart-panel-title">Корзина</div>
+      <div className="cart-panel-title">{t('cart.title')}</div>
       <div className="cart-panel-body">
-        {cart.length === 0 && <div className="empty-state">Корзина пуста</div>}
+        {cart.length === 0 && <div className="empty-state">{t('cart.empty')}</div>}
         {cart.map((line) => (
           <div key={line.id} className="line-item">
             <div style={{ flex: 1 }}>
               <div className="li-name">{line.name}</div>
-              <div className="li-price">{formatMoney(line.price)} за {line.saleUnit === 'weight' ? 'кг' : 'шт.'}</div>
-              <button className="li-remove" onClick={() => onRemove(line.id)}>Удалить</button>
+              <div className="li-price">{formatMoney(line.price)} {line.saleUnit === 'weight' ? t('cart.perKg') : t('cart.perPiece')}</div>
+              <button className="li-remove" onClick={() => onRemove(line.id)}>{t('cart.remove')}</button>
             </div>
             {line.saleUnit === 'weight' ? (
-              <button className="li-remove" onClick={() => onEditWeight(line)}>{formatWeight(line.qty)} · изменить</button>
+              <button className="li-remove" onClick={() => onEditWeight(line)}>{formatWeight(line.qty)} · {t('cart.change')}</button>
             ) : (
               <div className="qty-stepper">
-                <button onClick={() => onChangeQty(line.id, -1)} aria-label="Меньше">–</button>
+                <button onClick={() => onChangeQty(line.id, -1)} aria-label={t('cart.less')}>–</button>
                 <span>{line.qty}</span>
-                <button onClick={() => onChangeQty(line.id, 1)} aria-label="Больше">+</button>
+                <button onClick={() => onChangeQty(line.id, 1)} aria-label={t('cart.more')}>+</button>
               </div>
             )}
             <div className="li-total">{formatMoney(Math.round(line.price * line.qty))}</div>
@@ -68,14 +70,14 @@ export function CartPanel({
         <div className="cart-panel-footer">
           {hasRetail && (
             <>
-              <div className="summary-row"><span>Подытог</span><span>{formatMoney(subtotal)}</span></div>
+              <div className="summary-row"><span>{t('cart.subtotal')}</span><span>{formatMoney(subtotal)}</span></div>
               <DiscountEditor discount={discount} discountAmount={discountAmount} onChange={onChangeDiscount} />
               <LoyaltyEditor netAfterDiscount={netAfterDiscount} selection={loyalty} onChange={onChangeLoyalty} onLookup={onLookupCustomer} />
             </>
           )}
-          <div className="summary-row total"><span>Итого</span><span>{formatMoney(total)}</span></div>
+          <div className="summary-row total"><span>{t('cart.total')}</span><span>{formatMoney(total)}</span></div>
           <button className="btn btn-primary btn-block" onClick={onCheckout}>
-            Оплатить {formatMoney(total)}
+            {t('cart.checkout', { amount: formatMoney(total) })}
           </button>
         </div>
       )}
