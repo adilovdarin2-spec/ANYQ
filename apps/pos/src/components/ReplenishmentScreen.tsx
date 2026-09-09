@@ -6,6 +6,9 @@ import type { ReplenishmentItem } from '../types';
 interface Props {
   items: ReplenishmentItem[];
   windowDays: number;
+  /** The demand window held more movements than one pass reads. Shown, because
+   *  every recommendation below is then computed from part of the history. */
+  truncated: boolean;
   loading: boolean;
   error: string | null;
   savingProductId: string | null;
@@ -42,6 +45,7 @@ function explain(item: ReplenishmentItem, t: Translator['t']): string {
 export function ReplenishmentScreen({
   items,
   windowDays,
+  truncated,
   loading,
   error,
   savingProductId,
@@ -83,6 +87,11 @@ export function ReplenishmentScreen({
 
       <div className="screen-body">
         {error && <div className="login-error">{error}</div>}
+
+        {/* Before the numbers, not after them: this changes how every figure
+            below should be read, and an owner who has already decided to order
+            40 is not going back up the page. */}
+        {truncated && <div className="login-error">{t('replenish.truncated')}</div>}
         {loading && items.length === 0 && <div className="empty-state">{t('common.counting')}</div>}
         {!loading && items.length === 0 && !error && (
           <div className="empty-state">{t('repl.nothing')}</div>
