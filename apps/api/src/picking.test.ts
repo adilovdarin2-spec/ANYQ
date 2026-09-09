@@ -101,7 +101,22 @@ describe('picking an order', () => {
   });
 
   it('refuses a negative quantity', () => {
-    expect(resolvePick([line()], [{ productId: 'water', quantity: -1 }])).toEqual({ status: 'badQuantity' });
+    expect(resolvePick([line()], [{ productId: 'water', quantity: -1 }])).toEqual({
+      status: 'badQuantity',
+      reason: 'negative',
+    });
+  });
+
+  it('tells a missing quantity apart from a negative one', () => {
+    // A client sending the wrong field name, or an empty box read as undefined,
+    // used to be told its number was negative. Nobody reading that inspects
+    // their field names — they inspect their numbers, and the numbers are fine.
+    const missing = { productId: 'water' } as unknown as { productId: string; quantity: number };
+    expect(resolvePick([line()], [missing])).toEqual({ status: 'badQuantity', reason: 'missing' });
+    expect(resolvePick([line()], [{ productId: 'water', quantity: Number.NaN }])).toEqual({
+      status: 'badQuantity',
+      reason: 'missing',
+    });
   });
 
   it('refuses an empty submission', () => {

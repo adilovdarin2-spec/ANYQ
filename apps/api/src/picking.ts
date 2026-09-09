@@ -53,7 +53,10 @@ export type PickResolution =
   | { status: 'notOrdered'; productId: string }
   | { status: 'moreThanOrdered'; productId: string; ordered: number }
   | { status: 'notOnShelf'; productId: string; onHand: number }
-  | { status: 'badQuantity' };
+  // Two different mistakes, told apart: a number that is not there at all, and
+  // one that is there and negative. Reporting the first as the second sends
+  // whoever is debugging it to look at their values instead of their keys.
+  | { status: 'badQuantity'; reason: 'missing' | 'negative' };
 
 export function pickErrorMessage(resolution: Exclude<PickResolution, { status: 'ok' }>): string {
   switch (resolution.status) {
@@ -66,7 +69,9 @@ export function pickErrorMessage(resolution: Exclude<PickResolution, { status: '
     case 'notOnShelf':
       return `На складе есть только ${resolution.onHand}`;
     case 'badQuantity':
-      return 'Количество не может быть отрицательным';
+      return resolution.reason === 'missing'
+        ? 'Не указано, сколько собрано'
+        : 'Количество не может быть отрицательным';
     default:
       return 'Некорректная сборка';
   }
@@ -90,7 +95,8 @@ export function resolvePick(ordered: OrderedLine[], picked: PickedLine[]): PickR
   // pass on their own while together exceeding what was ordered.
   const wanted = new Map<string, number>();
   for (const line of picked) {
-    if (!Number.isFinite(line.quantity) || line.quantity < 0) return { status: 'badQuantity' };
+    if (!Number.isFinite(line.quantity)) return { status: 'badQuantity', reason: 'missing' };
+    if (line.quantity < 0) return { status: 'badQuantity', reason: 'negative' };
     wanted.set(line.productId, (wanted.get(line.productId) ?? 0) + line.quantity);
   }
 
