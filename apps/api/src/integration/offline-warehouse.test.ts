@@ -41,6 +41,32 @@ function binQuantity(body: any, code: string): number {
   return bin?.contents[0]?.quantity ?? 0;
 }
 
+/**
+ * A timestamp that is genuinely "after everything recorded so far".
+ *
+ * Read from the database rather than taken from the process clock. The route
+ * rewinds every movement with `createdAt > countedAt`; `createdAt` is written by
+ * Postgres and a `new Date()` comes from Node, so on any skew where the database
+ * runs a hair ahead — under load, and on Docker for Windows especially — a
+ * `countedAt` of "now" silently rewinds the fixture's own opening stock. The
+ * shelf then looks like it held nothing when it was walked, and a count of 100
+ * becomes a +100 adjustment instead of none.
+ *
+ * That is what made this file flaky: it passed alone and failed in the full
+ * suite, which is the signature of a clock race rather than a logic bug. Asking
+ * the data takes both clocks out of the question.
+ */
+async function afterEverythingSoFar(): Promise<Date> {
+  const latest = await prisma.stockMovement.aggregate({
+    where: { locationId: fx.locationId },
+    _max: { createdAt: true },
+  });
+  const last = latest._max.createdAt ?? new Date(0);
+  // A millisecond past it. The comparison is strictly greater, so landing exactly
+  // on the last movement would also keep it — one more makes the intent plain.
+  return new Date(last.getTime() + 1);
+}
+
 async function makeBin(zone: string, rack: string) {
   return api(fx.token, 'POST', '/pos/bins', { locationId: fx.locationId, zone, rack, shelf: '', bin: '' });
 }
@@ -50,7 +76,7 @@ describe('a count taken while the network was down', () => {
     // The whole reason a queued count is dangerous. The shelf held 100 when it
     // was walked and 12 were counted; three were sold before the count reached
     // the server. Applying 12 outright would resurrect the three.
-    const countedAt = new Date();
+    const countedAt = await afterEverythingSoFar();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     await api(fx.token, 'POST', '/pos/sales', {
@@ -78,7 +104,7 @@ describe('a count taken while the network was down', () => {
   it('does not erase a delivery that arrived after it was taken', async () => {
     // The goods were not on the shelf when it was walked, so the count says
     // nothing about them.
-    const countedAt = new Date();
+    const countedAt = await afterEverythingSoFar();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     const other = await prisma.product.create({
@@ -106,7 +132,7 @@ describe('a count taken while the network was down', () => {
     const counted = await api(fx.token, 'POST', '/pos/counts/by-bin', {
       locationId: fx.locationId,
       bins: [''],
-      countedAt: new Date().toISOString(),
+      countedAt: (await afterEverythingSoFar()).toISOString(),
       items: [{ productId: fx.productId, binLocation: '', countedQuantity: 95 }],
     });
     expect(counted.body.adjustments[0]).toMatchObject({ systemQuantity: 100, delta: -5 });

@@ -75,6 +75,12 @@ companiesRouter.post('/', async (req, res) => {
     return;
   }
 
+  const validUntil = readValidUntil(b.tariff?.validUntil);
+  if (!validUntil) {
+    res.status(400).json({ error: VALID_UNTIL_REQUIRED });
+    return;
+  }
+
   const slug = await generateUniqueSlug(b.name);
 
   const company = await prisma.company.create({
@@ -91,7 +97,7 @@ companiesRouter.post('/', async (req, res) => {
           userLimit: b.tariff?.userLimit ?? null,
           skuLimit: b.tariff?.skuLimit ?? null,
           supportLevel: b.tariff?.supportLevel ?? 'basic',
-          validUntil: new Date(b.tariff?.validUntil),
+          validUntil,
           blocked: false,
           notes: b.tariff?.notes ?? '',
         },
@@ -253,6 +259,23 @@ function serializeUser(u: { id: string; name: string; role: string; phone: strin
 }
 
 const PIN_PATTERN = /^\d{4,6}$/;
+
+/**
+ * The date the tariff runs out, or null if what arrived was not one.
+ *
+ * Checked rather than handed to `new Date` and hoped for: an absent or malformed
+ * value becomes an Invalid Date, Prisma refuses to store it, and the operator
+ * gets a 500 with no field named. This is also the one tariff field with no
+ * sensible default — a tariff with no end is a decision somebody has to make,
+ * not something to guess at while creating a company.
+ */
+function readValidUntil(raw: unknown): Date | null {
+  if (typeof raw !== 'string' && !(raw instanceof Date) && typeof raw !== 'number') return null;
+  const parsed = new Date(raw as string | number | Date);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+const VALID_UNTIL_REQUIRED = 'Укажите дату окончания тарифа (ГГГГ-ММ-ДД)';
 
 // posPin is looked up globally (not scoped by company) at /pos/login, so it
 // must be unique across every company on the platform, not just this one.
@@ -438,6 +461,12 @@ companiesRouter.patch('/:id/tariff', async (req, res) => {
     return;
   }
 
+  const validUntil = readValidUntil(b.validUntil);
+  if (!validUntil) {
+    res.status(400).json({ error: VALID_UNTIL_REQUIRED });
+    return;
+  }
+
   await prisma.tariff.update({
     where: { companyId: req.params.id },
     data: {
@@ -446,7 +475,7 @@ companiesRouter.patch('/:id/tariff', async (req, res) => {
       userLimit: b.userLimit ?? null,
       skuLimit: b.skuLimit ?? null,
       supportLevel: b.supportLevel ?? 'basic',
-      validUntil: new Date(b.validUntil),
+      validUntil,
       blocked: !!b.blocked,
       notes: b.notes ?? '',
     },

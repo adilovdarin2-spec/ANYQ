@@ -8,7 +8,8 @@
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "admin:create": "tsx prisma/bootstrap-admin.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
