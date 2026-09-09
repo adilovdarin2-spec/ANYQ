@@ -1,50 +1,16 @@
-import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { serveStatic } from '../../scripts/static-server.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIST_DIR = path.join(__dirname, 'dist');
-const PORT = process.env.PORT || 4174;
-
-const MIME_TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-};
-
-// A cashier terminal has no reason to be framed by another site — deny
-// embedding outright rather than leaving clickjacking on the table.
-const SECURITY_HEADERS = {
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'strict-origin-when-cross-origin',
-};
-
-const server = http.createServer((req, res) => {
-  const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-  let filePath = path.join(DIST_DIR, urlPath);
-
-  if (!filePath.startsWith(DIST_DIR)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-
-  fs.stat(filePath, (err, stats) => {
-    if (err || !stats.isFile()) {
-      filePath = path.join(DIST_DIR, 'index.html');
-    }
-    const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream', ...SECURITY_HEADERS });
-    fs.createReadStream(filePath).pipe(res);
-  });
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`ANYQ pos static server listening on http://0.0.0.0:${PORT}`);
+// Everything this used to do by hand — MIME types, the SPA fallback, the
+// security headers — now lives in one place, because all three copies were the
+// same file and every fix had to be made three times. Cache headers and gzip
+// arrived with the move; see the comments there for why they matter to a shop
+// on a bad connection.
+serveStatic({
+  name: 'pos',
+  rootDir: path.dirname(fileURLToPath(import.meta.url)),
+  defaultPort: 4174,
+  // A cashier terminal has no legitimate reason to be inside somebody else's page.
+  frameAncestors: 'DENY',
 });
