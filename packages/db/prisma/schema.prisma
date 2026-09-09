@@ -72,8 +72,46 @@ model Company {
   settlements       Settlement[]
   auditEntries      AuditEntry[]
   posDevices        PosDevice[]
+  ownerCabinet      OwnerCabinet?
 
   @@map("companies")
+}
+
+/// The owner's own way in — a secret link and a password he sets himself.
+///
+/// Separate from User on purpose. A POS user is a person on a shift, identified
+/// by a four-digit PIN the cashier next to them can read off the screen; that
+/// is right for a till on a counter and wrong for a door onto the internet. One
+/// row per company: the cabinet is the company's front door, not a per-person
+/// account, and the shop that needs several owners looking has bigger questions
+/// than this table.
+///
+/// Read-only by construction: no route behind this token writes anything. The
+/// worst a stolen link and password can do is let somebody see the numbers.
+model OwnerCabinet {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// The unguessable path segment. Unique so a collision is a write error
+  /// rather than two shops quietly sharing a door.
+  secret String @unique
+
+  /// Null until the owner sets one. Until then the link shows the company name
+  /// and nothing else — otherwise whoever found the link first would see the
+  /// takings.
+  passwordHash String?
+  passwordSetAt DateTime?
+
+  /// Bumped when the password is reset, so sessions minted before it stop
+  /// working. A password change that leaves old sessions alive is not a
+  /// password change.
+  tokenVersion Int @default(0)
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("owner_cabinets")
 }
 
 // Makes every mutating POS request safely retryable. A cashier's offline queue

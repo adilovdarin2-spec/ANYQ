@@ -51,6 +51,7 @@ import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErro
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
 import { reconcileBalances, summarize, mismatchExplanation } from '../reconciliation';
 import { buildImportPlan } from '../import';
+import { ensureCabinet, resetCabinet } from '../cabinet';
 import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
 import type { LedgerTotal, CachedQuantity } from '../reconciliation';
 import type { Charge } from '../settlements';
@@ -1414,6 +1415,19 @@ async function requireOwnerOrManager(userId: string | undefined): Promise<boolea
   return user?.role === 'owner' || user?.role === 'manager';
 }
 
+/**
+ * Только владелец.
+ *
+ * Отдельно от `requireOwnerOrManager`, потому что менеджер — это человек,
+ * который ведёт смену и товар. Раздавать вход в кабинет с выручкой по всем
+ * точкам он не должен, даже если ему доверяют кассу.
+ */
+async function requireOwner(userId: string | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  return user?.role === 'owner';
+}
+
 // What a document is, in the words an owner uses. Kept in one place because
 // three screens were each about to grow their own copy of this map, and a type
 // that reads "adjustment" on one screen and "Инвентаризация" on another is the
@@ -2725,14 +2739,25 @@ posRouter.get('/audit', requirePosAuth, async (req: PosAuthedRequest, res) => {
   });
 });
 
-posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) => {
-  if (!(await requireOwnerOrManager(req.posUserId))) {
-    res.status(403).json({ error: 'Сводка доступна владельцу и менеджеру' });
-    return;
-  }
-
+/**
+ * Сводка владельца по точке — деньги, полки, смены, расхождения.
+ *
+ * Вынесено из обработчика, чтобы этими же цифрами отвечал кабинет владельца.
+ * Кабинет — другая дверь: своя ссылка, свой пароль, никакого PIN-кода, — но
+ * цифры за ней должны быть те же самые. Посчитать их второй раз означало бы
+ * завести второй источник правды о выручке, и первое же расхождение между
+ * кассой и кабинетом стоило бы дороже, чем весь кабинет.
+ *
+ * Ролевая проверка осталась снаружи намеренно: у кассы это «владелец или
+ * менеджер», у кабинета — сам факт входа по паролю, и это разные вопросы.
+ */
+export async function respondWithDashboard(
+  companyId: string,
+  query: { locationId?: unknown; days?: unknown },
+  res: Response,
+): Promise<void> {
   const company = await prisma.company.findUnique({
-    where: { id: req.posCompanyId },
+    where: { id: companyId },
     include: { tariff: true, locations: true, users: true },
   });
   const state = tariffState(company?.tariff ?? null);
@@ -2741,26 +2766,26 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
     return;
   }
 
-  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], query.locationId, res);
   if (!locationId) return;
 
   const now = new Date();
-  const requestedDays = Number(req.query.days);
+  const requestedDays = Number(query.days);
   const days = Number.isFinite(requestedDays) && requestedDays > 0 && requestedDays <= 90 ? Math.round(requestedDays) : 7;
   const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const deadStockSince = new Date(now.getTime() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
 
   const [products, stockRows, salesDocs, returnDocs, adjustmentDocs, receiptLines, lastSales, batches, shifts] =
     await Promise.all([
-      prisma.product.findMany({ where: { companyId: req.posCompanyId }, select: { id: true, name: true, unit: true, purchasePrice: true } }),
+      prisma.product.findMany({ where: { companyId: companyId }, select: { id: true, name: true, unit: true, purchasePrice: true } }),
       prisma.stock.findMany({ where: { locationId } }),
       prisma.document.findMany({
-        where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
+        where: { companyId: companyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
         // The drawer figure needs to know which part of a split sale was cash.
         include: { items: true, payments: true },
       }),
       prisma.document.findMany({
-        where: { companyId: req.posCompanyId, locationId, type: 'return', createdAt: { gte: from } },
+        where: { companyId: companyId, locationId, type: 'return', createdAt: { gte: from } },
         include: { items: true },
       }),
       // Both kinds: a count that came up short and a deliberate write-off are
@@ -2768,7 +2793,7 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
       // sold.
       prisma.document.findMany({
         where: {
-          companyId: req.posCompanyId,
+          companyId: companyId,
           locationId,
           type: { in: ['adjustment', 'write_off'] },
           createdAt: { gte: from },
@@ -2778,7 +2803,7 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
       // Every receipt ever, because a weighted average cost is only honest if
       // it averages everything that was ever paid for these goods.
       prisma.documentItem.findMany({
-        where: { document: { companyId: req.posCompanyId, type: 'receipt' } },
+        where: { document: { companyId: companyId, type: 'receipt' } },
         select: { productId: true, quantity: true, price: true },
       }),
       prisma.stockMovement.groupBy({
@@ -2791,7 +2816,7 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
         include: { product: true },
         orderBy: { expiryDate: 'asc' },
       }),
-      prisma.shift.findMany({ where: { companyId: req.posCompanyId, locationId, openedAt: { gte: from } }, orderBy: { openedAt: 'desc' } }),
+      prisma.shift.findMany({ where: { companyId: companyId, locationId, openedAt: { gte: from } }, orderBy: { openedAt: 'desc' } }),
     ]);
 
   const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
@@ -2972,17 +2997,17 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
   // Sales that never reached the tax authority. A number an owner needs on the
   // same screen as the money, because it is the one that turns into a fine.
   const unfiscalisedCount = await prisma.fiscalReceipt.count({
-    where: { status: { in: ['pending', 'failed'] }, document: { locationId, companyId: req.posCompanyId } },
+    where: { status: { in: ['pending', 'failed'] }, document: { locationId, companyId: companyId } },
   });
   const unfiscalised = { count: unfiscalisedCount };
 
   // Shown only when it isn't zero. A trust indicator that is always green
   // stops being read, and this one should be green every single day.
-  const { ledgerTotals, mismatches } = await findLedgerMismatches(req.posCompanyId!, locationId);
+  const { ledgerTotals, mismatches } = await findLedgerMismatches(companyId!, locationId);
   const ledgerCheck = summarize(ledgerTotals, mismatches);
 
   const receivedTransfers = await prisma.document.findMany({
-    where: { companyId: req.posCompanyId, type: 'transfer', toLocationId: locationId, status: 'confirmed', fulfilledAt: { gte: from } },
+    where: { companyId: companyId, type: 'transfer', toLocationId: locationId, status: 'confirmed', fulfilledAt: { gte: from } },
     include: { items: { include: { product: true } }, location: true },
   });
   const transferDiscrepancies = receivedTransfers
@@ -3002,11 +3027,11 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
   // take today"; these answer "where is our money", which is a different and
   // usually larger question.
   const [customerAccounts, supplierAccounts] = await Promise.all([
-    prisma.counterparty.findMany({ where: { companyId: req.posCompanyId, type: 'customer' }, select: { id: true } }),
-    prisma.counterparty.findMany({ where: { companyId: req.posCompanyId, type: 'supplier' }, select: { id: true } }),
+    prisma.counterparty.findMany({ where: { companyId: companyId, type: 'customer' }, select: { id: true } }),
+    prisma.counterparty.findMany({ where: { companyId: companyId, type: 'supplier' }, select: { id: true } }),
   ]);
   const sumBalances = async (accounts: { id: string }[], type: string) => {
-    const ledgers = await loadLedgers(req.posCompanyId!, accounts.map((a) => a.id), type);
+    const ledgers = await loadLedgers(companyId!, accounts.map((a) => a.id), type);
     let total = 0;
     let overdue = 0;
     for (const ledger of ledgers.values()) {
@@ -3052,6 +3077,59 @@ posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) =
     expiring,
     flags: flagOutliers([...activityByUser.values()]),
     discrepancies: { counts: countDiscrepancies, transfers: transferDiscrepancies },
+  });
+}
+
+posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Сводка доступна владельцу и менеджеру' });
+    return;
+  }
+  await respondWithDashboard(req.posCompanyId!, req.query, res);
+});
+
+/**
+ * Ссылка на кабинет владельца — только владельцу.
+ *
+ * Не менеджеру: менеджер ведёт смену и товар, а кабинет показывает выручку по
+ * всем точкам, сходимость касс и кто из кассиров выбивается. Это разговор
+ * владельца с самим собой.
+ *
+ * Сам адрес собирает касса: она знает, по какому домену живёт витрина, из
+ * своей сборки, а сервер этого не знает и знать не обязан.
+ */
+posRouter.get('/cabinet', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwner(req.posUserId))) {
+    res.status(403).json({ error: 'Кабинет владельца настраивает владелец' });
+    return;
+  }
+  const cabinet = await ensureCabinet(req.posCompanyId!);
+  res.json({
+    secret: cabinet.secret,
+    hasPassword: cabinet.passwordHash !== null,
+    passwordSetAt: cabinet.passwordSetAt ? cabinet.passwordSetAt.toISOString() : null,
+    lastLoginAt: cabinet.lastLoginAt ? cabinet.lastLoginAt.toISOString() : null,
+  });
+});
+
+/**
+ * Новая ссылка и снятый пароль.
+ *
+ * Ответ на «ссылку переслали не тому» и на «я забыл пароль» — одной кнопкой,
+ * потому что для владельца это одно и то же действие: сделать так, чтобы
+ * старое перестало работать.
+ */
+posRouter.post('/cabinet/reset', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwner(req.posUserId))) {
+    res.status(403).json({ error: 'Кабинет владельца настраивает владелец' });
+    return;
+  }
+  const cabinet = await resetCabinet(req.posCompanyId!);
+  res.status(201).json({
+    secret: cabinet.secret,
+    hasPassword: false,
+    passwordSetAt: null,
+    lastLoginAt: null,
   });
 });
 

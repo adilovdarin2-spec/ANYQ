@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, CabinetInfo, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { getDeviceKey } from './storage';
 import { translate } from './i18n';
 import { translateServerMessage } from './i18n/server';
@@ -999,4 +999,19 @@ export async function loadPhotoUrl(token: string, photoId: string): Promise<stri
 
 export function deleteDocumentPhoto(token: string, photoId: string): Promise<{ ok: boolean }> {
   return request(`/pos/photos/${photoId}`, { method: 'DELETE' }, token);
+}
+
+/**
+ * Кабинет владельца: ссылка и её состояние.
+ *
+ * Только владельцу — менеджеру сервер ответит 403. Менеджер ведёт смену и
+ * товар; кабинет показывает выручку по всем точкам и сходимость касс.
+ */
+export function fetchCabinet(token: string): Promise<CabinetInfo> {
+  return request('/pos/cabinet', { method: 'GET' }, token);
+}
+
+/** Новая ссылка и снятый пароль — одним действием: старое перестаёт работать. */
+export function resetCabinet(token: string): Promise<CabinetInfo> {
+  return request('/pos/cabinet/reset', { method: 'POST' }, token);
 }
