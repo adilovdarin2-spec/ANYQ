@@ -56,7 +56,7 @@ import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
-import { allocateFefo, classifyExpiry } from '../batches';
+import { allocateFefo, classifyExpiry, sellableFromBatches } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity } from '../counts';
@@ -203,6 +203,33 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
     // means available, not on hand — units held for an open order are on the
     // shelf but already somebody else's.
     stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + availableQuantity(row));
+  }
+
+  // For a batch-tracked product the figure above is wrong, and wrong in the
+  // direction that hurts: `Stock.quantity` includes expired units, which the
+  // sale refuses to sell. A tile reading 47 next to a sale that stops at 39 is
+  // how a cashier promises a customer six packs that do not exist.
+  const now = new Date();
+  const batchRows = locationId
+    ? await prisma.productBatch.findMany({
+        where: { locationId, productId: { in: products.map((p) => p.id) } },
+        select: { id: true, productId: true, expiryDate: true, quantity: true },
+      })
+    : [];
+  if (batchRows.length > 0) {
+    const heldBackByProduct = new Map<string, number>();
+    for (const row of stockRows) {
+      heldBackByProduct.set(row.productId, (heldBackByProduct.get(row.productId) ?? 0) + totalHeldBack([row]));
+    }
+    const byProduct = new Map<string, { batchId: string; expiryDate: Date; quantity: number }[]>();
+    for (const row of batchRows) {
+      const list = byProduct.get(row.productId) ?? [];
+      list.push({ batchId: row.id, expiryDate: row.expiryDate, quantity: row.quantity });
+      byProduct.set(row.productId, list);
+    }
+    for (const [productId, batches] of byProduct) {
+      stockByProduct.set(productId, sellableFromBatches(batches, heldBackByProduct.get(productId) ?? 0, now));
+    }
   }
 
   // Dishes (recipe-tracked products) don't carry their own stock row — their real
@@ -513,10 +540,16 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         const rows = stockByProduct.get(item.productId);
         const productBatches = batchesByProduct.get(item.productId);
         if (productBatches && productBatches.length > 0) {
-          const sellable = productBatches
-            .filter((batch) => batch.expiryDate > now)
-            .reduce((sum, batch) => sum + batch.quantity, 0);
-          quantityByProduct.set(item.productId, sellable - totalHeldBack(rows));
+          // The same function the sale grid uses. They disagreed before it
+          // existed: the grid showed on-hand including expired units, this
+          // counted only unexpired ones, and the cashier met the difference
+          // halfway through promising a customer 45 packs.
+          const batchStock = productBatches.map((batch) => ({
+            batchId: batch.id,
+            expiryDate: batch.expiryDate,
+            quantity: batch.quantity,
+          }));
+          quantityByProduct.set(item.productId, sellableFromBatches(batchStock, totalHeldBack(rows), now));
         } else {
           quantityByProduct.set(item.productId, totalAvailable(rows));
         }
@@ -554,10 +587,15 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       for (const item of plainItems) {
         const productBatches = batchesByProduct.get(item.productId);
         if (productBatches && productBatches.length > 0) {
-          const sellableBatches: BatchStock[] = productBatches
-            .filter((batch) => batch.expiryDate > now)
-            .map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: remainingByBatchId.get(batch.id) ?? 0 }));
-          const { allocations } = allocateFefo(item.quantity, sellableBatches);
+          // Not filtered here any more: allocateFefo takes `now` and refuses
+          // expired stock itself, so the guarantee cannot be lost by a caller
+          // who did not know it was their job.
+          const sellableBatches: BatchStock[] = productBatches.map((batch) => ({
+            batchId: batch.id,
+            expiryDate: batch.expiryDate,
+            quantity: remainingByBatchId.get(batch.id) ?? 0,
+          }));
+          const { allocations } = allocateFefo(item.quantity, sellableBatches, now);
           for (const alloc of allocations) {
             const batch = productBatches.find((batchRow) => batchRow.id === alloc.batchId)!;
             remainingByBatchId.set(batch.id, (remainingByBatchId.get(batch.id) ?? 0) - alloc.quantity);
