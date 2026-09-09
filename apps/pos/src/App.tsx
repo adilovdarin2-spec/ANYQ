@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { genId, resolveScannedBarcode } from './utils';
@@ -61,6 +61,7 @@ import {
   fetchReturnableSales,
   fetchReturns,
   fetchSettlements,
+  fetchSourceSystems,
   fetchStockMovements,
   fetchSupplierReturns,
   fetchSuppliers,
@@ -136,6 +137,7 @@ import { BinCountScreen } from './components/BinCountScreen';
 import { OutboxBanner } from './components/OutboxBanner';
 import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { ImportScreen } from './components/ImportScreen';
+import { MigrationScreen } from './components/MigrationScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
@@ -175,6 +177,7 @@ type View =
   | 'bin-count'
   | 'reconciliation'
   | 'import'
+  | 'migrate'
   | 'settlements'
   | 'production'
   | 'floorplan'
@@ -183,7 +186,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -243,6 +246,11 @@ export default function App() {
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [settlementsSubmitting, setSettlementsSubmitting] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [sourceSystems, setSourceSystems] = useState<SourceSystemInfo[]>([]);
+  const [sourceSystemsLoading, setSourceSystemsLoading] = useState(false);
+  // Выбранная программа, из которой переезжают. null и view === 'migrate' —
+  // владелец ещё выбирает; null и view === 'import' — обычный импорт прайса.
+  const [importSystem, setImportSystem] = useState<SourceSystemInfo | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSubmitting, setImportSubmitting] = useState(false);
@@ -424,6 +432,7 @@ export default function App() {
       { key: 'bin-count', icon: '🔢', label: t('ops.binCount'), onClick: handleShowBinCount },
       { key: 'reconciliation', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
       { key: 'import', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
+      { key: 'migrate', icon: '📦', label: t('ops.migrate'), onClick: handleShowMigrate },
       { key: 'settlements', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
       { key: 'supplier-returns', icon: '📤', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
@@ -854,9 +863,39 @@ export default function App() {
 
   function handleShowImport() {
     setView('import');
+    setImportSystem(null);
     setImportPreview(null);
     setImportResult(null);
     setImportError(null);
+  }
+
+  // «Перенести товары»: сначала владелец называет свою программу, и только
+  // потом видит файловое поле. Порядок принципиальный — сопоставление колонок
+  // руками это то место, на котором импорт бросают.
+  async function handleShowMigrate() {
+    setView('migrate');
+    setImportSystem(null);
+    setImportPreview(null);
+    setImportResult(null);
+    setImportError(null);
+    if (!session || sourceSystems.length > 0) return;
+    setSourceSystemsLoading(true);
+    try {
+      const result = await fetchSourceSystems(session.token);
+      setSourceSystems(result.systems);
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : t('fail.loadSystems'));
+    } finally {
+      setSourceSystemsLoading(false);
+    }
+  }
+
+  function handleChooseSystem(system: SourceSystemInfo) {
+    setImportSystem(system);
+    setImportPreview(null);
+    setImportResult(null);
+    setImportError(null);
+    setView('import');
   }
 
   function resetImport() {
@@ -870,7 +909,7 @@ export default function App() {
     setImportLoading(true);
     setImportError(null);
     try {
-      setImportPreview(await previewImport(session.token, source));
+      setImportPreview(await previewImport(session.token, source, importSystem?.id ?? null));
     } catch (err) {
       setImportError(err instanceof ApiError ? err.message : t('fail.checkFile'));
     } finally {
@@ -885,7 +924,13 @@ export default function App() {
     try {
       // A key per attempt: importing a thousand products twice because a reply
       // was lost would double the catalogue.
-      const result = await commitImport(session.token, currentLocationId, source, genId('import'));
+      const result = await commitImport(
+        session.token,
+        currentLocationId,
+        source,
+        genId('import'),
+        importSystem?.id ?? null,
+      );
       setImportResult(result);
       setImportPreview(null);
       // The register sells from its cached catalogue, so it has to hear about
@@ -2471,14 +2516,26 @@ export default function App() {
         />
       )}
 
+      {view === 'migrate' && (
+        <MigrationScreen
+          systems={sourceSystems}
+          loading={sourceSystemsLoading}
+          error={importError}
+          onBack={() => setView('operations')}
+          onChoose={handleChooseSystem}
+        />
+      )}
+
       {view === 'import' && (
         <ImportScreen
+          system={importSystem}
+          onChangeSystem={handleShowMigrate}
           preview={importPreview}
           loading={importLoading}
           error={importError}
           submitting={importSubmitting}
           result={importResult}
-          onBack={() => setView('operations')}
+          onBack={() => setView(importSystem ? 'migrate' : 'operations')}
           onPreview={handlePreviewImport}
           onCommit={handleCommitImport}
           onReset={resetImport}

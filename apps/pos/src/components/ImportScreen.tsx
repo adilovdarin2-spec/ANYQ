@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import type { ImportPreview } from '../types';
+import type { ImportPreview, SourceSystemInfo } from '../types';
 import type { ImportSource } from '../api';
 import { useTranslation } from '../i18n/useLanguage';
 import { parseSheet } from '../utils';
+import { MigrationSteps } from './MigrationScreen';
+import { CatalogueAnalysisPanel } from './CatalogueAnalysis';
 
 interface Props {
+  /** Программа, из которой переезжают. null — обычный импорт прайса. */
+  system: SourceSystemInfo | null;
+  onChangeSystem: () => void;
   preview: ImportPreview | null;
   loading: boolean;
   error: string | null;
@@ -17,6 +22,8 @@ interface Props {
 }
 
 export function ImportScreen({
+  system,
+  onChangeSystem,
   preview,
   loading,
   error,
@@ -80,10 +87,11 @@ export function ImportScreen({
     <div className="screen">
       <div className="screen-header">
         <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
-        <span className="screen-title">{t('import.title')}</span>
+        <span className="screen-title">{system ? t('migrate.title') : t('import.title')}</span>
       </div>
 
       <div className="screen-body">
+        {system && !result && <MigrationSteps system={system} onChange={onChangeSystem} />}
         {result ? (
           <>
             <div className="report-cards">
@@ -160,6 +168,8 @@ export function ImportScreen({
                 and half not, with no way to tell which. */}
             {preview && (
               <>
+                <CatalogueAnalysisPanel analysis={preview.analysis} />
+
                 <div className="orders-section-title">{t('import.whatHappens')}</div>
                 <div className="report-cards">
                   <div className="report-card">

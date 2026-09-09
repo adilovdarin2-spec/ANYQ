@@ -51,6 +51,7 @@ import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErro
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
 import { reconcileBalances, summarize, mismatchExplanation } from '../reconciliation';
 import { buildImportPlan } from '../import';
+import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
 import type { LedgerTotal, CachedQuantity } from '../reconciliation';
 import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
@@ -4955,13 +4956,27 @@ function readGrid(body: any): GridResult {
   };
 }
 
-async function planImport(companyId: string, grid: string[][]) {
+async function planImport(companyId: string, grid: string[][], system: SourceSystem | null) {
   const existing = await prisma.product.findMany({
     where: { companyId },
     select: { id: true, name: true, barcode: true },
   });
-  return buildImportPlan(grid, existing);
+  return buildImportPlan(grid, existing, system?.aliases ?? {});
 }
+
+// Программы, из которых можно переехать. Отдаётся списком, а не зашивается в
+// экран: добавить новую — это одна запись на сервере, без выката кассы.
+posRouter.get('/import/systems', requirePosAuth, (_req: PosAuthedRequest, res) => {
+  res.json({
+    systems: SOURCE_SYSTEMS.map((s) => ({
+      id: s.id,
+      name: s.name,
+      note: s.note,
+      steps: s.steps,
+      stepsVerified: s.stepsVerified,
+    })),
+  });
+});
 
 // Says what would happen and changes nothing. An import that starts applying
 // rows and stops at the first bad one leaves a catalogue half in and half not,
@@ -4979,7 +4994,8 @@ posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthed
     return;
   }
 
-  const plan = await planImport(req.posCompanyId!, parsed.grid);
+  const system = findSourceSystem(req.body?.system);
+  const plan = await planImport(req.posCompanyId!, parsed.grid, system);
   res.json({
     created: plan.created,
     updated: plan.updated,
@@ -4989,6 +5005,10 @@ posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthed
     // Enough rows to recognise your own file and see the columns landed where
     // you meant them to.
     sample: plan.rows.slice(0, 20),
+    // Разбор считается по тому же файлу и в том же запросе: владелец должен
+    // увидеть, что нашлось в его магазине, до того как что-то записано, —
+    // иначе это уже не разбор, а отчёт после импорта.
+    analysis: analyseCatalogue(parsed.grid, system),
   });
 });
 
@@ -5018,7 +5038,7 @@ posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest,
   const locationId = resolveLocationOrRespond(company?.locations ?? [], req.body?.locationId, res);
   if (!locationId) return;
 
-  const plan = await planImport(req.posCompanyId!, grid);
+  const plan = await planImport(req.posCompanyId!, grid, findSourceSystem(req.body?.system));
   if (plan.rows.length === 0) {
     res.status(400).json({ error: 'В файле нет ни одной строки, которую можно импортировать', problems: plan.problems.slice(0, MAX_REPORTED_PROBLEMS) });
     return;
