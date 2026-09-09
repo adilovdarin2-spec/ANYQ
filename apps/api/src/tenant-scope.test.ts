@@ -27,8 +27,24 @@ const TENANT_FACING = ['apps/api/src/routes/pos.ts', 'apps/api/src/routes/supply
 
 const REPO_ROOT = resolve(__dirname, '../../..');
 
-/** Tokens that mean "this query is confined to one tenant". */
+/**
+ * Tokens that mean "this query is confined to one tenant".
+ *
+ * `locationId` belongs here only because of the second test below. A location id
+ * that arrived from the caller is not a scope on its own — taking
+ * `req.query.locationId` straight into a `where` is one shop reading another's
+ * stock. It counts as a scope because every handler that accepts one runs it
+ * through `resolveLocationOrRespond` first, which answers 404 unless the id is
+ * one of the calling company's own. If that ever stops being true, the test
+ * that checks it fails and this list stops being honest.
+ */
 const SCOPE = /companyId|posCompanyId|locationId|adminUserId/;
+
+/** Ways a handler can establish that a caller's location is really theirs. */
+const LOCATION_VERIFIED = /resolveLocationOrRespond|resolveLocationId|locationIds\.has|locations\.find|locations\.some/;
+
+/** A location id the caller chose, rather than one the server derived. */
+const LOCATION_FROM_CALLER = /req\.query\.locationId|req\.body\.locationId|req\.params\.locationId|(?<![\w.])b\.locationId/;
 
 const READ_OR_WRITE = /prisma\.(\w+)\.(findFirst|findUnique|findUniqueOrThrow|update|updateMany|delete|deleteMany|count|aggregate|groupBy)/;
 
@@ -90,6 +106,22 @@ function callsKeyedOnInput(): Call[] {
   return found;
 }
 
+/** Every route handler that accepts a location id chosen by the caller. */
+function handlersTakingACallerLocation(): { file: string; header: string; body: string }[] {
+  const found: { file: string; header: string; body: string }[] = [];
+  for (const file of TENANT_FACING) {
+    const src = readFileSync(resolve(REPO_ROOT, file), 'utf8');
+    // Every handler starts at `xRouter.method(` in column one.
+    for (const body of src.split(/\n(?=\w+Router\.(?:get|post|put|patch|delete)\()/)) {
+      const header = body.split('\n')[0].trim().slice(0, 80);
+      if (!/Router\.(get|post|put|patch|delete)\(/.test(header)) continue;
+      if (!LOCATION_FROM_CALLER.test(body)) continue;
+      found.push({ file, header, body });
+    }
+  }
+  return found;
+}
+
 describe('tenant isolation', () => {
   it('finds the calls it is supposed to be checking', () => {
     // A guard on the guard. If the extractor stops matching — a Prisma upgrade,
@@ -111,6 +143,23 @@ describe('tenant isolation', () => {
     expect(
       unscoped.map((call) => `${call.file}:${call.line} (${call.model}) ${call.text.trim().slice(0, 90)}`),
     ).toEqual([]);
+  });
+
+  it('checks a location the caller asked for before trusting it', () => {
+    // The hole this closes does not look like a hole: `where: { locationId }`
+    // reads as properly scoped, and is the opposite if the id came from the
+    // request unchecked. One shop would read another's stock, and the query
+    // would pass review.
+    const unverified = handlersTakingACallerLocation()
+      .filter(({ body }) => !LOCATION_VERIFIED.test(body))
+      .map(({ file, header }) => `${file} ${header}`);
+    expect(unverified).toEqual([]);
+  });
+
+  it('finds the handlers it is supposed to be checking', () => {
+    // Same guard-on-the-guard as above: the location test would pass by matching
+    // nothing if the helper were renamed or the handlers reshaped.
+    expect(handlersTakingACallerLocation().length).toBeGreaterThan(20);
   });
 
   it('does not keep an exemption for a call that has gone', () => {
