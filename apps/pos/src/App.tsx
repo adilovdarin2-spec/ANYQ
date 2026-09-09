@@ -301,6 +301,8 @@ export default function App() {
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [devices, setDevices] = useState<PosDevice[]>([]);
+  const [deviceCount, setDeviceCount] = useState(0);
+  const [devicesTruncated, setDevicesTruncated] = useState(false);
   const [devicesSubmitting, setDevicesSubmitting] = useState(false);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState<string | null>(null);
@@ -1412,7 +1414,10 @@ export default function App() {
     setDevicesLoading(true);
     setDevicesError(null);
     try {
-      setDevices((await fetchDevices(session.token)).devices);
+      const listed = await fetchDevices(session.token);
+      setDevices(listed.devices);
+      setDeviceCount(listed.total);
+      setDevicesTruncated(listed.truncated);
     } catch (err) {
       setDevicesError(err instanceof ApiError ? err.message : t('fail.loadDevices'));
     } finally {
@@ -2617,6 +2622,8 @@ export default function App() {
       {view === 'devices' && (
         <DevicesScreen
           devices={devices}
+          total={deviceCount}
+          truncated={devicesTruncated}
           loading={devicesLoading}
           error={devicesError}
           submitting={devicesSubmitting}

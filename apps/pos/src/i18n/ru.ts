@@ -933,6 +933,8 @@ export const ru = {
   'fail.revokeDevice': 'Не удалось отключить устройство',
   'fail.restoreDevice': 'Не удалось включить устройство',
 
+  'devices.truncated': 'Показаны {shown} из {total}. Если нужного устройства нет в списке — удалите лишние.',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
   // The interface itself is fully translated. What is not, and cannot be, is

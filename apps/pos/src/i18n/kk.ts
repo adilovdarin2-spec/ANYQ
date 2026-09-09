@@ -907,6 +907,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'fail.revokeDevice': 'Құрылғыны өшіру мүмкін болмады',
   'fail.restoreDevice': 'Құрылғыны қосу мүмкін болмады',
 
+  'devices.truncated': '{total} ішінен {shown} көрсетілген. Қажетті құрылғы тізімде болмаса — артықтарын жойыңыз.',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Тіл',
   'language.caveat': 'Тауар атаулары мен сирек кездесетін сервер хабарлары қай тілде жазылса, сондай күйінде қалады.',

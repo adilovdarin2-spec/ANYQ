@@ -221,4 +221,78 @@ describe('registers', () => {
     expect((await api(asCashier.body.token, 'GET', '/pos/devices')).status).toBe(403);
     expect((await api(asCashier.body.token, 'POST', '/pos/devices/anything/revoke')).status).toBe(403);
   });
+
+  it('puts live registers first and switched-off ones last', async () => {
+    // Postgres sorts NULLs last on ASC, so `revokedAt: 'asc'` put every
+    // switched-off device at the TOP — the person hunting for a stolen tablet
+    // read past everything they had already dealt with to reach the rows that
+    // matter, and with the list capped, live devices fell off the end.
+    const manager = await login(OFFICE);
+    await login(TILL);
+    await login('33333333-4444-4555-8666-777777777777');
+
+    const listed = await devices(manager.body.token);
+    const target = listed.body.devices.find((d: { current: boolean }) => !d.current);
+    await api(manager.body.token, 'POST', `/pos/devices/${target.id}/revoke`);
+
+    const after = await devices(manager.body.token);
+    const liveCount = after.body.devices.filter((d: { revokedAt: string | null }) => !d.revokedAt).length;
+    expect(liveCount).toBe(2);
+    // Every live row before every revoked one.
+    const firstRevoked = after.body.devices.findIndex((d: { revokedAt: string | null }) => !!d.revokedAt);
+    const lastLive = after.body.devices.reduce(
+      (last: number, d: { revokedAt: string | null }, index: number) => (d.revokedAt ? last : index),
+      -1,
+    );
+    expect(lastLive).toBeLessThan(firstRevoked);
+  });
+
+  it('says when the list stops short instead of quietly ending', async () => {
+    // Rows are created straight through Prisma: the point is what the endpoint
+    // reports when there are more than it will return, not how they got there.
+    const manager = await login(OFFICE);
+    await prisma.posDevice.createMany({
+      data: Array.from({ length: 70 }, (_, i) => ({
+        companyId: fx.companyId,
+        deviceKey: `filler-${String(i).padStart(4, '0')}-key`,
+        label: `Заполнитель ${i}`,
+      })),
+    });
+
+    const listed = await devices(manager.body.token);
+    expect(listed.body.total).toBe(71);
+    expect(listed.body.truncated).toBe(true);
+    expect(listed.body.devices.length).toBeLessThan(listed.body.total);
+  });
+
+  it('does not claim truncation when there is none', async () => {
+    const manager = await login(OFFICE);
+    const listed = await devices(manager.body.token);
+    expect(listed.body.total).toBe(1);
+    expect(listed.body.truncated).toBe(false);
+  });
+
+  it('refuses a new register once the company is full, rather than burying one', async () => {
+    // The attack this closes: a cashier who has just walked off with a tablet
+    // logs in with fresh keys until the stolen row is off the end of the list.
+    // Dropping the oldest row to make room would let that through, so the new
+    // login is refused and the owner is told to tidy up.
+    await login(TILL);
+    await prisma.posDevice.createMany({
+      data: Array.from({ length: 60 }, (_, i) => ({
+        companyId: fx.companyId,
+        deviceKey: `bulk-${String(i).padStart(4, '0')}-key`,
+        label: `Много ${i}`,
+      })),
+    });
+
+    const fresh = await login('cccccccc-dddd-4eee-8fff-000000000000');
+    expect(fresh.status).toBe(409);
+    expect(fresh.body.error).toContain('устройств');
+
+    // And a register already on the books still gets in — the cap bounds new
+    // rows, it does not stop the shop trading.
+    const known = await login(TILL);
+    expect(known.status).toBe(200);
+  });
 });

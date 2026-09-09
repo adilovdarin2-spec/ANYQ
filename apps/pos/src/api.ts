@@ -95,7 +95,14 @@ export interface PosDevice {
   current: boolean;
 }
 
-export function fetchDevices(token: string): Promise<{ devices: PosDevice[] }> {
+export interface DeviceList {
+  devices: PosDevice[];
+  total: number;
+  /** The server had more than it would return. Shown, never swallowed. */
+  truncated: boolean;
+}
+
+export function fetchDevices(token: string): Promise<DeviceList> {
   return request('/pos/devices', {}, token);
 }
 
