@@ -9,6 +9,7 @@ import { getOutbox, outcomeOf, queueCommand } from './outbox';
 import { useTranslation } from './i18n/useLanguage';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
+import { useOfflineReadiness } from './hooks/useOfflineReadiness';
 import {
   ApiError,
   ORDERS_BASE,
@@ -368,6 +369,9 @@ export default function App() {
   const { t } = useTranslation();
   const outbox = useOutboxSync(session?.token ?? null);
 
+  // Whether the till can be opened without a network at all, as opposed to
+  // whether it has one right now. See offline.ts.
+  const offlineReadiness = useOfflineReadiness();
   const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(
     session?.token ?? null,
     ensureShiftSyncedStable,
@@ -2794,6 +2798,7 @@ export default function App() {
           role={session.user.role}
           shift={shift}
           online={online}
+          offlineReadiness={offlineReadiness}
           pendingCount={pendingCount}
           stuckCount={stuckCount}
           storefrontUrl={storefrontUrl}
