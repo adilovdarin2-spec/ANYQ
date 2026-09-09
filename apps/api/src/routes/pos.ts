@@ -139,6 +139,14 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
       res.status(403).json({ error: 'Это устройство отключено — обратитесь к владельцу' });
       return;
     }
+    if (!existing) {
+      const known = await prisma.posDevice.count({ where: { companyId: user.companyId } });
+      if (known >= MAX_POS_DEVICES) {
+        res.status(409).json({ error: 'Слишком много устройств — владелец должен удалить лишние' });
+        return;
+      }
+    }
+
     device = existing
       ? await prisma.posDevice.update({
           where: { id: existing.id },
@@ -2451,6 +2459,17 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
 // changed what can also learn whose account to use.
 // --- registers ------------------------------------------------------------
 //
+// The most devices one company may have on the books at once.
+//
+// Generous for a real shop — the pilot charter budgets two — and a bound on
+// something a client controls. Every login with an unseen key writes a row, and
+// the key is generated on the device, so without a limit a cashier could bury
+// the tablet they had just walked off with under a few hundred fresh rows. The
+// login is refused rather than the row silently dropped: dropping the oldest
+// would let exactly that attack through, and refusing tells the owner to go and
+// tidy the list, which is the correct response to a shop with 60 registers.
+const MAX_POS_DEVICES = 60;
+//
 // The answer to a stolen tablet. `User.tokenVersion` retires every session a
 // person has, which is right for "this cashier has left" and wrong here: it
 // signs the cashier out of every till in the shop, mid-shift, to deal with one
@@ -2463,10 +2482,17 @@ posRouter.get('/devices', requirePosAuth, async (req: PosAuthedRequest, res) => 
     return;
   }
 
+  // Live first, most recently seen at the top; switched-off ones last.
+  //
+  // `nulls: 'first'` is load-bearing and not decoration: Postgres sorts NULLs
+  // last on ASC, so plain `asc` on a nullable column put every revoked device
+  // above the live ones — the opposite of what the screen needs from somebody
+  // working down it looking for one tablet.
+  const total = await prisma.posDevice.count({ where: { companyId: req.posCompanyId } });
   const devices = await prisma.posDevice.findMany({
     where: { companyId: req.posCompanyId },
-    orderBy: [{ revokedAt: 'asc' }, { lastSeenAt: 'desc' }],
-    take: 200,
+    orderBy: [{ revokedAt: { sort: 'asc', nulls: 'first' } }, { lastSeenAt: 'desc' }],
+    take: MAX_POS_DEVICES,
   });
 
   // Resolved in one read rather than a join per row: the list is small and the
@@ -2478,6 +2504,11 @@ posRouter.get('/devices', requirePosAuth, async (req: PosAuthedRequest, res) => 
   );
 
   res.json({
+    total,
+    // Said rather than left to be noticed. A list that quietly stops short is
+    // the same failure as a summary that says "all checks passed" after
+    // skipping one — it looks complete exactly when somebody is relying on it.
+    truncated: total > devices.length,
     devices: devices.map((device) => ({
       id: device.id,
       label: device.label,

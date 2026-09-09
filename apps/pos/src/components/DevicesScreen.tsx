@@ -4,6 +4,9 @@ import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
   devices: PosDevice[];
+  /** How many the company has, which may be more than were returned. */
+  total: number;
+  truncated: boolean;
   loading: boolean;
   error: string | null;
   submitting: boolean;
@@ -29,6 +32,8 @@ function formatWhen(iso: string): string {
  */
 export function DevicesScreen({
   devices,
+  total,
+  truncated,
   loading,
   error,
   submitting,
@@ -66,6 +71,12 @@ export function DevicesScreen({
         {error && <div className="login-error">{error}</div>}
 
         <p className="field-hint">{t('devices.why')}</p>
+
+        {/* Said, not swallowed. Somebody scanning this list for one tablet has
+            to know the list is not all of it. */}
+        {truncated && (
+          <div className="login-error">{t('devices.truncated', { shown: devices.length, total })}</div>
+        )}
 
         {loading && devices.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
         {!loading && devices.length === 0 && !error && <div className="empty-state">{t('devices.none')}</div>}
