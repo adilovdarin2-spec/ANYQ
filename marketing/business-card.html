@@ -1,0 +1,259 @@
+<title>Визитка ANYQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  /* Визитка 90 × 50 мм — стандарт для типографий Казахстана.
+     Фон печатается «в край», весь текст лежит внутри поля 5 мм,
+     поэтому подрезка ±1 мм ничего не срезает. */
+
+  :root {
+    --ink:    #14181b;
+    --paper:  #f1f2ee;
+    --accent: #0b6b4f;
+    --muted:  #6d746e;
+    --rule:   rgba(241,242,238,.22);
+
+    --display: 'Unbounded', 'Golos Text', system-ui, sans-serif;
+    --body:    'Golos Text', system-ui, -apple-system, sans-serif;
+    --mono:    'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: #dcded7;
+    color: var(--ink);
+    font-family: var(--body);
+    margin: 0;
+    padding: 28px 20px 48px;
+  }
+
+  .hint {
+    max-width: 380mm;
+    margin: 0 auto 22px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #4b524c;
+    max-width: 62ch;
+  }
+  .hint b { font-weight: 500; color: var(--ink); }
+  .hint code { background: rgba(20,24,27,.07); padding: 1px 5px; border-radius: 3px; }
+
+  .sheet {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+  }
+
+  .card {
+    width: 90mm;
+    height: 50mm;
+    padding: 5mm;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px -18px rgba(20,24,27,.7);
+  }
+
+  /* ---------- лицо ---------- */
+  .front {
+    background: var(--ink);
+    color: var(--paper);
+    justify-content: space-between;
+  }
+
+  .front .mark {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 11mm;
+    letter-spacing: .16em;
+    line-height: 1;
+    margin-top: 2mm;
+    /* буквенный интервал добавляет пустоту справа — компенсируем */
+    margin-right: -.16em;
+  }
+
+  .front .claim {
+    font-size: 3.6mm;
+    line-height: 1.35;
+    max-width: 55mm;
+    color: var(--paper);
+    opacity: .88;
+  }
+  .front .claim em { font-style: normal; color: #4fb28d; }
+
+  .front .foot {
+    font-family: var(--mono);
+    font-size: 2.5mm;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--paper);
+    opacity: .55;
+  }
+
+  /* тонкая линия-«отрыв чека» по правому краю лица */
+  .front::after {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; right: 12mm;
+    border-left: 1px dashed var(--rule);
+  }
+
+  /* ---------- оборот ---------- */
+  .back {
+    background: var(--paper);
+    color: var(--ink);
+    flex-direction: row;
+    gap: 5mm;
+    align-items: stretch;
+  }
+
+  .back .col {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .back .who .name {
+    font-size: 4.6mm;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .back .who .role {
+    font-size: 3.1mm;
+    color: var(--muted);
+    margin-top: .8mm;
+  }
+
+  .back .contacts {
+    font-family: var(--mono);
+    font-size: 3.1mm;
+    line-height: 1.7;
+  }
+  .back .contacts .phone {
+    font-size: 4.1mm;
+    font-weight: 500;
+    letter-spacing: .01em;
+  }
+  .back .contacts .site { color: var(--muted); }
+
+  .back .offer {
+    font-size: 3mm;
+    line-height: 1.4;
+    color: var(--accent);
+    font-weight: 500;
+    border-top: 1px solid #d0d3ca;
+    padding-top: 2mm;
+  }
+
+  .qr {
+    width: 26mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.6mm;
+    flex: 0 0 auto;
+  }
+  .qr svg, .qr canvas { width: 24mm; height: 24mm; display: block; }
+  .qr .cap {
+    font-family: var(--mono);
+    font-size: 2.2mm;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+  }
+  .qr .fallback {
+    font-family: var(--mono);
+    font-size: 2.4mm;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  /* поля, которые надо заполнить перед печатью */
+  .fill { border-bottom: 1px dotted #a9aea6; }
+
+  @media print {
+    @page { size: 90mm 50mm; margin: 0; }
+    body { background: #fff; padding: 0; }
+    .hint { display: none; }
+    .sheet { display: block; gap: 0; }
+    .card {
+      box-shadow: none;
+      page-break-after: always;
+      break-after: page;
+      width: 90mm;
+      height: 50mm;
+    }
+    .card:last-child { page-break-after: auto; break-after: auto; }
+    .fill { border-bottom: 0; }
+  }
+</style>
+
+<p class="hint">
+  <b>Печать:</b> Ctrl&nbsp;+&nbsp;P → «Сохранить в PDF», размер бумаги <code>90&nbsp;×&nbsp;50&nbsp;мм</code>,
+  поля «нет», <b>фоновая графика — включить</b>. Выйдет две страницы: лицо и оборот.<br>
+  <b>Перед печатью заполните два поля</b> на обороте — имя с должностью и адрес сайта; они подчёркнуты точками.<br>
+  <b>В типографии:</b> просите 2&nbsp;мм под обрез — фон уходит в край, весь текст лежит внутри поля 5&nbsp;мм и не срежется.
+</p>
+
+<div class="sheet">
+
+  <div class="card front">
+    <div class="mark">ANYQ</div>
+    <div class="claim">Касса и склад,<br>которые <em>сходятся</em></div>
+    <div class="foot">Магазины · Склады · Распределение</div>
+  </div>
+
+  <div class="card back">
+    <div class="col">
+      <div class="who">
+        <div class="name fill">Имя Фамилия</div>
+        <div class="role">Основатель, ANYQ by Astryx</div>
+      </div>
+      <div class="contacts">
+        <div class="phone">+7 778 417 5136</div>
+        <div>WhatsApp · Telegram</div>
+        <div class="site fill">anyq.kz</div>
+      </div>
+      <div class="offer">Разбор вашего магазина<br>за 10 минут — бесплатно</div>
+    </div>
+    <div class="qr" id="qr">
+      <div class="fallback" id="qrfallback">QR<br>+7 778 417 5136</div>
+      <div class="cap">Написать</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+  // QR ведёт в WhatsApp с уже написанным сообщением. Если библиотека не
+  // загрузилась (печать без интернета) — на её месте остаётся номер, и
+  // визитка всё равно печатается.
+  (function () {
+    if (typeof qrcode !== 'function') return;
+    var link = 'https://wa.me/77784175136?text=' +
+      encodeURIComponent('Здравствуйте! Хочу разбор магазина ANYQ');
+    var qr = qrcode(0, 'M');
+    qr.addData(link);
+    qr.make();
+    var holder = document.getElementById('qr');
+    var fallback = document.getElementById('qrfallback');
+    var svg = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+    var wrap = document.createElement('div');
+    wrap.innerHTML = svg;
+    var node = wrap.firstElementChild;
+    node.setAttribute('shape-rendering', 'crispEdges');
+    holder.replaceChild(node, fallback);
+  })();
+</script>
