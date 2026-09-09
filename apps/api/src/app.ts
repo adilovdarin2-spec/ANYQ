@@ -12,8 +12,30 @@ import { posRouter } from './routes/pos';
 import { supplyRouter } from './routes/supply';
 
 const defaultOrigins = ['http://localhost:5183', 'http://localhost:5184', 'http://localhost:5185'];
+
+/**
+ * Which front ends may talk to this server.
+ *
+ * Unset, this used to fall back to the three local development ports even in
+ * production — which fails closed, so it is not a hole, but it fails in the one
+ * place nobody is looking: the browser's console. Every screen would show a
+ * network error, the server log would show nothing at all, and the person
+ * debugging it has no reason to suspect CORS.
+ *
+ * Refused at start-up instead, with the answer in the message. A server that
+ * will not boot is found in a minute; a shop whose till cannot reach it is found
+ * by the queue.
+ */
+if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGINS) {
+  throw new Error(
+    'ALLOWED_ORIGINS is not set. In production it would fall back to localhost, and every front end ' +
+      'would be refused by CORS with nothing in the server log to say so. Set it to the deployed ' +
+      'origins, comma-separated: https://kassa.example.kz,https://admin.example.kz,https://orders.example.kz',
+  );
+}
+
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   : defaultOrigins;
 
 const app = express();

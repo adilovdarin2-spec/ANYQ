@@ -33,7 +33,26 @@ export function requireSecret(name: string): string {
     }
   }
 
-  throw new Error(
-    `${name} is not set. The server will not start without it: tokens signed with a default secret can be forged by anyone who can read the source.`,
-  );
+  throw new Error(`${name} is not set. The server will not start without it: ${WHY[name] ?? GENERIC_WHY}`);
 }
+
+/**
+ * Why each secret matters, in the words of what goes wrong without it.
+ *
+ * One message for all of them said tokens could be forged, which is true of
+ * JWT_SECRET and nonsense for a push key. An operator reading a start-up failure
+ * at seven in the morning should be told what this particular value is for, not
+ * a sentence about a different one.
+ */
+const WHY: Record<string, string> = {
+  JWT_SECRET:
+    'tokens signed with a default secret can be minted by anyone who can read the source, for any company.',
+  VAPID_PRIVATE_KEY:
+    'a push key committed to the repository lets anyone sign a notification that an owner\'s browser will accept — ' +
+    'an order that never happened, arriving from you. Generate a pair with `npx web-push generate-vapid-keys`.',
+  VAPID_PUBLIC_KEY:
+    'it is the other half of VAPID_PRIVATE_KEY and browsers check the pair matches. ' +
+    'Generate both with `npx web-push generate-vapid-keys`.',
+};
+
+const GENERIC_WHY = 'a value committed to the source is known to everyone who can read it, which makes it no secret at all.';
