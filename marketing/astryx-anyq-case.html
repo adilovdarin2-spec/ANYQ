@@ -1,0 +1,259 @@
+<title>ANYQ — кейс Astryx</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=DM+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  /* Токены сняты с astryx.kz, чтобы страница встала в сайт без правок:
+     фон #05070D, текст #F2F6FB, фирменный градиент 115°, Golos Text + DM Sans,
+     заголовки весом 550 с плотным трекингом. */
+  :root {
+    --bg:       #05070d;
+    --ink:      #f2f6fb;
+    --muted:    #96a2b4;
+    --line:     rgba(242, 246, 251, .12);
+    --card:     linear-gradient(rgba(16, 24, 36, .85), rgba(7, 11, 17, .9));
+    --grad:     linear-gradient(115deg, #48f0d4, #5ec8ff 42%, #7b6bff);
+    --cyan:     #48f0d4;
+    --alarm:    #ff7a59;
+
+    --head: 'Golos Text', 'DM Sans', Arial, sans-serif;
+    --body: 'DM Sans', 'Golos Text', Arial, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 22px 90px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1, h2, h3 { font-family: var(--head); margin: 0; text-wrap: balance; }
+
+  h1 {
+    font-weight: 550;
+    font-size: clamp(38px, 7.4vw, 68px);
+    line-height: 1.02;
+    letter-spacing: -.05em;
+    margin: 18px 0 20px;
+  }
+  h1 em { font-style: normal; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  h2 {
+    font-weight: 550;
+    font-size: clamp(24px, 3.6vw, 34px);
+    line-height: 1.1;
+    letter-spacing: -.035em;
+    margin-bottom: 16px;
+  }
+
+  h3 { font-weight: 600; font-size: 17px; letter-spacing: -.01em; margin-bottom: 6px; }
+
+  p { margin: 0 0 16px; max-width: 68ch; color: #d3dae5; }
+  p:last-child { margin-bottom: 0; }
+  .lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--ink); }
+  .muted { color: var(--muted); }
+  .small { font-size: 14.5px; }
+  strong { color: var(--ink); font-weight: 600; }
+
+  section { padding: 54px 0; border-top: 1px solid var(--line); }
+  header.hero { padding: 56px 0 8px; border: 0; }
+
+  /* --- шапка --- */
+  .brandline { display: flex; align-items: center; gap: 12px; }
+  .brandline .mark {
+    width: 30px; height: 30px; border-radius: 9px; background: var(--grad);
+    display: grid; place-items: center;
+    font-family: var(--head); font-weight: 700; font-size: 13px; color: #05070d;
+  }
+  .brandline .who { font-family: var(--mono); font-size: 11.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+
+  /* --- цифры --- */
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;
+    margin-top: 34px;
+  }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px 16px; }
+  .stat .v {
+    font-family: var(--head); font-weight: 550; font-size: 30px; line-height: 1;
+    letter-spacing: -.04em;
+    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .stat .l { font-size: 13px; color: var(--muted); margin-top: 7px; }
+
+  /* --- сетка карточек --- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 14px; margin-top: 22px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
+  .card p { font-size: 14.5px; margin: 0; color: var(--muted); }
+  .card .idx { font-family: var(--mono); font-size: 11.5px; color: var(--cyan); letter-spacing: .12em; }
+  .card h3 { margin: 10px 0 8px; }
+
+  /* --- список решений --- */
+  .rows { margin-top: 22px; border-top: 1px solid var(--line); }
+  .row {
+    display: grid; grid-template-columns: 190px 1fr; gap: 20px;
+    padding: 20px 0; border-bottom: 1px solid var(--line);
+  }
+  .row .k { font-family: var(--head); font-weight: 600; font-size: 15.5px; letter-spacing: -.01em; }
+  .row p { font-size: 14.5px; margin: 0; }
+  @media (max-width: 620px) { .row { grid-template-columns: 1fr; gap: 8px; } }
+
+  /* --- стек --- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-family: var(--mono); font-size: 12.5px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 13px; color: var(--muted);
+  }
+
+  /* --- статус --- */
+  .status { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 24px; margin-top: 22px; }
+  .status .badge {
+    display: inline-block; font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--alarm);
+    border: 1px solid rgba(255,122,89,.4); border-radius: 999px; padding: 5px 11px; margin-bottom: 12px;
+  }
+
+  /* --- призыв --- */
+  .cta { margin-top: 56px; text-align: center; }
+  .pill {
+    display: inline-block; background: var(--grad); color: #05070d;
+    font-family: var(--head); font-weight: 600; font-size: 16px;
+    text-decoration: none; padding: 15px 30px; border-radius: 999px;
+  }
+  .pill:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+  .cta .num { font-family: var(--mono); font-size: 13.5px; color: var(--muted); margin-top: 14px; }
+
+  footer { margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="brandline">
+      <span class="mark">A</span>
+      <span class="who">Astryx Studio · собственный продукт</span>
+    </div>
+
+    <h1>ANYQ — операционная система <em>магазина</em></h1>
+
+    <p class="lede">Касса, склад, закупки и кабинет владельца в одной системе. Для магазинов, складов и дистрибуции в Казахстане — там, где интернет пропадает, а учёт всё равно должен сходиться.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="v">4</div><div class="l">приложения: касса, склад, витрина заказов, админка</div></div>
+      <div class="stat"><div class="v">1 021</div><div class="l">автотест, из них 280 против настоящей базы</div></div>
+      <div class="stat"><div class="v">46 000</div><div class="l">строк своего кода, без готовых движков</div></div>
+      <div class="stat"><div class="v">2</div><div class="l">языка: русский и казахский целиком</div></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="eyebrow">Задача</div>
+    <h2>У магазина касса от одного поставщика, а учёт в Excel</h2>
+    <p>И они не сходятся никогда. Продажа проходит в одной программе, остаток живёт в другой, себестоимость не знает никто, а инвентаризация — это день закрытого магазина. Владелец видит выручку и не видит денег: сколько лежит на полках, что испортится в четверг, кто опустил цену и вернул её обратно.</p>
+    <p>Готовые кассовые решения этого не закрывают, потому что они кассы. Складские — не умеют торговать без сети. Мы взялись за то, что между ними.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Решение</div>
+    <h2>Четыре вещи, из которых следует всё остальное</h2>
+
+    <div class="cards">
+      <div class="card">
+        <div class="idx">01</div>
+        <h3>Остаток не хранится числом</h3>
+        <p>Правда — это журнал движений, только дописываемый. Число на полке — кэш, и оно пересчитывается из журнала по запросу. Поэтому любая цифра раскрывается в документ, а сходимость можно доказать, а не пообещать.</p>
+      </div>
+      <div class="card">
+        <div class="idx">02</div>
+        <h3>Офлайн — не режим, а норма</h3>
+        <p>Касса торгует без сети и досылает продажи, когда связь вернётся. Приёмка, пересчёт и перемещения — тоже. Ключ идемпотентности пишется в той же транзакции, что и работа, поэтому повтор запроса не продаёт товар дважды.</p>
+      </div>
+      <div class="card">
+        <div class="idx">03</div>
+        <h3>Инвентаризация на ходу</h3>
+        <p>Пересчёт применяется как разница на момент счёта: сервер отматывает журнал назад к времени обхода. Товар, проданный, пока считали, результат не ломает — магазин не закрывается.</p>
+      </div>
+      <div class="card">
+        <div class="idx">04</div>
+        <h3>Кабинет владельца</h3>
+        <p>Своя ссылка, свой пароль, телефон — и никакой установки. Только чтение: за этим доступом нет ни одного пишущего маршрута, поэтому украденная ссылка не может провести продажу.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Инженерные решения</div>
+    <h2>Что пришлось делать самим</h2>
+
+    <div class="rows">
+      <div class="row">
+        <div class="k">Свой разбор .xlsx</div>
+        <p>Файл приходит снаружи, а у популярной библиотеки история уязвимостей. Нужно было распаковать две записи и прочитать XML — ради этого брать на себя всю поверхность SheetML не стоило.</p>
+      </div>
+      <div class="row">
+        <div class="k">Переезд из чужих программ</div>
+        <p>Владелец выбирает свою программу, а словарь её заголовков лежит на сервере. Сопоставление колонок руками — то место, где импорт бросают везде.</p>
+      </div>
+      <div class="row">
+        <div class="k">Изоляция арендаторов</div>
+        <p>Тест читает исходники и проверяет, что каждый запрос ограничен компанией. Сорок четыре запроса, ни одной дыры — и проверяется это сборкой, а не памятью.</p>
+      </div>
+      <div class="row">
+        <div class="k">Казахский слоем</div>
+        <p>Русский полон по построению, казахский — накладка поверх. Тест читает исходники сервера и падает, если появилась фраза без перевода.</p>
+      </div>
+      <div class="row">
+        <div class="k">Резервные копии с проверкой</div>
+        <p>Копия, которую никто не восстанавливал, — это не копия. Восстановление прогоняется и сверяется, копия уходит с машины.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Стек</div>
+    <h2>Чем сделано</h2>
+    <div class="chips">
+      <span class="chip">TypeScript</span>
+      <span class="chip">React</span>
+      <span class="chip">Vite · PWA</span>
+      <span class="chip">Node · Express</span>
+      <span class="chip">Prisma</span>
+      <span class="chip">PostgreSQL</span>
+      <span class="chip">Vitest</span>
+      <span class="chip">Railway</span>
+      <span class="chip">Service Worker</span>
+      <span class="chip">Web Push</span>
+    </div>
+    <p class="small muted" style="margin-top:18px">Никаких платформ-конструкторов и внешних кассовых движков: всё, что считает деньги, написано и покрыто тестами здесь.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Статус</div>
+    <h2>Где проект сейчас</h2>
+    <div class="status">
+      <span class="badge">Пилот</span>
+      <p><strong>Развёрнуто на боевом сервере, база пустая, готово к первому магазину.</strong> Подключение клиента прогоняется скриптом от пустой базы до первой продажи — семнадцать шагов, включая сверку остатка с журналом.</p>
+      <p class="small muted" style="margin-bottom:0">Торговых дней на живой точке пока ноль, и мы это говорим прямо: тысяча тестов — не то же самое, что месяц работы настоящего магазина. Первый пилот идёт сейчас.</p>
+    </div>
+  </section>
+
+  <div class="cta">
+    <a class="pill" href="https://wa.me/77784175136?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%9F%D0%B8%D1%88%D1%83%20%D0%BF%D0%BE%20ANYQ">Обсудить проект →</a>
+    <div class="num">+7 778 417 5136</div>
+  </div>
+
+  <footer>Astryx Studio · Казахстан · дизайн, разработка, 3D</footer>
+</div>

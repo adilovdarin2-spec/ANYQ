@@ -8,6 +8,7 @@
     --ink:      #14181b;
     --paper:    #f1f2ee;
     --surface:  #fbfbf8;
+    --sunken:   #e8eae3;
     --accent:   #0b6b4f;
     --accent-s: #e2ede8;
     --alarm:    #b4451e;
@@ -15,6 +16,7 @@
     --muted:    #6d746e;
     --rule:     #d9dbd3;
     --shadow:   0 1px 0 rgba(20,24,27,.05), 0 8px 24px -18px rgba(20,24,27,.5);
+    --lift:     0 2px 2px -1px rgba(20,24,27,.06), 0 24px 48px -32px rgba(20,24,27,.6);
 
     --display: 'Unbounded', 'Golos Text', system-ui, sans-serif;
     --body:    'Golos Text', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -26,6 +28,7 @@
       --ink:      #e9ebe4;
       --paper:    #101311;
       --surface:  #171b18;
+      --sunken:   #0b0e0c;
       --accent:   #4fb28d;
       --accent-s: #172b23;
       --alarm:    #e2865e;
@@ -33,6 +36,7 @@
       --muted:    #949b93;
       --rule:     #2a2f2b;
       --shadow:   0 1px 0 rgba(0,0,0,.3), 0 10px 28px -20px #000;
+      --lift:     0 2px 2px -1px rgba(0,0,0,.4), 0 28px 56px -34px #000;
     }
   }
 
@@ -40,6 +44,7 @@
     --ink:      #e9ebe4;
     --paper:    #101311;
     --surface:  #171b18;
+    --sunken:   #0b0e0c;
     --accent:   #4fb28d;
     --accent-s: #172b23;
     --alarm:    #e2865e;
@@ -47,6 +52,7 @@
     --muted:    #949b93;
     --rule:     #2a2f2b;
     --shadow:   0 1px 0 rgba(0,0,0,.3), 0 10px 28px -20px #000;
+    --lift:     0 2px 2px -1px rgba(0,0,0,.4), 0 28px 56px -34px #000;
   }
 
   * { box-sizing: border-box; }
@@ -60,54 +66,24 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  .page {
-    max-width: 580px;
-    margin: 0 auto;
-    padding: 0 20px 72px;
-  }
+  .page { max-width: 600px; margin: 0 auto; padding: 0 20px 76px; }
 
-  section {
-    padding: 40px 0;
-    border-top: 1px solid var(--rule);
-  }
+  section { padding: 44px 0; border-top: 1px solid var(--rule); }
   section:first-of-type { border-top: 0; }
 
-  /* ---- the document line that opens each section ---- */
   .eyebrow {
     font-family: var(--mono);
-    font-size: 11.5px;
-    font-weight: 500;
-    letter-spacing: .14em;
-    text-transform: uppercase;
+    font-size: 11.5px; font-weight: 500;
+    letter-spacing: .14em; text-transform: uppercase;
     color: var(--muted);
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
+    display: flex; align-items: baseline; gap: 10px;
     margin-bottom: 18px;
   }
-  .eyebrow::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: var(--rule);
-    transform: translateY(-3px);
-  }
+  .eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--rule); transform: translateY(-3px); }
 
   h1, h2, h3 { text-wrap: balance; margin: 0; }
-
-  h2 {
-    font-size: 27px;
-    line-height: 1.18;
-    font-weight: 700;
-    letter-spacing: -.015em;
-    margin-bottom: 14px;
-  }
-
-  h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 6px;
-  }
+  h2 { font-size: 27px; line-height: 1.16; font-weight: 700; letter-spacing: -.015em; margin-bottom: 14px; }
+  h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 
   p { margin: 0 0 14px; max-width: 62ch; }
   p:last-child { margin-bottom: 0; }
@@ -115,303 +91,159 @@
   .lede { font-size: 17.5px; }
   .muted { color: var(--muted); }
   .small { font-size: 14px; }
-
   strong { font-weight: 600; }
+
+  .note {
+    font-family: var(--mono);
+    font-size: 12.5px; line-height: 1.5;
+    color: var(--muted); margin-top: 10px;
+  }
 
   /* ---------------- hero ---------------- */
   .hero { padding-top: 46px; }
-
-  .wordmark {
-    font-family: var(--display);
-    font-weight: 800;
-    font-size: 15px;
-    letter-spacing: .22em;
-    color: var(--ink);
-  }
+  .wordmark { font-family: var(--display); font-weight: 800; font-size: 15px; letter-spacing: .22em; }
 
   .hero-claim {
-    font-family: var(--display);
-    font-weight: 700;
-    font-size: clamp(31px, 8.6vw, 44px);
-    line-height: 1.06;
-    letter-spacing: -.02em;
+    font-family: var(--display); font-weight: 700;
+    font-size: clamp(31px, 8.6vw, 44px); line-height: 1.06; letter-spacing: -.02em;
     margin: 26px 0 18px;
   }
-  .hero-claim em {
-    font-style: normal;
-    color: var(--accent);
-  }
+  .hero-claim em { font-style: normal; color: var(--accent); }
 
   .proofs {
-    display: grid;
-    gap: 1px;
-    background: var(--rule);
-    border: 1px solid var(--rule);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-top: 26px;
+    display: grid; gap: 1px; background: var(--rule);
+    border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; margin-top: 26px;
   }
-  .proof {
-    background: var(--surface);
-    padding: 14px 16px;
-    display: grid;
-    grid-template-columns: 22px 1fr;
-    gap: 12px;
-    align-items: baseline;
-  }
-  .proof .n {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--accent);
-    font-weight: 600;
-  }
+  .proof { background: var(--surface); padding: 14px 16px; display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: baseline; }
+  .proof .n { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 600; }
   .proof p { margin: 4px 0 0; font-size: 14.5px; color: var(--muted); }
 
-  /* ---------------- till mock ---------------- */
+  /* ---------------- till ---------------- */
   .till {
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    box-shadow: var(--shadow);
-    padding: 16px;
-    margin: 22px 0 8px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 6px;
+    box-shadow: var(--shadow); padding: 16px; margin: 22px 0 8px;
   }
-  .till-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px dashed var(--rule);
-  }
+  .till-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--rule); }
   .till-title { font-weight: 600; font-size: 14.5px; }
 
   .chip {
-    font-family: var(--mono);
-    font-size: 11.5px;
-    font-weight: 500;
-    letter-spacing: .04em;
-    padding: 5px 10px;
-    border-radius: 999px;
-    white-space: nowrap;
-    background: var(--alarm-s);
-    color: var(--alarm);
+    font-family: var(--mono); font-size: 11.5px; font-weight: 500; letter-spacing: .04em;
+    padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+    background: var(--alarm-s); color: var(--alarm);
     transition: background .35s ease, color .35s ease;
   }
   .chip.sent { background: var(--accent-s); color: var(--accent); }
 
   .lines { margin-top: 12px; }
-  .line {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-size: 14.5px;
-    padding: 5px 0;
-  }
-  .line .dots {
-    flex: 1;
-    border-bottom: 1px dotted var(--rule);
-    transform: translateY(-4px);
-  }
-  .line .amt {
-    font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-    font-size: 14px;
-  }
-  .line.total {
-    margin-top: 8px;
-    padding-top: 10px;
-    border-top: 1px solid var(--rule);
-    font-weight: 600;
-  }
-  .line.total .amt { font-weight: 600; }
+  .line { display: flex; align-items: baseline; gap: 8px; font-size: 14.5px; padding: 5px 0; }
+  .line .dots { flex: 1; border-bottom: 1px dotted var(--rule); transform: translateY(-4px); }
+  .line .amt { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 14px; }
+  .line.total { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--rule); font-weight: 600; }
 
-  button.pull {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    letter-spacing: .04em;
-    background: transparent;
-    color: var(--ink);
-    border: 1px solid var(--rule);
-    border-radius: 4px;
-    padding: 9px 14px;
-    cursor: pointer;
-    transition: border-color .2s ease, color .2s ease;
+  button.pull, button.tile {
+    font: inherit; cursor: pointer;
+    background: transparent; color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 4px;
+    transition: border-color .2s ease, color .2s ease, background .2s ease;
   }
+  button.pull { font-family: var(--mono); font-size: 12.5px; letter-spacing: .04em; padding: 9px 14px; }
   button.pull:hover { border-color: var(--accent); color: var(--accent); }
-  button.pull:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* ---------------- drill-down chain ---------------- */
-  .chain { display: grid; gap: 8px; margin: 20px 0 4px; }
-  .step {
+  /* ---------------- phone ---------------- */
+  /* Кабинет показывается в телефоне, потому что его и открывают в телефоне.
+     Рамка тут не украшение — она сообщает, где это живёт. */
+  .phone-wrap { display: flex; justify-content: center; margin: 26px 0 10px; }
+  .phone {
+    width: 290px; max-width: 100%;
     background: var(--surface);
     border: 1px solid var(--rule);
-    border-left: 3px solid var(--accent);
-    border-radius: 3px;
-    padding: 11px 14px;
-    font-size: 14.5px;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
+    border-radius: 26px; padding: 12px;
+    box-shadow: var(--lift);
+  }
+  .phone-screen { background: var(--paper); border-radius: 16px; padding: 16px 14px 18px; }
+  .phone-brand { font-family: var(--display); font-weight: 800; font-size: 9px; letter-spacing: .22em; color: var(--accent); }
+  .phone-shop { font-weight: 700; font-size: 16px; margin: 3px 0 14px; }
+
+  .alarm {
+    background: var(--alarm-s); border: 1px solid var(--alarm);
+    border-radius: 12px; padding: 13px 14px; margin-bottom: 14px;
+  }
+  .alarm-value { font-family: var(--mono); font-size: 25px; font-weight: 600; line-height: 1; color: var(--alarm); font-variant-numeric: tabular-nums; }
+  .alarm-label { font-size: 12.5px; font-weight: 600; margin-top: 5px; }
+  .alarm-note { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+
+  .figs { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .fig { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 11px; }
+  .fig-v { font-family: var(--mono); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fig-l { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .phone-rows { margin-top: 12px; }
+  .phone-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+  .phone-row:last-child { border-bottom: 0; }
+  .phone-row .v { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------------- chain ---------------- */
+  .chain { display: grid; gap: 8px; margin: 20px 0 4px; }
+  .step {
+    background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    border-radius: 3px; padding: 11px 14px; font-size: 14.5px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   }
   .step:nth-child(2) { margin-left: 14px; }
   .step:nth-child(3) { margin-left: 28px; }
   .step:nth-child(4) { margin-left: 42px; }
   .step .k { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-  /* ---------------- morning card ---------------- */
-  .morning {
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    box-shadow: var(--shadow);
-    overflow: hidden;
-    margin: 22px 0 10px;
-  }
-  .morning-head {
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--rule);
-    font-family: var(--mono);
-    font-size: 11.5px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 14px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--rule);
-    font-size: 15px;
-  }
-  .row:last-child { border-bottom: 0; }
-  .row .v {
-    font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-  .row.flag { background: var(--alarm-s); }
-  .row.flag .v { color: var(--alarm); font-weight: 600; }
+  /* ---------------- tiles ---------------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin: 20px 0 12px; }
+  button.tile { padding: 13px 10px; font-size: 14px; font-weight: 500; text-align: center; }
+  button.tile:hover { border-color: var(--accent); }
+  button.tile[aria-pressed="true"] { background: var(--accent-s); border-color: var(--accent); color: var(--accent); }
 
-  /* ---------------- migration tiles ---------------- */
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-    gap: 8px;
-    margin: 20px 0 14px;
+  .steps-out {
+    background: var(--sunken); border-radius: 6px; padding: 14px 16px; margin-bottom: 14px;
+    font-size: 14.5px;
   }
-  .tile {
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 4px;
-    padding: 14px 12px;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 500;
-  }
-  .tile.other { color: var(--muted); font-weight: 400; }
+  .steps-out ol { margin: 8px 0 0; padding-left: 20px; line-height: 1.6; }
+  .steps-out .who { font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 
   /* ---------------- findings ---------------- */
   .findings { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; margin: 20px 0 12px; }
-  .finding {
-    background: var(--surface);
-    padding: 13px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 14px;
-  }
+  .finding { background: var(--surface); padding: 13px 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 14px; }
   .finding .t { font-size: 14.5px; }
-  .finding .n {
-    font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-    font-size: 16px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
+  .finding .n { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; white-space: nowrap; }
   .finding .n.bad { color: var(--alarm); }
 
   /* ---------------- pricing ---------------- */
   .tariffs { display: grid; gap: 10px; margin: 20px 0 12px; }
   .tariff {
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 5px;
-    padding: 15px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 16px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 5px; padding: 15px 16px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
   }
   .tariff.pick { border-color: var(--accent); }
   .tariff .name { font-weight: 600; font-size: 15.5px; }
   .tariff .desc { font-size: 13.5px; color: var(--muted); margin-top: 3px; }
-  .tariff .price {
-    font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-    font-size: 15px;
-    white-space: nowrap;
-  }
+  .tariff .price { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; white-space: nowrap; }
   .tariff .price span { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); text-align: right; }
 
   /* ---------------- cta ---------------- */
-  .cta {
-    background: var(--ink);
-    color: var(--paper);
-    border-radius: 8px;
-    padding: 28px 22px;
-    margin-top: 40px;
-  }
+  .cta { background: var(--ink); color: var(--paper); border-radius: 8px; padding: 28px 22px; margin-top: 40px; }
   .cta h2 { color: var(--paper); font-size: 24px; }
   .cta p { color: var(--paper); opacity: .8; }
   .cta a.wa {
-    display: inline-block;
-    margin-top: 8px;
-    background: var(--paper);
-    color: var(--ink);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 15.5px;
-    padding: 13px 22px;
-    border-radius: 5px;
+    display: inline-block; margin-top: 8px;
+    background: var(--paper); color: var(--ink); text-decoration: none;
+    font-weight: 600; font-size: 15.5px; padding: 13px 22px; border-radius: 5px;
   }
-  .cta a.wa:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .cta .num {
-    font-family: var(--mono);
-    font-size: 14px;
-    margin-top: 14px;
-    opacity: .7;
-    color: var(--paper);
-  }
-
-  .note {
-    font-size: 12.5px;
-    color: var(--muted);
-    font-family: var(--mono);
-    line-height: 1.5;
-    margin-top: 10px;
-  }
+  .cta .num { font-family: var(--mono); font-size: 14px; margin-top: 14px; opacity: .7; color: var(--paper); }
 
   footer {
-    margin-top: 34px;
-    padding-top: 18px;
-    border-top: 1px solid var(--rule);
-    font-size: 12.5px;
-    color: var(--muted);
-    display: flex;
-    justify-content: space-between;
-    gap: 14px;
-    flex-wrap: wrap;
+    margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--rule);
+    font-size: 12.5px; color: var(--muted);
+    display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; animation: none !important; }
-  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
 <div class="page">
@@ -434,15 +266,15 @@
       <div class="proof">
         <div class="n">02</div>
         <div>
-          <h3>Любая цифра открывается в документ</h3>
-          <p>Не «отчёт говорит», а «вот кто это сделал и когда».</p>
+          <h3>Магазин на вашем телефоне</h3>
+          <p>Своя ссылка и свой пароль. Ничего не устанавливать, кассу не трогать.</p>
         </div>
       </div>
       <div class="proof">
         <div class="n">03</div>
         <div>
           <h3>Переезд — один вечер</h3>
-          <p>Товары переносятся из вашей нынешней программы файлом выгрузки.</p>
+          <p>Товары переносятся из вашей нынешней программы одним файлом.</p>
         </div>
       </div>
     </div>
@@ -467,7 +299,43 @@
     </div>
 
     <button class="pull" id="pullbtn" type="button">Вернуть провод</button>
-    <p class="note">Нажмите — это ровно то, что показывают на встрече за пять секунд.</p>
+    <p class="note">Нажмите — на встрече это делается проводом и занимает пять секунд.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Утро владельца</div>
+    <h2>Магазин на телефоне за пять секунд</h2>
+    <p>Отдельная ссылка и пароль, который вы задаёте сами. Не приложение — ничего не устанавливать, не занимать память, не отвлекать кассира. У сотрудников доступа нет.</p>
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="phone-brand">ANYQ</div>
+          <div class="phone-shop">Магазин на Сейфуллина</div>
+
+          <div class="alarm">
+            <div class="alarm-value">−3 200 ₸</div>
+            <div class="alarm-label">Наличных не хватает</div>
+            <div class="alarm-note">Больше всего — смена Айгуль, 8 сентября</div>
+          </div>
+
+          <div class="figs">
+            <div class="fig"><div class="fig-v">412 800 ₸</div><div class="fig-l">Выручка</div></div>
+            <div class="fig"><div class="fig-v">96 400 ₸</div><div class="fig-l">Заработали</div></div>
+          </div>
+
+          <div class="phone-rows">
+            <div class="phone-row"><span>Должны нам</span><span class="v">184 000 ₸</span></div>
+            <div class="phone-row"><span>Испортится за неделю</span><span class="v">38 400 ₸</span></div>
+            <div class="phone-row"><span>Лежит без движения</span><span class="v">614 000 ₸</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">Цифры для примера. У вас на этом месте будут ваши.</p>
+    <p>Строка про недостачу стоит первой не для драматизма: разница, увиденная на следующее утро, ещё восстановима, а увиденная в конце месяца — нет.</p>
+    <p class="small muted">Кабинет только показывает. Изменить в нём нельзя ничего — ни цену, ни остаток, ни продажу. Это сделано нарочно: даже если ссылка и пароль попадут не в те руки, худшее, что случится, — чужой человек увидит цифры.</p>
   </section>
 
   <section>
@@ -481,41 +349,27 @@
       <div class="step"><span>Чек № 63 · возврат</span><span class="k">−2 190 ₸</span></div>
       <div class="step"><span>Провёл: Айгуль, смена 12</span><span class="k">19:41</span></div>
     </div>
-    <p class="note">Цифры для примера. У вас на этом месте будут ваши.</p>
-  </section>
-
-  <section>
-    <div class="eyebrow">Утро владельца</div>
-    <h2>Магазин на телефоне за пять секунд</h2>
-    <p>Своя ссылка, свой пароль. Ничего не устанавливать, кассу не трогать, у сотрудников доступа нет.</p>
-
-    <div class="morning">
-      <div class="morning-head">Вчера · 8 сентября</div>
-      <div class="row"><span>Выручка</span><span class="v">412 800 ₸</span></div>
-      <div class="row"><span>Средний чек</span><span class="v">4 745 ₸</span></div>
-      <div class="row flag"><span>Наличных не хватает</span><span class="v">−3 200 ₸</span></div>
-      <div class="row"><span>Кончится за 3 дня</span><span class="v">5 товаров</span></div>
-      <div class="row"><span>Испортится за неделю</span><span class="v">38 400 ₸</span></div>
-      <div class="row"><span>Лежит без движения 90 дней</span><span class="v">614 000 ₸</span></div>
-    </div>
-    <p class="note">Цифры для примера.</p>
-    <p>Строка про недостачу — на следующее утро, а не в конце месяца, когда уже ничего не восстановить.</p>
   </section>
 
   <section>
     <div class="eyebrow">Переезд</div>
     <h2>Три тысячи позиций — один вечер</h2>
-    <p>Самое частое возражение — не цена, а «у меня всё уже забито в другой программе». Поэтому в ANYQ есть кнопка <strong>«Перенести товары»</strong>: выбираете свою программу, система показывает три шага, где именно у неё лежит выгрузка, вы бросаете файл — колонки мы узнаём сами.</p>
+    <p>Самое частое возражение — не цена, а «у меня всё уже забито в другой программе». Поэтому в ANYQ есть кнопка <strong>«Перенести товары»</strong>: вы выбираете свою программу, мы показываем, где у неё лежит выгрузка, вы бросаете файл — колонки система узнаёт сама.</p>
 
-    <div class="tiles">
-      <div class="tile">Rekassa</div>
-      <div class="tile">Wipon</div>
-      <div class="tile">Kaspi</div>
-      <div class="tile">МойСклад</div>
-      <div class="tile">1С</div>
-      <div class="tile">Poster</div>
-      <div class="tile">Мультикас</div>
-      <div class="tile other">Excel или другая</div>
+    <div class="tiles" id="tiles">
+      <button class="tile" type="button" aria-pressed="false" data-note="Онлайн-касса на телефоне" data-steps="Откройте раздел с товарами|Найдите экспорт или выгрузку|Сохраните файл Excel или CSV">Rekassa</button>
+      <button class="tile" type="button" aria-pressed="false" data-note="Касса и учёт для розницы" data-steps="Откройте раздел с товарами|Найдите экспорт или выгрузку|Сохраните файл Excel">Wipon</button>
+      <button class="tile" type="button" aria-pressed="false" data-note="Магазин и приём оплаты" data-steps="Откройте кабинет продавца|Раздел с товарами|Скачайте файл товаров">Kaspi</button>
+      <button class="tile" type="button" aria-pressed="false" data-note="Складской учёт и торговля" data-steps="Товары и склады → Товары|Нажмите «Экспорт»|Формат Excel">МойСклад</button>
+      <button class="tile" type="button" aria-pressed="false" data-note="Торговля, УТ, Розница" data-steps="Справочник «Номенклатура»|Ещё → Вывести список|Сохранить как Excel">1С</button>
+      <button class="tile" type="button" aria-pressed="false" data-note="Касса для торговых точек" data-steps="Раздел «Меню» или «Склад»|Нажмите «Экспорт»|Файл Excel или CSV">Poster</button>
+      <button class="tile" type="button" aria-pressed="false" data-note="Товароучёт и кассы" data-steps="Раздел с товарами|Выгрузка или экспорт|Файл Excel">Мультикас</button>
+      <button class="tile" type="button" aria-pressed="false" data-note="Любая таблица с товарами" data-steps="Откройте свою таблицу товаров|Проверьте, что в первой строке заголовки|Сохраните как .xlsx">Excel</button>
+    </div>
+
+    <div class="steps-out" id="steps">
+      <span class="who">Нажмите свою программу</span>
+      <p style="margin:8px 0 0">Покажем, где именно у неё лежит выгрузка.</p>
     </div>
 
     <p>Переносим товары, штрихкоды, категории, единицы, цены, остатки, поставщиков и клиентов с их долгами. Прежде чем что-то создать, показываем построчно, что получится.</p>
@@ -535,7 +389,7 @@
       <div class="finding"><span class="t">Наценка по категориям</span><span class="n">5 % — 60 %</span></div>
     </div>
 
-    <p class="note">Пример разбора. Считается только по тому, что есть в вашем файле — ничего не додумываем.</p>
+    <p class="note">Пример разбора. Считается только по тому, что есть в вашем файле — ничего не додумываем и вслух говорим, чего в нём не было.</p>
     <p>А дальше — то, ради чего это и делается: <strong>ваш каталог уже загружен.</strong> Захотите — с завтрашнего дня работаете в ANYQ, заново вводить нечего.</p>
   </section>
 
@@ -545,31 +399,19 @@
 
     <div class="tariffs">
       <div class="tariff">
-        <div>
-          <div class="name">Старт</div>
-          <div class="desc">Одна точка, касса и склад целиком</div>
-        </div>
+        <div><div class="name">Старт</div><div class="desc">Одна точка, касса и склад целиком</div></div>
         <div class="price">59 900 ₸<span>в месяц</span></div>
       </div>
       <div class="tariff pick">
-        <div>
-          <div class="name">Стандарт</div>
-          <div class="desc">То же плюс приоритетная поддержка и помощь с настройкой</div>
-        </div>
+        <div><div class="name">Стандарт</div><div class="desc">То же плюс приоритетная поддержка и помощь с настройкой</div></div>
         <div class="price">79 800 ₸<span>в месяц</span></div>
       </div>
       <div class="tariff">
-        <div>
-          <div class="name">Сеть</div>
-          <div class="desc">Две точки, дополнительные сотрудники, поддержка</div>
-        </div>
+        <div><div class="name">Сеть</div><div class="desc">Две точки, дополнительные сотрудники, поддержка</div></div>
         <div class="price">114 500 ₸<span>в месяц</span></div>
       </div>
       <div class="tariff">
-        <div>
-          <div class="name">Supply</div>
-          <div class="desc">Оптовику: склад, закупки, отгрузка и витрина для его магазинов</div>
-        </div>
+        <div><div class="name">Supply</div><div class="desc">Оптовику: склад, закупки, отгрузка и витрина для его магазинов</div></div>
         <div class="price">159 800 ₸<span>в месяц</span></div>
       </div>
     </div>
@@ -603,15 +445,33 @@
     var offline = true;
     btn.addEventListener('click', function () {
       offline = !offline;
-      if (offline) {
-        chip.className = 'chip';
-        chip.textContent = 'Нет сети · 12 в очереди';
-        btn.textContent = 'Вернуть провод';
-      } else {
-        chip.className = 'chip sent';
-        chip.textContent = 'Отправлено · 12 продаж';
-        btn.textContent = 'Выдернуть провод';
-      }
+      chip.className = offline ? 'chip' : 'chip sent';
+      chip.textContent = offline ? 'Нет сети · 12 в очереди' : 'Отправлено · 12 продаж';
+      btn.textContent = offline ? 'Вернуть провод' : 'Выдернуть провод';
+    });
+
+    var out = document.getElementById('steps');
+    var tiles = document.getElementById('tiles');
+    tiles.addEventListener('click', function (event) {
+      var tile = event.target.closest('button.tile');
+      if (!tile) return;
+      Array.prototype.forEach.call(tiles.children, function (b) { b.setAttribute('aria-pressed', 'false'); });
+      tile.setAttribute('aria-pressed', 'true');
+
+      var steps = tile.getAttribute('data-steps').split('|');
+      var list = document.createElement('ol');
+      steps.forEach(function (text) {
+        var li = document.createElement('li');
+        li.textContent = text;
+        list.appendChild(li);
+      });
+
+      out.textContent = '';
+      var who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = tile.textContent + ' · ' + tile.getAttribute('data-note');
+      out.appendChild(who);
+      out.appendChild(list);
     });
   })();
 </script>
