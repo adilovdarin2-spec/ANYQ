@@ -163,6 +163,24 @@ function slugify(name: string): string {
 }
 
 async function main() {
+  // This file makes a development world: demo companies, invented sales, a
+  // pharmacy and a café with a kitchen. None of it belongs within a thousand
+  // miles of a shop's own database, and until 2026-09-09 it was also the only
+  // thing that created an admin account — so a real deployment had to run it
+  // and live with the demo shops. The account now comes from
+  // `npm run admin:create`, and this refuses to touch a production database
+  // unless somebody says out loud that they want the demo data.
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'yes') {
+    console.error(
+      [
+        'Refusing to seed demo data into a production database.',
+        '  For the platform account:  ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run admin:create --workspace=packages/db',
+        '  If you really do want demo companies here, set ALLOW_DEMO_SEED=yes.',
+      ].join('\n'),
+    );
+    process.exit(2);
+  }
+
   const adminPassword = process.env.ADMIN_SEED_PASSWORD || 'anyq2026';
   const passwordHash = await bcrypt.hash(adminPassword, 10);
   await prisma.adminUser.upsert({
