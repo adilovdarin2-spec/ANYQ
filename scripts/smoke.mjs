@@ -24,7 +24,7 @@
 // a fresh deployment and unacceptable on a live one: point it at a new or
 // development database, never at a shop's.
 
-const BASE = process.env.API || 'http://localhost:4010';
+const BASE = (process.env.API_URL || process.env.API || 'http://localhost:4010').replace(/[/]+$/, '');
 
 let token = null;
 const failures = [];

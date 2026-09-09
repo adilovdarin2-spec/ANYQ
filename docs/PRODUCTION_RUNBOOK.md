@@ -132,7 +132,7 @@
    разбирает, а таблица ключей идемпотентности растёт, пока её не чистят.
 
    ```
-   MAINTENANCE_SECRET=... API_URL=https://api... npm run maintenance
+   API_URL=https://api... MAINTENANCE_SECRET=... npm run maintenance
    ```
 
    Один проход и выход — так его вызывает cron или Railway Cron. Постоянный

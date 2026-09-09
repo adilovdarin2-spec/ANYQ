@@ -33,7 +33,10 @@ const TASKS = [
 const args = process.argv.slice(2);
 const loop = args.includes('--loop');
 const asJson = args.includes('--json');
-const base = (process.env.API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+// Either name: the other scripts here have always read API, this one read
+// API_URL, and passing the wrong one silently fell back to localhost and then
+// blamed the maintenance secret.
+const base = (process.env.API_URL || process.env.API || 'http://localhost:4000').replace(/[/]+$/, '');
 const secret = process.env.MAINTENANCE_SECRET;
 const intervalMs = Math.max(10, Number(process.env.MAINTENANCE_INTERVAL_SECONDS || 60)) * 1000;
 
