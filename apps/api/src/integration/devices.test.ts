@@ -286,13 +286,42 @@ describe('registers', () => {
       })),
     });
 
-    const fresh = await login('cccccccc-dddd-4eee-8fff-000000000000');
+    // A cashier on a brand-new device: refused. This is the person the cap is
+    // aimed at.
+    const cashier = await prisma.user.create({
+      data: { companyId: fx.companyId, name: 'Кассир', role: 'cashier', posPin: '778899' },
+    });
+    const fresh = await api(null, 'POST', '/pos/login', {
+      pin: cashier.posPin!,
+      deviceKey: 'cccccccc-dddd-4eee-8fff-000000000000',
+    });
     expect(fresh.status).toBe(409);
     expect(fresh.body.error).toContain('устройств');
 
-    // And a register already on the books still gets in — the cap bounds new
-    // rows, it does not stop the shop trading.
+    // A register already on the books still gets in — the cap bounds new rows,
+    // it does not stop the shop trading.
     const known = await login(TILL);
     expect(known.status).toBe(200);
+  });
+
+  it('still lets the owner in over the cap, because only they can clear it', async () => {
+    // Found on a live register rather than here: at the cap a brand-new device
+    // was refused for everybody, so an owner with a new phone was told to
+    // remove some devices and had no way to reach the screen that removes them.
+    // The fixture's user is an owner.
+    await prisma.posDevice.createMany({
+      data: Array.from({ length: 61 }, (_, i) => ({
+        companyId: fx.companyId,
+        deviceKey: `full-${String(i).padStart(4, '0')}-key`,
+        label: `Полно ${i}`,
+      })),
+    });
+
+    const owner = await login('eeeeeeee-ffff-4aaa-8bbb-cccccccccccc');
+    expect(owner.status).toBe(200);
+    // And they land somewhere they can act: the list, with the truncation said.
+    const listed = await devices(owner.body.token);
+    expect(listed.status).toBe(200);
+    expect(listed.body.truncated).toBe(true);
   });
 });

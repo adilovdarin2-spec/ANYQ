@@ -312,6 +312,7 @@ export default function App() {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [replenishment, setReplenishment] = useState<ReplenishmentItem[]>([]);
   const [replenishmentWindow, setReplenishmentWindow] = useState(28);
+  const [replenishmentTruncated, setReplenishmentTruncated] = useState(false);
   const [replenishmentLoading, setReplenishmentLoading] = useState(false);
   const [replenishmentError, setReplenishmentError] = useState<string | null>(null);
   const [policySavingProductId, setPolicySavingProductId] = useState<string | null>(null);
@@ -1623,6 +1624,7 @@ export default function App() {
       const data = await fetchReplenishment(session.token, currentLocationId);
       setReplenishment(data.items);
       setReplenishmentWindow(data.windowDays);
+      setReplenishmentTruncated(data.truncated);
     } catch (err) {
       setReplenishmentError(err instanceof ApiError ? err.message : t('fail.calculateOrder'));
     } finally {
@@ -2654,6 +2656,7 @@ export default function App() {
         <ReplenishmentScreen
           items={replenishment}
           windowDays={replenishmentWindow}
+          truncated={replenishmentTruncated}
           loading={replenishmentLoading}
           error={replenishmentError}
           savingProductId={policySavingProductId}

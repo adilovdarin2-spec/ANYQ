@@ -141,7 +141,14 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     }
     if (!existing) {
       const known = await prisma.posDevice.count({ where: { companyId: user.companyId } });
-      if (known >= MAX_POS_DEVICES) {
+      // An owner or manager is let in over the cap. They are the only people who
+      // can clear the list, and a limit that locks out the person who can lift
+      // it turns a nuisance into a shop that cannot be helped. Going a few rows
+      // over is bounded by how many managers a company has, and it does not
+      // reopen the hole: a cashier is still refused, which is who the cap is
+      // there to stop.
+      const privileged = user.role === 'owner' || user.role === 'manager';
+      if (known >= MAX_POS_DEVICES && !privileged) {
         res.status(409).json({ error: 'Слишком много устройств — владелец должен удалить лишние' });
         return;
       }

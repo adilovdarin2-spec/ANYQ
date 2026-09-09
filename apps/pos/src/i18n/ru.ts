@@ -935,6 +935,8 @@ export const ru = {
 
   'devices.truncated': 'Показаны {shown} из {total}. Если нужного устройства нет в списке — удалите лишние.',
 
+  'replenish.truncated': 'Движений за период больше, чем помещается в один расчёт — рекомендации ниже считались по самым свежим. Возьмите окно короче, иначе спрос занижен.',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
   // The interface itself is fully translated. What is not, and cannot be, is
