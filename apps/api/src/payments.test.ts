@@ -167,3 +167,35 @@ describe('totalsByMethod', () => {
     expect(totalsByMethod([])).toEqual({});
   });
 });
+
+describe('a sale that costs nothing', () => {
+  it('needs no payment, because nothing is being collected', () => {
+    // Loyalty points can cover a bill entirely — that is the point of them, and
+    // computeLoyalty clamps redemption so the total lands on zero rather than
+    // going negative. This used to build a single 0 ₸ line from the method the
+    // register sent and refuse it, so a customer with enough points to cover
+    // their shopping could not check out.
+    const resolved = resolveSalePayments({ paymentMethod: 'cash' }, 0);
+    expect(resolved).toEqual({ status: 'ok', payments: [], method: 'cash' });
+  });
+
+  it('puts nothing in the drawer', () => {
+    const resolved = resolveSalePayments({ paymentMethod: 'cash' }, 0);
+    if (resolved.status !== 'ok') throw new Error('expected ok');
+    expect(cashPortion(resolved.payments)).toBe(0);
+  });
+
+  it('keeps the method the register named, for the receipt', () => {
+    expect(resolveSalePayments({ paymentMethod: 'kaspi' }, 0)).toMatchObject({ method: 'kaspi' });
+    expect(resolveSalePayments({ payments: [{ method: 'card', amount: 0 }] }, 0)).toMatchObject({ method: 'card' });
+  });
+
+  it('still refuses a zero part of a real split', () => {
+    // The zero check is right for a part and wrong for the whole. A 0 ₸ line
+    // inside a bill somebody is paying is a slip of the finger.
+    expect(
+      resolveSalePayments({ payments: [{ method: 'cash', amount: 500 }, { method: 'card', amount: 0 }] }, 500),
+    ).toEqual({ status: 'badAmount' });
+  });
+});
+
