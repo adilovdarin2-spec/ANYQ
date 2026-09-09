@@ -31,9 +31,11 @@ export function Footer() {
 
           <div className="footer-col">
             <div className="footer-col-title">Аккаунт</div>
-            <a href={POS_LOGIN_URL} target="_blank" rel="noopener noreferrer">
-              <IconUser className="icon-14" /> Войти в кассу
-            </a>
+            {POS_LOGIN_URL && (
+              <a href={POS_LOGIN_URL} target="_blank" rel="noopener noreferrer">
+                <IconUser className="icon-14" /> Войти в кассу
+              </a>
+            )}
           </div>
 
           <div className="footer-col">

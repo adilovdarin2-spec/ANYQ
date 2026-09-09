@@ -27,7 +27,16 @@ function serverSaid(message: unknown): string | undefined {
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-export const ORDERS_BASE = import.meta.env.VITE_ORDERS_URL || 'https://orders-production-f493.up.railway.app';
+/**
+ * Where the other app lives, when this deployment knows.
+ *
+ * No fallback on purpose. It used to default to the hostname of an older
+ * deployment, which is a live server belonging to somebody else — an owner would
+ * copy their storefront address and hand partners a link into it. Empty means the
+ * link is simply not offered, which is a question somebody asks rather than a
+ * mistake nobody notices.
+ */
+export const ORDERS_BASE: string = import.meta.env.VITE_ORDERS_URL || '';
 
 export class ApiError extends Error {
   status: number;

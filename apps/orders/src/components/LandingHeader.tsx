@@ -42,10 +42,12 @@ export function LandingHeader() {
         </nav>
 
         <div className="landing-header-actions">
-          <a className="btn btn-ghost landing-login-btn" href={POS_LOGIN_URL} target="_blank" rel="noopener noreferrer">
-            <IconUser className="icon-16" />
-            <span>Войти</span>
-          </a>
+          {POS_LOGIN_URL && (
+            <a className="btn btn-ghost landing-login-btn" href={POS_LOGIN_URL} target="_blank" rel="noopener noreferrer">
+              <IconUser className="icon-16" />
+              <span>Войти</span>
+            </a>
+          )}
           <a className="btn btn-primary landing-header-cta" href={waUrl} target="_blank" rel="noopener noreferrer">
             <WhatsAppIcon />
             <span>Написать</span>
@@ -63,9 +65,11 @@ export function LandingHeader() {
               {item.label}
             </button>
           ))}
-          <a className="btn btn-secondary btn-block" href={POS_LOGIN_URL} target="_blank" rel="noopener noreferrer">
-            <IconUser className="icon-16" /> Войти в кассу
-          </a>
+          {POS_LOGIN_URL && (
+            <a className="btn btn-secondary btn-block" href={POS_LOGIN_URL} target="_blank" rel="noopener noreferrer">
+              <IconUser className="icon-16" /> Войти в кассу
+            </a>
+          )}
           <a className="btn btn-primary btn-block" href={waUrl} target="_blank" rel="noopener noreferrer">
             <WhatsAppIcon /> Написать в WhatsApp
           </a>

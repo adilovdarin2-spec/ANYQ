@@ -297,7 +297,7 @@ export function CompanyDetailDrawer({
             );
           })}
 
-          {company.slug && tariff.modules.includes('supply') && (
+          {ORDERS_BASE && company.slug && tariff.modules.includes('supply') && (
             <>
               <div className="section-title">Витрина для клиентов</div>
               <div className="mini-card stack">
