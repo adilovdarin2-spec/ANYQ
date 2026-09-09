@@ -20,7 +20,9 @@
     "maintenance": "node scripts/maintenance.mjs",
     "maintenance:loop": "node scripts/maintenance.mjs --loop",
     "smoke": "node scripts/smoke.mjs",
-    "onboard:check": "node scripts/onboard-check.mjs"
+    "onboard:check": "node scripts/onboard-check.mjs",
+    "build:deploy": "npm run build --workspace=apps/admin && npm run build --workspace=apps/pos && npm run build --workspace=apps/orders && node scripts/check-bundle.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "devDependencies": {
     "railway": "^3.6.0",

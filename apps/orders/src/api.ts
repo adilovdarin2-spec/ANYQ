@@ -4,7 +4,16 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 // Business owners/managers/cashiers log in with a PIN in the POS app — there is
 // no separate customer-facing account portal. admin-production is Astryx's own
 // internal superadmin backoffice and must never be linked from marketing pages.
-export const POS_LOGIN_URL = import.meta.env.VITE_POS_URL || 'https://pos-production-2e42.up.railway.app';
+/**
+ * Where the other app lives, when this deployment knows.
+ *
+ * No fallback on purpose. It used to default to the hostname of an older
+ * deployment, which is a live server belonging to somebody else — an owner would
+ * copy their storefront address and hand partners a link into it. Empty means the
+ * link is simply not offered, which is a question somebody asks rather than a
+ * mistake nobody notices.
+ */
+export const POS_LOGIN_URL: string = import.meta.env.VITE_POS_URL || '';
 export const WHATSAPP_NUMBER = '77784175136';
 
 export class ApiError extends Error {}

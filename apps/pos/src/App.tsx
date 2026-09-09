@@ -380,7 +380,10 @@ export default function App() {
   const hasRetail = session?.modules?.includes('retail') ?? false;
   const isDesktop = useIsDesktop();
   const canManageProducts = session?.user.role === 'owner' || session?.user.role === 'manager';
-  const storefrontUrl = hasSupply && session?.company.slug ? `${ORDERS_BASE}/${session.company.slug}` : null;
+  // Only when this deployment was told where the storefront lives. Without it
+  // there is no address to give, and inventing one sends partners elsewhere.
+  const storefrontUrl =
+    hasSupply && session?.company.slug && ORDERS_BASE ? `${ORDERS_BASE}/${session.company.slug}` : null;
   const categories = useMemo(
     () => Array.from(new Set((session?.products ?? []).map((p) => p.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru')),
     [session?.products],
