@@ -10,6 +10,8 @@ interface Props {
   role: string;
   shift: Shift;
   online: boolean;
+  /** 'unavailable' when the service worker did not register. See offline.ts. */
+  offlineReadiness: 'unknown' | 'ready' | 'unavailable';
   pendingCount: number;
   stuckCount: number;
   storefrontUrl: string | null;
@@ -46,6 +48,7 @@ export function ProfileScreen({
   role,
   shift,
   online,
+  offlineReadiness,
   pendingCount,
   stuckCount,
   storefrontUrl,
@@ -98,6 +101,16 @@ export function ProfileScreen({
           {pendingCount > 0 ? ` · ${t('profile.syncPending', { count: pendingCount })}` : ''}
         </span>
       </div>
+
+      {/* Said where somebody will read it before a bad morning, not in a log
+          nobody opens. Without the worker the till cannot be opened at all
+          without a network, which is the opposite of what it promises. */}
+      {offlineReadiness === 'unavailable' && (
+        <div className="mini-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+          <strong>{t('profile.offlineBroken')}</strong>
+          <span className="field-hint">{t('profile.offlineBrokenWhy')}</span>
+        </div>
+      )}
       {stuckCount > 0 && (
         <div className="profile-row">
           <span>⚠ {t('profile.needAttention')}</span>

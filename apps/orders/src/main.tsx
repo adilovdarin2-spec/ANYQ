@@ -44,7 +44,12 @@ injectManifest();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    // Logged rather than swallowed. Nothing here depends on offline the way the
+    // till does, so it is not surfaced in the interface — but a failure that
+    // leaves no trace anywhere is how a broken install stays broken.
+    navigator.serviceWorker.register('/sw.js').catch((err: unknown) => {
+      console.error('[offline] service worker did not register:', err instanceof Error ? err.message : err);
+    });
   });
 }
 
