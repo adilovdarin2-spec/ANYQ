@@ -1,19 +1,19 @@
 <title>Визитка ANYQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 
 <style>
-  /* Визитка 90 × 50 мм — стандарт для типографий Казахстана.
-     Фон печатается «в край», весь текст лежит внутри поля 5 мм,
-     поэтому подрезка ±1 мм ничего не срезает. */
+  /* Визитка 90 × 50 мм. Фон печатается в край, весь текст лежит внутри
+     поля 4 мм — подрезка ±1 мм ничего не срезает. */
 
   :root {
-    --ink:    #14181b;
-    --paper:  #f1f2ee;
-    --accent: #0b6b4f;
+    --ink:    #101417;
+    --ink-2:  #1b2226;
+    --paper:  #f2f3ef;
+    --accent: #14a877;
+    --accent-d:#0b6b4f;
     --muted:  #6d746e;
-    --rule:   rgba(241,242,238,.22);
 
     --display: 'Unbounded', 'Golos Text', system-ui, sans-serif;
     --body:    'Golos Text', system-ui, -apple-system, sans-serif;
@@ -23,213 +23,281 @@
   * { box-sizing: border-box; }
 
   body {
-    background: #dcded7;
+    background: #c9ccc4;
     color: var(--ink);
     font-family: var(--body);
     margin: 0;
-    padding: 28px 20px 48px;
+    padding: 26px 18px 46px;
   }
 
   .hint {
-    max-width: 380mm;
-    margin: 0 auto 22px;
+    max-width: 66ch;
+    margin: 0 auto 24px;
     font-family: var(--mono);
     font-size: 12.5px;
-    line-height: 1.6;
-    color: #4b524c;
-    max-width: 62ch;
+    line-height: 1.65;
+    color: #3f453f;
   }
-  .hint b { font-weight: 500; color: var(--ink); }
-  .hint code { background: rgba(20,24,27,.07); padding: 1px 5px; border-radius: 3px; }
+  .hint b { font-weight: 600; color: var(--ink); }
+  .hint code { background: rgba(16,20,23,.09); padding: 1px 5px; border-radius: 3px; }
 
-  .sheet {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    justify-content: center;
-  }
+  .sheet { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
 
   .card {
     width: 90mm;
     height: 50mm;
-    padding: 5mm;
     position: relative;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 10px 30px -18px rgba(20,24,27,.7);
+    box-shadow: 0 12px 34px -20px rgba(16,20,23,.85);
   }
 
-  /* ---------- лицо ---------- */
+  /* ============ ЛИЦО ============ */
   .front {
     background: var(--ink);
     color: var(--paper);
+    display: flex;
+    flex-direction: column;
     justify-content: space-between;
+    padding: 4.5mm 5mm 0;
   }
+
+  .front .kicker {
+    font-family: var(--mono);
+    font-size: 2.5mm;
+    font-weight: 500;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .front .block { margin-bottom: 1mm; }
 
   .front .mark {
     font-family: var(--display);
     font-weight: 800;
-    font-size: 11mm;
-    letter-spacing: .16em;
-    line-height: 1;
-    margin-top: 2mm;
-    /* буквенный интервал добавляет пустоту справа — компенсируем */
-    margin-right: -.16em;
+    font-size: 17mm;
+    line-height: .86;
+    letter-spacing: -.005em;
+    display: block;
   }
+  .front .mark span { color: var(--accent); }
 
   .front .claim {
-    font-size: 3.6mm;
-    line-height: 1.35;
-    max-width: 55mm;
-    color: var(--paper);
-    opacity: .88;
-  }
-  .front .claim em { font-style: normal; color: #4fb28d; }
-
-  .front .foot {
-    font-family: var(--mono);
-    font-size: 2.5mm;
-    letter-spacing: .16em;
-    text-transform: uppercase;
-    color: var(--paper);
-    opacity: .55;
+    font-size: 4mm;
+    font-weight: 500;
+    line-height: 1.3;
+    margin-top: 2.4mm;
+    max-width: 62mm;
   }
 
-  /* тонкая линия-«отрыв чека» по правому краю лица */
-  .front::after {
-    content: "";
-    position: absolute;
-    top: 0; bottom: 0; right: 12mm;
-    border-left: 1px dashed var(--rule);
+  .front .claim b { font-weight: 700; }
+
+  /* Штрихкод в край — деталь из мира магазина, а не украшение.
+     Два наложенных градиента с разным периодом, чтобы полосы
+     не читались как повторяющийся узор. */
+  .barcode {
+    height: 7.5mm;
+    margin: 3mm -5mm 0;
+    background-color: var(--ink);
+    background-image:
+      repeating-linear-gradient(90deg,
+        var(--paper) 0 .34mm, transparent .34mm 1.05mm,
+        var(--paper) 1.05mm 1.62mm, transparent 1.62mm 2.1mm,
+        var(--paper) 2.1mm 2.28mm, transparent 2.28mm 3.4mm,
+        var(--paper) 3.4mm 4.15mm, transparent 4.15mm 4.6mm),
+      repeating-linear-gradient(90deg,
+        var(--paper) 0 .22mm, transparent .22mm 2.7mm,
+        var(--paper) 2.7mm 3.1mm, transparent 3.1mm 6.3mm);
   }
 
-  /* ---------- оборот ---------- */
+  /* ============ ОБОРОТ ============ */
   .back {
     background: var(--paper);
     color: var(--ink);
-    flex-direction: row;
-    gap: 5mm;
-    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .back .bar {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 2.6mm 5mm;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4mm;
+  }
+  .back .bar .m {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 4.2mm;
+    letter-spacing: .04em;
+  }
+  .back .bar .m span { color: var(--accent); }
+  .back .bar .site {
+    font-family: var(--mono);
+    font-size: 2.9mm;
+    color: var(--paper);
+    opacity: .75;
+  }
+
+  .back .body {
+    flex: 1;
+    display: flex;
+    gap: 4mm;
+    padding: 3.6mm 5mm 0;
+    min-height: 0;
   }
 
   .back .col {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    flex: 1;
-    min-width: 0;
   }
 
-  .back .who .name {
-    font-size: 4.6mm;
-    font-weight: 600;
-    line-height: 1.2;
+  .back .name {
+    font-size: 5.2mm;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -.01em;
   }
-  .back .who .role {
+  .back .role {
     font-size: 3.1mm;
+    color: var(--muted);
+    margin-top: .9mm;
+  }
+
+  .back .phone {
+    font-family: var(--mono);
+    font-size: 5mm;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    line-height: 1.1;
+  }
+  .back .chan {
+    font-family: var(--mono);
+    font-size: 2.7mm;
+    letter-spacing: .1em;
+    text-transform: uppercase;
     color: var(--muted);
     margin-top: .8mm;
   }
 
-  .back .contacts {
-    font-family: var(--mono);
-    font-size: 3.1mm;
-    line-height: 1.7;
-  }
-  .back .contacts .phone {
-    font-size: 4.1mm;
-    font-weight: 500;
-    letter-spacing: .01em;
-  }
-  .back .contacts .site { color: var(--muted); }
-
-  .back .offer {
-    font-size: 3mm;
-    line-height: 1.4;
-    color: var(--accent);
-    font-weight: 500;
-    border-top: 1px solid #d0d3ca;
-    padding-top: 2mm;
-  }
-
   .qr {
-    width: 26mm;
+    flex: 0 0 auto;
+    width: 24mm;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 1.6mm;
-    flex: 0 0 auto;
+    gap: 1.2mm;
   }
-  .qr svg, .qr canvas { width: 24mm; height: 24mm; display: block; }
+  .qr svg { width: 24mm; height: 24mm; display: block; }
   .qr .cap {
     font-family: var(--mono);
-    font-size: 2.2mm;
-    letter-spacing: .08em;
+    font-size: 2.3mm;
+    letter-spacing: .1em;
     text-transform: uppercase;
     color: var(--muted);
-    text-align: center;
   }
   .qr .fallback {
-    font-family: var(--mono);
-    font-size: 2.4mm;
-    color: var(--muted);
+    width: 24mm; height: 24mm;
+    border: .4mm solid var(--ink);
+    display: flex; align-items: center; justify-content: center;
     text-align: center;
-    line-height: 1.4;
+    font-family: var(--mono);
+    font-size: 2.6mm;
+    line-height: 1.35;
+    padding: 1.5mm;
+  }
+
+  .offer {
+    margin-top: 3mm;
+    background: var(--accent-d);
+    color: var(--paper);
+    padding: 2.4mm 5mm;
+    font-size: 3.3mm;
+    font-weight: 600;
+    letter-spacing: .005em;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4mm;
+  }
+  .offer .free {
+    font-family: var(--mono);
+    font-size: 2.7mm;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    opacity: .85;
+    white-space: nowrap;
   }
 
   /* поля, которые надо заполнить перед печатью */
-  .fill { border-bottom: 1px dotted #a9aea6; }
+  .fill { border-bottom: .3mm dotted #a9aea6; }
 
   @media print {
     @page { size: 90mm 50mm; margin: 0; }
     body { background: #fff; padding: 0; }
     .hint { display: none; }
     .sheet { display: block; gap: 0; }
-    .card {
-      box-shadow: none;
-      page-break-after: always;
-      break-after: page;
-      width: 90mm;
-      height: 50mm;
-    }
-    .card:last-child { page-break-after: auto; break-after: auto; }
+    .card { box-shadow: none; break-after: page; page-break-after: always; }
+    .card:last-child { break-after: auto; page-break-after: auto; }
     .fill { border-bottom: 0; }
   }
 </style>
 
 <p class="hint">
   <b>Печать:</b> Ctrl&nbsp;+&nbsp;P → «Сохранить в PDF», размер бумаги <code>90&nbsp;×&nbsp;50&nbsp;мм</code>,
-  поля «нет», <b>фоновая графика — включить</b>. Выйдет две страницы: лицо и оборот.<br>
-  <b>Перед печатью заполните два поля</b> на обороте — имя с должностью и адрес сайта; они подчёркнуты точками.<br>
-  <b>В типографии:</b> просите 2&nbsp;мм под обрез — фон уходит в край, весь текст лежит внутри поля 5&nbsp;мм и не срежется.
+  поля «нет», <b>фоновая графика — включить</b>. Две страницы: лицо и оборот.<br>
+  <b>Заполните два поля</b> на обороте — имя с должностью и адрес сайта (подчёркнуты точками).<br>
+  <b>В типографии:</b> 2&nbsp;мм под обрез, плотность 300–350&nbsp;г, матовая ламинация — на чёрном она не собирает отпечатки.
 </p>
 
 <div class="sheet">
 
   <div class="card front">
-    <div class="mark">ANYQ</div>
-    <div class="claim">Касса и склад,<br>которые <em>сходятся</em></div>
-    <div class="foot">Магазины · Склады · Распределение</div>
+    <div>
+      <div class="kicker">Магазины · Склады · Распределение</div>
+    </div>
+
+    <div class="block">
+      <div class="mark">ANY<span>Q</span></div>
+      <div class="claim">Касса и склад, которые <b>сходятся</b></div>
+    </div>
+
+    <div class="barcode"></div>
   </div>
 
   <div class="card back">
-    <div class="col">
-      <div class="who">
-        <div class="name fill">Имя Фамилия</div>
-        <div class="role">Основатель, ANYQ by Astryx</div>
-      </div>
-      <div class="contacts">
-        <div class="phone">+7 778 417 5136</div>
-        <div>WhatsApp · Telegram</div>
-        <div class="site fill">anyq.kz</div>
-      </div>
-      <div class="offer">Разбор вашего магазина<br>за 10 минут — бесплатно</div>
+    <div class="bar">
+      <div class="m">ANY<span>Q</span></div>
+      <div class="site fill">anyq.kz</div>
     </div>
-    <div class="qr" id="qr">
-      <div class="fallback" id="qrfallback">QR<br>+7 778 417 5136</div>
-      <div class="cap">Написать</div>
+
+    <div class="body">
+      <div class="col">
+        <div>
+          <div class="name fill">Имя Фамилия</div>
+          <div class="role">Основатель, ANYQ by Astryx</div>
+        </div>
+        <div>
+          <div class="phone">+7 778 417 5136</div>
+          <div class="chan">WhatsApp · Telegram</div>
+        </div>
+      </div>
+
+      <div class="qr" id="qr">
+        <div class="fallback" id="qrfallback">+7 778<br>417 5136</div>
+        <div class="cap">Написать</div>
+      </div>
+    </div>
+
+    <div class="offer">
+      <span>Разбор вашего магазина за 10 минут</span>
+      <span class="free">Бесплатно</span>
     </div>
   </div>
 
@@ -237,9 +305,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
-  // QR ведёт в WhatsApp с уже написанным сообщением. Если библиотека не
-  // загрузилась (печать без интернета) — на её месте остаётся номер, и
-  // визитка всё равно печатается.
+  // QR открывает WhatsApp с уже написанным сообщением. Не загрузилась
+  // библиотека (печать без интернета) — на её месте остаётся номер,
+  // и визитка всё равно печатается.
   (function () {
     if (typeof qrcode !== 'function') return;
     var link = 'https://wa.me/77784175136?text=' +
@@ -249,9 +317,8 @@
     qr.make();
     var holder = document.getElementById('qr');
     var fallback = document.getElementById('qrfallback');
-    var svg = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
     var wrap = document.createElement('div');
-    wrap.innerHTML = svg;
+    wrap.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
     var node = wrap.firstElementChild;
     node.setAttribute('shape-rendering', 'crispEdges');
     holder.replaceChild(node, fallback);
