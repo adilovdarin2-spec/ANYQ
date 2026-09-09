@@ -59,6 +59,20 @@ export function resolveSalePayments(
   total: number,
 ): PaymentResolution {
   const sent = Array.isArray(input.payments) ? input.payments : [];
+
+  // Nothing to collect, so nothing to record. A bill covered entirely by loyalty
+  // points lands here, and so does one taken to zero by a discount: the goods
+  // leave, the drawer does not move, and `pointsRedeemed` on the document says
+  // why. Refusing it — which is what happened before, because the legacy path
+  // built a single 0 ₸ line and the zero check below rejected it — meant a
+  // customer with enough points to cover their shopping could not pay at all.
+  //
+  // Checked before the lines are read rather than after: with no lines to speak
+  // of, `empty` and `badAmount` would both be the wrong answer.
+  if (total === 0) {
+    const only = sent.length === 1 ? (sent[0] as { method?: unknown })?.method : input.paymentMethod;
+    return { status: 'ok', payments: [], method: typeof only === 'string' ? only : 'cash' };
+  }
   // Registers already in the field send a single method and no amount. They
   // must keep working across a deploy, so the old shape is read as the split
   // it is: all of it, one way.
