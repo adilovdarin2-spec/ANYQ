@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { cartTotals } from './cart';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useOutboxSync } from './hooks/useOutboxSync';
@@ -2156,17 +2157,18 @@ export default function App() {
     setQuery('');
   }
 
-  const cartSubtotal = cart.reduce((sum, l) => sum + Math.round(l.price * l.qty), 0);
-  const cartDiscountAmount = discount
-    ? discount.type === 'percent'
-      ? Math.round((cartSubtotal * Math.min(Math.max(discount.value, 0), 100)) / 100)
-      : Math.min(Math.max(discount.value, 0), cartSubtotal)
-    : 0;
-  const cartNetAfterDiscount = cartSubtotal - cartDiscountAmount;
-  const cartPointsRedeemed = loyalty
-    ? Math.min(Math.max(loyalty.pointsToRedeem, 0), loyalty.pointsAvailable, cartNetAfterDiscount)
-    : 0;
-  const cartTotal = cartNetAfterDiscount - cartPointsRedeemed;
+  // One named function rather than the formula inline, because the server has
+  // the same arithmetic and `cart.test.ts` sweeps the two against each other.
+  // Two copies of a money formula is how a till comes to disagree with its own
+  // receipt, and once a split payment is involved a one-tenge disagreement is a
+  // refused sale with a queue behind it.
+  const {
+    subtotal: cartSubtotal,
+    discountAmount: cartDiscountAmount,
+    netAfterDiscount: cartNetAfterDiscount,
+    pointsRedeemed: cartPointsRedeemed,
+    total: cartTotal,
+  } = cartTotals(cart, discount, loyalty);
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
   const cartQtyByProduct = cart.reduce<Record<string, number>>((acc, l) => {
     acc[l.productId] = (acc[l.productId] ?? 0) + l.qty;
