@@ -21,7 +21,7 @@
  * deployment before the real customer goes in, or against a scratch database.
  */
 
-const BASE = (process.env.API || 'http://localhost:4000').replace(/[/]+$/, '');
+const BASE = (process.env.API_URL || process.env.API || 'http://localhost:4000').replace(/[/]+$/, '');
 const EMAIL = process.env.ADMIN_EMAIL || '';
 const PASSWORD = process.env.ADMIN_PASSWORD || '';
 
