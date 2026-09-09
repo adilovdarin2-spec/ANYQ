@@ -15,13 +15,19 @@
  *      hypothetical — it is how this check came to be written: the POS bundle in
  *      this repository was pointing at `localhost:4010`, from a gitignored file
  *      left over from a debugging session.
- *   3. A cross-app link falls back to a hostname from an older deployment. That
- *      one is the worst of the three, because it is a live URL: the owner copies
- *      their storefront link, hands it to their suppliers, and it goes to
- *      somebody else's server.
+ *   3. A cross-app link falls back to a hardcoded address. This used to be
+ *      checked here too, against the two railway.app hostnames the source once
+ *      fell back to — on the assumption they belonged to an older, foreign
+ *      deployment. They did not: they are this project's own production URLs,
+ *      which the first real deploy proved by having the check reject a correctly
+ *      configured build. The fallbacks are gone from the source now, so a bundle
+ *      carrying those names means somebody set VITE_ORDERS_URL or VITE_POS_URL
+ *      to them on purpose, which is right. A rule resting on a premise that
+ *      turned out to be false is worse than no rule, so it was removed rather
+ *      than narrowed.
  *
- * So this checks the artifact rather than the intent. Run after building for a
- * deployment; `npm run build:deploy` does both.
+ * So this checks the artifact rather than the intent. Each service builds and
+ * checks its own bundle; see scripts/railway-build.js.
  *
  *   node scripts/check-bundle.mjs
  */
@@ -29,7 +35,12 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const APPS = ['pos', 'admin', 'orders'];
+const ALL_APPS = ['pos', 'admin', 'orders'];
+
+// Named on the command line when only one service is being built — which is the
+// normal case on a deploy, where each service builds and checks itself.
+const requested = process.argv.slice(2).filter((a) => ALL_APPS.includes(a));
+const APPS = requested.length > 0 ? requested : ALL_APPS;
 
 /**
  * Things that must not survive into a deployed bundle, and what to do about it.
@@ -49,16 +60,6 @@ const FORBIDDEN = [
   {
     pattern: /127\.0\.0\.1:\d+/g,
     say: (found) => `points at ${found}, which is the same problem as localhost. Set VITE_API_URL.`,
-  },
-  {
-    // The specific hostnames this repository once fell back to. Named rather
-    // than matched by a pattern, because "any railway.app URL" is legitimate —
-    // it is where this is deployed.
-    pattern: /orders-production-f493\.up\.railway\.app|pos-production-2e42\.up\.railway\.app/g,
-    say: (found) =>
-      `carries ${found}, a hostname from an older deployment.\n` +
-      '      A wrong link is worse than none: the owner copies their storefront address and hands\n' +
-      '      partners a link to somebody else\'s server. Set VITE_ORDERS_URL and VITE_POS_URL.',
   },
 ];
 
