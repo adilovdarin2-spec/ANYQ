@@ -883,3 +883,12 @@ export interface LedgerDocument {
   paymentMethod: string | null;
   items: { productId: string; name: string; quantity: number; price: number }[];
 }
+
+/** Ссылка на кабинет владельца и то, что с ней уже произошло. */
+export interface CabinetInfo {
+  /** Секретный сегмент. Адрес касса собирает сама — домен витрины знает она. */
+  secret: string;
+  hasPassword: boolean;
+  passwordSetAt: string | null;
+  lastLoginAt: string | null;
+}

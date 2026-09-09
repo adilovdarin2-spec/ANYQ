@@ -19,7 +19,17 @@ const CYRILLIC = /[А-яЁё]/;
  * Left out: the admin panel and the supplier portal, which nobody reads at a
  * till, and the integration harness, which is fixtures.
  */
-const SKIPPED = ['routes/companies.ts', 'routes/auth.ts', 'routes/supply.ts'];
+const SKIPPED = [
+  'routes/companies.ts',
+  'routes/auth.ts',
+  'routes/supply.ts',
+  // The owner's cabinet, which is not a register either. It lives in the
+  // storefront app, which has no language switch, so its refusals are read in
+  // Russian by design — and a Kazakh translation nobody can reach would be a
+  // dictionary entry pretending to be a feature.
+  'routes/cabinet.ts',
+  'cabinet.ts',
+];
 
 function apiModules(): string[] {
   const found: string[] = [];

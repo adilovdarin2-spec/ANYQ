@@ -8,6 +8,7 @@ import { drainFiscalQueue } from './fiscal-worker';
 import { networkFiscalProvider } from './fiscal-network';
 import { authRouter } from './routes/auth';
 import { companiesRouter } from './routes/companies';
+import { cabinetRouter } from './routes/cabinet';
 import { posRouter } from './routes/pos';
 import { supplyRouter } from './routes/supply';
 
@@ -123,6 +124,7 @@ app.post('/maintenance/prune-idempotency-keys', async (req, res) => {
 app.use('/auth', authRouter);
 app.use('/companies', companiesRouter);
 app.use('/pos', posRouter);
+app.use('/cabinet', cabinetRouter);
 app.use('/supply', supplyRouter);
 
 app.use((req, res) => {

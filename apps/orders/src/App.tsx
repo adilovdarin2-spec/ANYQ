@@ -11,15 +11,30 @@ import { StateScreen } from './components/StateScreen';
 import { LandingPage } from './components/LandingPage';
 import { InstallPrompt } from './components/InstallPrompt';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
+import { Cabinet } from './components/Cabinet';
 
 type View = 'catalog' | 'checkout' | 'success';
 
+/**
+ * `/k/<секрет>` — кабинет владельца, а не витрина склада.
+ *
+ * Отдельный префикс, а не отдельное приложение: пятая служба на платформе ради
+ * одного экрана не стоит того. Префикс из одной буквы выбран, чтобы ссылку было
+ * не тяжело продиктовать по телефону — она и так длинная.
+ */
+function getCabinetSecret(): string | null {
+  const parts = window.location.pathname.replace(/^\/+/, '').split('/');
+  return parts[0] === 'k' && parts[1] ? decodeURIComponent(parts[1]) : null;
+}
+
 function getCompanyId(): string | null {
   const segment = window.location.pathname.replace(/^\/+/, '').split('/')[0];
-  return segment ? decodeURIComponent(segment) : null;
+  if (!segment || segment === 'k') return null;
+  return decodeURIComponent(segment);
 }
 
 export default function App() {
+  const [cabinetSecret] = useState<string | null>(getCabinetSecret);
   const [companyId] = useState<string | null>(getCompanyId);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,6 +102,14 @@ export default function App() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (cabinetSecret) {
+    return (
+      <div className="app-shell">
+        <Cabinet secret={cabinetSecret} />
+      </div>
+    );
   }
 
   if (!companyId) {

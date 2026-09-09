@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, CabinetInfo, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { genId, resolveScannedBarcode } from './utils';
@@ -60,6 +60,7 @@ import {
   fetchReports,
   fetchReturnableSales,
   fetchReturns,
+  fetchCabinet,
   fetchSettlements,
   fetchSourceSystems,
   fetchStockMovements,
@@ -79,6 +80,7 @@ import {
   registerFiscalManually,
   rejectOrder,
   repairReconciliation,
+  resetCabinet as resetCabinetLink,
   saveStockPolicy,
   sendToKitchen,
   setCounterpartyCredit,
@@ -138,6 +140,7 @@ import { OutboxBanner } from './components/OutboxBanner';
 import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { ImportScreen } from './components/ImportScreen';
 import { MigrationScreen } from './components/MigrationScreen';
+import { CabinetLinkScreen } from './components/CabinetLinkScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
@@ -178,6 +181,7 @@ type View =
   | 'reconciliation'
   | 'import'
   | 'migrate'
+  | 'cabinet'
   | 'settlements'
   | 'production'
   | 'floorplan'
@@ -186,7 +190,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -247,6 +251,10 @@ export default function App() {
   const [settlementsSubmitting, setSettlementsSubmitting] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [sourceSystems, setSourceSystems] = useState<SourceSystemInfo[]>([]);
+  const [cabinet, setCabinet] = useState<CabinetInfo | null>(null);
+  const [cabinetLoading, setCabinetLoading] = useState(false);
+  const [cabinetError, setCabinetError] = useState<string | null>(null);
+  const [cabinetResetting, setCabinetResetting] = useState(false);
   const [sourceSystemsLoading, setSourceSystemsLoading] = useState(false);
   // Выбранная программа, из которой переезжают. null и view === 'migrate' —
   // владелец ещё выбирает; null и view === 'import' — обычный импорт прайса.
@@ -433,6 +441,7 @@ export default function App() {
       { key: 'reconciliation', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
       { key: 'import', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
       { key: 'migrate', icon: '📦', label: t('ops.migrate'), onClick: handleShowMigrate },
+      { key: 'cabinet', icon: '🔑', label: t('ops.cabinet'), onClick: handleShowCabinet },
       { key: 'settlements', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
       { key: 'supplier-returns', icon: '📤', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
@@ -887,6 +896,33 @@ export default function App() {
       setImportError(err instanceof ApiError ? err.message : t('fail.loadSystems'));
     } finally {
       setSourceSystemsLoading(false);
+    }
+  }
+
+  async function handleShowCabinet() {
+    setView('cabinet');
+    setCabinetError(null);
+    if (!session) return;
+    setCabinetLoading(true);
+    try {
+      setCabinet(await fetchCabinet(session.token));
+    } catch (err) {
+      setCabinetError(err instanceof ApiError ? err.message : t('fail.loadCabinet'));
+    } finally {
+      setCabinetLoading(false);
+    }
+  }
+
+  async function handleResetCabinet() {
+    if (!session) return;
+    setCabinetResetting(true);
+    setCabinetError(null);
+    try {
+      setCabinet(await resetCabinetLink(session.token));
+    } catch (err) {
+      setCabinetError(err instanceof ApiError ? err.message : t('fail.loadCabinet'));
+    } finally {
+      setCabinetResetting(false);
     }
   }
 
@@ -2513,6 +2549,17 @@ export default function App() {
           onChangeType={handleChangeSettlementType}
           onPay={handleRecordSettlement}
           onSetCredit={handleSetCredit}
+        />
+      )}
+
+      {view === 'cabinet' && (
+        <CabinetLinkScreen
+          info={cabinet}
+          loading={cabinetLoading}
+          error={cabinetError}
+          resetting={cabinetResetting}
+          onBack={() => setView('operations')}
+          onReset={handleResetCabinet}
         />
       )}
 
