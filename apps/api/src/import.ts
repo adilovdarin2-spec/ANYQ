@@ -39,10 +39,40 @@ export type ColumnMap = Partial<Record<ImportField, number>>;
 // spreadsheets are full of columns nobody else needs, and refusing a file for
 // having an extra one would be absurd.
 export function detectColumns(header: string[]): ColumnMap {
+  return detectColumnsWith(header, {});
+}
+
+/**
+ * The same, plus headings that only one program uses.
+ *
+ * `extra` wins over the general dictionary, because a program-specific heading
+ * is the more specific claim: "Цена реализации" in a Wipon export is the sale
+ * price even when the same file also has a column called "Цена", which the
+ * general dictionary would otherwise take.
+ */
+export function detectColumnsWith(
+  header: string[],
+  extra: Partial<Record<ImportField, string[]>>,
+): ColumnMap {
   const map: ColumnMap = {};
+
   header.forEach((cell, index) => {
     const key = normaliseHeader(cell ?? '');
     if (!key) return;
+    for (const [field, aliases] of Object.entries(extra) as [ImportField, string[]][]) {
+      if (map[field] !== undefined) continue;
+      if (aliases.includes(key)) {
+        map[field] = index;
+        return;
+      }
+    }
+  });
+
+  header.forEach((cell, index) => {
+    const key = normaliseHeader(cell ?? '');
+    // A column already claimed above is not offered again: one heading must
+    // not end up standing for two fields.
+    if (!key || Object.values(map).includes(index)) return;
     for (const [field, aliases] of Object.entries(HEADER_ALIASES) as [ImportField, string[]][]) {
       if (map[field] !== undefined) continue;
       // Exact first, then prefix: "ценапродажи" must not be claimed by "цена".
@@ -144,7 +174,16 @@ const MAX_NAME_LENGTH = 200;
 // the first bad one leaves a catalogue nobody can reason about — half in, half
 // not, and no way to tell which. So the whole file is judged first, and the
 // person decides whether to proceed.
-export function buildImportPlan(grid: string[][], existing: ExistingProduct[]): ImportPlan {
+export function buildImportPlan(
+  grid: string[][],
+  existing: ExistingProduct[],
+  /**
+   * Headings peculiar to the program the file came out of. Passed as plain data
+   * rather than as the program itself, so the catalogue of programs can depend
+   * on the importer and not the other way round.
+   */
+  extraAliases: Partial<Record<ImportField, string[]>> = {},
+): ImportPlan {
   const problems: ImportProblem[] = [];
   const rows: ImportRow[] = [];
 
@@ -154,7 +193,7 @@ export function buildImportPlan(grid: string[][], existing: ExistingProduct[]): 
   }
 
   const [header, ...body] = nonEmpty;
-  const columns = detectColumns(header);
+  const columns = detectColumnsWith(header, extraAliases);
 
   if (columns.name === undefined) {
     problems.push({

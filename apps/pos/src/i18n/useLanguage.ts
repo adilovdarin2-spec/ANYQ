@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format, readStoredLanguage, storeLanguage, translate } from './index';
+import { translateServerMessage } from './server';
 import type { Language, PhraseKey } from './index';
 
 /**
@@ -31,6 +32,15 @@ export interface Translator {
   language: Language;
   /** One phrase, with named values put into it. */
   t: (key: PhraseKey, values?: Record<string, string | number>) => string;
+  /**
+   * A sentence the server wrote, said in the cashier's language.
+   *
+   * Errors already go through this on the way out of `api.ts`, but text that
+   * arrives inside a successful response — the steps for a source program, the
+   * notes on a catalogue analysis — does not pass that way. Rendered raw it
+   * would sit in Russian on a Kazakh till and nobody would see why.
+   */
+  s: (message: string) => string;
   setLanguage: (language: Language) => void;
 }
 
@@ -56,5 +66,7 @@ export function useTranslation(): Translator {
     [language],
   );
 
-  return { language, t, setLanguage };
+  const say = useCallback((message: string) => translateServerMessage(language, message), [language]);
+
+  return { language, t, s: say, setLanguage };
 }

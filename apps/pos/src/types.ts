@@ -775,6 +775,44 @@ export interface ImportPreview {
   /** Total, which may exceed what is listed. */
   problemCount: number;
   sample: ImportSampleRow[];
+  /** What the file says about the shop, before anything is written. */
+  analysis: CatalogueAnalysis;
+}
+
+/** One program somebody might be moving away from. */
+export interface SourceSystemInfo {
+  id: string;
+  name: string;
+  note: string;
+  steps: string[];
+  /**
+   * Whether those steps were checked against a real export from that program.
+   * False means the screen says so rather than pretending: a made-up path
+   * through somebody else's menu sends the owner looking for a button that
+   * isn't there.
+   */
+  stepsVerified: boolean;
+}
+
+export interface CatalogueAnalysis {
+  products: number;
+  found: string[];
+  /** null, not zero, when the file has no purchase price or no quantity. */
+  stockValue: number | null;
+  retailValue: number | null;
+  atLoss: { count: number; examples: { name: string; purchasePrice: number; salePrice: number }[] } | null;
+  atZero: number | null;
+  duplicates: { count: number; examples: { name: string; lines: number[] }[] };
+  noBarcode: number;
+  noPurchasePrice: number;
+  markup: {
+    median: number;
+    min: number;
+    max: number;
+    byCategory: { category: string; medianMarkup: number; items: number }[];
+  } | null;
+  /** What could not be counted, and why. Shown to the owner as written. */
+  notes: string[];
 }
 
 /// One change to a price, a role or a credit limit — the changes that move

@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { getDeviceKey } from './storage';
 import { translate } from './i18n';
 import { translateServerMessage } from './i18n/server';
@@ -764,8 +764,28 @@ export function repairReconciliation(
  */
 export type ImportSource = { grid: string[][] } | { xlsxBase64: string };
 
-export function previewImport(token: string, source: ImportSource): Promise<ImportPreview> {
-  return request('/pos/import/products/preview', { method: 'POST', body: JSON.stringify(source) }, token);
+/**
+ * Which program the file came out of, when the owner said so.
+ *
+ * Carried alongside the file rather than baked into it: the server keeps the
+ * dictionary of that program's column headings, so naming the program is what
+ * saves the owner from mapping columns by hand — the step on which people
+ * abandon an import in every other system.
+ */
+export function fetchSourceSystems(token: string): Promise<{ systems: SourceSystemInfo[] }> {
+  return request('/pos/import/systems', { method: 'GET' }, token);
+}
+
+export function previewImport(
+  token: string,
+  source: ImportSource,
+  system: string | null,
+): Promise<ImportPreview> {
+  return request(
+    '/pos/import/products/preview',
+    { method: 'POST', body: JSON.stringify({ ...source, system }) },
+    token,
+  );
 }
 
 export interface ImportResult {
@@ -781,10 +801,15 @@ export function commitImport(
   locationId: string,
   source: ImportSource,
   idempotencyKey: string,
+  system: string | null,
 ): Promise<ImportResult> {
   return request(
     '/pos/import/products',
-    { method: 'POST', body: JSON.stringify({ locationId, ...source }), headers: { 'Idempotency-Key': idempotencyKey } },
+    {
+      method: 'POST',
+      body: JSON.stringify({ locationId, system, ...source }),
+      headers: { 'Idempotency-Key': idempotencyKey },
+    },
     token,
   );
 }
