@@ -34,6 +34,26 @@ export function formatMoney(n: number): string {
   return `${n.toLocaleString('ru-RU')} ₸`;
 }
 
+/** За сколько дней до конца тариф считается «кончается». */
+export const EXPIRING_SOON_DAYS = 7;
+
+/**
+ * Сколько дней осталось. 0 — сегодня последний, отрицательное — уже кончился.
+ *
+ * Нужно не кассе, а тому, кто выставляет счета: без этого в списке видно дату, и
+ * узнать, у кого она на этой неделе, можно только глазами по всей таблице. Счёт,
+ * выставленный на день позже, — это магазин, который утром не открылся, и звонок
+ * не с благодарностью.
+ *
+ * Считается по календарным дням: часы здесь не значат ничего, а «осталось 0.4»
+ * не значит вообще ничего.
+ */
+export function daysUntil(validUntil: string, now: Date = new Date()): number {
+  const end = parseLocalISODate(validUntil).getTime();
+  const today = parseLocalISODate(toLocalISODate(now)).getTime();
+  return Math.round((end - today) / 86_400_000);
+}
+
 export function getTariffState(tariff: Tariff): TariffState {
   if (tariff.blocked) return 'blocked';
   const today = toLocalISODate(new Date());

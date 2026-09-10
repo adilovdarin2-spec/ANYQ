@@ -2,7 +2,26 @@ import type { Company } from '../types';
 import { SUPPORT_LABELS } from '../types';
 import { StatusChip } from './StatusChip';
 import { ModuleBadges } from './ModuleBadges';
-import { formatDate, getTariffState, pluralizeRu } from '../utils';
+import { EXPIRING_SOON_DAYS, daysUntil, formatDate, getTariffState, pluralizeRu } from '../utils';
+
+/**
+ * «Кончается через N дней» рядом с датой.
+ *
+ * Дата сама по себе не отвечает на вопрос, ради которого в этот список заходят:
+ * кому выставлять счёт сейчас. Считать дни глазами по таблице из сорока строк
+ * никто не будет, а цена пропущенной строки — магазин, который утром не
+ * открылся.
+ *
+ * Молчит, когда до конца далеко: пометка у каждой строки перестаёт быть
+ * пометкой.
+ */
+function ExpiringSoon({ validUntil }: { validUntil: string }) {
+  const left = daysUntil(validUntil);
+  if (left < 0 || left > EXPIRING_SOON_DAYS) return null;
+  const text =
+    left === 0 ? 'сегодня последний день' : `через ${left} ${pluralizeRu(left, 'день', 'дня', 'дней')}`;
+  return <span className="expiring-soon">{text}</span>;
+}
 
 export function CompaniesTable({ companies, onSelect }: { companies: Company[]; onSelect: (id: string) => void }) {
   if (companies.length === 0) {
@@ -45,7 +64,10 @@ export function CompaniesTable({ companies, onSelect }: { companies: Company[]; 
               <td><ModuleBadges modules={c.tariff.modules} /></td>
               <td>{SUPPORT_LABELS[c.tariff.supportLevel]}</td>
               <td><StatusChip state={getTariffState(c.tariff)} /></td>
-              <td className="date-cell">{formatDate(c.tariff.validUntil)}</td>
+              <td className="date-cell">
+                {formatDate(c.tariff.validUntil)}
+                <ExpiringSoon validUntil={c.tariff.validUntil} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -67,7 +89,9 @@ export function CompaniesTable({ companies, onSelect }: { companies: Company[]; 
             <div className="company-card-meta">
               <span>{c.locations.length} {pluralizeRu(c.locations.length, 'точка', 'точки', 'точек')}</span>
               <span>{SUPPORT_LABELS[c.tariff.supportLevel]}</span>
-              <span>до {formatDate(c.tariff.validUntil)}</span>
+              <span>
+                до {formatDate(c.tariff.validUntil)} <ExpiringSoon validUntil={c.tariff.validUntil} />
+              </span>
             </div>
           </button>
         ))}

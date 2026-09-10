@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatMoney,
   getTariffState,
+  daysUntil,
   newValidUntil,
   extendValidUntil,
 } from './utils';
@@ -103,5 +104,36 @@ describe('newValidUntil / extendValidUntil', () => {
     const future = newValidUntil('1y');
     const extended = extendValidUntil(future, '1m');
     expect(parseLocalISODate(extended).getTime()).toBeGreaterThan(parseLocalISODate(future).getTime());
+  });
+});
+
+describe('daysUntil', () => {
+  /**
+   * Считается для того, чтобы счёт выставили вовремя, поэтому проверяется
+   * граница, а не «через год». Дата тарифа — целый день: пока он не кончился,
+   * магазин работает.
+   */
+  const at = (iso: string) => new Date(`${iso}T12:00:00`);
+
+  it('сегодня последний день — ноль', () => {
+    expect(daysUntil('2026-09-30', at('2026-09-30'))).toBe(0);
+  });
+
+  it('завтра — один', () => {
+    expect(daysUntil('2026-09-30', at('2026-09-29'))).toBe(1);
+  });
+
+  it('неделя — семь', () => {
+    expect(daysUntil('2026-09-30', at('2026-09-23'))).toBe(7);
+  });
+
+  it('кончился — отрицательное, а не ноль', () => {
+    // Ноль означает «ещё сегодня работает», и спутать это с «уже не работает»
+    // значит не позвонить тому, кто как раз закрыт.
+    expect(daysUntil('2026-09-30', at('2026-10-01'))).toBe(-1);
+  });
+
+  it('через месяц — месяц, а не «скоро»', () => {
+    expect(daysUntil('2026-10-30', at('2026-09-30'))).toBe(30);
   });
 });
