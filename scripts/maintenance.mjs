@@ -97,6 +97,23 @@ async function tick() {
           `fiscal: attempted ${result.attempted ?? 0}, registered ${result.registered ?? 0}, ` +
             `deferred ${result.deferred ?? 0}, abandoned ${result.abandoned ?? 0}`,
         );
+      } else if (task.name === 'summary') {
+        // Each task is asked to describe itself. This one used to fall into the
+        // generic branch and print "summary: removed 0" — a line that names an
+        // action the task does not perform, on a job nobody watches, in the one
+        // log that is the only window into it. Zero of the wrong noun is worse
+        // than no line at all: it reads like the summary is deleting things.
+        if ((result.composed ?? 0) === 0) {
+          say(`summary: nothing to say to anybody (${result.skipped ?? 0} shops not due, ${result.locations ?? 0} looked at)`);
+        } else {
+          say(
+            `summary: composed ${result.composed}, delivered ${result.delivered ?? 0} ` +
+              `to owners across ${result.locations ?? 0} location(s)`,
+          );
+        }
+        for (const failure of result.failed ?? []) {
+          say(`summary: could not count location ${failure.locationId}: ${failure.error}`);
+        }
       } else {
         say(`${task.name}: removed ${result.removed ?? 0}`);
       }
