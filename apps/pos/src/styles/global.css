@@ -228,13 +228,13 @@ button { cursor: pointer; }
 .receipt-divider { border-top: 1px dashed var(--border); margin: 10px 0; }
 .receipt-total { display: flex; justify-content: space-between; font-weight: 700; font-size: 1rem; }
 
-/* install banner — docked above the tab bar AND clear of the cart bar
-   (both can be visible together: a new cashier hasn't dismissed the banner
-   yet and already has an item in the cart) */
+/* Предложение установить приложение — в потоке, а не поверх содержимого.
+   Раньше было закреплено над панелью вкладок и перекрывало то, что под ним: на
+   телефоне 360×640 это два товара в сетке продаж и кнопка «Войти» на экране
+   ввода PIN. Двигать его выше значит починить одну высоту экрана и сломать
+   другую, поэтому он просто раздвигает содержимое. */
 .install-banner {
-  position: fixed; left: 12px; right: 12px; z-index: 40;
-  bottom: calc(var(--tab-bar-h) + 92px + env(safe-area-inset-bottom));
-  max-width: 496px; margin: 0 auto;
+  margin: 12px 16px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
   padding: 14px 16px; box-shadow: var(--shadow-md);
 }

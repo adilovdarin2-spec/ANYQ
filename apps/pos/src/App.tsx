@@ -2465,12 +2465,18 @@ export default function App() {
   }
 
   if (!session) {
-    return (
-      <>
-        <PinLogin onLogin={handleLogin} />
-        <InstallPrompt {...install} />
-      </>
-    );
+    // Без предложения установить приложение — намеренно.
+    //
+    // Баннер пристыкован к низу экрана, а на телефоне 360×640 (обычный Android,
+    // а не редкость) он накрывает клавишу «0» и кнопку «Войти». То есть первый
+    // же человек, открывший кассу на таком телефоне, не может войти, пока не
+    // догадается закрыть крестик, — и это происходит ровно в тот момент, когда
+    // он видит продукт впервые.
+    //
+    // Двигать баннер выше значило бы чинить одну высоту экрана и ломать другую.
+    // Предлагать установку до входа и так рано: человек ещё не знает, нужна ли
+    // ему эта касса. Ниже, после входа, предложение остаётся.
+    return <PinLogin onLogin={handleLogin} />;
   }
 
   // A typed search always searches the full catalog, ignoring the category
@@ -2491,6 +2497,7 @@ export default function App() {
         {/* До открытия смены — то есть в ту самую минуту утром, когда ещё можно
             успеть что-то сделать. */}
         <TariffNotice tariff={session.tariff} />
+        <InstallPrompt {...install} />
         <OpenShiftScreen
           locations={session.locations}
           currentLocationId={currentLocationId}
@@ -2499,7 +2506,6 @@ export default function App() {
           onSwitchLocation={handleSwitchLocation}
           onOpen={openShift}
         />
-        <InstallPrompt {...install} />
       </>
     );
   }
@@ -2517,6 +2523,11 @@ export default function App() {
 
       {/* Весь день висит только в последние сутки — см. urgentOnly. */}
       <TariffNotice tariff={session.tariff} urgentOnly />
+
+      {/* Наверху и в потоке, а не поверх сетки товаров: на телефоне 360×640
+          закреплённый снизу баннер накрывал два товара, и кассир бил пальцем в
+          предложение установить приложение вместо продажи. */}
+      <InstallPrompt {...install} />
 
       {view === 'sale' && isDesktop && (
         <div className="pos-main">
@@ -3140,7 +3151,6 @@ export default function App() {
         <WeightEntryModal product={weightProduct} onConfirm={handleConfirmWeight} onCancel={() => setWeightProduct(null)} />
       )}
 
-      <InstallPrompt {...install} />
     </div>
   );
 }
