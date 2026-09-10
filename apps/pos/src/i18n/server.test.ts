@@ -141,6 +141,12 @@ const NOT_A_MESSAGE = new Set<string>([
   'Пересчёт ячеек: 7', 'Сверка журнала: исправлено позиций 7',
   // An example inside a doc comment.
   'Сок "Дар" 1л',
+  // Written to the server's own log, never sent to anybody. The operator
+  // reading it is looking at a terminal, not at a till.
+  '(пусто)',
+  '[cors] отказано источнику 7. Разрешены: 7. ',
+  'Если это ваш собственный фронтенд — добавьте его в ALLOWED_ORIGINS ровно в том виде, ',
+  'в каком браузер шлёт Origin: со схемой, без завершающего слэша.',
 ]);
 
 describe('the server, in the cashier\'s language', () => {

@@ -42,11 +42,17 @@ export function Cabinet({ secret }: { secret: string }) {
     document.title = 'Кабинет владельца · ANYQ';
   }, []);
 
+  // Состояние ссылки спрашиваем только когда входить ещё нужно. Раньше это
+  // делалось на каждой загрузке страницы, и владелец, обновивший кабинет
+  // несколько раз подряд, упирался в лимит попыток входа — не введя ничего.
   useEffect(() => {
+    if (token) return;
     fetchCabinetStatus(secret)
       .then(setStatus)
-      .catch((err) => setStatusError(err instanceof ApiError ? err.message : 'Ссылка не открылась'));
-  }, [secret]);
+      // Запасной текст не повторяет заголовок: «Ссылка не открылась. Ссылка
+      // не открылась» — это то, что видел бы владелец при обрыве связи.
+      .catch((err) => setStatusError(err instanceof ApiError ? err.message : 'Сервер не ответил'));
+  }, [secret, token]);
 
   const signOut = useCallback(() => {
     forgetCabinetToken(secret);
@@ -123,15 +129,15 @@ export function Cabinet({ secret }: { secret: string }) {
     );
   }
 
-  if (!status) {
+  if (!status && !token) {
     return <StateScreen title="Открываем кабинет…" message="Секунду." />;
   }
 
   if (!token) {
     return (
       <CabinetGate
-        company={status.company}
-        needsPassword={status.needsPassword}
+        company={status!.company}
+        needsPassword={status!.needsPassword}
         submitting={gateSubmitting}
         error={gateError}
         onSubmit={handleGate}
@@ -141,7 +147,7 @@ export function Cabinet({ secret }: { secret: string }) {
 
   return (
     <CabinetScreen
-      company={company || status.company}
+      company={company || status?.company || ''}
       locations={locations}
       locationId={locationId}
       days={days}

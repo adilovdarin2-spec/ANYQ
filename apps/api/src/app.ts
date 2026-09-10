@@ -45,6 +45,15 @@ const app = express();
 // (below) can't tell real clients apart and keys every login attempt off
 // the same proxy address instead of the actual caller.
 app.set('trust proxy', 1);
+/**
+ * Источники, которым уже отказали, — чтобы сказать про каждый один раз.
+ *
+ * С потолком: иначе любой, кто перебирает адреса, растит эту память сколько
+ * захочет. Дойдя до потолка, перестаём запоминать — не перестаём отказывать.
+ */
+const refusedOrigins = new Set<string>();
+const MAX_REFUSED_REMEMBERED = 50;
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -52,7 +61,23 @@ app.use(
         callback(null, true);
         return;
       }
-      callback(new Error('Not allowed by CORS'));
+
+      // Отказ, а не ошибка. `callback(new Error(...))` уходил в обработчик
+      // ошибок и превращался в 500 со стеком в логе — а браузер видел ответ
+      // без CORS-заголовков и показывал «network error». То есть ровно тот
+      // случай, ради которого написана проверка ALLOWED_ORIGINS выше: человек,
+      // разбирающийся с этим, не имеет причин заподозрить CORS. Здесь мы
+      // просто не выдаём разрешение, и запрос отклоняет браузер — как и
+      // задумано, без пятисотки.
+      if (!refusedOrigins.has(origin) && refusedOrigins.size < MAX_REFUSED_REMEMBERED) {
+        refusedOrigins.add(origin);
+        console.warn(
+          `[cors] отказано источнику ${origin}. Разрешены: ${allowedOrigins.join(', ') || '(пусто)'}. ` +
+            'Если это ваш собственный фронтенд — добавьте его в ALLOWED_ORIGINS ровно в том виде, ' +
+            'в каком браузер шлёт Origin: со схемой, без завершающего слэша.',
+        );
+      }
+      callback(null, false);
     },
   }),
 );
