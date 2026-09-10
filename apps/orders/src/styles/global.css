@@ -45,7 +45,15 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
   font-family: Georgia, serif; flex-shrink: 0;
 }
 .order-header-text { min-width: 0; }
-.order-company-name { font-family: Georgia, serif; font-weight: 700; font-size: 1.15rem; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Имя поставщика переносится, а не обрезается. «Склад HoReCa «Дастархан…» —
+   это его собственная страница, на которую он позвал своих магазинов, и первое,
+   что там видно, не должно быть обрубком. Двух строк хватает любому названию,
+   а третью отсекаем: заголовок не должен вытеснять товар. */
+.order-company-name {
+  font-family: Georgia, serif; font-weight: 700; font-size: 1.15rem; line-height: 1.25;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 .order-header-sub { font-size: 0.8rem; color: var(--ink-muted); }
 
 /* content container */

@@ -175,7 +175,12 @@ export default function App() {
 
       {view === 'success' && <SuccessScreen companyName={catalog.company.name} onNewOrder={() => setView('catalog')} />}
 
-      <InstallPrompt {...install} />
+      {/* Только после того, как в корзине что-то появилось.
+          Баннер закреплён снизу и закрывает две строки каталога, а каталог —
+          это то, ради чего сюда пришли: закупщик выбирает товар, а не ищет,
+          куда поставить ярлык. Тот, кто уже набирает заказ, ярлыку рад; тот,
+          кто зашёл впервые, — нет, и запомнит он именно то, что ему мешали. */}
+      {cart.length > 0 && <InstallPrompt {...install} />}
     </div>
   );
 }
