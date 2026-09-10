@@ -931,3 +931,19 @@ export interface PriceListMatch {
   lines: PriceListLine[];
   truncated: boolean;
 }
+
+/** Строка накладной поставщика, сопоставленная с нашим каталогом. */
+export interface DeliveryLine extends PriceListLine {
+  /** Сколько привезли по накладной. null — в файле не было числа. */
+  quantity: number | null;
+  /** Цена, по которой пойдёт приёмка: из накладной, иначе наша последняя закупочная. */
+  receiptPrice: number;
+}
+
+export interface DeliveryMatch {
+  locationId: string;
+  problems: string[];
+  summary: PriceListMatch['summary'];
+  lines: DeliveryLine[];
+  truncated: boolean;
+}

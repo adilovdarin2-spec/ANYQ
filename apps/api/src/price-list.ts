@@ -199,3 +199,80 @@ export function summarisePriceList(lines: MatchedLine[]): PriceListSummary {
     biggestRise,
   };
 }
+
+// --- накладная поставщика ----------------------------------------------------
+
+export interface DeliveryRow extends PriceListRow {
+  /** Сколько привезли. null — количество прочитать не удалось. */
+  quantity: number | null;
+}
+
+/**
+ * Как накладная называет колонку с количеством.
+ *
+ * У прайса на этом месте кратность отгрузки, у накладной — сколько штук
+ * приехало. Слово одно, смысл разный, поэтому и словарь разный.
+ */
+const DELIVERY_ALIASES: Partial<Record<ImportField, string[]>> = {
+  salePrice: ['ценапоставщика', 'ценабезндс', 'ценазаединицу', 'цена'],
+  quantity: ['количество', 'колво', 'кол', 'отгружено', 'привезено', 'quantity', 'qty'],
+};
+
+/**
+ * Читает накладную поставщика.
+ *
+ * Смысл ровно один: приёмка сегодня — это сорок минут ручного ввода, и это
+ * самая ненавидимая операция в магазине. Распознавание фотографии бумажной
+ * накладной требует внешней службы; а накладная, присланная файлом — а её
+ * присылают файлом чаще, чем кажется, — читается тем же разбором, что и
+ * каталог, и печатать не нужно ничего.
+ *
+ * Строка без количества не выбрасывается: пусть кладовщик увидит её и впишет
+ * число сам. Молча пропущенная позиция — это недостача, которую заметят через
+ * неделю.
+ */
+export function readDeliveryNote(grid: string[][]): { rows: DeliveryRow[]; problems: string[] } {
+  const problems: string[] = [];
+  const nonEmpty = grid.filter((row) => row.some((cell) => (cell ?? '').trim() !== ''));
+  if (nonEmpty.length < 2) {
+    return { rows: [], problems: ['В файле нет ни одной строки с товаром'] };
+  }
+
+  const [header, ...body] = nonEmpty;
+  const columns = detectColumnsWith(header, DELIVERY_ALIASES);
+
+  if (columns.name === undefined) {
+    return { rows: [], problems: ['Не найден столбец с названием товара'] };
+  }
+  if (columns.quantity === undefined) {
+    problems.push('Не найден столбец с количеством — впишите его вручную по каждой строке');
+  }
+  if (columns.salePrice === undefined) {
+    problems.push('Не найден столбец с ценой — приёмка встанет по вашей последней закупочной');
+  }
+
+  const rows: DeliveryRow[] = [];
+  body.forEach((raw, index) => {
+    const cell = (field: ImportField): string => {
+      const at = columns[field];
+      return at === undefined ? '' : (raw[at] ?? '').trim();
+    };
+
+    const supplierName = cell('name');
+    if (!supplierName) return;
+
+    const price = parseNumber(cell('salePrice'));
+    const quantity = parseNumber(cell('quantity'));
+
+    rows.push({
+      line: index + 2,
+      supplierName,
+      barcode: normaliseBarcode(cell('barcode')),
+      supplierPrice: price === null || price < 0 ? null : Math.round(price),
+      minQuantity: null,
+      quantity: quantity === null || quantity < 0 ? null : quantity,
+    });
+  });
+
+  return { rows, problems };
+}

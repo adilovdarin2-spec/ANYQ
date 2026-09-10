@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, CabinetInfo, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { genId, resolveScannedBarcode } from './utils';
@@ -25,6 +25,7 @@ import {
   createPackaging,
   createProduction,
   createPurchaseOrder,
+  createReceipt,
   createRemoteShift,
   createReturn,
   createSupplierReturn,
@@ -79,6 +80,7 @@ import {
   recordSettlement,
   registerFiscalManually,
   rejectOrder,
+  matchDeliveryNote,
   matchPriceList,
   repairReconciliation,
   resetCabinet as resetCabinetLink,
@@ -143,6 +145,7 @@ import { ImportScreen } from './components/ImportScreen';
 import { MigrationScreen } from './components/MigrationScreen';
 import { CabinetLinkScreen } from './components/CabinetLinkScreen';
 import { PriceListScreen } from './components/PriceListScreen';
+import { DeliveryNoteScreen } from './components/DeliveryNoteScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
@@ -185,6 +188,7 @@ type View =
   | 'migrate'
   | 'cabinet'
   | 'price-list'
+  | 'delivery'
   | 'settlements'
   | 'production'
   | 'floorplan'
@@ -193,7 +197,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'price-list', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'price-list', 'delivery', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -260,6 +264,11 @@ export default function App() {
   const [priceListError, setPriceListError] = useState<string | null>(null);
   const [priceListSubmitting, setPriceListSubmitting] = useState(false);
   const [priceListOrderId, setPriceListOrderId] = useState<string | null>(null);
+  const [delivery, setDelivery] = useState<DeliveryMatch | null>(null);
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [deliverySubmitting, setDeliverySubmitting] = useState(false);
+  const [deliveryReceiptId, setDeliveryReceiptId] = useState<string | null>(null);
   const [cabinetLoading, setCabinetLoading] = useState(false);
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [cabinetResetting, setCabinetResetting] = useState(false);
@@ -449,6 +458,7 @@ export default function App() {
       { key: 'reconciliation', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
       { key: 'import', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
       { key: 'migrate', icon: '📦', label: t('ops.migrate'), onClick: handleShowMigrate },
+      { key: 'delivery', icon: '📄', label: t('ops.delivery'), onClick: handleShowDelivery },
       { key: 'price-list', icon: '🧾', label: t('ops.priceList'), onClick: handleShowPriceList },
       { key: 'cabinet', icon: '🔑', label: t('ops.cabinet'), onClick: handleShowCabinet },
       { key: 'settlements', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
@@ -963,6 +973,61 @@ export default function App() {
       setPriceListError(err instanceof ApiError ? err.message : t('fail.createOrder'));
     } finally {
       setPriceListSubmitting(false);
+    }
+  }
+
+  // Накладная файлом: разбор, сверка, и только потом приёмка — тремя разными
+  // действиями, потому что это три разных утверждения.
+  function handleShowDelivery() {
+    setView('delivery');
+    setDelivery(null);
+    setDeliveryError(null);
+    setDeliveryReceiptId(null);
+  }
+
+  function resetDelivery() {
+    setDelivery(null);
+    setDeliveryError(null);
+    setDeliveryReceiptId(null);
+  }
+
+  async function handleMatchDelivery(source: ImportSource) {
+    if (!session || !currentLocationId) return;
+    setDeliveryLoading(true);
+    setDeliveryError(null);
+    try {
+      setDelivery(await matchDeliveryNote(session.token, currentLocationId, source));
+    } catch (err) {
+      setDeliveryError(err instanceof ApiError ? err.message : t('fail.matchDelivery'));
+    } finally {
+      setDeliveryLoading(false);
+    }
+  }
+
+  async function handleReceiveDelivery(items: { productId: string; quantity: number; price: number }[]) {
+    if (!session || !currentLocationId) return;
+    setDeliverySubmitting(true);
+    setDeliveryError(null);
+    try {
+      const receipt = await createReceipt(
+        session.token,
+        {
+          locationId: currentLocationId,
+          // Поставщика на этом экране не спрашиваем: накладная уже названа
+          // файлом, а лишнее поле между «сверил» и «принял» — это лишний повод
+          // отложить приёмку. Кто привёз, дописывается в документе.
+          supplierName: '',
+          supplierPhone: '',
+          items: items.map((item) => ({ ...item, packagingId: null })),
+        },
+        genId('delivery'),
+      );
+      setDeliveryReceiptId(receipt.id);
+      await refreshCatalogAfterStockChange();
+    } catch (err) {
+      setDeliveryError(err instanceof ApiError ? err.message : t('fail.receive'));
+    } finally {
+      setDeliverySubmitting(false);
     }
   }
 
@@ -2622,6 +2687,20 @@ export default function App() {
           onChangeType={handleChangeSettlementType}
           onPay={handleRecordSettlement}
           onSetCredit={handleSetCredit}
+        />
+      )}
+
+      {view === 'delivery' && (
+        <DeliveryNoteScreen
+          match={delivery}
+          loading={deliveryLoading}
+          error={deliveryError}
+          submitting={deliverySubmitting}
+          receivedId={deliveryReceiptId}
+          onBack={() => setView('operations')}
+          onMatch={handleMatchDelivery}
+          onReceive={handleReceiveDelivery}
+          onReset={resetDelivery}
         />
       )}
 
