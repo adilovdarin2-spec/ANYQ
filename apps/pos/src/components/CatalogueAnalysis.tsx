@@ -71,8 +71,10 @@ export function CatalogueAnalysisPanel({ analysis }: { analysis: CatalogueAnalys
       {lossy && lossy.examples.length > 0 && (
         <>
           <div className="orders-section-title">{t('analysis.atLossTitle')}</div>
-          {lossy.examples.map((item) => (
-            <div key={item.name} className="report-row low">
+          {/* Ключ по номеру, а не по названию: один и тот же товар может быть
+              заведён дважды, и React тогда рисует одну строку вместо двух. */}
+          {lossy.examples.map((item, index) => (
+            <div key={`${item.name}-${index}`} className="report-row low">
               <span>
                 {item.name}
                 <br />
