@@ -73,18 +73,70 @@ function parseUrl(url) {
 }
 
 /**
- * Postgres client tools, run inside the database's own container.
+ * Живёт ли база в нашем контейнере рядом или на чужом сервере.
  *
- * Not on the host on purpose. `pg_dump` refuses to talk to a server newer than
- * itself, so a machine with an older client installed — or, on Windows,
- * usually none at all — produces either a confusing failure or, worse, a
- * partial dump. Taking the tools from the same image as the server removes the
- * version question entirely, and means a person restoring at seven in the
- * morning needs nothing installed but Docker.
+ * От этого зависит, откуда брать клиентские утилиты, и это не мелочь: `pg_dump`
+ * отказывается говорить с сервером новее себя. Пока это не различалось,
+ * `npm run backup` против боевой базы падал на «server version mismatch» — то
+ * есть боевую копию этой командой снять было нельзя, при том что проверенное
+ * восстановление хартия делает условием запуска.
  */
-function pg(args, { input, onStdout } = {}) {
+function isLocalContainerDb(db) {
+  return db.host === 'localhost' || db.host === '127.0.0.1' || db.host === CONTAINER;
+}
+
+/**
+ * Мажорная версия сервера — чтобы взять клиент ровно такой же.
+ *
+ * Спрашивается у самого сервера, а не задаётся настройкой: настройку забудут
+ * поменять ровно тогда, когда базу обновят, и узнают об этом в то утро, когда
+ * копия понадобится.
+ */
+async function serverMajor(url) {
+  const { PrismaClient } = await import('@prisma/client');
+  const prisma = new PrismaClient({ datasources: { db: { url } } });
+  try {
+    const rows = await prisma.$queryRawUnsafe('SHOW server_version_num');
+    return Math.floor(Number(rows[0].server_version_num) / 10000);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+/**
+ * Postgres client tools of the version the server is actually running.
+ *
+ * Локальная база: утилиты берутся из её же контейнера — версии совпадают по
+ * построению, и человеку, восстанавливающему в семь утра, не нужно ничего,
+ * кроме Docker. Чужой сервер: поднимается одноразовый контейнер с образом той
+ * же мажорной версии. В обоих случаях вопрос версии закрыт, а не оставлен на
+ * удачу — и `pg_dump` не отдаст неполный дамп молча.
+ */
+/**
+ * Куда и чем подключаться. Заполняется один раз, при старте.
+ *
+ * `image === null` — база в нашем контейнере, клиент берём оттуда же.
+ * Иначе — чужой сервер: одноразовый контейнер нужной версии, и подключение
+ * по адресу, потому что внутри такого контейнера никакой базы нет.
+ */
+const CLIENT = { image: null, hostArgs: [] };
+
+/** Куда вставить `-h host -p port`: сразу после имени утилиты. */
+const TOOLS = new Set(['pg_dump', 'psql', 'pg_restore', 'pg_isready']);
+
+function withHost(args) {
+  if (CLIENT.hostArgs.length === 0) return args;
+  const at = args.findIndex((a) => TOOLS.has(a));
+  if (at < 0) return args;
+  return [...args.slice(0, at + 1), ...CLIENT.hostArgs, ...args.slice(at + 1)];
+}
+
+function pg(rawArgs, { input, onStdout } = {}) {
+  const args = withHost(rawArgs);
+  const image = CLIENT.image;
+  const docker = image ? ['run', '--rm', '-i', image, ...args] : ['exec', '-i', CONTAINER, ...args];
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', ['exec', '-i', CONTAINER, ...args], {
+    const child = spawn('docker', docker, {
       stdio: [input ? 'pipe' : 'ignore', onStdout ? 'pipe' : 'ignore', 'pipe'],
     });
 
@@ -97,7 +149,11 @@ function pg(args, { input, onStdout } = {}) {
     if (input) input.pipe(child.stdin);
 
     child.on('error', (err) =>
-      reject(new Error(`docker exec failed — is Docker running and «${CONTAINER}» up? (${err.message})`)),
+      reject(new Error(
+        image
+          ? `docker run failed — is Docker running? (${err.message})`
+          : `docker exec failed — is Docker running and «${CONTAINER}» up? (${err.message})`,
+      )),
     );
     child.on('close', (code) => {
       if (code === 0) resolve();
@@ -386,7 +442,28 @@ function flag(name) {
 
 const command = process.argv[2];
 
+/**
+ * Один раз решить, чем и куда подключаться, — до любой команды.
+ *
+ * Локальная база: клиент из её же контейнера, адрес не нужен. Чужой сервер:
+ * образ той же мажорной версии и явный адрес, потому что внутри одноразового
+ * контейнера никакой базы нет. Раньше выбора не было вовсе, и `create` против
+ * боевой базы падал на «server version mismatch».
+ */
+async function chooseClient() {
+  if (command === 'list') return;
+  const url = databaseUrl();
+  const db = parseUrl(url);
+  if (isLocalContainerDb(db)) return;
+
+  const major = await serverMajor(url);
+  CLIENT.image = `postgres:${major}-bookworm`;
+  CLIENT.hostArgs = ['-h', db.host, '-p', String(db.port)];
+  console.log(`База на ${db.host}, PostgreSQL ${major} — клиент из ${CLIENT.image}`);
+}
+
 try {
+  await chooseClient();
   switch (command) {
     case 'create': {
       const written = await create();
