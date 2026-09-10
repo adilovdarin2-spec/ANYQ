@@ -267,3 +267,13 @@ button.mini-card:focus-visible { outline: 2px solid var(--accent); outline-offse
 .error-boundary-icon { font-size: 2.5rem; margin-bottom: 12px; }
 .error-boundary-card h1 { font-size: 1.15rem; margin: 0 0 10px; color: var(--ink); }
 .error-boundary-card p { font-size: 0.9rem; color: var(--ink-muted); line-height: 1.5; margin: 0 0 20px; }
+
+/* «Кончается через N дней» — приписка к дате в списке компаний.
+   Цвет из токенов, чтобы работать в обеих темах. */
+.expiring-soon {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--status-overdue);
+  white-space: nowrap;
+}
