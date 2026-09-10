@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
+import { shouldRefreshCatalog } from './catalog-refresh';
+import type { RefreshTrigger } from './catalog-refresh';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useOutboxSync } from './hooks/useOutboxSync';
@@ -197,6 +199,16 @@ type View =
   | 'kds'
   | 'stock-history';
 
+/**
+ * Как часто касса перечитывает остатки, пока на неё смотрят.
+ *
+ * Минута — компромисс, а не круглое число: продукт обязан работать без сети, и
+ * постоянный опрос противоречит этому обещанию, а плитка, отставшая на минуту,
+ * ошибается только там, где две кассы продают один и тот же последний товар в
+ * одну и ту же минуту. Такую продажу всё равно отклонит сервер.
+ */
+const CATALOG_REFRESH_MS = 60_000;
+
 const OPERATIONS_VIEWS = new Set<View>([
   'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'price-list', 'delivery', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
@@ -208,6 +220,10 @@ export default function App() {
   const [locationSwitching, setLocationSwitching] = useState(false);
   const [shift, setShift] = useState<Shift | null>(() => getShift());
   const [cart, setCart] = useState<CartLine[]>([]);
+  // Читается из обработчиков, которые живут дольше рендера (таймер обновления
+  // каталога), поэтому ref, а не значение из замыкания.
+  const cartRef = useRef<CartLine[]>([]);
+  cartRef.current = cart;
   // Falls back to the location the catalog was loaded for at login, so a
   // single-location company never has to choose and a cashier signing in on a
   // colleague's device doesn't inherit a location that isn't theirs.
@@ -406,6 +422,62 @@ export default function App() {
   const ensureShiftRef = useRef<() => Promise<void>>(async () => {});
   ensureShiftRef.current = () => ensureShiftSynced();
   const ensureShiftSyncedStable = useCallback(() => ensureShiftRef.current(), []);
+
+  /**
+   * Остатки, которые не врут через час работы.
+   *
+   * Сессия с товарами лежит в localStorage и переживает перезагрузку — так
+   * задумано: касса обязана открыться без сети. Но пока каталог никто не
+   * перечитывал, плитки показывают цифры того момента, когда эта касса
+   * последний раз входила. Вторая касса продала хлеб — здесь по-прежнему «ост.
+   * 39», и кассир обещает покупателю то, чего нет. Сервер такую продажу
+   * отклонит, но узнает об этом покупатель у прилавка, и виноватой будет
+   * выглядеть касса.
+   *
+   * Поэтому каталог перечитывается, когда касса возвращается к работе: при
+   * запуске, когда экран снова стал видимым, когда вернулась сеть — и не чаще
+   * раза в минуту, пока смотрят на витрину. Не поток обновлений: продукт живёт
+   * без сети неделю, и превращать его в устройство, которое всё время ходит в
+   * интернет, ради секундной свежести неправильно.
+   *
+   * Не трогает каталог, пока в корзине что-то есть: менять плитки под пальцем
+   * посреди чека — это ровно та секунда, когда кассиру нужно, чтобы экран стоял
+   * на месте. Итог чека от этого не зависит: цена запоминается в строке
+   * корзины.
+   */
+  const refreshCatalogRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    refreshCatalogRef.current = () => void refreshCatalogAfterStockChange();
+  });
+  useEffect(() => {
+    if (!session?.token || !currentLocationId) return;
+    let lastAt = 0;
+    const refresh = (trigger: RefreshTrigger) => {
+      const allowed = shouldRefreshCatalog(trigger, {
+        online: navigator.onLine,
+        visible: document.visibilityState === 'visible',
+        cartLines: cartRef.current.length,
+        sinceLastMs: Date.now() - lastAt,
+      });
+      if (!allowed) return;
+      lastAt = Date.now();
+      refreshCatalogRef.current();
+    };
+
+    refresh('open');
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh('visible');
+    };
+    const onOnline = () => refresh('online');
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
+    const timer = window.setInterval(() => refresh('tick'), CATALOG_REFRESH_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
+      window.clearInterval(timer);
+    };
+  }, [session?.token, currentLocationId]);
 
   // The warehouse's own queue. Separate from the till's because the two obey
   // opposite rules on refusal: a rejected sale is skipped so it cannot strand
