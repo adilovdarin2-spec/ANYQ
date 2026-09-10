@@ -5,10 +5,11 @@ interface Props {
   cart: CartLine[];
   total: number;
   onChangeQty: (productId: string, delta: number) => void;
+  onSetQty: (productId: string, qty: number) => void;
   onCheckout: () => void;
 }
 
-export function CartSidebar({ cart, total, onChangeQty, onCheckout }: Props) {
+export function CartSidebar({ cart, total, onChangeQty, onSetQty, onCheckout }: Props) {
   return (
     <div className="cart-sidebar">
       <div className="cart-sidebar-title">Корзина</div>
@@ -32,7 +33,16 @@ export function CartSidebar({ cart, total, onChangeQty, onCheckout }: Props) {
                   <button onClick={() => onChangeQty(line.productId, -1)} aria-label="Меньше">
                     –
                   </button>
-                  <span>{line.qty}</span>
+                  <input
+                    className="qty-field"
+                    type="number"
+                    min={0}
+                    max={line.maxStock}
+                    inputMode="numeric"
+                    value={line.qty}
+                    aria-label={`Сколько ${line.unit}`}
+                    onChange={(e) => onSetQty(line.productId, Math.floor(Number(e.target.value) || 0))}
+                  />
                   <button onClick={() => onChangeQty(line.productId, 1)} disabled={line.qty >= line.maxStock} aria-label="Больше">
                     +
                   </button>
