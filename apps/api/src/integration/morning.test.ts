@@ -173,6 +173,22 @@ describe('утренняя сводка', () => {
     expect(sent).toEqual([]);
   });
 
+  it('за один вызов обходит не больше пяти магазинов, остальные ждут следующего', async () => {
+    // Каждая точка — это полный расчёт сводки и расчёт дефицита. Двадцать
+    // магазинов в одном запросе это минуты работы и отвалившийся по таймауту
+    // вызов, после которого половина осталась без сводки без единой записи о
+    // том, почему.
+    for (let i = 0; i < 7; i += 1) await createFixture({ openingQuantity: 5 });
+
+    const first = await sendMorningSummaries(MORNING);
+    expect(first.remaining).toBeGreaterThan(0);
+
+    // Следующий тик через минуту берёт отложенные — и не трогает уже
+    // посчитанные.
+    const second = await sendMorningSummaries(new Date(MORNING.getTime() + 60_000));
+    expect(second.remaining).toBe(0);
+  });
+
   it('чужой компании сводка не достаётся', async () => {
     const other = await createFixture({ openingQuantity: 10 });
     await subscribe(fx.userId, 'https://push.example/owner');

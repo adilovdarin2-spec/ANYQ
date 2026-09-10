@@ -61,9 +61,14 @@ function say(line) {
  * a working scheduler.
  */
 async function runTask(task) {
+  // Ограничение по времени, потому что без него зависший запрос останавливает
+  // весь планировщик навсегда: следующий тик ждёт предыдущего, и очередь
+  // перестаёт разбираться молча. Две минуты — с большим запасом на самую
+  // тяжёлую задачу; всё, что дольше, уже не «медленно», а «не отвечает».
   const response = await fetch(`${base}${task.path}`, {
     method: 'POST',
     headers: { 'x-maintenance-secret': secret, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (response.status === 404) {
@@ -103,12 +108,13 @@ async function tick() {
         // action the task does not perform, on a job nobody watches, in the one
         // log that is the only window into it. Zero of the wrong noun is worse
         // than no line at all: it reads like the summary is deleting things.
+        const waiting = result.remaining ? `, ${result.remaining} shop(s) left for the next tick` : '';
         if ((result.composed ?? 0) === 0) {
-          say(`summary: nothing to say to anybody (${result.skipped ?? 0} shops not due, ${result.locations ?? 0} looked at)`);
+          say(`summary: nothing to say to anybody (${result.skipped ?? 0} shops not due, ${result.locations ?? 0} looked at)${waiting}`);
         } else {
           say(
             `summary: composed ${result.composed}, delivered ${result.delivered ?? 0} ` +
-              `to owners across ${result.locations ?? 0} location(s)`,
+              `to owners across ${result.locations ?? 0} location(s)${waiting}`,
           );
         }
         for (const failure of result.failed ?? []) {
