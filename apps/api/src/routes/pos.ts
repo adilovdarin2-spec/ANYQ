@@ -53,7 +53,7 @@ import { reconcileBalances, summarize, mismatchExplanation } from '../reconcilia
 import { buildImportPlan } from '../import';
 import { ensureCabinet, resetCabinet } from '../cabinet';
 import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
-import { matchPriceList, readPriceList, summarisePriceList } from '../price-list';
+import { matchPriceList, readDeliveryNote, readPriceList, summarisePriceList } from '../price-list';
 import type { LedgerTotal, CachedQuantity } from '../reconciliation';
 import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
@@ -1220,7 +1220,7 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
       status: 'confirmed',
       createdAt: { gte: from, lte: to },
     },
-    include: { items: { include: { product: true } }, payments: true },
+    include: { items: { include: { product: true } }, payments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
     orderBy: { createdAt: 'desc' },
     take: REPORT_SALE_LIMIT,
   });
@@ -2327,7 +2327,7 @@ posRouter.get('/documents', requirePosAuth, async (req: PosAuthedRequest, res) =
     },
     include: {
       items: { include: { product: true } },
-      payments: true,
+      payments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
       counterparty: true,
       // A count, never the bytes: a listing that carried them would cost
       // megabytes for a screen that shows a paperclip.
@@ -2469,7 +2469,7 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
   if (dataset === 'sales') {
     const sales = await prisma.document.findMany({
       where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
-      include: { items: { include: { product: true } }, payments: true },
+      include: { items: { include: { product: true } }, payments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
       orderBy: { createdAt: 'desc' },
       take: LIMIT,
     });
@@ -2821,7 +2821,7 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
       prisma.document.findMany({
         where: { companyId: companyId, locationId, type: 'sale', status: 'confirmed', createdAt: { gte: from } },
         // The drawer figure needs to know which part of a split sale was cash.
-        include: { items: true, payments: true },
+        include: { items: true, payments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
       }),
       prisma.document.findMany({
         where: { companyId: companyId, locationId, type: 'return', createdAt: { gte: from } },
@@ -5132,6 +5132,69 @@ posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthed
     // увидеть, что нашлось в его магазине, до того как что-то записано, —
     // иначе это уже не разбор, а отчёт после импорта.
     analysis: analyseCatalogue(parsed.grid, system),
+  });
+});
+
+/**
+ * Накладная поставщика файлом: что приехало и что из этого мы знаем.
+ *
+ * Приёмка сегодня — сорок минут ручного ввода, и это самая ненавидимая операция
+ * в магазине. Распознавание фотографии бумажной накладной требует внешней
+ * службы, которой у нас нет; но накладную присылают файлом чаще, чем кажется, и
+ * файл читается тем же разбором, что и каталог.
+ *
+ * Ничего не записывает. Приёмку проводит уже существующий маршрут, когда
+ * кладовщик сверил строки с тем, что стоит на полу: накладная — это заявление
+ * поставщика о том, что он привёз, а приёмка — наше утверждение о том, что мы
+ * получили, и это разные утверждения. Автоматическая приёмка по присланному
+ * файлу означала бы, что недостачу подписали не глядя.
+ */
+posRouter.post('/deliveries/match', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.body?.locationId, res);
+  if (!locationId) return;
+
+  const parsed = readGrid(req.body);
+  if (parsed.status !== 'ok') {
+    res.status(400).json({ error: parsed.message });
+    return;
+  }
+
+  const { rows, problems } = readDeliveryNote(parsed.grid);
+  if (rows.length === 0) {
+    res.status(400).json({ error: problems[0] ?? 'В файле нет строк с товаром' });
+    return;
+  }
+
+  const ours = await prisma.product.findMany({
+    where: { companyId: req.posCompanyId },
+    select: { id: true, name: true, barcode: true, purchasePrice: true, unit: true },
+  });
+  const matched = matchPriceList(rows, ours);
+  const quantityByLine = new Map(rows.map((row) => [row.line, row.quantity]));
+
+  res.json({
+    locationId,
+    problems,
+    summary: summarisePriceList(matched),
+    lines: matched.slice(0, MAX_PRICE_LIST_LINES).map((line) => ({
+      ...line,
+      quantity: quantityByLine.get(line.line) ?? null,
+      // Цена приёмки: та, что в накладной, а если её там нет — наша последняя
+      // закупочная. Ноль поставил бы себестоимость в ноль и сделал бы маржу
+      // этого товара выдуманной на всё время, пока партия не кончится.
+      receiptPrice: line.supplierPrice ?? line.ourPurchasePrice ?? 0,
+    })),
+    truncated: matched.length > MAX_PRICE_LIST_LINES,
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   matchPriceList,
+  readDeliveryNote,
   normaliseBarcode,
   readPriceList,
   summarisePriceList,
@@ -194,5 +195,66 @@ describe('итог по прайсу', () => {
     expect(summary.dearer).toBe(0);
     expect(summary.cheaper).toBe(0);
     expect(summary.biggestRise).toBeNull();
+  });
+});
+
+describe('накладная поставщика', () => {
+  it('читает количество и цену', () => {
+    const { rows } = readDeliveryNote([
+      ['Наименование', 'Штрихкод', 'Количество', 'Цена'],
+      ['Вода 1 л', '4870001112223', '24', '120'],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ supplierName: 'Вода 1 л', quantity: 24, supplierPrice: 120 });
+  });
+
+  it('понимает «отгружено» и «кол-во»', () => {
+    expect(readDeliveryNote([['Товар', 'Отгружено'], ['Вода', '12']]).rows[0].quantity).toBe(12);
+    expect(readDeliveryNote([['Товар', 'Кол-во'], ['Вода', '7']]).rows[0].quantity).toBe(7);
+  });
+
+  it('строку без количества не выбрасывает', () => {
+    // Молча пропущенная позиция — это недостача, которую заметят через неделю.
+    const { rows } = readDeliveryNote([
+      ['Наименование', 'Количество'],
+      ['Вода 1 л', ''],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].quantity).toBeNull();
+  });
+
+  it('без колонки количества говорит, что вписывать придётся руками', () => {
+    const { problems } = readDeliveryNote([['Наименование'], ['Вода 1 л']]);
+    expect(problems.join(' ')).toContain('вручную');
+  });
+
+  it('без колонки цены предупреждает, чем она заменится', () => {
+    const { problems } = readDeliveryNote([
+      ['Наименование', 'Количество'],
+      ['Вода 1 л', '10'],
+    ]);
+    expect(problems.join(' ')).toContain('последней закупочной');
+  });
+
+  it('дробное количество читается: товар бывает в килограммах', () => {
+    expect(readDeliveryNote([['Товар', 'Количество'], ['Сыр', '2,5']]).rows[0].quantity).toBe(2.5);
+  });
+
+  it('отрицательное количество не берётся', () => {
+    expect(readDeliveryNote([['Товар', 'Количество'], ['Сыр', '-3']]).rows[0].quantity).toBeNull();
+  });
+
+  it('сопоставляется с каталогом тем же способом, что и прайс', () => {
+    const { rows } = readDeliveryNote([
+      ['Наименование', 'Штрихкод', 'Количество', 'Цена'],
+      ['ХЛЕБ ТАНДЫР 400Г', '4870001112223', '24', '190'],
+    ]);
+    const [line] = matchPriceList(rows, OURS);
+    expect(line.productId).toBe('p1');
+    expect(line.matchedBy).toBe('barcode');
+  });
+
+  it('пустой файл читать нечего', () => {
+    expect(readDeliveryNote([[]]).rows).toEqual([]);
   });
 });

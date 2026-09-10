@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, CabinetInfo, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { getDeviceKey } from './storage';
 import { translate } from './i18n';
 import { translateServerMessage } from './i18n/server';
@@ -1037,4 +1037,20 @@ export function matchPriceList(
   source: ImportSource,
 ): Promise<PriceListMatch> {
   return request('/pos/price-lists/match', { method: 'POST', body: JSON.stringify({ locationId, ...source }) }, token);
+}
+
+/**
+ * Разбор накладной поставщика, присланной файлом.
+ *
+ * Ничего не принимает: накладная — это заявление поставщика о том, что он
+ * привёз, а приёмка — наше утверждение о том, что мы получили. Приёмку проводит
+ * `createReceipt`, после того как кладовщик сверил строки с тем, что стоит на
+ * полу.
+ */
+export function matchDeliveryNote(
+  token: string,
+  locationId: string,
+  source: ImportSource,
+): Promise<DeliveryMatch> {
+  return request('/pos/deliveries/match', { method: 'POST', body: JSON.stringify({ locationId, ...source }) }, token);
 }

@@ -117,6 +117,9 @@ const NOT_A_MESSAGE = new Set<string>([
   // How a supplier's price list names its own columns. Input, like the rest.
   'кратность', 'минзаказ', 'минимальнаяпартия', 'минпартия', 'оптоваяцена',
   'прайс', 'ценапоставщика', 'ценапрайс',
+  // And how a delivery note names its own — the same kind of thing, read from
+  // the other side of the transaction.
+  'кол', 'отгружено', 'привезено', 'ценабезндс',
   // Names of other companies' programs. A brand is not translated, and
   // translating one would stop the owner recognising his own.
   '1С', 'МойСклад', 'Мультикас',
