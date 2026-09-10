@@ -70,7 +70,9 @@ button { cursor: pointer; }
   padding: 12px 14px; font-size: 1rem; background: var(--surface); color: var(--ink);
 }
 .search-bar input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.search-hint { font-size: 0.72rem; color: var(--ink-muted); padding: 4px 4px 0; }
+/* Одной строкой и тихо: подсказка живёт на самом рабочем экране постоянно, и
+   две строки текста здесь стоят дороже, чем помогают. */
+.search-hint { font-size: 0.72rem; color: var(--ink-muted); margin: 6px 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .category-bar {
   display: flex; gap: 8px; overflow-x: auto; margin: 8px -14px 0; padding: 2px 14px 4px;
   scrollbar-width: none;
@@ -117,6 +119,10 @@ button { cursor: pointer; }
 
 /* cart bar (docked above the bottom tab bar, not flush with the screen edge) */
 .cart-bar {
+  /* Сброс рамки, а не украшение: это <button>, и без сброса браузер рисует ему
+     свою `2px outset white` — на зелёной полосе она выглядела белым объёмным
+     кантом из девяностых. Единственная кнопка в кассе, где сброса не было. */
+  border: none;
   position: fixed; left: 0; right: 0; z-index: 25;
   bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 8px);
   max-width: 520px; margin: 0 auto;
@@ -233,14 +239,22 @@ button { cursor: pointer; }
    телефоне 360×640 это два товара в сетке продаж и кнопка «Войти» на экране
    ввода PIN. Двигать его выше значит починить одну высоту экрана и сломать
    другую, поэтому он просто раздвигает содержимое. */
+/* Компактный намеренно. Это предложение на будущее, а не работа: на телефоне
+   375×812 прежний баннер занимал четверть первого экрана над товарами, то есть
+   кассир при первом запуске видел меньше половины того, чем торгует. */
 .install-banner {
-  margin: 12px 16px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  padding: 14px 16px; box-shadow: var(--shadow-md);
+  margin: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px;
 }
-.install-banner-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
-.install-banner-title { font-weight: 700; font-size: 0.92rem; }
-.install-banner p { margin: 0; font-size: 0.82rem; color: var(--ink-muted); line-height: 1.5; }
+.install-banner-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.install-banner-title { font-weight: 700; font-size: 0.85rem; }
+.install-banner p { margin: 0; font-size: 0.76rem; color: var(--ink-muted); line-height: 1.45; }
+/* Крестик остаётся размером с палец (40×40), но перестаёт быть серым плашкой:
+   в компактном баннере залитый квадрат весит больше, чем сам текст, а закрыть
+   подсказку — не главное действие на экране. */
+.install-banner .icon-btn { flex: none; background: none; }
+.install-banner .icon-btn:active { background: var(--surface-2); }
 .install-steps { margin: 8px 0 0; padding-left: 1.2em; font-size: 0.82rem; color: var(--ink-muted); }
 .install-steps li { margin: 3px 0; }
 .share-glyph { display: inline-block; border: 1.5px solid var(--ink-muted); border-radius: 4px; padding: 0 5px; font-size: 0.75em; }
@@ -454,7 +468,9 @@ button { cursor: pointer; }
   padding: 0 4px; background: none; border: none; color: var(--ink-muted); font-size: 0.68rem; font-weight: 600;
 }
 .tab-bar-item.active { color: var(--accent); }
-.tab-bar-icon { font-size: 1.3rem; position: relative; line-height: 1; }
+/* Значок теперь рисованный и наследует цвет: активная вкладка целиком зелёная,
+   а не «зелёная подпись под разноцветным эмодзи». */
+.tab-bar-icon { position: relative; line-height: 0; display: inline-flex; }
 .tab-bar-badge {
   position: absolute; top: -6px; right: -10px;
   background: var(--status-overdue); color: #fff;

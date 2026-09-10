@@ -1,5 +1,7 @@
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
+import { Icon } from './Icon';
+import type { IconName } from './Icon';
 
 export type MainTab = 'sale' | 'products' | 'operations' | 'profile';
 
@@ -13,11 +15,11 @@ interface Props {
 
 // The label is a key, resolved at render: a module-level constant would be
 // translated once, at import, and never change when the language does.
-const TABS: { key: MainTab; icon: string; phrase: PhraseKey }[] = [
-  { key: 'sale', icon: '🛒', phrase: 'tab.sale' },
-  { key: 'products', icon: '📦', phrase: 'tab.products' },
-  { key: 'operations', icon: '⚙️', phrase: 'tab.operations' },
-  { key: 'profile', icon: '👤', phrase: 'tab.profile' },
+const TABS: { key: MainTab; icon: IconName; phrase: PhraseKey }[] = [
+  { key: 'sale', icon: 'sale', phrase: 'tab.sale' },
+  { key: 'products', icon: 'products', phrase: 'tab.products' },
+  { key: 'operations', icon: 'operations', phrase: 'tab.operations' },
+  { key: 'profile', icon: 'profile', phrase: 'tab.profile' },
 ];
 
 export function TabBar({ active, onChange, showProducts, showOperations, operationsBadge = 0 }: Props) {
@@ -39,7 +41,7 @@ export function TabBar({ active, onChange, showProducts, showOperations, operati
             onClick={() => onChange(tab.key)}
           >
             <span className="tab-bar-icon">
-              {tab.icon}
+              <Icon name={tab.icon} />
               {tab.key === 'operations' && operationsBadge > 0 && <span className="tab-bar-badge">{operationsBadge}</span>}
             </span>
             <span className="tab-bar-label">{t(tab.phrase)}</span>
