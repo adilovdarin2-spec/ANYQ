@@ -22,6 +22,7 @@
  *   MAINTENANCE_SECRET   the shared secret the endpoints require
  *   MAINTENANCE_INTERVAL_SECONDS  gap between ticks in --loop (default 60)
  *   MAINTENANCE_HEARTBEAT_SECONDS  how often routine lines repeat (default 3600)
+ *   MAINTENANCE_GIVE_UP_AFTER     failed passes in a row before exiting (default 10)
  */
 
 import { createQuietLog } from './lib/quiet.mjs';
@@ -49,6 +50,18 @@ const asJson = args.includes('--json');
 const base = (process.env.API_URL || process.env.API || 'http://localhost:4000').replace(/[/]+$/, '');
 const secret = process.env.MAINTENANCE_SECRET;
 const intervalMs = Math.max(10, Number(process.env.MAINTENANCE_INTERVAL_SECONDS || 60)) * 1000;
+
+/** Русский счёт: 1 проход, 2 прохода, 5 проходов. */
+function plural(n, one, few, many) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+/** Сколько неудачных проходов подряд считать поломкой, а не икотой. */
+const GIVE_UP_AFTER = Math.max(1, Number(process.env.MAINTENANCE_GIVE_UP_AFTER || 10));
 
 // Почему рутина печатается не каждый тик — в scripts/lib/quiet.mjs, там же это
 // и проверено тестами.
@@ -152,7 +165,10 @@ async function tick() {
       // Reported and carried on. One task failing is not a reason to skip the
       // other: a fiscal queue that cannot drain does not make the key table
       // stop growing.
-      say(`FAILED ${results[task.name].error}`);
+      // Имя задачи впереди всегда. HTTP-ошибка называет себя сама, а обрыв сети
+      // — нет: три строки «FAILED fetch failed» подряд не говорят, отвалилось
+      // всё или только одно, а читают их ровно тогда, когда это и надо знать.
+      say(`FAILED ${task.name}: ${results[task.name].error.replace(new RegExp(`^${task.name}: `), '')}`);
     }
   }
 
@@ -198,8 +214,33 @@ async function main() {
     });
   }
 
+  let failedInARow = 0;
   while (!stopping) {
-    await tick();
+    const ok = await tick();
+    failedInARow = ok ? 0 : failedInARow + 1;
+
+    if (failedInARow >= GIVE_UP_AFTER) {
+      // Падаем нарочно — и это единственный способ, которым эта служба может
+      // позвать на помощь.
+      //
+      // Служба, которая крутится и каждую минуту пишет FAILED, для Railway
+      // выглядит «Online», а лог планировщика никто не читает по своей воле.
+      // Ненулевой выход превращает молчаливую поломку в красную службу и письмо
+      // от платформы — то есть в канал оповещения, который уже есть и за который
+      // никому не надо платить и ничего настраивать.
+      //
+      // Десять подряд, а не одна: перезапуск API или сетевая икота — это один-два
+      // неудачных тика, и падать из-за них значило бы приучить всех, что красная
+      // служба ничего не значит.
+      console.error(
+        `${new Date().toISOString()} ` +
+          `${GIVE_UP_AFTER} ${plural(GIVE_UP_AFTER, 'проход', 'прохода', 'проходов')} подряд с ошибкой. ` +
+          'Останавливаюсь, чтобы это стало видно.',
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     if (stopping) break;
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, intervalMs);
