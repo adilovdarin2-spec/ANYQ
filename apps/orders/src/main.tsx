@@ -4,6 +4,9 @@ import App from './App';
 import { ErrorBoundary } from './ErrorBoundary';
 import './styles/tokens.css';
 import './styles/global.css';
+// Кабинет владельца — отдельный экран со своим языком вёрстки, и его стили
+// живут отдельно от витрины: это две разные вещи, которые просто делят домен.
+import './styles/cabinet.css';
 
 // This app is multi-tenant — one deployment, one URL per supplier
 // (/company-slug). A static manifest.json can't know which supplier a visitor

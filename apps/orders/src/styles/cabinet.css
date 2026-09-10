@@ -1,0 +1,188 @@
+/* ==========================================================================
+   Кабинет владельца
+   --------------------------------------------------------------------------
+   Экран, который открывают с телефона у прилавка или в машине, а не изучают
+   за столом. Отсюда всё остальное.
+
+   Две вещи держат вид:
+
+   1. **Одна цифра крупнее всех.** Выручка — это вопрос, ради которого кабинет
+      открывают, и она набрана так, чтобы читаться на вытянутой руке. Всё
+      остальное вокруг неё — подпись. Раньше выручка была одной из четырёх
+      одинаковых карточек: главный вопрос выглядел так же, как «сколько дали
+      скидок», а день без продаж показывал четыре нуля подряд.
+   2. **Списки свёрстаны как строки документа** — название, отточие, сумма.
+      Так свёрстан любой акт и любая накладная, которые владелец читает каждый
+      день; глаз находит сумму без усилия даже при названиях разной длины.
+
+   Цвет тревоги на экране ровно один и появляется ровно в одном месте — там,
+   где касса не сошлась. Красное во втором месте перестаёт быть тревогой.
+   ========================================================================== */
+
+.cab {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 14px 18px 64px;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- шапка --------------------------------------------------------------- */
+.cab-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 6px 0 18px;
+}
+.cab-top-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cab-mark {
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 9px; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-family: Georgia, serif; font-weight: 700; font-size: 0.95rem;
+}
+.cab-shop {
+  font-size: 1rem; font-weight: 700; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cab-exit {
+  flex-shrink: 0; background: none; border: none; padding: 6px 2px;
+  font-size: 0.85rem; font-weight: 600; color: var(--ink-muted);
+}
+.cab-exit:hover { color: var(--accent); }
+
+/* --- период -------------------------------------------------------------- */
+.cab-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 22px; }
+.cab-select {
+  flex: 1 1 auto; min-width: 0; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  font-size: 0.88rem;
+}
+.cab-days {
+  display: flex; gap: 2px; background: var(--surface-2);
+  border-radius: 11px; padding: 3px; flex: 0 0 auto;
+}
+.cab-day {
+  border: none; background: none; border-radius: 9px; padding: 7px 13px;
+  font-size: 0.82rem; font-weight: 600; color: var(--ink-muted); white-space: nowrap;
+  /* Палец на планшете нажимает и чуть тянет — без этого переключатель периода
+     выделяется как текст и остаётся подсвеченным. */
+  user-select: none; -webkit-user-select: none;
+}
+.cab-day-on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+.cab-refresh {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--ink-muted); font-size: 1.05rem; line-height: 1;
+}
+.cab-refresh:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.cab-refresh:disabled { opacity: 0.5; }
+
+/* --- главная цифра ------------------------------------------------------- */
+.cab-hero { padding: 4px 0 26px; }
+.cab-eyebrow {
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-muted); margin-bottom: 8px;
+}
+.cab-hero-value {
+  font-size: clamp(2.5rem, 13vw, 3.4rem);
+  font-weight: 700; line-height: 0.95; letter-spacing: -0.035em;
+  color: var(--ink);
+}
+.cab-hero-quiet {
+  font-size: 1.5rem; font-weight: 700; line-height: 1.1;
+  letter-spacing: -0.02em; color: var(--ink-muted);
+}
+.cab-hero-sub {
+  margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px 16px;
+  font-size: 0.88rem; color: var(--ink-muted);
+}
+.cab-hero-sub b { font-weight: 700; color: var(--ink); }
+
+/* --- тревога ------------------------------------------------------------- */
+/* Врезка с полосой слева, а не залитый прямоугольник: находка, а не отказ
+   системы. Цвет тревоги на экране только здесь. */
+.cab-alarm {
+  border-left: 3px solid var(--status-overdue);
+  background: var(--status-overdue-bg);
+  border-radius: 0 14px 14px 0;
+  padding: 14px 16px; margin-bottom: 26px;
+}
+.cab-alarm-head { font-size: 0.85rem; font-weight: 700; color: var(--status-overdue); }
+.cab-alarm-value {
+  font-size: 1.7rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.025em;
+  color: var(--status-overdue); margin-top: 2px;
+}
+.cab-alarm-note { margin-top: 6px; font-size: 0.8rem; color: var(--ink-muted); line-height: 1.45; }
+
+/* --- разделы ------------------------------------------------------------- */
+.cab-section { margin-bottom: 28px; }
+.cab-h2 {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.cab-h2-total { font-weight: 700; color: var(--ink); letter-spacing: 0; font-size: 0.85rem; }
+
+/* --- строка документа ---------------------------------------------------- */
+.cab-row {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 11px 0; border-bottom: 1px solid var(--border);
+}
+.cab-row:last-child { border-bottom: none; }
+.cab-row-name { font-size: 0.93rem; min-width: 0; flex: 0 1 auto; }
+.cab-row-note {
+  display: block; margin-top: 2px; font-size: 0.76rem; color: var(--ink-muted); line-height: 1.4;
+}
+/* Отточие занимает всё, что осталось между названием и суммой. */
+.cab-row-dots {
+  flex: 1 1 auto; min-width: 12px; align-self: center;
+  border-bottom: 1px dotted var(--border); transform: translateY(-2px);
+}
+.cab-row-value { flex: 0 0 auto; font-weight: 700; white-space: nowrap; }
+.cab-row-value-alarm { color: var(--status-overdue); }
+
+/* --- реплики ------------------------------------------------------------- */
+.cab-standalone { margin: 0 0 22px; }
+.cab-note { margin: 12px 0 0; font-size: 0.83rem; line-height: 1.5; }
+.cab-muted { color: var(--ink-muted); }
+.cab-good { color: var(--status-active); font-weight: 600; font-size: 0.88rem; }
+.cab-warn { color: var(--status-trial); font-weight: 600; }
+.cab-error { color: var(--status-overdue); font-weight: 600; font-size: 0.88rem; }
+
+.cab-foot {
+  margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--border);
+  font-size: 0.78rem; color: var(--ink-muted); line-height: 1.55;
+}
+
+/* --- дверь --------------------------------------------------------------- */
+.cab-gate {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 24px 18px; min-height: 100dvh;
+}
+.cab-gate-card {
+  width: 100%; max-width: 400px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 20px; padding: 28px 24px;
+  box-shadow: var(--shadow-md);
+}
+.cab-brand {
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.22em;
+  color: var(--accent); text-transform: uppercase;
+}
+.cab-gate-title { margin: 10px 0 8px; font-size: 1.45rem; line-height: 1.12; font-weight: 700; letter-spacing: -0.02em; }
+.cab-gate-sub { margin: 0 0 20px; font-size: 0.9rem; color: var(--ink-muted); line-height: 1.55; }
+
+.cab-form { display: flex; flex-direction: column; }
+.cab-label { font-size: 0.76rem; font-weight: 700; color: var(--ink-muted); margin-bottom: 6px; letter-spacing: 0.02em; }
+.cab-input {
+  padding: 13px 14px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--ink); font-size: 1rem; margin-bottom: 14px;
+}
+.cab-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--surface); }
+.cab-hint { margin: -6px 0 14px; font-size: 0.78rem; color: var(--ink-muted); line-height: 1.5; }
+.cab-check { display: flex; align-items: center; gap: 9px; font-size: 0.85rem; color: var(--ink-muted); margin-bottom: 18px; }
+.cab-button {
+  border: none; border-radius: 12px; background: var(--accent); color: #fff;
+  padding: 15px; font-size: 1rem; font-weight: 700; margin-top: 2px;
+}
+.cab-button:disabled { opacity: 0.45; cursor: default; }
+.cab-button:hover:not(:disabled) { background: var(--accent-strong); }

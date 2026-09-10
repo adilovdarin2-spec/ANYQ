@@ -440,42 +440,42 @@ export default function App() {
 
   const operationsItems: OperationItem[] = [];
   if (hasSupply) {
-    operationsItems.push({ key: 'orders', icon: '📦', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
+    operationsItems.push({ key: 'orders', group: 'suppliers', icon: '📦', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
   }
   if (hasPharmacy) {
-    operationsItems.push({ key: 'batches', icon: '💊', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
+    operationsItems.push({ key: 'batches', group: 'stock', icon: '💊', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
   }
   if (hasWarehouse) {
     operationsItems.push(
-      { key: 'transfers', icon: '🔄', label: t('ops.transfers'), onClick: handleShowTransfers },
-      { key: 'incoming', icon: '📥', label: t('ops.incoming'), onClick: handleShowIncoming },
-      { key: 'counts', icon: '📋', label: t('ops.counts'), onClick: handleShowCounts },
-      { key: 'returns', icon: '↩️', label: t('ops.returns'), onClick: handleShowReturns },
-      { key: 'replenishment', icon: '🛒', label: t('ops.replenishment'), onClick: handleShowReplenishment },
-      { key: 'purchase-orders', icon: '📄', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders },
-      { key: 'bins', icon: '🗄️', label: t('ops.bins'), onClick: handleShowBins },
-      { key: 'bin-count', icon: '🔢', label: t('ops.binCount'), onClick: handleShowBinCount },
-      { key: 'reconciliation', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
-      { key: 'import', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
-      { key: 'migrate', icon: '📦', label: t('ops.migrate'), onClick: handleShowMigrate },
-      { key: 'delivery', icon: '📄', label: t('ops.delivery'), onClick: handleShowDelivery },
-      { key: 'price-list', icon: '🧾', label: t('ops.priceList'), onClick: handleShowPriceList },
-      { key: 'cabinet', icon: '🔑', label: t('ops.cabinet'), onClick: handleShowCabinet },
-      { key: 'settlements', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
-      { key: 'write-offs', icon: '🗑️', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
-      { key: 'supplier-returns', icon: '📤', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
-      { key: 'fiscal', icon: '🧾', label: t('ops.fiscal'), onClick: handleShowFiscal },
-      { key: 'production', icon: '🏭', label: t('ops.production'), onClick: handleShowProduction },
+      { key: 'transfers', group: 'stock', icon: '🔄', label: t('ops.transfers'), onClick: handleShowTransfers },
+      { key: 'incoming', group: 'stock', icon: '📥', label: t('ops.incoming'), onClick: handleShowIncoming },
+      { key: 'counts', group: 'stock', icon: '📋', label: t('ops.counts'), onClick: handleShowCounts },
+      { key: 'returns', group: 'money', icon: '↩️', label: t('ops.returns'), onClick: handleShowReturns },
+      { key: 'replenishment', group: 'suppliers', icon: '🛒', label: t('ops.replenishment'), onClick: handleShowReplenishment },
+      { key: 'purchase-orders', group: 'suppliers', icon: '📄', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders },
+      { key: 'bins', group: 'stock', icon: '🗄️', label: t('ops.bins'), onClick: handleShowBins },
+      { key: 'bin-count', group: 'stock', icon: '🔢', label: t('ops.binCount'), onClick: handleShowBinCount },
+      { key: 'reconciliation', group: 'money', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
+      { key: 'import', group: 'setup', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
+      { key: 'migrate', group: 'setup', icon: '📦', label: t('ops.migrate'), onClick: handleShowMigrate },
+      { key: 'delivery', group: 'suppliers', icon: '📄', label: t('ops.delivery'), onClick: handleShowDelivery },
+      { key: 'price-list', group: 'suppliers', icon: '🧾', label: t('ops.priceList'), onClick: handleShowPriceList },
+      { key: 'cabinet', group: 'setup', icon: '🔑', label: t('ops.cabinet'), onClick: handleShowCabinet },
+      { key: 'settlements', group: 'money', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
+      { key: 'write-offs', group: 'stock', icon: '🗑️', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
+      { key: 'supplier-returns', group: 'suppliers', icon: '📤', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
+      { key: 'fiscal', group: 'money', icon: '🧾', label: t('ops.fiscal'), onClick: handleShowFiscal },
+      { key: 'production', group: 'stock', icon: '🏭', label: t('ops.production'), onClick: handleShowProduction },
     );
   }
   if (hasRestaurant) {
     operationsItems.push(
-      { key: 'floorplan', icon: '🍽️', label: t('floor.title'), onClick: handleShowFloorPlan },
-      { key: 'kds', icon: '🔥', label: t('kds.title'), onClick: handleShowKds },
+      { key: 'floorplan', group: 'restaurant', icon: '🍽️', label: t('floor.title'), onClick: handleShowFloorPlan },
+      { key: 'kds', group: 'restaurant', icon: '🔥', label: t('kds.title'), onClick: handleShowKds },
     );
   }
   if (hasTerminal) {
-    operationsItems.push({ key: 'stock-history', icon: '📜', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
+    operationsItems.push({ key: 'stock-history', group: 'money', icon: '📜', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
   }
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 
