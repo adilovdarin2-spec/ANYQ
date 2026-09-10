@@ -18,7 +18,7 @@
 // equals the sum of its own movements, per shelf.
 //
 //   npm run smoke                     # against http://localhost:4010
-//   API=https://api.example npm run smoke
+//   SMOKE_WRITES_REAL_DATA=yes API=https://api.example npm run smoke
 //
 // It writes real data and does not clean up after itself. That is the point on
 // a fresh deployment and unacceptable on a live one: point it at a new or
@@ -74,7 +74,42 @@ function skip(name, why) {
   console.log(`  SKIP ${name} — ${why}`);
 }
 
+/**
+ * Отказ до первой записи, если сервер чужой и никто этого не подтвердил.
+ *
+ * Всё, что делает этот скрипт, — настоящие продажи, возвраты, списания и
+ * пересчёты, и убирать за собой он не умеет. На свежем развёртывании это ровно
+ * то, что нужно. На базе работающего магазина это фальшивые чеки в чужой
+ * бухгалтерии, и убрать их нельзя: документы не удаляются, и это не упущение.
+ *
+ * До сих пор от этого защищал комментарий в шапке. Комментарий не останавливает
+ * человека, который в восемь утра делает то, что написано в регламенте, — а
+ * регламент говорит «прогнать smoke после развёртывания». И PIN здесь зашит
+ * числом 4444, то есть на чужом сервере он не обязательно не подойдёт: четыре
+ * цифры, и 4444 выбирают чаще, чем хотелось бы.
+ *
+ * Поэтому граница проведена там, где проходит опасность: своя машина — можно
+ * молча, чужой сервер — только с явным «да, я знаю».
+ */
+const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1)([:/]|$)/.test(BASE);
+const ACKNOWLEDGED = process.env.SMOKE_WRITES_REAL_DATA === 'yes';
+
 const run = async () => {
+  if (!LOCAL && !ACKNOWLEDGED) {
+    console.error(`\nОтказываюсь: ${BASE} — не эта машина.`);
+    console.error('');
+    console.error('Скрипт проводит настоящие продажи, возвраты и списания и за собой не убирает.');
+    console.error('Если там уже работает магазин, его бухгалтерия получит чеки, которых не было,');
+    console.error('и удалить их будет нельзя — документы не удаляются намеренно.');
+    console.error('');
+    console.error('Если это действительно свежее развёртывание, на котором ещё нет ни одного');
+    console.error('настоящего чека, повторите так:');
+    console.error('');
+    console.error(`  SMOKE_WRITES_REAL_DATA=yes API=${BASE} npm run smoke`);
+    process.exitCode = 2;
+    return;
+  }
+
   console.log('\n== login ==');
   const login = await call('POST', '/pos/login', { pin: '4444' });
   check('POS login', login.status === 200, JSON.stringify(login.data).slice(0, 200));
