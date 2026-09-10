@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dueForSummary, localDay, localHour } from './morning';
+import { dueForSummary } from './morning';
+import { localDay, localHour } from './kz-time';
 
 /**
  * Когда сводку отправлять, а когда молчать.

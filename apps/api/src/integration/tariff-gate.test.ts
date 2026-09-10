@@ -40,11 +40,17 @@ beforeEach(async () => {
   fx = await createFixture({ openingQuantity: 50 });
 });
 
-/** Ends the tariff without touching the token already in the cashier's hands. */
+/**
+ * Ends the tariff without touching the token already in the cashier's hands.
+ *
+ * Two days back, not one: the end date is inclusive through its own calendar day
+ * in the shop's time zone, so "yesterday at this hour" is still today's date for
+ * part of the night and would make this helper ambiguous at midnight.
+ */
 async function expireTariff(): Promise<void> {
   await prisma.tariff.update({
     where: { companyId: fx.companyId },
-    data: { validUntil: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    data: { validUntil: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
   });
 }
 
@@ -173,5 +179,49 @@ describe('a tariff that has run out', () => {
       { 'Idempotency-Key': 'tariff-gate-after-renewal' },
     );
     expect(sale.status).toBe(201);
+  });
+});
+
+describe('а пока тариф ещё не кончился', () => {
+  /**
+   * То, чего не хватало рядом с этим шлюзом: предупреждения.
+   *
+   * Шлюз выше проверен со всех сторон — и он про минуту, когда уже поздно. Здесь
+   * проверяется обвязка, через которую касса узнаёт об этом заранее: само число
+   * считается чистой функцией и проверено отдельно, но функция, чей результат не
+   * доходит до экрана, не предупреждает никого.
+   */
+  async function endOn(date: string): Promise<void> {
+    await prisma.tariff.update({
+      where: { companyId: fx.companyId },
+      data: { validUntil: new Date(date) },
+    });
+  }
+
+  /** Сегодняшняя дата по Казахстану — так же, как её считает сервер. */
+  function kzToday(): string {
+    return new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+
+  it('касса узнаёт при входе, сколько осталось', async () => {
+    await endOn(kzToday());
+    const login = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(login.status).toBe(200);
+    expect(login.body.tariff).toEqual({ validUntil: kzToday(), daysLeft: 0 });
+  });
+
+  it('в последний день вход ещё работает', async () => {
+    // Та самая ошибка, из-за которой магазин терял кассу утром оплаченного дня.
+    await endOn(kzToday());
+    const login = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(login.status).toBe(200);
+  });
+
+  it('с запасом в месяц ничего не обещает сверх даты', async () => {
+    const far = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await endOn(far);
+    const login = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(login.body.tariff.validUntil).toBe(far);
+    expect(login.body.tariff.daysLeft).toBeGreaterThanOrEqual(29);
   });
 });
