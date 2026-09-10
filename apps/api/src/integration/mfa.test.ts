@@ -80,6 +80,68 @@ describe('turning the second factor on', () => {
   });
 });
 
+describe('приходя за кодом во второй раз', () => {
+  /**
+   * Ради этого «ожидание» и придумано, и до 10 сентября 2026 оно тут же
+   * ломалось: повторный `setup` молча выпускал новый секрет поверх ждущего.
+   * Человек, отсканировавший QR и вернувшийся ввести код, получал «код неверен
+   * — проверьте время на телефоне» и шёл крутить часы. Тот же случай — когда
+   * ключ выдали со стороны: открыл админку, и присланный QR мёртв.
+   */
+  it('отдаёт тот же ключ, а не новый', async () => {
+    const token = (await login()).body.token as string;
+    const first = await api(token, 'POST', '/auth/mfa/setup', {});
+    const second = await api(token, 'POST', '/auth/mfa/setup', {});
+
+    expect(second.body.secret).toBe(first.body.secret);
+    expect(second.body.reused).toBe(true);
+    expect(first.body.reused).toBe(false);
+  });
+
+  it('и код с телефона после этого подходит', async () => {
+    // Собственно последствие. Проверка выше сравнивает строки, эта — что вход
+    // включается тем кодом, который человек видит на телефоне.
+    const token = (await login()).body.token as string;
+    const first = await api(token, 'POST', '/auth/mfa/setup', {});
+    await api(token, 'POST', '/auth/mfa/setup', {});
+
+    const enabled = await api(token, 'POST', '/auth/mfa/enable', {
+      code: currentCode(first.body.secret as string),
+    });
+    expect(enabled.status).toBe(200);
+  });
+
+  it('новый ключ выдаётся только если попросили явно', async () => {
+    // Телефон потеряли на середине — тогда старый ключ и нужно отменить. Но
+    // только по прямой просьбе, а не потому, что экран открыли ещё раз.
+    const token = (await login()).body.token as string;
+    const first = await api(token, 'POST', '/auth/mfa/setup', {});
+    const fresh = await api(token, 'POST', '/auth/mfa/setup', { fresh: true });
+
+    expect(fresh.body.secret).not.toBe(first.body.secret);
+    expect(fresh.body.reused).toBe(false);
+
+    // И старый после этого действительно мёртв.
+    const stale = await api(token, 'POST', '/auth/mfa/enable', {
+      code: currentCode(first.body.secret as string),
+    });
+    expect(stale.status).toBe(400);
+  });
+
+  it('состояние «ключ ждёт» видно снаружи', async () => {
+    // Без этого экран настроек не может отличить «ещё не начинали» от
+    // «отсканировали и не дошли», и предлагает начать заново.
+    const token = (await login()).body.token as string;
+    const before = await api(token, 'GET', '/auth/me');
+    expect(before.body.mfaPending).toBe(false);
+
+    await api(token, 'POST', '/auth/mfa/setup', {});
+    const after = await api(token, 'GET', '/auth/me');
+    expect(after.body.mfaPending).toBe(true);
+    expect(after.body.mfaEnabled).toBe(false);
+  });
+});
+
 describe('logging in with it on', () => {
   it('refuses the password alone and says a code is needed', async () => {
     await enrol();

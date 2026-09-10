@@ -94,6 +94,9 @@ authRouter.get('/me', requireAuth, async (req: AuthedRequest, res) => {
     email: user.email,
     name: user.name,
     mfaEnabled: Boolean(user.totpSecret),
+    // Ключ выпущен, но код с телефона ещё не вводили. Экран настроек без этого
+    // предлагал «Настроить» так, будто ничего не начиналось.
+    mfaPending: Boolean(user.pendingTotpSecret),
     // Shown so somebody down to their last code is told before they need it,
     // rather than after.
     recoveryCodesLeft: user.totpSecret ? unusedCodes : 0,
@@ -118,11 +121,27 @@ authRouter.post('/mfa/setup', requireAuth, async (req: AuthedRequest, res) => {
     return;
   }
 
-  const secret = generateSecret();
-  await prisma.adminUser.update({ where: { id: user.id }, data: { pendingTotpSecret: secret } });
+  // Уже выпущенный и ждущий ключ возвращается тот же самый — если только не
+  // попросили новый явно.
+  //
+  // Иначе получается ловушка ровно в том месте, ради которого «ожидание» и
+  // придумано: человек сканирует QR, закрывает вкладку, возвращается ввести код
+  // — и любое повторное открытие этого экрана молча заменяет секрет. Код с
+  // телефона после этого не подходит, а сервер отвечает «проверьте время на
+  // телефоне», и человек идёт крутить часы вместо того, чтобы сканировать
+  // заново. То же самое ломает и выдачу ключа со стороны: тот, кому прислали
+  // QR, теряет его, открыв админку.
+  const wantsFresh = req.body?.fresh === true;
+  const secret = !wantsFresh && user.pendingTotpSecret ? user.pendingTotpSecret : generateSecret();
+  if (secret !== user.pendingTotpSecret) {
+    await prisma.adminUser.update({ where: { id: user.id }, data: { pendingTotpSecret: secret } });
+  }
 
   res.json({
     secret,
+    // Чтобы экран мог сказать «этот ключ вы уже сканировали», а не показать его
+    // как новый.
+    reused: secret === user.pendingTotpSecret,
     // Both: the URI for a camera, the secret for somebody typing it in by hand
     // because the camera on the shop's tablet does not work.
     otpauthUri: otpauthUri(secret, user.email),
