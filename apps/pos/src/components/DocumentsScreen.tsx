@@ -56,7 +56,13 @@ export function DocumentsScreen({ title, subtitle, documents, loading, error, on
           <div key={doc.id} className="order-card">
             <div className="order-card-head">
               <div>
-                <div className="order-customer">{documentTypeLabel(t, doc.type, doc.typeLabel)}</div>
+                <div className="order-customer">
+                  {documentTypeLabel(t, doc.type, doc.typeLabel)}
+                  {/* Номер стоит рядом с типом, а не в подписи: именно им
+                      документ называют в разговоре с бухгалтером и по нему
+                      ищут в выгрузке. */}
+                  {doc.number && <span className="doc-number">{doc.number}</span>}
+                </div>
                 <div className="order-meta">
                   {formatDateTime(doc.createdAt)}
                   {doc.createdByName ? ` · ${doc.createdByName}` : ''}

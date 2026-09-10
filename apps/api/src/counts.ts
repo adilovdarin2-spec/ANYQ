@@ -16,6 +16,38 @@ export function hasInvalidCountedQuantity(counts: CountLineInput[]): boolean {
   return counts.some((c) => !Number.isFinite(c.countedQuantity) || c.countedQuantity < 0);
 }
 
+/** Одно движение, случившееся уже после того, как полку посчитали. */
+export interface ProductMovementSince {
+  productId: string;
+  quantity: number;
+}
+
+/**
+ * Сколько товара было на точке в момент счёта, а не сейчас.
+ *
+ * Инвентаризацию считают часами и без сети, а приходит она позже — иногда
+ * сильно позже. Применить её как абсолютную цифру на момент прихода означает
+ * отменить всё, что случилось в промежутке: полку посчитали в полдень, к
+ * вечеру три штуки продали, и пришедший счёт вернёт эти три на место.
+ *
+ * Поэтому журнал отматывается к моменту счёта, а счёт превращается в разницу,
+ * которую он на самом деле утверждает. Та же логика, что у пересчёта ячеек
+ * (`balancesAtTime`), только по товару целиком: обычная инвентаризация — это
+ * утверждение про точку, а не про конкретную полку.
+ *
+ * Именно это и позволяет считать, **не закрывая магазин**.
+ */
+export function productBalancesAtTime(
+  current: Map<string, number>,
+  movementsSince: ProductMovementSince[],
+): Map<string, number> {
+  const rewound = new Map(current);
+  for (const movement of movementsSince) {
+    rewound.set(movement.productId, (rewound.get(movement.productId) ?? 0) - movement.quantity);
+  }
+  return rewound;
+}
+
 export function computeCountAdjustments(counts: CountLineInput[], stockByProduct: Map<string, number>): CountAdjustment[] {
   return counts.map((c) => {
     const systemQuantity = stockByProduct.get(c.productId) ?? 0;

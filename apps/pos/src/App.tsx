@@ -1801,7 +1801,13 @@ export default function App() {
     setCountSubmitting(true);
     setCountsError(null);
     try {
-      await createCount(session.token, { ...payload, locationId: currentLocationId });
+      await createCount(session.token, {
+        ...payload,
+        locationId: currentLocationId,
+        // Момент обхода, а не момент отправки. Между ними может пройти час
+        // торговли — и без этой отметки счёт отменил бы его.
+        countedAt: new Date().toISOString(),
+      });
       await loadCounts();
       return true;
     } catch (err) {

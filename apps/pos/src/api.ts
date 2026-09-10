@@ -309,6 +309,15 @@ export function fetchCounts(token: string): Promise<Count[]> {
 export interface CreateCountPayload {
   locationId: string;
   items: { productId: string; countedQuantity: number }[];
+  /**
+   * Когда полку на самом деле обошли.
+   *
+   * Сервер отматывает журнал к этому моменту, и счёт применяется как разница,
+   * которую он утверждал, а не как абсолютная цифра. Ровно это и позволяет
+   * считать, не закрывая магазин: проданное во время обхода не возвращается на
+   * полку задним числом.
+   */
+  countedAt?: string;
 }
 
 export function createCount(token: string, payload: CreateCountPayload): Promise<{ id: string; createdAt: string }> {

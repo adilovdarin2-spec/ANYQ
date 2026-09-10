@@ -866,6 +866,9 @@ export interface LedgerDocument {
   id: string;
   type: string;
   typeLabel: string;
+  /// Номер, которым документ называют вслух: ПРХ-2026-000123. Пусто только у
+  /// записей, сделанных до появления нумерации.
+  number: string | null;
   status: string;
   createdAt: string;
   createdByName: string | null;

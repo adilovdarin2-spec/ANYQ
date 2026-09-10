@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCountAdjustments, hasInvalidCountedQuantity } from './counts';
+import { computeCountAdjustments, hasInvalidCountedQuantity, productBalancesAtTime } from './counts';
 
 describe('computeCountAdjustments', () => {
   it('computes a positive delta when the count is higher than system stock', () => {
@@ -57,5 +57,56 @@ describe('hasInvalidCountedQuantity', () => {
       { productId: 'p2', countedQuantity: -3 },
     ];
     expect(hasInvalidCountedQuantity(items)).toBe(true);
+  });
+});
+
+describe('остаток на момент счёта, по товару', () => {
+  it('вычитает то, что продали после обхода', () => {
+    // Полку посчитали в полдень, к вечеру продали три. Сейчас лежит 7,
+    // значит в полдень было 10 — и счёт «10» никакой разницы не даёт.
+    const now = new Map([['хлеб', 7]]);
+    const rewound = productBalancesAtTime(now, [{ productId: 'хлеб', quantity: -3 }]);
+    expect(rewound.get('хлеб')).toBe(10);
+  });
+
+  it('вычитает приёмку, случившуюся после обхода', () => {
+    const now = new Map([['хлеб', 50]]);
+    const rewound = productBalancesAtTime(now, [{ productId: 'хлеб', quantity: 40 }]);
+    expect(rewound.get('хлеб')).toBe(10);
+  });
+
+  it('складывает все движения по одному товару', () => {
+    const now = new Map([['хлеб', 12]]);
+    const rewound = productBalancesAtTime(now, [
+      { productId: 'хлеб', quantity: -3 },
+      { productId: 'хлеб', quantity: -2 },
+      { productId: 'хлеб', quantity: 20 },
+    ]);
+    // 12 − (−3 − 2 + 20) = −3
+    expect(rewound.get('хлеб')).toBe(-3);
+  });
+
+  it('не трогает товары, с которыми ничего не происходило', () => {
+    const now = new Map([['хлеб', 7], ['молоко', 4]]);
+    const rewound = productBalancesAtTime(now, [{ productId: 'хлеб', quantity: -3 }]);
+    expect(rewound.get('молоко')).toBe(4);
+  });
+
+  it('товар, которого сейчас нет на остатке, но который двигался, восстанавливается', () => {
+    // Всё, что с ним случилось, случилось после счёта — значит в момент счёта
+    // он лежал ровно противоположным этому.
+    const rewound = productBalancesAtTime(new Map(), [{ productId: 'кофе', quantity: -2 }]);
+    expect(rewound.get('кофе')).toBe(2);
+  });
+
+  it('без движений возвращает то же самое', () => {
+    const now = new Map([['хлеб', 7]]);
+    expect([...productBalancesAtTime(now, []).entries()]).toEqual([['хлеб', 7]]);
+  });
+
+  it('исходную карту не меняет', () => {
+    const now = new Map([['хлеб', 7]]);
+    productBalancesAtTime(now, [{ productId: 'хлеб', quantity: -3 }]);
+    expect(now.get('хлеб')).toBe(7);
   });
 });

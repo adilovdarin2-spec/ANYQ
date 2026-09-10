@@ -61,7 +61,7 @@ import type { SaleRecord } from '../reports';
 import { allocateFefo, classifyExpiry, sellableFromBatches } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
-import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity } from '../counts';
+import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity, productBalancesAtTime } from '../counts';
 import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy } from '../payments';
 import { recordChanges, resolveActor } from '../audit-log';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
@@ -2328,6 +2328,9 @@ posRouter.get('/documents', requirePosAuth, async (req: PosAuthedRequest, res) =
         id: doc.id,
         type: doc.type,
         typeLabel: documentTypeLabel(doc.type),
+        // То, чем документ называют вслух и ищут в выгрузке. Пусто только у
+        // строк, записанных до появления нумерации.
+        number: doc.number,
         status: doc.status,
         createdAt: doc.createdAt.toISOString(),
         createdByName: doc.createdBy ? nameByUserId.get(doc.createdBy) ?? 'Удалённый сотрудник' : null,
@@ -2460,7 +2463,9 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
         : sale.paymentMethod ?? '';
       return sale.items.map((item) => [
         sale.createdAt,
-        sale.id,
+        // Номер, а не cuid. Идентификатор из двадцати пяти знаков в колонке
+        // «Чек» бухгалтеру не говорит ничего и в акт не переписывается.
+        sale.number ?? sale.id,
         sale.createdBy ? nameByUserId.get(sale.createdBy) ?? 'Удалённый сотрудник' : '',
         item.product.name,
         item.quantity,
@@ -2474,7 +2479,9 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
   if (dataset === 'movements') {
     const movements = await prisma.stockMovement.findMany({
       where: { locationId, createdAt: { gte: from } },
-      include: { product: true },
+      // Номер документа, а не только его идентификатор: по этой колонке
+      // движение сверяют с бумагой.
+      include: { product: true, document: { select: { number: true } } },
       orderBy: { createdAt: 'desc' },
       take: LIMIT,
     });
@@ -2485,7 +2492,7 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
       m.binLocation || 'не размещено',
       m.quantity,
       m.reason,
-      m.documentId,
+      m.document?.number ?? m.documentId ?? '',
       m.createdBy ? nameByUserId.get(m.createdBy) ?? 'Удалённый сотрудник' : '',
     ]);
   }
@@ -6289,7 +6296,32 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
       [...stockByProduct.entries()].map(([productId, rows]) => [productId, totalOnHand(rows)]),
     );
 
-    const adjustments = computeCountAdjustments(items, quantityByProduct);
+    // Когда полку на самом деле обошли. Пересчёт по ячейкам умел это с самого
+    // начала, а обычная инвентаризация — нет, и обещание «считайте, не закрывая
+    // магазин» для неё было неправдой: счёт, применённый как абсолютная цифра,
+    // отменял всё, что продали, пока считали.
+    //
+    // Клиент старой версии `countedAt` не пришлёт, и тогда всё работает
+    // по-прежнему: остаток берётся на момент прихода. Это не хуже, чем было.
+    const countedAtRaw = typeof b.countedAt === 'string' ? new Date(b.countedAt) : null;
+    const countedAt = countedAtRaw && !Number.isNaN(countedAtRaw.getTime()) && countedAtRaw <= new Date()
+      ? countedAtRaw
+      : null;
+
+    let systemByProduct = quantityByProduct;
+    if (countedAt) {
+      const since = await tx.stockMovement.findMany({
+        where: {
+          locationId,
+          productId: { in: items.map((it) => it.productId) },
+          createdAt: { gt: countedAt },
+        },
+        select: { productId: true, quantity: true },
+      });
+      systemByProduct = productBalancesAtTime(quantityByProduct, since);
+    }
+
+    const adjustments = computeCountAdjustments(items, systemByProduct);
 
     const document = await tx.document.create({
       data: {
