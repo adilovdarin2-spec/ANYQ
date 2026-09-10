@@ -35,6 +35,10 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
   const [locationAddress, setLocationAddress] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
+  // Без PIN владелец не войдёт ни в кассу, ни в свой кабинет — а напомнить об
+  // этом было некому: компания создавалась, владелец в ней был, и обнаруживалось
+  // это через неделю словами «а я и не заходил ни разу».
+  const [ownerPin, setOwnerPin] = useState('');
 
   const [modules, setModules] = useState<ModuleKey[]>(['shop']);
   const [locationLimit, setLocationLimit] = useState('');
@@ -44,7 +48,9 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
   const [duration, setDuration] = useState<DurationPreset>('1m');
   const [notes, setNotes] = useState('');
 
-  const step1Valid = name.trim() !== '' && phone.trim() !== '' && locationName.trim() !== '' && ownerName.trim() !== '';
+  const pinValid = ownerPin.trim() === '' || /^\d{4,6}$/.test(ownerPin.trim());
+  const step1Valid =
+    name.trim() !== '' && phone.trim() !== '' && locationName.trim() !== '' && ownerName.trim() !== '' && pinValid;
 
   function toggleModule(m: ModuleKey) {
     setModules((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
@@ -58,7 +64,7 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
         name: name.trim(),
         phone: phone.trim(),
         location: { name: locationName.trim(), type: locationType, address: locationAddress.trim() },
-        owner: { name: ownerName.trim(), phone: ownerPhone.trim() },
+        owner: { name: ownerName.trim(), phone: ownerPhone.trim(), posPin: ownerPin.trim() },
         tariff: {
           modules,
           locationLimit: parseLimit(locationLimit),
@@ -131,7 +137,15 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
                   <label htmlFor="ownerPhone">Телефон</label>
                   <input id="ownerPhone" type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="+7 700 000 00 00" />
                 </div>
+                <div className="field">
+                  <label htmlFor="ownerPin">PIN для входа</label>
+                  <input id="ownerPin" type="text" inputMode="numeric" value={ownerPin} onChange={(e) => setOwnerPin(e.target.value)} placeholder="4–6 цифр" />
+                </div>
               </div>
+              <p className="field-hint">
+                Без PIN владелец не сможет войти ни в кассу, ни в свой кабинет. Задать его можно и
+                позже — в карточке сотрудников.
+              </p>
             </>
           )}
 

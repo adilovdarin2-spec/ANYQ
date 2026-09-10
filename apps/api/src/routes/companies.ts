@@ -63,6 +63,10 @@ function serializeCompany(company: CompanyWithRelations) {
   };
 }
 
+/** Четыре-шесть цифр: столько кассир согласен набирать по сто раз в день. */
+const PIN_PATTERN = /^\d{4,6}$/;
+const PIN_TAKEN = 'Этот PIN уже используется другим сотрудником';
+
 companiesRouter.get('/', async (_req, res) => {
   const companies = await prisma.company.findMany({ include, orderBy: { createdAt: 'desc' } });
   res.json(companies.map(serializeCompany));
@@ -81,6 +85,28 @@ companiesRouter.post('/', async (req, res) => {
     return;
   }
 
+  // PIN владельца — здесь же, а не отдельным заходом.
+  //
+  // До этого компания создавалась с владельцем без PIN, то есть владелец не мог
+  // войти никуда, пока кто-то не вспомнит зайти в карточку сотрудников и
+  // дописать код. Никто об этом не напоминал, и обнаруживается это через
+  // неделю словами «а я и не заходил ни разу». Поле необязательное: раздать
+  // PIN позже по-прежнему можно.
+  const ownerPin = typeof b.owner?.posPin === 'string' ? b.owner.posPin.trim() : '';
+  if (ownerPin && !PIN_PATTERN.test(ownerPin)) {
+    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
+    return;
+  }
+  if (ownerPin) {
+    // PIN уникален на всю платформу: два человека с одним кодом — это две
+    // смены, записанные на одного.
+    const clash = await prisma.user.findFirst({ where: { posPin: ownerPin } });
+    if (clash) {
+      res.status(409).json({ error: PIN_TAKEN });
+      return;
+    }
+  }
+
   const slug = await generateUniqueSlug(b.name);
 
   const company = await prisma.company.create({
@@ -89,7 +115,7 @@ companiesRouter.post('/', async (req, res) => {
       phone: b.phone,
       slug,
       locations: { create: [{ name: b.location.name, type: b.location.type, address: b.location.address ?? '' }] },
-      users: { create: [{ name: b.owner.name, role: 'owner', phone: b.owner.phone ?? '' }] },
+      users: { create: [{ name: b.owner.name, role: 'owner', phone: b.owner.phone ?? '', posPin: ownerPin || null }] },
       tariff: {
         create: {
           modules: JSON.stringify(b.tariff?.modules ?? []),
@@ -258,7 +284,6 @@ function serializeUser(u: { id: string; name: string; role: string; phone: strin
   return { id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', posPin: u.posPin ?? '' };
 }
 
-const PIN_PATTERN = /^\d{4,6}$/;
 
 /**
  * The date the tariff runs out, or null if what arrived was not one.
@@ -283,7 +308,6 @@ const VALID_UNTIL_REQUIRED = 'Укажите дату окончания тар�
 // The check below is kept because it gives a decent message; the guarantee is
 // the unique index. The check alone was a check-then-write two admins could
 // both win, and the loser's cashier would have signed into the winner's shop.
-const PIN_TAKEN = 'Этот PIN уже используется другим сотрудником';
 
 /** True when Postgres refused the write because the PIN is already spoken for. */
 function isPinConflict(err: unknown): boolean {

@@ -100,7 +100,11 @@ export interface CreateCompanyPayload {
   name: string;
   phone: string;
   location: { name: string; type: string; address: string };
-  owner: { name: string; phone: string };
+  /**
+   * PIN необязателен: раздать его можно и позже. Но без него владелец не
+   * войдёт ни в кассу, ни в свой кабинет, и узнают об этом не сразу.
+   */
+  owner: { name: string; phone: string; posPin?: string };
   tariff: {
     modules: string[];
     locationLimit: number | null;
