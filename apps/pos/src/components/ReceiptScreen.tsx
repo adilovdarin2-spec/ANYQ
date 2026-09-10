@@ -1,4 +1,5 @@
 import type { Sale } from '../types';
+import { Icon } from './Icon';
 import type { PaymentMethod } from '../types';
 
 const METHOD_PHRASES: Record<PaymentMethod, PhraseKey> = {
@@ -86,7 +87,7 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
       </div>
       <div className="screen-footer">
         {canPrint && (
-          <button className="btn btn-secondary" onClick={() => window.print()}>🖨 {t('receipt.print')}</button>
+          <button className="btn btn-secondary" onClick={() => window.print()}><span className="payment-option-label"><Icon name="printer" size={18} /> {t('receipt.print')}</span></button>
         )}
         <button className="btn btn-primary btn-block" onClick={onNewSale}>{t('receipt.newSale')}</button>
       </div>

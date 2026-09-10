@@ -156,7 +156,7 @@ export function ProfileScreen({
 
       {onShowReports && (
         <button type="button" className="profile-action" onClick={onShowReports}>
-          <span>📊 {t('profile.reports')}</span>
+          <span className="profile-action-label"><Icon name="chart" /> {t('profile.reports')}</span>
           <span>›</span>
         </button>
       )}
@@ -196,7 +196,7 @@ export function ProfileScreen({
 
       {pushSupported && (
         <button type="button" className="profile-action" onClick={onTogglePush} disabled={pushBusy}>
-          <span>{pushEnabled ? '🔔' : '🔕'} {t('profile.push')}</span>
+          <span className="profile-action-label"><Icon name={pushEnabled ? 'bellOn' : 'bellOff'} /> {t('profile.push')}</span>
           <span>{pushEnabled ? t('profile.pushOn') : t('profile.pushOff')}</span>
         </button>
       )}
