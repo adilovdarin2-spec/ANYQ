@@ -99,8 +99,36 @@ export function saveCurrentLocationId(locationId: string | null): void {
   write(LOCATION_KEY, locationId);
 }
 
+/**
+ * Годится ли то, что лежит в хранилище, за сессию.
+ *
+ * `read` возвращает разобранный JSON и объявляет его нужным типом — а он им
+ * быть не обязан. Сессия, записанная прошлой версией кассы, не знает про поля,
+ * которые появились позже, и первая же попытка их прочитать роняет кассу целиком:
+ * не экран, а всё приложение — с белым экраном и «перезагрузите кассу», из
+ * которого кассир сам не выберется, потому что перезагрузка прочитает ту же
+ * сессию снова.
+ *
+ * Проверяются только те поля, без которых экран продажи не построится. Не
+ * годится — считаем, что сессии нет: касса покажет ввод PIN-кода, кассир войдёт
+ * заново, и это неприятно ровно один раз.
+ */
+export function looksLikeSession(value: unknown): value is PosSession {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Partial<PosSession>;
+  return (
+    typeof session.token === 'string' &&
+    Array.isArray(session.products) &&
+    Array.isArray(session.locations) &&
+    Array.isArray(session.modules) &&
+    !!session.user &&
+    !!session.company
+  );
+}
+
 export function getSession(): PosSession | null {
-  return read<PosSession | null>(SESSION_KEY, null);
+  const stored = read<unknown>(SESSION_KEY, null);
+  return looksLikeSession(stored) ? stored : null;
 }
 
 export function saveSession(session: PosSession | null): void {

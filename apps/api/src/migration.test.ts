@@ -106,6 +106,37 @@ describe('разбор каталога', () => {
     expect(analysis.atLoss?.examples.map((e) => e.name)).toEqual(['Сахар', 'Мука']);
   });
 
+  it('один товар, заведённый дважды, — это один убыточный, а не два', () => {
+    // Иначе дубль удваивает ту самую цифру, которую мы показываем владельцу
+    // как находку, — и разбор перестаёт стоить чего-либо.
+    const analysis = analyseCatalogue([
+      HEADER,
+      ['Сахар', '111', 'Бакалея', '500', '450', '20'],
+      ['Сахар', '111', 'Бакалея', '500', '450', '5'],
+    ]);
+    expect(analysis.atLoss?.count).toBe(1);
+    expect(analysis.atLoss?.examples).toHaveLength(1);
+    expect(analysis.duplicates.count).toBe(1);
+  });
+
+  it('и без штрихкода дубль по названию тоже считается один раз', () => {
+    const analysis = analyseCatalogue([
+      HEADER,
+      ['Сахар', '', 'Бакалея', '500', '450', '20'],
+      ['САХАР', '', 'Бакалея', '500', '450', '5'],
+    ]);
+    expect(analysis.atLoss?.count).toBe(1);
+  });
+
+  it('разные товары в минус считаются по отдельности', () => {
+    const analysis = analyseCatalogue([
+      HEADER,
+      ['Сахар', '111', 'Бакалея', '500', '450', '20'],
+      ['Мука', '222', 'Бакалея', '300', '290', '5'],
+    ]);
+    expect(analysis.atLoss?.count).toBe(2);
+  });
+
   it('продажа ровно в ноль считается отдельно от убытка', () => {
     const analysis = analyseCatalogue([
       HEADER,

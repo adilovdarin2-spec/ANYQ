@@ -272,7 +272,12 @@ export function analyseCatalogue(grid: string[][], system: SourceSystem | null =
   let atZero = 0;
 
   const lossExamples: LossExample[] = [];
-  let atLossCount = 0;
+  // Товары, а не строки. Дубль в файле — это один товар, заведённый дважды, и
+  // считать его двумя убыточными значит завысить ту самую цифру, которую мы
+  // показываем владельцу как находку. Одна выдуманная цифра — и разбор не
+  // стоит ничего.
+  const atLoss = new Set<string>();
+  const atZeroKeys = new Set<string>();
   const markups: number[] = [];
   const byCategory = new Map<string, number[]>();
   const nameLines = new Map<string, { name: string; lines: number[] }>();
@@ -302,13 +307,21 @@ export function analyseCatalogue(grid: string[][], system: SourceSystem | null =
     }
 
     if (purchase !== null && purchase > 0 && sale !== null && sale >= 0) {
+      // Тот же ключ, что и у поиска дублей: штрихкод определяет товар, а имя —
+      // это то, что кто-то набрал.
+      const identity = cell('barcode') || name.toLowerCase();
       if (sale < purchase) {
-        atLossCount += 1;
-        if (lossExamples.length < MAX_EXAMPLES) {
-          lossExamples.push({ name, purchasePrice: Math.round(purchase), salePrice: Math.round(sale) });
+        if (!atLoss.has(identity)) {
+          atLoss.add(identity);
+          if (lossExamples.length < MAX_EXAMPLES) {
+            lossExamples.push({ name, purchasePrice: Math.round(purchase), salePrice: Math.round(sale) });
+          }
         }
       } else if (sale === purchase) {
-        atZero += 1;
+        if (!atZeroKeys.has(identity)) {
+          atZeroKeys.add(identity);
+          atZero += 1;
+        }
       } else {
         const markup = ((sale - purchase) / purchase) * 100;
         markups.push(markup);
@@ -372,7 +385,7 @@ export function analyseCatalogue(grid: string[][], system: SourceSystem | null =
     found,
     stockValue: hasPurchase && hasQuantity ? Math.round(stockValue) : null,
     retailValue: hasPurchase && hasQuantity && retailValue > 0 ? Math.round(retailValue) : null,
-    atLoss: hasPurchase ? { count: atLossCount, examples: lossExamples } : null,
+    atLoss: hasPurchase ? { count: atLoss.size, examples: lossExamples } : null,
     atZero: hasPurchase ? atZero : null,
     duplicates: { count: duplicateCount, examples: duplicateExamples },
     noBarcode: hasBarcode ? noBarcode : 0,
