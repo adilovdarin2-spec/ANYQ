@@ -24,7 +24,10 @@
  * Рисунок общий у всех: сетка 24, обводка 1.75, скруглённые концы, никакой
  * заливки. За счёт этого они выглядят одним семейством, а не подборкой.
  */
-export type IconName = 'sale' | 'products' | 'operations' | 'profile' | 'summary' | 'journal' | 'export' | 'devices' | 'install';
+export type IconName =
+  | 'sale' | 'products' | 'operations' | 'profile'
+  | 'summary' | 'journal' | 'export' | 'devices' | 'install'
+  | 'cash' | 'qr' | 'card' | 'split' | 'credit';
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Тележка: корзина, две ручки колёс, ручка.
@@ -91,6 +94,46 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M12 3.5v11M8 11l4 4 4-4" />
       <path d="M5 20.5h14" />
+    </>
+  ),
+  // Наличные: купюра с номиналом.
+  cash: (
+    <>
+      <rect x="2.5" y="6" width="19" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2.6" />
+      <path d="M6 12h.01M18 12h.01" />
+    </>
+  ),
+  // QR: три «глаза» и точка — узнаётся как код, а не как решётка.
+  qr: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <path d="M14 14h3v3h-3zM20 14v.01M20 20v.01M14 20v.01M17.5 20v.01M20 17.5v.01" />
+    </>
+  ),
+  // Карта: полоса магнитной ленты сверху.
+  card: (
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+      <path d="M2.5 9.5h19M6 15h3.5" />
+    </>
+  ),
+  // Смешанная: сумма пополам. Круг с чертой посередине — «часть так, часть
+  // иначе» читается сразу, в отличие от развилки со стрелками, которая на 22
+  // пикселях превращалась в кляксу.
+  split: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5v17" />
+    </>
+  ),
+  // В долг: раскрытая тетрадь долгов.
+  credit: (
+    <>
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z" />
+      <path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z" />
     </>
   ),
 };

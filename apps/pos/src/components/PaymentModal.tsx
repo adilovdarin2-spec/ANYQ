@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Icon } from './Icon';
+import type { IconName } from './Icon';
 import type { PaymentLine, PaymentMethod } from '../types';
 
 import { formatMoney } from '../utils';
@@ -19,7 +21,10 @@ interface Props {
   onConfirm: (payments: PaymentLine[]) => void;
 }
 
-const ICONS: Record<PaymentMethod, string> = { cash: '💵', kaspi: '▦', card: '💳', credit: '📓' };
+// Рисованные, а не эмодзи: на этом экране их четыре подряд, и раньше это были
+// четыре разных языка сразу — цветное эмодзи, типографский знак ▦, ещё эмодзи и
+// математический символ ÷. Кассир видит этот экран на каждой продаже.
+const ICONS: Record<PaymentMethod, IconName> = { cash: 'cash', kaspi: 'qr', card: 'card', credit: 'credit' };
 
 // Phrase keys rather than labels: a constant holding translated text is
 // translated once, at import, and never changes when the language does.
@@ -58,23 +63,23 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
           <div className="payment-options">
             {methods.map((m) => (
               <button key={m} className="payment-option" onClick={() => setSelected(m)}>
-                <span>{ICONS[m]} {t(METHOD_PHRASES[m])}</span>
-                <span>→</span>
+                <span className="payment-option-label"><Icon name={ICONS[m]} /> {t(METHOD_PHRASES[m])}</span>
+                <span aria-hidden="true">→</span>
               </button>
             ))}
             {/* Part on the phone and the rest in cash is ordinary here. Without
                 this the only way to ring it up is as two sales, which gives the
                 customer two receipts neither of which he can return against. */}
             <button className="payment-option" onClick={() => setSplitting(true)}>
-              <span>÷ {t('payment.mixed')}</span>
-              <span>→</span>
+              <span className="payment-option-label"><Icon name="split" /> {t('payment.mixed')}</span>
+              <span aria-hidden="true">→</span>
             </button>
           </div>
         )}
 
         {selected === 'kaspi' && (
           <>
-            <div className="qr-box">▦ Kaspi QR</div>
+            <div className="qr-box"><Icon name="qr" size={28} /> Kaspi QR</div>
             <p style={{ textAlign: 'center', color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
               {t('payment.kaspiHint')}
             </p>
@@ -83,7 +88,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
 
         {selected === 'credit' && (
           <div style={{ textAlign: 'center', marginTop: 40 }}>
-            <div style={{ fontSize: '2.4rem' }}>📓</div>
+            <div style={{ color: 'var(--ink-muted)' }}><Icon name="credit" size={40} /></div>
             <p style={{ color: 'var(--ink-muted)' }}>
               {t('payment.creditHint', { amount: formatMoney(total) })}
             </p>
