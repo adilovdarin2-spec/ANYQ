@@ -8,7 +8,7 @@ import {
   looksLikeCabinetSecret,
   secretsMatch,
 } from '../cabinet';
-import { loginRateLimit } from '../rateLimit';
+import { cabinetProbeRateLimit, loginRateLimit } from '../rateLimit';
 import { requireSecret } from '../secrets';
 import { respondWithDashboard } from './pos';
 
@@ -118,7 +118,7 @@ async function findBySecret(raw: unknown) {
  * попал куда надо, и недостаточно, чтобы случайный человек что-то узнал. Ни
  * выручки, ни точек, ни имён.
  */
-cabinetRouter.get('/:secret', loginRateLimit, async (req, res) => {
+cabinetRouter.get('/:secret', cabinetProbeRateLimit, async (req, res) => {
   const cabinet = await findBySecret(req.params.secret);
   if (!cabinet) {
     res.status(404).json({ error: 'Такой ссылки нет' });
