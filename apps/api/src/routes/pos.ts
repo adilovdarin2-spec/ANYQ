@@ -1712,7 +1712,7 @@ const DEMAND_REASONS = new Set(['sale', 'order_fulfill', 'table_order', 'return'
  * прикидка. Посчитать дефицит вторым способом означало бы, что экран пополнения
  * и черновик заказа однажды разойдутся, и объяснить это будет нечем.
  */
-async function replenishmentFor(companyId: string, locationId: string) {
+export async function replenishmentFor(companyId: string, locationId: string) {
   const now = new Date();
   const windowStart = new Date(now.getTime() - DEMAND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
@@ -2796,9 +2796,21 @@ export async function respondWithDashboard(
   const locationId = resolveLocationOrRespond(company?.locations ?? [], query.locationId, res);
   if (!locationId) return;
 
-  const now = new Date();
   const requestedDays = Number(query.days);
   const days = Number.isFinite(requestedDays) && requestedDays > 0 && requestedDays <= 90 ? Math.round(requestedDays) : 7;
+  res.json(await dashboardFor(companyId, locationId, days));
+}
+
+/**
+ * Те же цифры, но объектом.
+ *
+ * Понадобилось утренней сводке: она не отвечает на запрос, она сама решает,
+ * будить ли владельца, и для этого ей нужны числа, а не ответ. Отдельного
+ * расчёта у неё нет намеренно — сводка, разошедшаяся с кабинетом хотя бы на
+ * тенге, обесценивает обоих.
+ */
+export async function dashboardFor(companyId: string, locationId: string, days: number) {
+  const now = new Date();
   const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const deadStockSince = new Date(now.getTime() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
 
@@ -2846,7 +2858,11 @@ export async function respondWithDashboard(
       prisma.shift.findMany({ where: { companyId: companyId, locationId, openedAt: { gte: from } }, orderBy: { openedAt: 'desc' } }),
     ]);
 
-  const nameByUserId = new Map((company?.users ?? []).map((u) => [u.id, u.name]));
+  // Имена сотрудников нужны только чтобы подписать смены и выбросы. Отдельный
+  // запрос, а не поле уже загруженной компании: расчёт больше не знает про
+  // компанию целиком — он знает про точку.
+  const staff = await prisma.user.findMany({ where: { companyId }, select: { id: true, name: true } });
+  const nameByUserId = new Map(staff.map((u) => [u.id, u.name]));
   const nameByProductId = new Map(products.map((p) => [p.id, p.name]));
   const unitByProductId = new Map(products.map((p) => [p.id, p.unit]));
   const costByProduct = buildAverageCost(
@@ -3073,7 +3089,7 @@ export async function respondWithDashboard(
   const receivable = await sumBalances(customerAccounts, 'customer');
   const payable = await sumBalances(supplierAccounts, 'supplier');
 
-  res.json({
+  return {
     locationId,
     from: from.toISOString(),
     to: now.toISOString(),
@@ -3104,7 +3120,7 @@ export async function respondWithDashboard(
     expiring,
     flags: flagOutliers([...activityByUser.values()]),
     discrepancies: { counts: countDiscrepancies, transfers: transferDiscrepancies },
-  });
+  };
 }
 
 posRouter.get('/dashboard', requirePosAuth, async (req: PosAuthedRequest, res) => {

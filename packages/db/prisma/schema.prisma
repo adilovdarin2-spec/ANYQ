@@ -58,6 +58,10 @@ model Company {
   // Nullable: only companies with the supply module actually need one.
   slug      String?  @unique
   createdAt DateTime @default(now())
+  /// Когда последний раз отправляли утреннюю сводку владельцу. Планировщик
+  /// между запусками ничего не помнит, поэтому «сегодня уже отправляли»
+  /// решает сервер — по этой отметке.
+  lastSummaryAt DateTime?
 
   tariff            Tariff?
   locations         Location[]

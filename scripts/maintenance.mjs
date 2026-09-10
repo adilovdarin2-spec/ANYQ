@@ -28,6 +28,13 @@ const TASKS = [
   // housekeeping that can wait for the next tick if the process is stopped.
   { name: 'fiscal', path: '/maintenance/drain-fiscal-queue' },
   { name: 'idempotency', path: '/maintenance/prune-idempotency-keys' },
+  // The owners' morning summary. Called on every pass, including at three in
+  // the morning, and that is deliberate: this script keeps nothing between
+  // runs, so it cannot know whether today's summary has gone out. The server
+  // decides — it sends only between eight and noon in the shop's own time, and
+  // only once per shop per day. A scheduler that had to know the hour would be
+  // a second place to get the hour wrong.
+  { name: 'summary', path: '/maintenance/daily-summary' },
 ];
 
 const args = process.argv.slice(2);

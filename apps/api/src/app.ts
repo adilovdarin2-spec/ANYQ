@@ -2,6 +2,7 @@ import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import { pruneIdempotencyKeys } from './idempotency';
+import { sendMorningSummaries } from './morning';
 import { writeRateLimit } from './rateLimit';
 import { metricsMiddleware, report } from './metrics-store';
 import { drainFiscalQueue } from './fiscal-worker';
@@ -135,6 +136,23 @@ app.post('/maintenance/drain-fiscal-queue', async (req, res) => {
     return;
   }
   res.json(await drainFiscalQueue(networkFiscalProvider()));
+});
+
+/**
+ * Утренняя сводка владельцам.
+ *
+ * Единственная задача планировщика, которая обращается к людям, а не к очереди,
+ * — и поэтому единственная, у которой время имеет значение. Планировщик зовёт
+ * её раз в сутки утром; сервер сам решает, кому есть что сказать, и молчит там,
+ * где вчера ничего не произошло.
+ */
+app.post('/maintenance/daily-summary', async (req, res) => {
+  const secret = process.env.MAINTENANCE_SECRET;
+  if (!secret || req.header('x-maintenance-secret') !== secret) {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  res.json(await sendMorningSummaries());
 });
 
 app.post('/maintenance/prune-idempotency-keys', async (req, res) => {
