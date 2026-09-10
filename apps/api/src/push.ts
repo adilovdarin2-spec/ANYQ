@@ -42,14 +42,24 @@ export interface PushPayload {
   url?: string;
 }
 
-// Best-effort: a push failure must never block the action that triggered it
-// (e.g. placing an order). A 404/410 response means the browser dropped the
-// subscription — safe to delete it so we stop paying the send cost for it.
-export async function sendPushToCompany(companyId: string, payload: PushPayload): Promise<void> {
-  const subscriptions = await prisma.pushSubscription.findMany({ where: { companyId } });
-  if (subscriptions.length === 0) return;
+interface Subscription {
+  id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
 
+/**
+ * Отправка, общая для всех адресатов.
+ *
+ * Best-effort: провал отправки не должен ломать действие, которое её вызвало —
+ * например, оформление заказа. Ответ 404 или 410 означает, что браузер выбросил
+ * подписку, и её можно удалить, чтобы не платить за отправку в пустоту.
+ */
+async function sendTo(subscriptions: Subscription[], payload: PushPayload): Promise<number> {
+  if (subscriptions.length === 0) return 0;
   const body = JSON.stringify(payload);
+  let delivered = 0;
 
   await Promise.all(
     subscriptions.map(async (sub) => {
@@ -58,6 +68,7 @@ export async function sendPushToCompany(companyId: string, payload: PushPayload)
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           body,
         );
+        delivered += 1;
       } catch (err) {
         const statusCode = (err as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {
@@ -65,5 +76,33 @@ export async function sendPushToCompany(companyId: string, payload: PushPayload)
         }
       }
     }),
+  );
+
+  return delivered;
+}
+
+/** Всем устройствам компании. Годится для того, что касается всей смены. */
+export async function sendPushToCompany(companyId: string, payload: PushPayload): Promise<void> {
+  await sendTo(await prisma.pushSubscription.findMany({ where: { companyId } }), payload);
+}
+
+/**
+ * Только владельцу.
+ *
+ * Разница не косметическая. `sendPushToCompany` доходит до планшета кассира —
+ * и это правильно для «поступил новый заказ» и категорически неправильно для
+ * выручки и сходимости кассы. Отправить сводку владельца всем устройствам
+ * компании означало бы разослать кассирам то, ради закрытия чего написан
+ * отдельный кабинет с отдельным паролем.
+ *
+ * Подписка знает своего человека с самого начала (`PushSubscription.userId`
+ * заполняется при подписке), так что фильтр — это запрос, а не миграция.
+ */
+export async function sendPushToOwners(companyId: string, payload: PushPayload): Promise<number> {
+  return sendTo(
+    await prisma.pushSubscription.findMany({
+      where: { companyId, user: { role: 'owner' } },
+    }),
+    payload,
   );
 }

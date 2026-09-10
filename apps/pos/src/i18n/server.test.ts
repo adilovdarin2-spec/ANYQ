@@ -29,6 +29,15 @@ const SKIPPED = [
   // dictionary entry pretending to be a feature.
   'routes/cabinet.ts',
   'cabinet.ts',
+  // The owner's morning summary. Its text is never rendered by a register: the
+  // server composes it and the phone's operating system displays it as a push
+  // notification, so the register's dictionary cannot reach it even in
+  // principle. Saying it in Kazakh needs the server to know the owner's own
+  // language, which it does not — the same limitation server.ts describes for
+  // every other message, except that here there is no Russian fallback on a
+  // screen to soften it. Written down in docs/PRODUCT_PLAN.md rather than
+  // pretended away.
+  'daily-summary.ts',
 ];
 
 function apiModules(): string[] {
