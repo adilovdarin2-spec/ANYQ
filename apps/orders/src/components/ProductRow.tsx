@@ -20,13 +20,17 @@ export function ProductRow({ product, qty, onAdd, onChangeQty, onSetQty }: Props
         <div className="product-row-meta">
           <span className="product-row-price">{formatMoney(product.price)}</span>
           <span>/ {product.unit}</span>
+          {/* Метка только там, где есть о чём предупредить.
+              «В наличии» стояло у каждой строки — то есть не говорило ничего, а
+              место занимало: на телефоне у товаров с длинным названием метка
+              переносилась на вторую строку, и карточки в списке становились
+              разной высоты. Отсутствие и остаток «на донышке» — вот что меняет
+              решение закупщика, и теперь в списке видно только это. */}
           {out ? (
             <span className="stock-tag out">Нет в наличии</span>
           ) : low ? (
             <span className="stock-tag low">Осталось {product.stock}</span>
-          ) : (
-            <span className="stock-tag">В наличии</span>
-          )}
+          ) : null}
         </div>
       </div>
 
