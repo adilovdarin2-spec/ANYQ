@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Icon } from './Icon';
 import { LANGUAGES } from '../i18n';
 import type { PhraseKey } from '../i18n';
 import { useTranslation } from '../i18n/useLanguage';
@@ -148,7 +149,7 @@ export function ProfileScreen({
 
       {onShowDashboard && (
         <button type="button" className="profile-action" onClick={onShowDashboard}>
-          <span>🧭 {t('profile.dashboard')}</span>
+          <span className="profile-action-label"><Icon name="summary" /> {t('profile.dashboard')}</span>
           <span>›</span>
         </button>
       )}
@@ -162,21 +163,21 @@ export function ProfileScreen({
 
       {onShowAudit && (
         <button type="button" className="profile-action" onClick={onShowAudit}>
-          <span>📝 {t('profile.audit')}</span>
+          <span className="profile-action-label"><Icon name="journal" /> {t('profile.audit')}</span>
           <span>›</span>
         </button>
       )}
 
       {onShowExport && (
         <button type="button" className="profile-action" onClick={onShowExport}>
-          <span>↓ {t('profile.export')}</span>
+          <span className="profile-action-label"><Icon name="export" /> {t('profile.export')}</span>
           <span>›</span>
         </button>
       )}
 
       {onShowDevices && (
         <button type="button" className="profile-action" onClick={onShowDevices}>
-          <span>📱 {t('profile.devices')}</span>
+          <span className="profile-action-label"><Icon name="devices" /> {t('profile.devices')}</span>
           <span>›</span>
         </button>
       )}
@@ -201,7 +202,7 @@ export function ProfileScreen({
       )}
 
       <button type="button" className="profile-action" onClick={onShowInstall}>
-        <span>⬇ {t('profile.install')}</span>
+        <span className="profile-action-label"><Icon name="install" /> {t('profile.install')}</span>
         <span>›</span>
       </button>
 
