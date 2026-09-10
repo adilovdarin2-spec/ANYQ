@@ -308,10 +308,6 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 @media (min-width: 900px) {
   .order-header { padding: 20px 24px; }
 
-  /* corner toast instead of a bottom-center banner, so it never covers the
-     product grid or cart sidebar */
-  .install-banner { left: auto; right: 24px; bottom: 24px; max-width: 360px; }
-
   .storefront-layout {
     display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start;
     max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px;
