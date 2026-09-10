@@ -296,3 +296,66 @@ describe('a warehouse morning replayed in order', () => {
     expect(await findLedgerMismatches()).toEqual([]);
   });
 });
+
+describe('обычная инвентаризация, снятая во время торговли', () => {
+  it('применяет разницу, которую утверждала, а не увиденную цифру', async () => {
+    // Ровно то же обещание, что и у пересчёта по ячейкам, — и до сих пор оно
+    // держалось только там. Обычная инвентаризация применяла абсолютную цифру,
+    // а значит возвращала на полку всё, что продали, пока по ней шли: «считайте,
+    // не закрывая магазин» было неправдой именно для того экрана, который для
+    // этого и открывают.
+    const countedAt = await afterEverythingSoFar();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Три продали, пока обходили.
+    await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 3, price: 200 }],
+    });
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(97);
+
+    // Насчитали 90 при 100 на момент обхода — то есть недостача 10.
+    const counted = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      countedAt: countedAt.toISOString(),
+      items: [{ productId: fx.productId, countedQuantity: 90 }],
+    });
+    expect(counted.status).toBe(201);
+
+    // 97 − 10 = 87. Без перемотки было бы 90: три проданные вернулись бы на полку.
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(87);
+    expect(await findLedgerMismatches(fx.locationId)).toEqual([]);
+  });
+
+  it('без отметки о времени работает как раньше — по остатку на момент прихода', async () => {
+    // Касса старой версии `countedAt` не пришлёт, и её счёт не должен падать
+    // или считаться иначе, чем считался вчера.
+    await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 3, price: 200 }],
+    });
+
+    const counted = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      items: [{ productId: fx.productId, countedQuantity: 90 }],
+    });
+    expect(counted.status).toBe(201);
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(90);
+    expect(await findLedgerMismatches(fx.locationId)).toEqual([]);
+  });
+
+  it('отметку из будущего игнорирует', async () => {
+    // Часы планшета могут уйти вперёд. Перематывать журнал в будущее нельзя —
+    // в этом случае честнее посчитать по текущему остатку.
+    const future = new Date(Date.now() + 60 * 60 * 1000);
+    const counted = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      countedAt: future.toISOString(),
+      items: [{ productId: fx.productId, countedQuantity: 90 }],
+    });
+    expect(counted.status).toBe(201);
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(90);
+  });
+});

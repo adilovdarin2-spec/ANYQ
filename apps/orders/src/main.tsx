@@ -19,8 +19,8 @@ function injectManifest() {
     start_url: startUrl,
     scope: '/',
     display: 'standalone',
-    background_color: '#F5FAF6',
-    theme_color: '#146C43',
+    background_color: '#FBFDFC',
+    theme_color: '#0F8A4D',
     orientation: 'portrait',
     lang: 'ru',
     icons: [

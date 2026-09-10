@@ -1,20 +1,20 @@
 :root {
-  --bg: #F5FAF6;
+  --bg: #FBFDFC;
   --surface: #FFFFFF;
-  --surface-2: #E3F1E7;
-  --ink: #102019;
-  --ink-muted: #4E6558;
-  --accent: #146C43;
-  --accent-strong: #0E4F31;
-  --border: #CFE3D6;
+  --surface-2: #EDF6F0;
+  --ink: #0E1A14;
+  --ink-muted: #57675E;
+  --accent: #0F8A4D;
+  --accent-strong: #0A6237;
+  --border: #DBE7E0;
 
-  --status-active: #146C43;
-  --status-active-bg: #DCEEE2;
-  --status-overdue: #B23B2E;
-  --status-overdue-bg: #F5DEDA;
+  --status-active: #0F8A4D;
+  --status-active-bg: #E4F4EA;
+  --status-overdue: #C0392B;
+  --status-overdue-bg: #FBE8E5;
 
-  --shadow-sm: 0 1px 2px rgba(16, 32, 25, 0.06);
-  --shadow-md: 0 12px 32px rgba(16, 32, 25, 0.12);
+  --shadow-sm: 0 1px 2px rgba(14, 26, 20, 0.06);
+  --shadow-md: 0 12px 32px rgba(14, 26, 20, 0.12);
   --cart-bar-clearance: 84px;
   color-scheme: light;
 }

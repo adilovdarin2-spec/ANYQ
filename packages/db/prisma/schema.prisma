@@ -641,6 +641,12 @@ model Document {
   toLocation    Location?     @relation("DestinationLocation", fields: [toLocationId], references: [id])
   toLocationId  String?
   type          String
+  /// Человеческий номер: ПРХ-2026-000123. Присваивается триггером БД
+  /// (миграция 20260910000100), а не приложением: документы создаются в двух
+  /// десятках мест, и следующее место про нумерацию забудет — а триггер
+  /// забыть нельзя. Nullable только ради самой миграции; на новых строках он
+  /// всегда есть.
+  number        String?
   status        String        @default("draft")
   /// The single method when there was one, 'mixed' when the sale was split.
   /// Kept alongside `payments` so everything written before splits existed
@@ -709,6 +715,7 @@ model Document {
   @@index([counterpartyId, type])
   // Cash reconciliation reads a shift's own takings.
   @@index([shiftId])
+  @@unique([companyId, number])
   @@map("documents")
 }
 
