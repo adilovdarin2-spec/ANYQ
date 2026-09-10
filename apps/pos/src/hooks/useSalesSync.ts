@@ -3,6 +3,14 @@ import { getSales, saveSales } from '../storage';
 import { useOnlineStatus } from './useOnlineStatus';
 import { submitSale, ApiError } from '../api';
 
+/**
+ * Как часто пробовать снова, когда в очереди что-то осталось.
+ *
+ * Двадцать секунд: достаточно редко, чтобы не шуметь запросами с полусотни
+ * касс, и достаточно часто, чтобы продажа не пролежала весь вечер.
+ */
+const RETRY_MS = 20_000;
+
 export function useSalesSync(token: string | null, ensureShiftSynced: () => Promise<void>) {
   const online = useOnlineStatus();
   const [pendingCount, setPendingCount] = useState(() => getSales().filter((s) => !s.synced && !s.syncError).length);
@@ -78,6 +86,26 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
   useEffect(() => {
     if (online) void sync();
   }, [online, sync]);
+
+  /**
+   * И ещё раз, сама по себе, пока в очереди что-то есть.
+   *
+   * До этого очередь разбиралась только когда браузер сообщал, что сеть
+   * появилась, — и это покрывает ровно один случай: пропал и вернулся
+   * интернет. А самый частый случай другой: интернет есть, а сервер минуту не
+   * отвечал — выкатили обновление, перезапустился, моргнул. Браузер об этом
+   * событий не шлёт, и продажа лежала в очереди до следующей продажи. Тихим
+   * вечером это часы: у владельца в сводке нет выручки, а на чеке написано
+   * «не синхронизирован» под продажей, которая прошла.
+   *
+   * Таймер живёт только пока есть что досылать, поэтому касса, у которой всё
+   * отправлено, ничего не делает.
+   */
+  useEffect(() => {
+    if (!online || !token || pendingCount === 0) return;
+    const timer = window.setInterval(() => void sync(), RETRY_MS);
+    return () => window.clearInterval(timer);
+  }, [online, token, pendingCount, sync]);
 
   return { online, pendingCount, stuckCount, refreshPendingCount, sync };
 }
