@@ -13,7 +13,10 @@ export function SuccessScreen({ companyName, onNewOrder }: Props) {
         <div className="success-icon">✓</div>
         <div className="success-title">Спасибо за заказ!</div>
         <p className="success-sub">
-          Заказ передан в «{companyName}». С вами свяжутся для подтверждения и уточнения времени выдачи.
+          {/* Без кавычек вокруг названия: у половины поставщиков они уже внутри,
+              и получалось «Склад HoReCa «Дастархан Опт»» — двойные кавычки в
+              первом же предложении, которое видит клиент. */}
+          Заказ передан в {companyName}. С вами свяжутся для подтверждения и уточнения времени выдачи.
         </p>
       </div>
       <div className="screen-footer">
