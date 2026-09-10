@@ -39,6 +39,22 @@ const KZ_OFFSET_HOURS = 5;
 const MORNING_FROM = 8;
 const MORNING_UNTIL = 12;
 
+/**
+ * Сколько магазинов обходим за один вызов.
+ *
+ * Каждая точка — это полный расчёт сводки и расчёт дефицита, десятки запросов
+ * по девяностодневному окну движений. Двадцать магазинов в одном HTTP-запросе
+ * — это минуты работы, за которые запрос успеет отвалиться по таймауту у любого
+ * прокси между планировщиком и сервером, и половина магазинов останется без
+ * сводки без единой записи о том, почему.
+ *
+ * Поэтому вызов ограничен, а планировщик приходит каждую минуту: недосчитанные
+ * магазины достаются следующему тику. Отметка ставится по магазину, а не на
+ * весь обход, так что повторов не будет, а утро длится четыре часа — успеет
+ * даже сотня.
+ */
+const COMPANIES_PER_CALL = 5;
+
 /** Который час в магазине. */
 export function localHour(now: Date): number {
   return (now.getUTCHours() + KZ_OFFSET_HOURS) % 24;
@@ -67,6 +83,8 @@ export function dueForSummary(now: Date, lastSummaryAt: Date | null): boolean {
 export interface MorningResult {
   /** Сколько точек посчитали. */
   locations: number;
+  /** Магазины, до которых этот вызов не дошёл: их возьмёт следующий тик. */
+  remaining: number;
   /** Сколько сводок собрали (то есть было о чём сказать). */
   composed: number;
   /** Сколько уведомлений реально ушло на устройства. */
@@ -120,8 +138,9 @@ export async function sendMorningSummaries(now: Date = new Date()): Promise<Morn
     include: { tariff: true, locations: { select: { id: true, name: true } } },
   });
 
-  const result: MorningResult = { locations: 0, composed: 0, delivered: 0, skipped: 0, failed: [] };
+  const result: MorningResult = { locations: 0, composed: 0, delivered: 0, skipped: 0, remaining: 0, failed: [] };
 
+  let handled = 0;
   for (const company of companies) {
     if (tariffState(company.tariff ?? null) !== 'active') {
       result.skipped += 1;
@@ -131,6 +150,13 @@ export async function sendMorningSummaries(now: Date = new Date()): Promise<Morn
       result.skipped += 1;
       continue;
     }
+    if (handled >= COMPANIES_PER_CALL) {
+      // Не пропущен, а отложен: отметку ему не ставим, и следующий тик через
+      // минуту начнёт с него.
+      result.remaining += 1;
+      continue;
+    }
+    handled += 1;
 
     // Отметка ставится до отправки, а не после. Отправка — не транзакция: она
     // может частью пройти и частью упасть, и повтор через минуту разослал бы
