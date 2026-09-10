@@ -53,6 +53,7 @@ import { reconcileBalances, summarize, mismatchExplanation } from '../reconcilia
 import { buildImportPlan } from '../import';
 import { ensureCabinet, resetCabinet } from '../cabinet';
 import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
+import { matchPriceList, readPriceList, summarisePriceList } from '../price-list';
 import type { LedgerTotal, CachedQuantity } from '../reconciliation';
 import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
@@ -1703,34 +1704,24 @@ const DEMAND_REASONS = new Set(['sale', 'order_fulfill', 'table_order', 'return'
 // acts on a figure they can't check, so every line carries the rate, the cover
 // and the reason it appeared — an owner who disagrees can see exactly which
 // input to argue with.
-posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, res) => {
-  const company = await prisma.company.findUnique({
-    where: { id: req.posCompanyId },
-    include: { tariff: true, locations: true },
-  });
-  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
-    res.status(403).json({ error: 'Закупки недоступны на вашем тарифе' });
-    return;
-  }
-  const state = tariffState(company?.tariff ?? null);
-  if (state !== 'active') {
-    res.status(403).json({ error: tariffDenialMessage(state) });
-    return;
-  }
-
-  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
-  if (!locationId) return;
-
+/**
+ * Что нужно дозаказать на точке, и почему именно столько.
+ *
+ * Вынесено из обработчика ради прайса поставщика: когда оптовик присылает свой
+ * прайс, вопрос «что из него брать» — это ровно этот расчёт, а не отдельная
+ * прикидка. Посчитать дефицит вторым способом означало бы, что экран пополнения
+ * и черновик заказа однажды разойдутся, и объяснить это будет нечем.
+ */
+async function replenishmentFor(companyId: string, locationId: string) {
   const now = new Date();
   const windowStart = new Date(now.getTime() - DEMAND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
   const [products, stockRows, policies, packagings, movements, incomingTransfers] = await Promise.all([
-    prisma.product.findMany({ where: { companyId: req.posCompanyId, sellable: true } }),
+    prisma.product.findMany({ where: { companyId: companyId, sellable: true } }),
     prisma.stock.findMany({ where: { locationId } }),
     prisma.stockPolicy.findMany({ where: { locationId } }),
     prisma.productPackaging.findMany({
-      where: { product: { companyId: req.posCompanyId } },
+      where: { product: { companyId: companyId } },
       orderBy: { unitsPerPack: 'asc' },
     }),
     prisma.stockMovement.findMany({
@@ -1743,12 +1734,12 @@ posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, re
     // stockroom ends up holding three months of one item.
     prisma.documentItem.findMany({
       where: {
-        document: { companyId: req.posCompanyId, type: 'transfer', status: 'in_transit', toLocationId: locationId },
+        document: { companyId: companyId, type: 'transfer', status: 'in_transit', toLocationId: locationId },
       },
       select: { productId: true, quantity: true },
     }),
   ]);
-  const onOrderByProduct = await outstandingOnOrder(req.posCompanyId!, locationId);
+  const onOrderByProduct = await outstandingOnOrder(companyId!, locationId);
 
   // Summed across bins: the question is what this point has, not what one
   // shelf in it has.
@@ -1834,15 +1825,44 @@ posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, re
     .filter((line) => line.recommended > 0)
     .sort((a, b) => (a.daysOfCover ?? Number.POSITIVE_INFINITY) - (b.daysOfCover ?? Number.POSITIVE_INFINITY));
 
-  res.json({
+  return {
     locationId,
     windowDays: DEMAND_WINDOW_DAYS,
+    // Каждая позиция, а не только дефицитные. Экрану пополнения нужно решение,
+    // а прайсу поставщика — остаток по любой присланной строке: «сколько у нас
+    // этого лежит» спрашивают и про то, что заказывать не надо.
+    all: lines,
     // When the ledger for this window did not fit, the demand rates are built
     // from the most recent part of it. Better said out loud than quietly
     // understated.
     truncated: movements.length >= DEMAND_MOVEMENT_LIMIT,
     items: needed,
+  };
+}
+
+posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
   });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Закупки недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const { all, ...payload } = await replenishmentFor(req.posCompanyId!, locationId);
+  // Полный список наружу не отдаётся: экран показывает решение, а не отчёт.
+  void all;
+  res.json(payload);
 });
 
 posRouter.put('/products/:id/policy', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -4998,6 +5018,8 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
 const MAX_IMPORT_ROWS = 20000;
 /** Enough for somebody to see the shape of what is wrong without scrolling forever. */
 const MAX_REPORTED_PROBLEMS = 200;
+/** Столько строк прайса помещается на экран без бесконечной прокрутки. */
+const MAX_PRICE_LIST_LINES = 500;
 
 type GridResult = { status: 'ok'; grid: string[][] } | { status: 'error'; message: string };
 
@@ -5094,6 +5116,86 @@ posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthed
     // увидеть, что нашлось в его магазине, до того как что-то записано, —
     // иначе это уже не разбор, а отчёт после импорта.
     analysis: analyseCatalogue(parsed.grid, system),
+  });
+});
+
+/**
+ * Прайс поставщика: что из него у нас есть, что подорожало и что брать.
+ *
+ * Ничего не записывает — это разбор присланного файла, а не заказ. Заказ
+ * создаёт уже существующий маршрут, когда владелец выбрал строки: файл от
+ * поставщика не должен превращаться в обязательство сам по себе.
+ *
+ * Сколько брать, считает `replenishmentFor` — тот же расчёт, что показывает
+ * экран пополнения. Прикинуть дефицит вторым способом означало бы, что экран и
+ * заказ однажды разойдутся, и объяснить это будет нечем.
+ */
+posRouter.post('/price-lists/match', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Прайс поставщика смотрит владелец или менеджер' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Закупки недоступны на вашем тарифе' });
+    return;
+  }
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.body?.locationId, res);
+  if (!locationId) return;
+
+  const parsed = readGrid(req.body);
+  if (parsed.status !== 'ok') {
+    res.status(400).json({ error: parsed.message });
+    return;
+  }
+
+  const { rows, problems } = readPriceList(parsed.grid);
+  if (rows.length === 0) {
+    res.status(400).json({ error: problems[0] ?? 'В файле нет строк с товаром' });
+    return;
+  }
+
+  const ours = await prisma.product.findMany({
+    where: { companyId: req.posCompanyId },
+    select: { id: true, name: true, barcode: true, purchasePrice: true, unit: true },
+  });
+  const matched = matchPriceList(rows, ours);
+
+  const replenishment = await replenishmentFor(req.posCompanyId!, locationId);
+  const recommendedByProduct = new Map(replenishment.all.map((item) => [item.productId, item]));
+
+  res.json({
+    locationId,
+    problems,
+    summary: summarisePriceList(matched),
+    lines: matched.slice(0, MAX_PRICE_LIST_LINES).map((line) => {
+      const need = line.productId ? recommendedByProduct.get(line.productId) : undefined;
+      // Кратность поставщика уважается: заказать три штуки там, где возят
+      // дюжинами, — это ответ, с которым нечего делать.
+      const suggested = need
+        ? line.minQuantity && line.minQuantity > 0
+          ? Math.ceil(need.recommended / line.minQuantity) * line.minQuantity
+          : need.recommended
+        : 0;
+      return {
+        ...line,
+        available: need?.available ?? null,
+        daysOfCover: need?.daysOfCover ?? null,
+        suggestedQuantity: suggested,
+      };
+    }),
+    truncated: matched.length > MAX_PRICE_LIST_LINES,
   });
 });
 

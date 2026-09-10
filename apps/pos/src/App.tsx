@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, CabinetInfo, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, CabinetInfo, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { genId, resolveScannedBarcode } from './utils';
@@ -79,6 +79,7 @@ import {
   recordSettlement,
   registerFiscalManually,
   rejectOrder,
+  matchPriceList,
   repairReconciliation,
   resetCabinet as resetCabinetLink,
   saveStockPolicy,
@@ -141,6 +142,7 @@ import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { ImportScreen } from './components/ImportScreen';
 import { MigrationScreen } from './components/MigrationScreen';
 import { CabinetLinkScreen } from './components/CabinetLinkScreen';
+import { PriceListScreen } from './components/PriceListScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { OperationsScreen } from './components/OperationsScreen';
@@ -182,6 +184,7 @@ type View =
   | 'import'
   | 'migrate'
   | 'cabinet'
+  | 'price-list'
   | 'settlements'
   | 'production'
   | 'floorplan'
@@ -190,7 +193,7 @@ type View =
   | 'stock-history';
 
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'price-list', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 export default function App() {
@@ -252,6 +255,11 @@ export default function App() {
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [sourceSystems, setSourceSystems] = useState<SourceSystemInfo[]>([]);
   const [cabinet, setCabinet] = useState<CabinetInfo | null>(null);
+  const [priceList, setPriceList] = useState<PriceListMatch | null>(null);
+  const [priceListLoading, setPriceListLoading] = useState(false);
+  const [priceListError, setPriceListError] = useState<string | null>(null);
+  const [priceListSubmitting, setPriceListSubmitting] = useState(false);
+  const [priceListOrderId, setPriceListOrderId] = useState<string | null>(null);
   const [cabinetLoading, setCabinetLoading] = useState(false);
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [cabinetResetting, setCabinetResetting] = useState(false);
@@ -441,6 +449,7 @@ export default function App() {
       { key: 'reconciliation', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
       { key: 'import', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
       { key: 'migrate', icon: '📦', label: t('ops.migrate'), onClick: handleShowMigrate },
+      { key: 'price-list', icon: '🧾', label: t('ops.priceList'), onClick: handleShowPriceList },
       { key: 'cabinet', icon: '🔑', label: t('ops.cabinet'), onClick: handleShowCabinet },
       { key: 'settlements', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
       { key: 'write-offs', icon: '🗑️', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
@@ -896,6 +905,64 @@ export default function App() {
       setImportError(err instanceof ApiError ? err.message : t('fail.loadSystems'));
     } finally {
       setSourceSystemsLoading(false);
+    }
+  }
+
+  // Прайс поставщика: разбор файла, потом черновик заказа — и только после
+  // того, как человек выбрал строки.
+  async function handleShowPriceList() {
+    setView('price-list');
+    setPriceList(null);
+    setPriceListError(null);
+    setPriceListOrderId(null);
+    if (!session || suppliers.length > 0) return;
+    // Список поставщиков нужен только чтобы подписать заказ. Не загрузился —
+    // заказ всё равно создастся, просто без поставщика.
+    try {
+      setSuppliers(await fetchSuppliers(session.token));
+    } catch {
+      /* см. выше */
+    }
+  }
+
+  function resetPriceList() {
+    setPriceList(null);
+    setPriceListError(null);
+    setPriceListOrderId(null);
+  }
+
+  async function handleMatchPriceList(source: ImportSource) {
+    if (!session || !currentLocationId) return;
+    setPriceListLoading(true);
+    setPriceListError(null);
+    try {
+      setPriceList(await matchPriceList(session.token, currentLocationId, source));
+    } catch (err) {
+      setPriceListError(err instanceof ApiError ? err.message : t('fail.matchPriceList'));
+    } finally {
+      setPriceListLoading(false);
+    }
+  }
+
+  async function handleCreateOrderFromPriceList(
+    supplierId: string | null,
+    items: { productId: string; quantity: number; price: number }[],
+  ) {
+    if (!session || !currentLocationId) return;
+    setPriceListSubmitting(true);
+    setPriceListError(null);
+    try {
+      const order = await createPurchaseOrder(session.token, {
+        locationId: currentLocationId,
+        supplierId,
+        note: t('priceList.note'),
+        items: items.map((item) => ({ ...item, packagingId: null })),
+      });
+      setPriceListOrderId(order.id);
+    } catch (err) {
+      setPriceListError(err instanceof ApiError ? err.message : t('fail.createOrder'));
+    } finally {
+      setPriceListSubmitting(false);
     }
   }
 
@@ -2555,6 +2622,21 @@ export default function App() {
           onChangeType={handleChangeSettlementType}
           onPay={handleRecordSettlement}
           onSetCredit={handleSetCredit}
+        />
+      )}
+
+      {view === 'price-list' && (
+        <PriceListScreen
+          suppliers={suppliers}
+          match={priceList}
+          loading={priceListLoading}
+          error={priceListError}
+          submitting={priceListSubmitting}
+          createdOrderId={priceListOrderId}
+          onBack={() => setView('operations')}
+          onMatch={handleMatchPriceList}
+          onCreateOrder={handleCreateOrderFromPriceList}
+          onReset={resetPriceList}
         />
       )}
 
