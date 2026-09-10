@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
-import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -220,7 +220,18 @@ export default function App() {
       : session?.catalogLocationId ?? session?.locations[0]?.id ?? null;
   const currentLocation = session?.locations.find((l) => l.id === currentLocationId) ?? null;
   const [view, setView] = useState<View>('sale');
-  const [lastSale, setLastSale] = useState<Sale | null>(null);
+  /**
+   * Чек показывает продажу такой, какая она сейчас, а не снимок момента оплаты.
+   *
+   * Раньше здесь лежала копия объекта, созданная в момент продажи с
+   * `synced: false`. Синхронизация происходит через долю секунды и помечает
+   * продажу в хранилище — но копию не трогает, и чек навсегда оставался с
+   * подписью «не синхронизирован» под продажей, которая давно на сервере.
+   *
+   * Кассир, прочитавший это, пробьёт второй раз. Весь продукт построен вокруг
+   * того, чтобы не продать дважды, а тут интерфейс сам к этому приглашает.
+   */
+  const [lastSaleId, setLastSaleId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -408,6 +419,14 @@ export default function App() {
   const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(
     session?.token ?? null,
     ensureShiftSyncedStable,
+  );
+
+  // Перечитывается, когда меняется счётчик неотправленных — а он обновляется
+  // после каждой попытки синхронизации. То есть подпись на чеке перестаёт
+  // говорить «не синхронизирован» ровно тогда, когда продажа доходит.
+  const lastSale = useMemo(
+    () => (lastSaleId ? getSales().find((s) => s.id === lastSaleId) ?? null : null),
+    [lastSaleId, pendingCount],
   );
   const hasSupply = session?.modules?.includes('supply') ?? false;
   const hasTerminal = session?.modules?.includes('terminal') ?? false;
@@ -2437,7 +2456,7 @@ export default function App() {
     addSale(sale);
     refreshPendingCount();
     void sync();
-    setLastSale(sale);
+    setLastSaleId(sale.id);
     setCart([]);
     setDiscount(null);
     setLoyalty(null);
