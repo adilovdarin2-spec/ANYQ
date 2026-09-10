@@ -190,12 +190,12 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
   .success-icon { animation: none; }
 }
 
-/* install banner (PWA) — docked above where the cart bar appears so an
-   in-progress order is never covered by the banner */
+/* Предложение установить приложение — в потоке, под шапкой.
+   Было закреплено снизу и закрывало две строки каталога, то есть ровно то, ради
+   чего закупщик сюда пришёл. Теперь раздвигает содержимое, а не накрывает его. */
 .install-banner {
-  position: fixed; left: 12px; right: 12px; z-index: 40;
-  bottom: calc(var(--cart-bar-clearance) + env(safe-area-inset-bottom));
-  max-width: 496px; margin: 0 auto;
+  margin: 12px 16px;
+  max-width: 728px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
   padding: 14px 16px; box-shadow: var(--shadow-md);
 }
