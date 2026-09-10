@@ -593,3 +593,14 @@ button { cursor: pointer; }
 /* Подорожание красным, удешевление зелёным — то, ради чего прайс и открывают. */
 .price-up { color: var(--status-overdue); font-weight: 600; }
 .price-down { color: var(--status-active); font-weight: 600; }
+
+/* --- разделы операций ----------------------------------------------------- */
+/* Плоский список из двадцати одинаковых строк — это не меню, а перечень:
+   кладовщик, которому нужна приёмка, читает его сверху донизу каждый раз.
+   Заголовок раздела стоит того, чтобы занять строку. */
+.operations-group { margin-bottom: 18px; }
+.operations-group-title {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--ink-muted); padding: 0 16px 8px;
+}
+.operations-group + .operations-group { border-top: 1px solid var(--border); padding-top: 16px; }

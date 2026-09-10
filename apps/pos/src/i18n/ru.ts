@@ -1048,6 +1048,15 @@ export const ru = {
   'fail.matchDelivery': 'Не удалось разобрать накладную',
   'fail.receive': 'Не удалось провести приёмку',
 
+  // --- разделы операций -----------------------------------------------------
+  // Названы по тому, что человек собирается сделать, а не по тому, как устроен
+  // продукт: «товар и остатки», а не «складской модуль». Порядок — по частоте.
+  'opsGroup.stock': 'Товар и остатки',
+  'opsGroup.suppliers': 'Поставщики и заказы',
+  'opsGroup.money': 'Деньги и документы',
+  'opsGroup.restaurant': 'Зал и кухня',
+  'opsGroup.setup': 'Настройка',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
   // The interface itself is fully translated. What is not, and cannot be, is
