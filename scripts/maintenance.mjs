@@ -21,7 +21,10 @@
  *   API_URL              where the API listens (default http://localhost:4000)
  *   MAINTENANCE_SECRET   the shared secret the endpoints require
  *   MAINTENANCE_INTERVAL_SECONDS  gap between ticks in --loop (default 60)
+ *   MAINTENANCE_HEARTBEAT_SECONDS  how often routine lines repeat (default 3600)
  */
+
+import { createQuietLog } from './lib/quiet.mjs';
 
 const TASKS = [
   // Fiscal first. A late receipt is a problem worth minutes; pruning keys is
@@ -47,9 +50,17 @@ const base = (process.env.API_URL || process.env.API || 'http://localhost:4000')
 const secret = process.env.MAINTENANCE_SECRET;
 const intervalMs = Math.max(10, Number(process.env.MAINTENANCE_INTERVAL_SECONDS || 60)) * 1000;
 
-function say(line) {
-  if (!asJson) console.log(`${new Date().toISOString()} ${line}`);
-}
+// Почему рутина печатается не каждый тик — в scripts/lib/quiet.mjs, там же это
+// и проверено тестами.
+const log = createQuietLog({
+  write: (line) => {
+    if (!asJson) console.log(`${new Date().toISOString()} ${line}`);
+  },
+  heartbeatMs: Math.max(0, Number(process.env.MAINTENANCE_HEARTBEAT_SECONDS || 3600)) * 1000,
+});
+
+const say = (line) => log.say(line);
+const routine = (key, line) => log.routine(key, line);
 
 /**
  * One task.
@@ -88,20 +99,26 @@ async function tick() {
   const results = {};
   let failed = false;
 
+  log.beginTick();
+
   for (const task of TASKS) {
     try {
       const result = await runTask(task);
       results[task.name] = result;
       if (task.name === 'fiscal' && result.skipped === 'not-configured') {
-        // Said once per tick rather than swallowed: on a pilot where a separate
-        // registered till does the fiscalising, this is the expected state, and
-        // a line saying so is how somebody knows the scheduler is alive.
-        say('fiscal: no OFD configured on this server, queue untouched');
+        // Рутина, а не событие: на пилоте, где фискалит отдельная
+        // зарегистрированная касса, это и есть нормальное состояние. Сказать
+        // один раз и потом раз в час — значит и не потерять этот факт, и не
+        // спрятать за ним настоящие строки.
+        routine('fiscal', 'fiscal: no OFD configured on this server, queue untouched');
       } else if (task.name === 'fiscal') {
-        say(
+        const line =
           `fiscal: attempted ${result.attempted ?? 0}, registered ${result.registered ?? 0}, ` +
-            `deferred ${result.deferred ?? 0}, abandoned ${result.abandoned ?? 0}`,
-        );
+          `deferred ${result.deferred ?? 0}, abandoned ${result.abandoned ?? 0}`;
+        // Нулевая попытка — это «очередь пуста», рутина. Любая ненулевая цифра
+        // это чек, который прошёл или не прошёл, и её прятать нельзя.
+        if ((result.attempted ?? 0) === 0) routine('fiscal', line);
+        else say(line);
       } else if (task.name === 'summary') {
         // Each task is asked to describe itself. This one used to fall into the
         // generic branch and print "summary: removed 0" — a line that names an
@@ -110,7 +127,10 @@ async function tick() {
         // than no line at all: it reads like the summary is deleting things.
         const waiting = result.remaining ? `, ${result.remaining} shop(s) left for the next tick` : '';
         if ((result.composed ?? 0) === 0) {
-          say(`summary: nothing to say to anybody (${result.skipped ?? 0} shops not due, ${result.locations ?? 0} looked at)${waiting}`);
+          routine(
+            'summary',
+            `summary: nothing to say to anybody (${result.skipped ?? 0} shops not due, ${result.locations ?? 0} looked at)${waiting}`,
+          );
         } else {
           say(
             `summary: composed ${result.composed}, delivered ${result.delivered ?? 0} ` +
@@ -120,8 +140,11 @@ async function tick() {
         for (const failure of result.failed ?? []) {
           say(`summary: could not count location ${failure.locationId}: ${failure.error}`);
         }
+      } else if ((result.removed ?? 0) === 0) {
+        routine(task.name, `${task.name}: removed 0`);
       } else {
-        say(`${task.name}: removed ${result.removed ?? 0}`);
+        // Удалили — значит было что удалять, и это видно всегда.
+        say(`${task.name}: removed ${result.removed}`);
       }
     } catch (err) {
       failed = true;
