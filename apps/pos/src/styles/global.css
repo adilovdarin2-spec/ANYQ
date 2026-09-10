@@ -577,3 +577,19 @@ button { cursor: pointer; }
   font-size: 0.74rem; font-weight: 500; color: var(--ink-muted);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+
+/* --- прайс поставщика ---------------------------------------------------- */
+/* Поле количества стоит прямо в строке: заказ собирается пробеганием сверху
+   вниз, и уводить человека в отдельный экран на каждую позицию — это тот же
+   вечер работы, который экран и должен убрать. */
+.qty-input {
+  width: 76px; flex-shrink: 0; text-align: right;
+  padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+  font: inherit; font-variant-numeric: tabular-nums;
+}
+.qty-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Подорожание красным, удешевление зелёным — то, ради чего прайс и открывают. */
+.price-up { color: var(--status-overdue); font-weight: 600; }
+.price-down { color: var(--status-active); font-weight: 600; }

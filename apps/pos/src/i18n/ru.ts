@@ -999,6 +999,36 @@ export const ru = {
   'cabinet.resetDo': 'Да, выдать новую',
   'fail.loadCabinet': 'Не удалось получить ссылку на кабинет',
 
+  // --- прайс поставщика ----------------------------------------------------
+  // Поставщик присылает не список изменений цен, а новый прайс. Сравнить его с
+  // прошлым руками невозможно — поэтому подорожание замечают на третьем
+  // месяце, по упавшей марже. Этот экран показывает его сразу.
+  'ops.priceList': 'Прайс поставщика',
+  'priceList.title': 'Прайс поставщика',
+  'priceList.intro': 'Загрузите прайс — покажем, что из него у вас есть, что подорожало и сколько чего брать по вашим же остаткам.',
+  'priceList.match': 'Разобрать прайс',
+  'priceList.matching': 'Разбираем…',
+  'priceList.matched': 'Есть у нас',
+  'priceList.unmatched': 'Нет у нас',
+  'priceList.dearer': 'Подорожало',
+  'priceList.cheaper': 'Подешевело',
+  'priceList.biggestRise': 'Сильнее всего подорожал «{name}» — на {percent} %.',
+  'priceList.supplier': 'Поставщик',
+  'priceList.noSupplier': 'Не указывать',
+  'priceList.onlyNeeded': 'Только то, что нужно заказать или изменилось в цене',
+  'priceList.lines': 'Позиции ({count})',
+  'priceList.onShelf': 'на полке {count}',
+  'priceList.cover': 'хватит на {days} дн.',
+  'priceList.notOurs': 'нет у нас',
+  'priceList.truncated': 'Показаны первые 500 строк. Остальное разберём следующим файлом.',
+  'priceList.create': 'Создать заказ: {count} поз. на {total}',
+  'priceList.draftOnly': 'Заказ создастся черновиком — его ещё нужно утвердить и отправить.',
+  'priceList.note': 'Собран из прайса поставщика',
+  'priceList.done': 'Черновик заказа создан',
+  'priceList.doneHint': 'Найдите его в разделе «Заказы поставщику» — там же он утверждается и отправляется.',
+  'priceList.another': 'Разобрать ещё один прайс',
+  'fail.matchPriceList': 'Не удалось разобрать прайс',
+
   // --- the language itself ------------------------------------------------
   'language.title': 'Язык',
   // The interface itself is fully translated. What is not, and cannot be, is

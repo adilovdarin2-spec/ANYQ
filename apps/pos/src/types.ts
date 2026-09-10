@@ -895,3 +895,39 @@ export interface CabinetInfo {
   passwordSetAt: string | null;
   lastLoginAt: string | null;
 }
+
+// --- прайс поставщика --------------------------------------------------------
+
+export interface PriceListLine {
+  line: number;
+  supplierName: string;
+  barcode: string | null;
+  supplierPrice: number | null;
+  minQuantity: number | null;
+  productId: string | null;
+  ourName: string | null;
+  ourUnit: string | null;
+  ourPurchasePrice: number | null;
+  matchedBy: 'barcode' | 'name' | 'none';
+  /** На сколько процентов дороже нашей последней закупки. null — не с чем сравнить. */
+  priceChangePercent: number | null;
+  available: number | null;
+  daysOfCover: number | null;
+  /** Сколько брать по нашему же расчёту дефицита, с учётом кратности поставщика. */
+  suggestedQuantity: number;
+}
+
+export interface PriceListMatch {
+  locationId: string;
+  problems: string[];
+  summary: {
+    rows: number;
+    matched: number;
+    unmatched: number;
+    dearer: number;
+    cheaper: number;
+    biggestRise: { name: string; percent: number } | null;
+  };
+  lines: PriceListLine[];
+  truncated: boolean;
+}

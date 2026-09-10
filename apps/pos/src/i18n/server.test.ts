@@ -105,6 +105,9 @@ const NOT_A_MESSAGE = new Set<string>([
   'ценазакупки', 'ценаопт', 'ценапозиции', 'ценапоступления', 'ценаприхода',
   'ценапродажиосновная', 'ценапродажная', 'ценареализации', 'ценарозничная',
   'ценатенге', 'штрихкодосновной', 'штрихкодшк', 'штрихкоды', 'штрихкодытовара',
+  // How a supplier's price list names its own columns. Input, like the rest.
+  'кратность', 'минзаказ', 'минимальнаяпартия', 'минпартия', 'оптоваяцена',
+  'прайс', 'ценапоставщика', 'ценапрайс',
   // Names of other companies' programs. A brand is not translated, and
   // translating one would stop the owner recognising his own.
   '1С', 'МойСклад', 'Мультикас',
