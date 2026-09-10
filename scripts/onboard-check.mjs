@@ -180,6 +180,89 @@ const run = async () => {
   }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
   step('stock equals the ledger', rec.status === 200 && rec.data?.mismatched === 0,
     `${rec.status} mismatched=${rec.data?.mismatched}`);
+
+  console.log('\n== the documents ==');
+  const docs = await fetch(`${BASE}/pos/documents?locationId=${locationId}&days=1`, {
+    headers: { Authorization: `Bearer ${posToken}` },
+  }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
+  step('the documents of the day are listed', docs.status === 200 && Array.isArray(docs.data?.documents),
+    `${docs.status} ${JSON.stringify(docs.data).slice(0, 200)}`);
+  // The number is assigned by a database trigger, so a deployment whose
+  // migrations did not all run produces documents without one — and nobody
+  // notices until the customer's bookkeeper asks.
+  const numbered = (docs.data?.documents ?? []).filter((d) => d.number);
+  step('every document has a number a bookkeeper can quote',
+    (docs.data?.documents ?? []).length > 0 && numbered.length === (docs.data?.documents ?? []).length,
+    `${numbered.length} of ${(docs.data?.documents ?? []).length}: ${numbered.map((d) => d.number).join(', ')}`);
+
+  console.log('\n== the owner gets in ==');
+  // The company was created with an owner, and that owner has no PIN — so
+  // until this happens they cannot sign in anywhere. Every real connection
+  // does this; the check did not, which is why it never noticed.
+  const owner = (detail?.users ?? []).find((u) => u.role === 'owner');
+  step('the company has an owner', !!owner, JSON.stringify(detail?.users ?? []).slice(0, 200));
+  if (!owner) return;
+
+  const ownerPin = String(800000 + Math.floor(Math.random() * 99999));
+  const gavePin = await call('PATCH', `/companies/${companyId}/users/${owner.id}`, {
+    name: owner.name, role: 'owner', posPin: ownerPin,
+  });
+  step('the owner is given a PIN', gavePin.status === 200, `${gavePin.status} ${JSON.stringify(gavePin.data).slice(0, 200)}`);
+
+  const ownerLogin = await call('POST', '/pos/login', { pin: ownerPin, deviceKey: 'bbbb2222-cccc-4ddd-8eee-ffff33334444' }, false);
+  if (!step('and can sign in at the till', ownerLogin.status === 200, `${ownerLogin.status} ${JSON.stringify(ownerLogin.data).slice(0, 200)}`)) return;
+
+  const cabinet = await fetch(`${BASE}/pos/cabinet`, {
+    headers: { Authorization: `Bearer ${ownerLogin.data.token}` },
+  }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
+  step('the owner gets a cabinet link', cabinet.status === 200 && typeof cabinet.data?.secret === 'string',
+    `${cabinet.status} ${JSON.stringify(cabinet.data).slice(0, 200)}`);
+  step('and the cabinet has no password until they set one', cabinet.data?.hasPassword === false,
+    JSON.stringify(cabinet.data));
+
+  if (typeof cabinet.data?.secret === 'string') {
+    const door = await call('GET', `/cabinet/${cabinet.data.secret}`, undefined, false);
+    // Before a password exists the link must show the company name and nothing
+    // else — otherwise whoever finds it first sees the takings.
+    step('the link shows the shop name and nothing more',
+      door.status === 200 && Object.keys(door.data ?? {}).sort().join(',') === 'company,needsPassword',
+      `${door.status} ${JSON.stringify(door.data)}`);
+  }
+
+  // The manager created earlier must not be able to reach it. Proven here on a
+  // real server rather than only in a test database.
+  const managerTry = await fetch(`${BASE}/pos/cabinet`, {
+    headers: { Authorization: `Bearer ${posToken}` },
+  }).then(async (r) => ({ status: r.status }));
+  step('a manager is refused the cabinet', managerTry.status === 403, `got ${managerTry.status}`);
+
+  console.log('\n== moving in from another program ==');
+  const systems = await fetch(`${BASE}/pos/import/systems`, {
+    headers: { Authorization: `Bearer ${posToken}` },
+  }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
+  step('the list of programs to move from is served',
+    systems.status === 200 && (systems.data?.systems ?? []).length > 0,
+    `${systems.status} ${(systems.data?.systems ?? []).length} systems`);
+
+  const preview = await fetch(`${BASE}/pos/import/products/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${posToken}` },
+    body: JSON.stringify({
+      system: 'other',
+      grid: [
+        ['Наименование', 'Штрихкод', 'Закуп', 'Цена', 'Остаток'],
+        ['Сахар 1 кг', '4870009998887', '500', '450', '20'],
+        ['Хлеб', '', '180', '280', '10'],
+      ],
+    }),
+  }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
+  step('a catalogue can be read before anything is written', preview.status === 200,
+    `${preview.status} ${JSON.stringify(preview.data).slice(0, 200)}`);
+  // The finding the whole sales approach rests on: an item priced below what it
+  // was bought for. If this comes back zero on a file that plainly has one,
+  // the analysis is not running on this deployment.
+  step('and the analysis finds the item sold at a loss', preview.data?.analysis?.atLoss?.count === 1,
+    JSON.stringify(preview.data?.analysis?.atLoss ?? null));
 };
 
 let crashed = null;
