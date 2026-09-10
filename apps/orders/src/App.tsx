@@ -76,6 +76,25 @@ export default function App() {
     });
   }
 
+  /**
+   * Количество, набранное числом, а не плюсиком.
+   *
+   * Витрина оптовая: заказывают мешками и дюжинами. Двенадцать нажатий на «+»
+   * ради двенадцати мешков — это не мелкое неудобство, а причина, по которой
+   * закупщик закроет вкладку и позвонит по телефону, как звонил раньше.
+   *
+   * Ноль убирает строку, остаток ограничивает сверху: витрина обещает то, что
+   * лежит на складе, и принять заказ на большее значило бы пообещать за
+   * поставщика то, чего у него нет.
+   */
+  function setQty(productId: string, qty: number) {
+    setCart((prev) =>
+      prev
+        .map((l) => (l.productId === productId ? { ...l, qty: Math.min(Math.max(qty, 0), l.maxStock) } : l))
+        .filter((l) => l.qty > 0),
+    );
+  }
+
   function changeQty(productId: string, delta: number) {
     setCart((prev) =>
       prev
@@ -157,8 +176,9 @@ export default function App() {
           cartQtyByProduct={cartQtyByProduct}
           onAdd={addToCart}
           onChangeQty={changeQty}
+          onSetQty={setQty}
         />
-        <CartSidebar cart={cart} total={cartTotal} onChangeQty={changeQty} onCheckout={() => setView('checkout')} />
+        <CartSidebar cart={cart} total={cartTotal} onChangeQty={changeQty} onSetQty={setQty} onCheckout={() => setView('checkout')} />
       </div>
       {cartCount > 0 && view === 'catalog' && <CartBar count={cartCount} total={cartTotal} onOpen={() => setView('checkout')} />}
 

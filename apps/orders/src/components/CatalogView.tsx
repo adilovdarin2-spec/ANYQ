@@ -11,6 +11,7 @@ interface Props {
   cartQtyByProduct: Record<string, number>;
   onAdd: (product: CatalogProduct) => void;
   onChangeQty: (productId: string, delta: number) => void;
+  onSetQty: (productId: string, qty: number) => void;
 }
 
 export function CatalogView({
@@ -23,6 +24,7 @@ export function CatalogView({
   cartQtyByProduct,
   onAdd,
   onChangeQty,
+  onSetQty,
 }: Props) {
   // A typed search always searches the full catalog, ignoring the category
   // filter — otherwise a customer could search for a real product, land on
@@ -79,6 +81,7 @@ export function CatalogView({
                 qty={cartQtyByProduct[p.id] ?? 0}
                 onAdd={() => onAdd(p)}
                 onChangeQty={(delta) => onChangeQty(p.id, delta)}
+                onSetQty={(qty) => onSetQty(p.id, qty)}
               />
             ))}
           </div>
