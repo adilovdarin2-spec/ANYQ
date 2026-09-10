@@ -140,6 +140,7 @@ import { WriteOffScreen } from './components/WriteOffScreen';
 import { BinsScreen } from './components/BinsScreen';
 import { BinCountScreen } from './components/BinCountScreen';
 import { OutboxBanner } from './components/OutboxBanner';
+import { TariffNotice } from './components/TariffNotice';
 import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { ImportScreen } from './components/ImportScreen';
 import { MigrationScreen } from './components/MigrationScreen';
@@ -2487,6 +2488,9 @@ export default function App() {
   if (!shift) {
     return (
       <>
+        {/* До открытия смены — то есть в ту самую минуту утром, когда ещё можно
+            успеть что-то сделать. */}
+        <TariffNotice tariff={session.tariff} />
         <OpenShiftScreen
           locations={session.locations}
           currentLocationId={currentLocationId}
@@ -2510,6 +2514,9 @@ export default function App() {
         pendingCount={pendingCount}
         stuckCount={stuckCount}
       />
+
+      {/* Весь день висит только в последние сутки — см. urgentOnly. */}
+      <TariffNotice tariff={session.tariff} urgentOnly />
 
       {view === 'sale' && isDesktop && (
         <div className="pos-main">

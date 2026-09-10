@@ -74,6 +74,12 @@ export interface PosSession {
   /** Which location the `products` stock figures belong to; null if the company has none. */
   catalogLocationId: string | null;
   products: Product[];
+  /**
+   * Сколько магазину осталось работать по тарифу. `daysLeft === 0` — сегодня
+   * последний день. Необязательное: сессия, сохранённая прошлой сборкой, этого
+   * поля не знает, и это не причина выкидывать кассира на экран входа.
+   */
+  tariff?: { validUntil: string; daysLeft: number } | null;
 }
 
 // Reloads the sale grid after the user switches location. Stock only means

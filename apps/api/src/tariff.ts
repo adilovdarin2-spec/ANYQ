@@ -1,10 +1,49 @@
+import { localDay, startOfLocalDay } from './kz-time';
+
 export type TariffState = 'active' | 'expired' | 'blocked' | 'missing';
 
-export function tariffState(tariff: { blocked: boolean; validUntil: Date } | null): TariffState {
+/**
+ * Работает ли магазин.
+ *
+ * `validUntil` — дата, а не мгновение: администратор вводит, по какое число
+ * оплачено, и значит тариф обязан работать весь этот день. Сравнение с «сейчас»
+ * давало обратное. Дата приходит из базы полуночью по UTC, то есть тариф «до 30
+ * сентября» умирал в пять утра тридцатого по Казахстану: магазин терял кассу
+ * утром того дня, за который заплатил, и узнавал об этом от кассира на первой
+ * продаже. Для кассы это не мелкая арифметическая неточность, а закрытый
+ * магазин.
+ *
+ * Поэтому сравниваем с началом наступившего в магазине дня: дата включительна, и
+ * тариф кончается в местную полночь.
+ *
+ * `now` параметром — иначе границу не проверить, кроме как дождаться её. Тесты,
+ * написанные «год назад / год вперёд», не проверяли ничего: неправа эта функция
+ * была именно на границе.
+ */
+export function tariffState(
+  tariff: { blocked: boolean; validUntil: Date } | null,
+  now: Date = new Date(),
+): TariffState {
   if (!tariff) return 'missing';
   if (tariff.blocked) return 'blocked';
-  if (tariff.validUntil < new Date()) return 'expired';
+  if (tariff.validUntil < startOfLocalDay(now)) return 'expired';
   return 'active';
+}
+
+/**
+ * Сколько дней магазину осталось работать. 0 — сегодня последний.
+ *
+ * Нужно, чтобы касса могла предупредить заранее. Без этого тариф кончается
+ * ровно так: в восемь утра кассир прикладывает палец, получает «обратитесь в
+ * поддержку», за ним очередь, а владелец узнаёт об этом звонком. Ни кассир, ни
+ * очередь исправить это не могут — а за три дня мог бы владелец.
+ *
+ * Считается по календарным дням магазина, а не по часам: «осталось 0.4 дня» —
+ * это не то, что человек может услышать и что-то с этим сделать.
+ */
+export function daysLeft(tariff: { validUntil: Date }, now: Date = new Date()): number {
+  const day = (at: Date) => Date.parse(`${localDay(at)}T00:00:00.000Z`);
+  return Math.round((day(tariff.validUntil) - day(now)) / 86_400_000);
 }
 
 export function tariffDenialMessage(state: TariffState): string {

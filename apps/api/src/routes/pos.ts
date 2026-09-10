@@ -5,7 +5,7 @@ import { cleanDeviceLabel, deviceLabel, readDeviceKey } from '../devices';
 import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
-import { tariffState, tariffDenialMessage } from '../tariff';
+import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
 import {
   blockStock,
   unblockStock,
@@ -189,6 +189,14 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
     catalogLocationId,
     products: groupedProducts,
+    // Сколько магазину осталось работать. Касса покажет это заранее, чтобы
+    // тариф не кончался впервые в восемь утра при очереди.
+    tariff: user.company.tariff
+      ? {
+          validUntil: user.company.tariff.validUntil.toISOString().slice(0, 10),
+          daysLeft: daysLeft(user.company.tariff),
+        }
+      : null,
   });
 });
 

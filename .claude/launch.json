@@ -4,38 +4,72 @@
     {
       "name": "admin",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:admin"],
+      "runtimeArgs": [
+        "run",
+        "dev:admin"
+      ],
       "port": 5183
     },
     {
       "name": "pos",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:pos"],
+      "runtimeArgs": [
+        "run",
+        "dev:pos"
+      ],
       "port": 5184
     },
     {
       "name": "orders",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:orders"],
+      "runtimeArgs": [
+        "run",
+        "dev:orders"
+      ],
       "port": 5185
     },
     {
       "name": "api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:api"],
+      "runtimeArgs": [
+        "run",
+        "dev:api"
+      ],
       "port": 4000
     },
     {
       "name": "pos-prod",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "apps/pos", "run", "start"],
+      "runtimeArgs": [
+        "--prefix",
+        "apps/pos",
+        "run",
+        "start"
+      ],
       "port": 4174
     },
     {
       "name": "orders-prod",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "apps/orders", "run", "start"],
+      "runtimeArgs": [
+        "--prefix",
+        "apps/orders",
+        "run",
+        "start"
+      ],
       "port": 4175
+    },
+    {
+      "name": "api-4010",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:api"
+      ],
+      "port": 4010,
+      "env": {
+        "PORT": "4010"
+      }
     }
   ]
 }

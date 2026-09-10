@@ -3,6 +3,7 @@ import { buildSummary, worthSending, type SummaryInput } from './daily-summary';
 import { sendPushToOwners } from './push';
 import { dashboardFor, replenishmentFor } from './routes/pos';
 import { tariffState } from './tariff';
+import { localDay, localHour } from './kz-time';
 
 /**
  * Утренний обход: посчитать вчерашний день каждому магазину и разбудить того,
@@ -25,16 +26,6 @@ import { tariffState } from './tariff';
 /** Меньше трёх дней запаса — это «кончается». */
 const RUNNING_OUT_DAYS = 3;
 
-/**
- * Часовой пояс Казахстана: с 2024 года он один на всю страну, UTC+5.
- *
- * Зашит числом намеренно. Альтернатива — часовой пояс на компанию, а это поле,
- * которое кто-то должен заполнить правильно, и первый же незаполненный означает
- * сводку в три часа ночи. Продукт продаётся в одной стране; когда это перестанет
- * быть правдой, здесь появится поле, а до тех пор честнее число с объяснением.
- */
-const KZ_OFFSET_HOURS = 5;
-
 /** Утро: между восемью и полуднем по местному времени. */
 const MORNING_FROM = 8;
 const MORNING_UNTIL = 12;
@@ -54,16 +45,6 @@ const MORNING_UNTIL = 12;
  * даже сотня.
  */
 const COMPANIES_PER_CALL = 5;
-
-/** Который час в магазине. */
-export function localHour(now: Date): number {
-  return (now.getUTCHours() + KZ_OFFSET_HOURS) % 24;
-}
-
-/** Какой сегодня день в магазине — как «2026-09-10». */
-export function localDay(now: Date): string {
-  return new Date(now.getTime() + KZ_OFFSET_HOURS * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
 
 /**
  * Пора ли этой компании получить сводку.
