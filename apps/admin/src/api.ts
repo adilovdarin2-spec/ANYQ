@@ -68,10 +68,15 @@ export function login(email: string, password: string, code?: string): Promise<L
 export interface MfaSetup {
   secret: string;
   otpauthUri: string;
+  /** Тот же ключ, что уже был выпущен и ждёт кода, а не только что созданный. */
+  reused: boolean;
 }
 
-export function startMfaSetup(token: string): Promise<MfaSetup> {
-  return request('/auth/mfa/setup', { method: 'POST' }, token);
+// `fresh` — осознанный отказ от ждущего ключа: телефон потеряли, начинаем
+// заново. Без него сервер возвращает уже выпущенный, чтобы «отсканировал и
+// вернулся позже» работало.
+export function startMfaSetup(token: string, fresh = false): Promise<MfaSetup> {
+  return request('/auth/mfa/setup', { method: 'POST', body: JSON.stringify({ fresh }) }, token);
 }
 
 export function enableMfa(token: string, code: string): Promise<{ enabled: boolean; recoveryCodes: string[] }> {
@@ -87,6 +92,7 @@ export function fetchMe(token: string): Promise<{
   email: string;
   name: string;
   mfaEnabled: boolean;
+  mfaPending: boolean;
   recoveryCodesLeft: number;
 }> {
   return request('/auth/me', {}, token);

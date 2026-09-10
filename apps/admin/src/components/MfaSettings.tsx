@@ -5,6 +5,8 @@ import type { MfaSetup } from '../api';
 interface Props {
   token: string;
   enabled: boolean;
+  /** Ключ уже выпущен и ждёт кода — сканировали, но до конца не дошли. */
+  pending: boolean;
   recoveryCodesLeft: number;
   onChanged: () => void;
 }
@@ -16,7 +18,7 @@ interface Props {
  * A password alone on that account is the whole platform's security, and
  * passwords are reused.
  */
-export function MfaSettings({ token, enabled, recoveryCodesLeft, onChanged }: Props) {
+export function MfaSettings({ token, enabled, pending, recoveryCodesLeft, onChanged }: Props) {
   const [setup, setSetup] = useState<MfaSetup | null>(null);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -103,10 +105,11 @@ export function MfaSettings({ token, enabled, recoveryCodesLeft, onChanged }: Pr
   if (setup) {
     return (
       <div className="field">
-        <h2 className="login-title">Отсканируйте ключ</h2>
+        <h2 className="login-title">{setup.reused ? 'Тот же ключ' : 'Отсканируйте ключ'}</h2>
         <p>
-          Откройте Google Authenticator или другое такое приложение и добавьте ключ. Если камера
-          не работает, введите его вручную:
+          {setup.reused
+            ? 'Это тот ключ, который уже был выпущен. Если он есть в приложении на телефоне, просто введите код; если нет — добавьте его сейчас.'
+            : 'Откройте Google Authenticator или другое такое приложение и добавьте ключ. Если камера не работает, введите его вручную:'}
         </p>
         <pre style={{ fontSize: '1.05rem', letterSpacing: '0.08em' }}>{setup.secret}</pre>
         <p style={{ wordBreak: 'break-all', fontSize: '0.85rem' }}>{setup.otpauthUri}</p>
@@ -128,6 +131,47 @@ export function MfaSettings({ token, enabled, recoveryCodesLeft, onChanged }: Pr
         >
           Включить
         </button>
+      </div>
+    );
+  }
+
+  // Ключ уже выпущен — значит человек сюда вернулся, а не начинает.
+  //
+  // Раньше этот экран в обоих случаях предлагал «Настроить», и нажатие выпускало
+  // новый ключ поверх ждущего. Код с уже отсканированного телефона после этого
+  // не подходил, а сервер отвечал «проверьте время на телефоне» — то есть
+  // человек шёл крутить часы вместо того, чтобы сканировать заново.
+  if (pending) {
+    return (
+      <div className="field">
+        <h2 className="login-title">Ключ уже выпущен</h2>
+        <p>
+          Его отсканировали или собирались отсканировать, но код так и не ввели. Пока код не
+          введён, второй фактор не включён и вход работает по-старому.
+        </p>
+        {error && <div className="login-error">{error}</div>}
+        <button
+          className="btn btn-primary"
+          style={{ marginTop: 16 }}
+          disabled={busy}
+          onClick={() => run(async () => setSetup(await startMfaSetup(token)))}
+        >
+          Ввести код
+        </button>
+        {/* Отдельной кнопкой и с прямым предупреждением: это единственный способ
+            потерять уже выданный ключ, и делать это случайно нельзя. */}
+        <button
+          className="btn btn-secondary"
+          style={{ marginTop: 10 }}
+          disabled={busy}
+          onClick={() => run(async () => setSetup(await startMfaSetup(token, true)))}
+        >
+          Выпустить новый ключ
+        </button>
+        <p style={{ fontSize: '0.85rem', marginTop: 8 }}>
+          Новый ключ отменяет старый: то, что уже добавлено в приложение на телефоне, перестанет
+          подходить.
+        </p>
       </div>
     );
   }

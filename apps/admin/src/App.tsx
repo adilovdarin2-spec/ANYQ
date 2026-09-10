@@ -32,13 +32,13 @@ const USER_KEY = 'anyq_admin_user';
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [view, setView] = useState<'companies' | 'security'>('companies');
-  const [me, setMe] = useState<{ mfaEnabled: boolean; recoveryCodesLeft: number } | null>(null);
+  const [me, setMe] = useState<{ mfaEnabled: boolean; mfaPending: boolean; recoveryCodesLeft: number } | null>(null);
 
   const loadMe = useCallback(async () => {
     if (!token) return;
     try {
       const data = await fetchMe(token);
-      setMe({ mfaEnabled: data.mfaEnabled, recoveryCodesLeft: data.recoveryCodesLeft });
+      setMe({ mfaEnabled: data.mfaEnabled, mfaPending: data.mfaPending, recoveryCodesLeft: data.recoveryCodesLeft });
     } catch {
       // A failed check must not lock anybody out of the app; the sidebar
       // simply does not mark the entry.
@@ -171,6 +171,7 @@ export default function App() {
             <MfaSettings
               token={token}
               enabled={me?.mfaEnabled ?? false}
+              pending={me?.mfaPending ?? false}
               recoveryCodesLeft={me?.recoveryCodesLeft ?? 0}
               onChanged={loadMe}
             />
