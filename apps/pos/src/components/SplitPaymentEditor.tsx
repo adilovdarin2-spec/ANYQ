@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Icon } from './Icon';
+import type { IconName } from './Icon';
 import type { PaymentLine, PaymentMethod } from '../types';
 
 import { formatMoney } from '../utils';
@@ -17,7 +19,10 @@ interface Props {
 // offering the button is better than failing after it is pressed.
 const SPLITTABLE: PaymentMethod[] = ['cash', 'kaspi', 'card'];
 
-const ICONS: Record<string, string> = { cash: '💵', kaspi: '▦', card: '💳' };
+// Те же значки, что на экране оплаты: эти два экрана стоят подряд, и разные
+// картинки для одного и того же способа оплаты — это вопрос «а это точно то же
+// самое?» в момент, когда кассир делит сумму на две.
+const ICONS: Record<string, IconName> = { cash: 'cash', kaspi: 'qr', card: 'card' };
 
 const METHOD_PHRASES: Record<string, PhraseKey> = {
   cash: 'payment.cash',
@@ -71,7 +76,7 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
         {SPLITTABLE.map((method) => (
           <div key={method} className="count-row">
             <div>
-              <div className="li-name">{ICONS[method]} {t(METHOD_PHRASES[method])}</div>
+              <div className="li-name payment-option-label"><Icon name={ICONS[method]} size={18} /> {t(METHOD_PHRASES[method])}</div>
               <button
                 className="btn btn-ghost split-fill"
                 onClick={() => fillRemainder(method)}

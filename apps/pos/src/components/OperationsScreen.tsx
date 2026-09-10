@@ -1,9 +1,11 @@
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
+import { Icon } from './Icon';
+import type { IconName } from './Icon';
 
 export interface OperationItem {
   key: string;
-  icon: string;
+  icon: IconName;
   label: string;
   badge?: number;
   onClick: () => void;
@@ -52,7 +54,7 @@ export function OperationsScreen({ items }: Props) {
             <div className="operations-group-title">{t(group.title)}</div>
             {inGroup.map((item) => (
               <button key={item.key} type="button" className="operations-row" onClick={item.onClick}>
-                <span className="operations-icon">{item.icon}</span>
+                <span className="operations-icon"><Icon name={item.icon} /></span>
                 <span className="operations-label">{item.label}</span>
                 {!!item.badge && <span className="operations-badge">{item.badge}</span>}
                 <span className="operations-chevron">›</span>

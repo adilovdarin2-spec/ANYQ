@@ -532,42 +532,42 @@ export default function App() {
 
   const operationsItems: OperationItem[] = [];
   if (hasSupply) {
-    operationsItems.push({ key: 'orders', group: 'suppliers', icon: '📦', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
+    operationsItems.push({ key: 'orders', group: 'suppliers', icon: 'orders', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
   }
   if (hasPharmacy) {
-    operationsItems.push({ key: 'batches', group: 'stock', icon: '💊', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
+    operationsItems.push({ key: 'batches', group: 'stock', icon: 'batches', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
   }
   if (hasWarehouse) {
     operationsItems.push(
-      { key: 'transfers', group: 'stock', icon: '🔄', label: t('ops.transfers'), onClick: handleShowTransfers },
-      { key: 'incoming', group: 'stock', icon: '📥', label: t('ops.incoming'), onClick: handleShowIncoming },
-      { key: 'counts', group: 'stock', icon: '📋', label: t('ops.counts'), onClick: handleShowCounts },
-      { key: 'returns', group: 'money', icon: '↩️', label: t('ops.returns'), onClick: handleShowReturns },
-      { key: 'replenishment', group: 'suppliers', icon: '🛒', label: t('ops.replenishment'), onClick: handleShowReplenishment },
-      { key: 'purchase-orders', group: 'suppliers', icon: '📄', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders },
-      { key: 'bins', group: 'stock', icon: '🗄️', label: t('ops.bins'), onClick: handleShowBins },
-      { key: 'bin-count', group: 'stock', icon: '🔢', label: t('ops.binCount'), onClick: handleShowBinCount },
-      { key: 'reconciliation', group: 'money', icon: '⚖️', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
-      { key: 'import', group: 'setup', icon: '📥', label: t('ops.import'), onClick: handleShowImport },
-      { key: 'migrate', group: 'setup', icon: '📦', label: t('ops.migrate'), onClick: handleShowMigrate },
-      { key: 'delivery', group: 'suppliers', icon: '📄', label: t('ops.delivery'), onClick: handleShowDelivery },
-      { key: 'price-list', group: 'suppliers', icon: '🧾', label: t('ops.priceList'), onClick: handleShowPriceList },
-      { key: 'cabinet', group: 'setup', icon: '🔑', label: t('ops.cabinet'), onClick: handleShowCabinet },
-      { key: 'settlements', group: 'money', icon: '🤝', label: t('ops.settlements'), onClick: handleShowSettlements },
-      { key: 'write-offs', group: 'stock', icon: '🗑️', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
-      { key: 'supplier-returns', group: 'suppliers', icon: '📤', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
-      { key: 'fiscal', group: 'money', icon: '🧾', label: t('ops.fiscal'), onClick: handleShowFiscal },
-      { key: 'production', group: 'stock', icon: '🏭', label: t('ops.production'), onClick: handleShowProduction },
+      { key: 'transfers', group: 'stock', icon: 'transfer', label: t('ops.transfers'), onClick: handleShowTransfers },
+      { key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming },
+      { key: 'counts', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts },
+      { key: 'returns', group: 'money', icon: 'return', label: t('ops.returns'), onClick: handleShowReturns },
+      { key: 'replenishment', group: 'suppliers', icon: 'replenish', label: t('ops.replenishment'), onClick: handleShowReplenishment },
+      { key: 'purchase-orders', group: 'suppliers', icon: 'doc', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders },
+      { key: 'bins', group: 'stock', icon: 'bins', label: t('ops.bins'), onClick: handleShowBins },
+      { key: 'bin-count', group: 'stock', icon: 'binCount', label: t('ops.binCount'), onClick: handleShowBinCount },
+      { key: 'reconciliation', group: 'money', icon: 'scales', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
+      { key: 'import', group: 'setup', icon: 'import', label: t('ops.import'), onClick: handleShowImport },
+      { key: 'migrate', group: 'setup', icon: 'migrate', label: t('ops.migrate'), onClick: handleShowMigrate },
+      { key: 'delivery', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery },
+      { key: 'price-list', group: 'suppliers', icon: 'priceList', label: t('ops.priceList'), onClick: handleShowPriceList },
+      { key: 'cabinet', group: 'setup', icon: 'key', label: t('ops.cabinet'), onClick: handleShowCabinet },
+      { key: 'settlements', group: 'money', icon: 'wallet', label: t('ops.settlements'), onClick: handleShowSettlements },
+      { key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
+      { key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
+      { key: 'fiscal', group: 'money', icon: 'receipt', label: t('ops.fiscal'), onClick: handleShowFiscal },
+      { key: 'production', group: 'stock', icon: 'factory', label: t('ops.production'), onClick: handleShowProduction },
     );
   }
   if (hasRestaurant) {
     operationsItems.push(
-      { key: 'floorplan', group: 'restaurant', icon: '🍽️', label: t('floor.title'), onClick: handleShowFloorPlan },
-      { key: 'kds', group: 'restaurant', icon: '🔥', label: t('kds.title'), onClick: handleShowKds },
+      { key: 'floorplan', group: 'restaurant', icon: 'table', label: t('floor.title'), onClick: handleShowFloorPlan },
+      { key: 'kds', group: 'restaurant', icon: 'flame', label: t('kds.title'), onClick: handleShowKds },
     );
   }
   if (hasTerminal) {
-    operationsItems.push({ key: 'stock-history', group: 'money', icon: '📜', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
+    operationsItems.push({ key: 'stock-history', group: 'money', icon: 'history', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
   }
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 

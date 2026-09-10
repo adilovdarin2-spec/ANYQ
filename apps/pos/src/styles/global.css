@@ -523,7 +523,12 @@ button { cursor: pointer; }
   padding: 14px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 12px;
   background: var(--surface); text-align: left;
 }
-.operations-icon { font-size: 1.3rem; flex-shrink: 0; }
+/* Значок операции: рисованный и приглушённый.
+   До этого здесь стояли эмодзи — синие, красные, фиолетовые, в вертикальном
+   списке с подписями у каждой строки. Цвет ничего не подсказывал: он был у всех
+   и разный, а список из-за него читался как лист наклеек. Теперь один вес и
+   один цвет, а внимание достаётся словам, ради которых сюда и заходят. */
+.operations-icon { flex-shrink: 0; display: inline-flex; color: var(--ink-muted); }
 .operations-label { flex: 1; font-size: 0.92rem; font-weight: 600; }
 .operations-badge {
   background: var(--status-overdue); color: #fff; font-size: 0.7rem; font-weight: 800;
