@@ -57,6 +57,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'cart.change': 'өзгерту',
   'cart.less': 'Азырақ',
   'cart.more': 'Көбірек',
+  'cart.quantity': 'Саны',
   'cart.perKg': 'кг үшін',
   'cart.perPiece': 'дана үшін',
   'cart.subtotal': 'Аралық жиын',
