@@ -18,6 +18,7 @@ interface Props {
   onChangeLoyalty: (selection: LoyaltySelection | null) => void;
   onLookupCustomer: (phone: string) => Promise<CustomerLookupResult>;
   onChangeQty: (lineId: string, delta: number) => void;
+  onSetQty: (lineId: string, qty: number) => void;
   onEditWeight: (line: CartLine) => void;
   onRemove: (lineId: string) => void;
   onBack: () => void;
@@ -37,6 +38,7 @@ export function CartSheet({
   onChangeLoyalty,
   onLookupCustomer,
   onChangeQty,
+  onSetQty,
   onEditWeight,
   onRemove,
   onBack,
@@ -63,7 +65,17 @@ export function CartSheet({
             ) : (
               <div className="qty-stepper">
                 <button onClick={() => onChangeQty(line.id, -1)} aria-label={t('cart.less')}>–</button>
-                <span>{line.qty}</span>
+                {/* Поле, а не надпись: двенадцать пачек набираются вводом, а не
+                    одиннадцатью касаниями «плюса». */}
+                <input
+                  className="qty-field"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={line.qty}
+                  aria-label={t('cart.quantity')}
+                  onChange={(e) => onSetQty(line.id, Math.floor(Number(e.target.value) || 0))}
+                />
                 <button onClick={() => onChangeQty(line.id, 1)} aria-label={t('cart.more')}>+</button>
               </div>
             )}

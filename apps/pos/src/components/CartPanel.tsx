@@ -18,6 +18,7 @@ interface Props {
   onChangeLoyalty: (selection: LoyaltySelection | null) => void;
   onLookupCustomer: (phone: string) => Promise<CustomerLookupResult>;
   onChangeQty: (lineId: string, delta: number) => void;
+  onSetQty: (lineId: string, qty: number) => void;
   onEditWeight: (line: CartLine) => void;
   onRemove: (lineId: string) => void;
   onCheckout: () => void;
@@ -36,6 +37,7 @@ export function CartPanel({
   onChangeLoyalty,
   onLookupCustomer,
   onChangeQty,
+  onSetQty,
   onEditWeight,
   onRemove,
   onCheckout,
@@ -58,7 +60,17 @@ export function CartPanel({
             ) : (
               <div className="qty-stepper">
                 <button onClick={() => onChangeQty(line.id, -1)} aria-label={t('cart.less')}>–</button>
-                <span>{line.qty}</span>
+                {/* То же поле, что в корзине на телефоне: за прилавком с
+                    клавиатурой набрать число тем более быстрее, чем нажимать. */}
+                <input
+                  className="qty-field"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={line.qty}
+                  aria-label={t('cart.quantity')}
+                  onChange={(e) => onSetQty(line.id, Math.floor(Number(e.target.value) || 0))}
+                />
                 <button onClick={() => onChangeQty(line.id, 1)} aria-label={t('cart.more')}>+</button>
               </div>
             )}

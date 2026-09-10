@@ -58,6 +58,7 @@ export const ru = {
   'cart.change': 'изменить',
   'cart.less': 'Меньше',
   'cart.more': 'Больше',
+  'cart.quantity': 'Количество',
   'cart.perKg': 'за кг',
   'cart.perPiece': 'за шт.',
   'cart.subtotal': 'Подытог',

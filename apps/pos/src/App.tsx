@@ -2453,6 +2453,21 @@ export default function App() {
     );
   }
 
+  /**
+   * Количество вводом, а не одиннадцатью нажатиями на «плюс».
+   *
+   * Двенадцать пачек — обычная покупка в магазине у дома, и до этого кассир
+   * набирал её одиннадцатью касаниями подряд, глядя не на покупателя, а на
+   * экран. Плюс и минус остаются: для одной-двух штук они быстрее ввода.
+   *
+   * Ноль убирает строку — так же, как минус до нуля. Отдельная «пустая строка с
+   * нулём» не значит ничего: товар либо в чеке, либо нет.
+   */
+  function setQty(lineId: string, qty: number) {
+    const clean = Number.isFinite(qty) ? Math.max(0, Math.floor(qty)) : 0;
+    setCart((prev) => prev.map((l) => (l.id === lineId ? { ...l, qty: clean } : l)).filter((l) => l.qty > 0));
+  }
+
   function removeLine(lineId: string) {
     setCart((prev) => prev.filter((l) => l.id !== lineId));
   }
@@ -2633,6 +2648,7 @@ export default function App() {
             onChangeLoyalty={setLoyalty}
             onLookupCustomer={lookupCustomer}
             onChangeQty={changeQty}
+            onSetQty={setQty}
             onEditWeight={handleEditWeightLine}
             onRemove={removeLine}
             onCheckout={() => setView('payment')}
@@ -2675,6 +2691,7 @@ export default function App() {
           onChangeLoyalty={setLoyalty}
           onLookupCustomer={lookupCustomer}
           onChangeQty={changeQty}
+          onSetQty={setQty}
           onEditWeight={handleEditWeightLine}
           onRemove={removeLine}
           onBack={() => setView('sale')}
