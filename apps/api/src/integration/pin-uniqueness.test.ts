@@ -146,3 +146,67 @@ describe('POS PINs', () => {
     expect(renamed.body.name).toBe('Асель Каримова');
   });
 });
+
+/**
+ * PIN владельца при создании компании.
+ *
+ * Компания создавалась с владельцем **без** PIN, то есть владелец не мог войти
+ * ни в кассу, ни в свой кабинет, пока кто-то не вспомнит зайти в карточку
+ * сотрудников и дописать код. Никто об этом не напоминал. Обнаружилось это на
+ * проверке подключения к боевому серверу — там пришлось дописывать PIN
+ * отдельным шагом, и стало видно, что каждое настоящее подключение делает то же
+ * самое, а продукт про это молчит.
+ */
+describe('владелец при создании компании', () => {
+  const company = (owner: Record<string, unknown>) => ({
+    name: `Магазин ${Math.random().toString(36).slice(2, 8)}`,
+    phone: '+7 700 000 00 00',
+    location: { name: 'Точка', type: 'shop', address: '' },
+    owner,
+    tariff: { modules: ['shop'], supportLevel: 'basic', validUntil: '2030-01-01' },
+  });
+
+  it('получает PIN сразу и может войти в кассу', async () => {
+    const token = await adminToken();
+    const created = await api(token, 'POST', '/companies', company({ name: 'Аян Бекова', phone: '', posPin: '7351' }));
+    expect(created.status).toBe(201);
+
+    const login = await api(null, 'POST', '/pos/login', { pin: '7351' });
+    expect(login.status).toBe(200);
+    expect(login.body.user.role).toBe('owner');
+  });
+
+  it('без PIN компания создаётся по-прежнему', async () => {
+    // Поле необязательное: раздать код позже можно, и старые клиенты API про
+    // него не знают.
+    const token = await adminToken();
+    const created = await api(token, 'POST', '/companies', company({ name: 'Без кода', phone: '' }));
+    expect(created.status).toBe(201);
+    expect(created.body.users[0].posPin).toBe('');
+  });
+
+  it('чужой PIN не отдаётся', async () => {
+    const token = await adminToken();
+    const existing = await createFixture();
+    const created = await api(token, 'POST', '/companies', company({ name: 'Тёзка', phone: '', posPin: existing.pin }));
+    expect(created.status).toBe(409);
+    expect(created.body.error).toContain('PIN');
+  });
+
+  it('и компания при этом не создаётся', async () => {
+    // Отказ на середине, оставивший компанию без владельца, был бы хуже отказа.
+    const token = await adminToken();
+    const existing = await createFixture();
+    const before = await prisma.company.count();
+    await api(token, 'POST', '/companies', company({ name: 'Тёзка', phone: '', posPin: existing.pin }));
+    expect(await prisma.company.count()).toBe(before);
+  });
+
+  it('PIN не из четырёх-шести цифр отклоняется', async () => {
+    const token = await adminToken();
+    for (const bad of ['12', '1234567', 'абвг', '12a4']) {
+      const res = await api(token, 'POST', '/companies', company({ name: 'Кривой код', phone: '', posPin: bad }));
+      expect(res.status, bad).toBe(400);
+    }
+  });
+});
