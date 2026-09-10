@@ -12,6 +12,7 @@
 //   node scripts/backup.mjs verify              # create, restore, prove, drop
 //   node scripts/backup.mjs verify --file X     # prove an existing dump
 //   node scripts/backup.mjs restore --file X --into anyq_restored
+//   node scripts/backup.mjs move --to postgres://…   # переезд на другой сервер
 //
 // A dump that only exists on the machine running the database is not a backup
 // of that machine. `--mirror` (or ANYQ_BACKUP_MIRROR) copies it to a second
@@ -124,16 +125,18 @@ const CLIENT = { image: null, hostArgs: [] };
 /** Куда вставить `-h host -p port`: сразу после имени утилиты. */
 const TOOLS = new Set(['pg_dump', 'psql', 'pg_restore', 'pg_isready']);
 
-function withHost(args) {
-  if (CLIENT.hostArgs.length === 0) return args;
+function withHost(args, client) {
+  if (client.hostArgs.length === 0) return args;
   const at = args.findIndex((a) => TOOLS.has(a));
   if (at < 0) return args;
-  return [...args.slice(0, at + 1), ...CLIENT.hostArgs, ...args.slice(at + 1)];
+  return [...args.slice(0, at + 1), ...client.hostArgs, ...args.slice(at + 1)];
 }
 
-function pg(rawArgs, { input, onStdout } = {}) {
-  const args = withHost(rawArgs);
-  const image = CLIENT.image;
+// `client` — параметр, а не всегда CLIENT: переезд читает с одного сервера и
+// пишет на другой в пределах одного запуска.
+function pg(rawArgs, { input, onStdout, client = CLIENT } = {}) {
+  const args = withHost(rawArgs, client);
+  const image = client.image;
   const docker = image ? ['run', '--rm', '-i', image, ...args] : ['exec', '-i', CONTAINER, ...args];
   return new Promise((resolve, reject) => {
     const child = spawn('docker', docker, {
@@ -162,13 +165,36 @@ function pg(rawArgs, { input, onStdout } = {}) {
   });
 }
 
-async function psql(database, sql, { user, password }) {
+async function psql(database, sql, { user, password }, client = CLIENT) {
   let out = '';
   await pg(
     ['env', `PGPASSWORD=${password}`, 'psql', '-U', user, '-d', database, '-t', '-A', '-F', '\t', '-c', sql],
-    { onStdout: (stream) => stream.on('data', (chunk) => (out += chunk.toString())) },
+    { onStdout: (stream) => stream.on('data', (chunk) => (out += chunk.toString())), client },
   );
   return out.trim();
+}
+
+/**
+ * Чем и куда подключаться к серверу, названному URL-ом.
+ *
+ * То же решение, что `chooseClient` принимает для своей базы, но для чужой:
+ * переезд — это два сервера в одном запуске, и версию клиента для второго
+ * нужно спросить у второго, а не унаследовать у первого.
+ */
+async function clientFor(url) {
+  const db = parseUrl(url);
+  const major = await serverMajor(url);
+  // Сервер всегда чужой — даже если он на этой же машине. Для базы в соседнем
+  // контейнере `docker exec anyq-db` подошёл бы, но цель переезда это не наша
+  // dev-база, и угадывать, в каком контейнере она лежит, не нужно: к ней есть
+  // адрес. А внутри контейнера с клиентом «localhost» — это сам контейнер,
+  // поэтому для него адрес переписывается, хотя версию мы спросили по тому,
+  // который написан.
+  const host = db.host === 'localhost' || db.host === '127.0.0.1' ? 'host.docker.internal' : db.host;
+  return {
+    db,
+    client: { image: `postgres:${major}-bookworm`, hostArgs: ['-h', host, '-p', String(db.port)] },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -307,18 +333,18 @@ async function restore(file, into, { force = false } = {}) {
 
 // Counting for real rather than trusting the planner's estimate: the estimate
 // is fine for a dashboard and useless as evidence.
-async function rowCounts(database, db) {
+async function rowCounts(database, db, client = CLIENT) {
   const names = (await psql(database, `
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
-    ORDER BY tablename`, db))
+    ORDER BY tablename`, db, client))
     .split('\n')
     .filter(Boolean);
 
   if (names.length === 0) return new Map();
 
   const union = names.map((n) => `SELECT '${n}' AS t, count(*) AS c FROM "${n}"`).join(' UNION ALL ');
-  const rows = (await psql(database, union, db)).split('\n').filter(Boolean);
+  const rows = (await psql(database, union, db, client)).split('\n').filter(Boolean);
   return new Map(rows.map((line) => {
     const [table, count] = line.split('\t');
     return [table, Number(count)];
@@ -341,6 +367,126 @@ const LEDGER_CHECK = `
      AND m."binLocation" = s."binLocation"
     WHERE s.quantity <> coalesce(m.moved, 0)
   ) mismatches`;
+
+/** Где стоит схема. Расхождение здесь значит, что копия поднимется и упадёт на первой записи. */
+const LATEST_MIGRATION =
+  'SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC NULLS LAST LIMIT 1';
+
+// ---------------------------------------------------------------------------
+// Переезд на другой сервер
+// ---------------------------------------------------------------------------
+
+/**
+ * Переносит базу на чужой сервер и доказывает, что перенеслась.
+ *
+ * Нужно это не ради удобства. Боевая база лежит в Сан-Франциско, а в ней имена,
+ * телефоны, адреса доставки и ИИН — персональные данные граждан РК, которые
+ * закон требует хранить на территории Казахстана. Команда ниже — ответ на это
+ * требование: один запуск, и копия стоит на сервере в Казахстане, проверенная
+ * тем же способом, которым проверяется любая копия.
+ *
+ * Трафик она не переключает и переключать не должна. Перевести приложение на
+ * новую базу значит поменять DATABASE_URL у четырёх служб и выбрать минуту,
+ * когда магазины останутся без кассы; это решение человека, а не скрипта.
+ * Поэтому в конце — не «готово», а что именно делать дальше.
+ *
+ * Базу на той стороне не создаём: у управляемого хостинга на это обычно и нет
+ * прав, зато база там уже есть — её дают вместе с адресом. Непустую не трогаем
+ * без --force: самая дорогая ошибка здесь — залить дамп поверх базы, которая
+ * уже работает.
+ */
+async function moveTo(url, { file = null, force = false } = {}) {
+  const source = parseUrl(databaseUrl());
+  const { db: target, client } = await clientFor(url);
+
+  if (target.host === source.host && target.port === source.port && target.database === source.database) {
+    throw new Error('Отказ: --to указывает на ту же базу, с которой снимается копия.');
+  }
+
+  const tables = Number(
+    await psql(
+      target.database,
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'",
+      target,
+      client,
+    ),
+  );
+  if (tables > 0 && !force) {
+    throw new Error(
+      `Отказ: в «${target.database}» на ${target.host} уже ${tables} таблиц. ` +
+        'Повторите с --force, если её содержимое нужно затереть.',
+    );
+  }
+  if (tables > 0) {
+    console.log(`Очищаю «${target.database}»: было ${tables} таблиц.`);
+    await psql(target.database, 'DROP SCHEMA public CASCADE; CREATE SCHEMA public', target, client);
+  }
+
+  const dump = file ?? (await create());
+  console.log(`Переношу ${dump} → ${target.host}/${target.database}…`);
+
+  await pg(
+    [
+      'env',
+      `PGPASSWORD=${target.password}`,
+      'psql',
+      '-U',
+      target.user,
+      '-d',
+      target.database,
+      '-v',
+      'ON_ERROR_STOP=1',
+      '--quiet',
+    ],
+    { input: createReadStream(dump).pipe(createGunzip()), client },
+  );
+
+  // Та же проверка, что у verify, и по той же причине: перенос, после которого
+  // остаток не сходится с журналом, — это не перенос, а потеря данных, которая
+  // выглядит как успех.
+  const failures = [];
+  const [before, after] = await Promise.all([
+    rowCounts(source.database, source),
+    rowCounts(target.database, target, client),
+  ]);
+  for (const [table, count] of before) {
+    const moved = after.get(table);
+    if (moved === undefined) failures.push(`таблица «${table}» не перенеслась`);
+    else if (moved !== count) failures.push(`«${table}»: было ${count}, перенесено ${moved}`);
+  }
+
+  const [sourceMigration, movedMigration] = await Promise.all([
+    psql(source.database, LATEST_MIGRATION, source),
+    psql(target.database, LATEST_MIGRATION, target, client),
+  ]);
+  if (sourceMigration !== movedMigration) {
+    failures.push(`миграции разошлись: ${sourceMigration || '—'} против ${movedMigration || '—'}`);
+  }
+
+  const mismatches = Number(await psql(target.database, LEDGER_CHECK, target, client));
+  if (mismatches > 0) failures.push(`на новом сервере остаток не сходится с журналом: ${mismatches} строк`);
+
+  const totalRows = [...before.values()].reduce((sum, n) => sum + n, 0);
+  console.log(`Таблиц: ${before.size}, строк: ${totalRows}`);
+  console.log(`Миграция: ${movedMigration || '—'}`);
+  console.log(`Сверка остатка с журналом: ${mismatches === 0 ? 'сходится' : `расхождений ${mismatches}`}`);
+
+  if (failures.length) {
+    console.error('\nПЕРЕНОС НЕ ПРОШЁЛ ПРОВЕРКУ — приложение переключать нельзя:');
+    for (const failure of failures) console.error(`  — ${failure}`);
+    process.exitCode = 1;
+    return false;
+  }
+
+  console.log(`\nБаза перенесена на ${target.host} и проверена.`);
+  console.log('Приложение всё ещё работает со старой базой — переключение это отдельный шаг:');
+  console.log(
+    '  1. Предупредите магазины о перерыве: всё, что продано между копией и переключением, останется в старой базе.',
+  );
+  console.log('  2. Поменяйте DATABASE_URL у api, admin, pos и orders на новый адрес.');
+  console.log('  3. Снимите копию уже с новой базы и проверьте её: node scripts/backup.mjs verify');
+  return true;
+}
 
 async function verify(file) {
   const db = parseUrl(databaseUrl());
@@ -372,8 +518,8 @@ async function verify(file) {
     //    migration comes back up and then fails on the first write, which is a
     //    worse outcome than not coming up at all.
     const [sourceMigration, restoredMigration] = await Promise.all([
-      psql(db.database, `SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC NULLS LAST LIMIT 1`, db),
-      psql(scratch, `SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC NULLS LAST LIMIT 1`, db),
+      psql(db.database, LATEST_MIGRATION, db),
+      psql(scratch, LATEST_MIGRATION, db),
     ]);
     if (sourceMigration !== restoredMigration) {
       failures.push(`миграции разошлись: ${sourceMigration || '—'} против ${restoredMigration || '—'}`);
@@ -489,8 +635,17 @@ try {
       console.log(`Восстановлено в «${into}».`);
       break;
     }
+    case 'move': {
+      const to = flag('to');
+      if (!to || to === true) throw new Error('Укажите --to <postgres://…> — адрес базы, куда переносим.');
+      const file = flag('file');
+      await moveTo(to, { file: typeof file === 'string' ? file : null, force: Boolean(flag('force')) });
+      break;
+    }
     default:
-      console.log('Команды: create | list | verify | restore --file X --into Y [--force]');
+      console.log(
+        'Команды: create | list | verify | restore --file X --into Y [--force] | move --to <url> [--file X] [--force]',
+      );
       process.exitCode = 1;
   }
 } catch (err) {
