@@ -40,7 +40,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 }
 .order-header-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
 .order-brand-mark {
-  width: 40px; height: 40px; border-radius: 12px; background: var(--accent); color: #fff;
+  width: 40px; height: 40px; border-radius: 12px; background: var(--accent-fill); color: var(--on-accent);
   display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem;
   font-family: Georgia, serif; flex-shrink: 0;
 }
@@ -67,7 +67,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
   flex-shrink: 0; padding: 10px 16px; min-height: 40px; border-radius: 20px; border: 1px solid var(--border);
   background: var(--surface); color: var(--ink-muted); font-size: 0.85rem; font-weight: 600; white-space: nowrap;
 }
-.category-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.category-chip.on { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
 
 /* search */
 .order-search { margin-bottom: 16px; }
@@ -102,7 +102,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
    дешевле, чем один промах мимо товара. */
 .add-btn {
   padding: 11px 16px; min-height: 44px; border-radius: 10px; border: none;
-  background: var(--accent); color: #fff; font-weight: 700; font-size: 0.86rem; flex-shrink: 0;
+  background: var(--accent-fill); color: var(--on-accent); font-weight: 700; font-size: 0.86rem; flex-shrink: 0;
 }
 .add-btn:disabled { background: var(--border); color: var(--ink-muted); }
 
@@ -117,7 +117,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 }
 .order-cart-bar-inner {
   width: 100%; max-width: 728px; border: none; text-align: left; font: inherit;
-  background: var(--accent); color: #fff; border-radius: 14px;
+  background: var(--accent-fill); color: var(--on-accent); border-radius: 14px;
   padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
   box-shadow: var(--shadow-md);
 }
@@ -164,7 +164,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 
 .btn { border: none; border-radius: 10px; padding: 13px 18px; font-size: 0.95rem; font-weight: 700; }
 .btn-block { width: 100%; }
-.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary { background: var(--accent-fill); color: var(--on-accent); }
 .btn-primary:disabled { background: var(--border); color: var(--ink-muted); }
 .btn-secondary { background: var(--surface-2); color: var(--ink); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -176,7 +176,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 /* state screen (loading / error / landing) */
 .state-screen { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
 .state-card { max-width: 420px; text-align: center; }
-.state-card .mark { width: 56px; height: 56px; border-radius: 16px; background: var(--accent); color: #fff; font-family: Georgia, serif; font-weight: 700; font-size: 1.4rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; }
+.state-card .mark { width: 56px; height: 56px; border-radius: 16px; background: var(--accent-fill); color: var(--on-accent); font-family: Georgia, serif; font-weight: 700; font-size: 1.4rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; }
 .state-card h1 { font-family: Georgia, serif; font-size: 1.25rem; margin: 0 0 10px; }
 .state-card p { color: var(--ink-muted); font-size: 0.92rem; line-height: 1.55; margin: 0; }
 
@@ -234,7 +234,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .tier-card.popular { border-color: var(--accent); border-width: 2px; padding: 21px; }
 .tier-badge {
   position: absolute; top: -12px; left: 22px; white-space: nowrap;
-  background: var(--accent); color: #fff; font-size: 0.68rem; font-weight: 800;
+  background: var(--accent-fill); color: var(--on-accent); font-size: 0.68rem; font-weight: 800;
   padding: 4px 11px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.03em;
   box-shadow: var(--shadow-sm);
 }
@@ -488,7 +488,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .step-num {
   display: flex; align-items: center; justify-content: center;
   width: 40px; height: 40px; border-radius: 50%; margin-bottom: 14px;
-  background: var(--accent); color: #fff; font-family: Georgia, serif; font-weight: 700; font-size: 1.1rem;
+  background: var(--accent-fill); color: var(--on-accent); font-family: Georgia, serif; font-weight: 700; font-size: 1.1rem;
 }
 .step-card h3 { font-size: 1.02rem; font-weight: 700; margin: 0 0 8px; }
 .step-card p { font-size: 0.88rem; line-height: 1.55; color: var(--ink-muted); margin: 0; }
@@ -562,7 +562,7 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
   .device-mockup-tile-price { font-size: 0.78rem; font-weight: 700; color: var(--accent-strong); }
   .device-mockup-cart {
     display: flex; justify-content: space-between; align-items: center;
-    background: var(--accent); color: #fff; border-radius: 10px; padding: 10px 12px;
+    background: var(--accent-fill); color: var(--on-accent); border-radius: 10px; padding: 10px 12px;
     font-size: 0.8rem; font-weight: 700;
   }
 

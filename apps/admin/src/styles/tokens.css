@@ -9,6 +9,12 @@
      4.9 даже на зеленоватой подложке, и это тот же зелёный. */
   --accent: #0D7A45;
   --accent-strong: #0A6237;
+  /* Пара для залитых зелёным поверхностей: см. tokens.css кассы. Белый на
+     ярком зелёном тёмной темы — 2.35, нечитаемо; на глубоком зелёном светлой —
+     7.46. Заливка и текст на ней объявляются вместе, чтобы их нельзя было
+     развести по разным темам. */
+  --accent-fill: #0A6237;
+  --on-accent: #FFFFFF;
   --border: #DBE7E0;
 
   --status-active: #0D7A45;
@@ -34,6 +40,8 @@
     --ink-muted: #97A49C;
     --accent: #3FBF77;
     --accent-strong: #63D294;
+    --accent-fill: #3FBF77;
+    --on-accent: #08120D;
     --border: #2A3430;
 
     --status-active: #3FBF77;
@@ -59,6 +67,8 @@
   --ink-muted: #97A49C;
   --accent: #3FBF77;
   --accent-strong: #63D294;
+  --accent-fill: #3FBF77;
+  --on-accent: #08120D;
   --border: #2A3430;
   --status-active: #3FBF77;
   --status-active-bg: #14301F;
@@ -84,6 +94,8 @@
      4.9 даже на зеленоватой подложке, и это тот же зелёный. */
   --accent: #0D7A45;
   --accent-strong: #0A6237;
+  --accent-fill: #0A6237;
+  --on-accent: #FFFFFF;
   --border: #DBE7E0;
   --status-active: #0D7A45;
   --status-active-bg: #E4F4EA;
