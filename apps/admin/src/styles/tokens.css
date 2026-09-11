@@ -4,11 +4,14 @@
   --surface-2: #EDF6F0;
   --ink: #0E1A14;
   --ink-muted: #57675E;
-  --accent: #0F8A4D;
+  /* #0F8A4D давал 4.41 на белом при норме 4.5 — то есть зелёный текст (цена,
+     активная вкладка, «Активен») формально нечитаем. Тон глубже: 5.4 на белом,
+     4.9 даже на зеленоватой подложке, и это тот же зелёный. */
+  --accent: #0D7A45;
   --accent-strong: #0A6237;
   --border: #DBE7E0;
 
-  --status-active: #0F8A4D;
+  --status-active: #0D7A45;
   --status-active-bg: #E4F4EA;
   --status-trial: #2E6FA3;
   --status-trial-bg: #DDEAF4;
@@ -76,10 +79,13 @@
   --surface-2: #EDF6F0;
   --ink: #0E1A14;
   --ink-muted: #57675E;
-  --accent: #0F8A4D;
+  /* #0F8A4D давал 4.41 на белом при норме 4.5 — то есть зелёный текст (цена,
+     активная вкладка, «Активен») формально нечитаем. Тон глубже: 5.4 на белом,
+     4.9 даже на зеленоватой подложке, и это тот же зелёный. */
+  --accent: #0D7A45;
   --accent-strong: #0A6237;
   --border: #DBE7E0;
-  --status-active: #0F8A4D;
+  --status-active: #0D7A45;
   --status-active-bg: #E4F4EA;
   --status-trial: #2E6FA3;
   --status-trial-bg: #DDEAF4;
