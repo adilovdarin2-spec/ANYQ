@@ -41,7 +41,11 @@ export function MigrationScreen({ systems, loading, error, onBack, onChoose }: P
         <div className="migrate-tiles">
           {systems.map((system) => (
             <button key={system.id} className="migrate-tile" onClick={() => onChoose(system)}>
-              <span className="migrate-tile-name">{system.name}</span>
+              {/* Через тот же словарь, что и описание. Названия программ — это
+                  марки, и словарь их не знает, поэтому они проходят насквозь;
+                  а единственная не-марка в списке, «Excel или другая», перевод
+                  имеет и раньше оставалась русской посреди казахского экрана. */}
+              <span className="migrate-tile-name">{s(system.name)}</span>
               <span className="migrate-tile-note">{s(system.note)}</span>
             </button>
           ))}
@@ -72,7 +76,7 @@ export function MigrationSteps({
   return (
     <div className="migrate-steps">
       <div className="migrate-steps-head">
-        <span className="migrate-steps-title">{t('migrate.stepsFor', { name: system.name })}</span>
+        <span className="migrate-steps-title">{t('migrate.stepsFor', { name: s(system.name) })}</span>
         <button className="link-button" onClick={onChange}>
           {t('migrate.change')}
         </button>
