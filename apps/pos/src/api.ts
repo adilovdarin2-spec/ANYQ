@@ -152,6 +152,11 @@ export interface SubmitSalePayload {
   customerPhone?: string;
   customerName?: string;
   pointsToRedeem?: number;
+  /**
+   * Момент, когда чек пробили на кассе. Отличается от момента приёма сервером
+   * ровно на время, которое продажа пролежала в офлайн-очереди.
+   */
+  soldAt?: string;
 }
 
 export interface SubmitSaleResult {

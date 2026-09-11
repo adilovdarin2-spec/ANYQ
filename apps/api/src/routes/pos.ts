@@ -6,6 +6,7 @@ import { signPosToken, requirePosAuth } from '../pos-auth';
 import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
+import { soldAtOrNow } from '../sold-at';
 import {
   blockStock,
   unblockStock,
@@ -368,6 +369,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   // Checked rather than trusted: a sale filed against another company's shift
   // would land in somebody else's cash reconciliation.
   let shiftId: string | null = null;
+  let shiftOpenedAt: Date | null = null;
   const shiftClientId = typeof b.shiftClientId === 'string' && b.shiftClientId ? b.shiftClientId : null;
   const namedShiftId = typeof b.shiftId === 'string' && b.shiftId ? b.shiftId : null;
   if (shiftClientId || namedShiftId) {
@@ -389,6 +391,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     // important part, and an unattributed one is a smaller problem than a
     // refused one.
     shiftId = shift ? shift.id : null;
+    shiftOpenedAt = shift ? shift.openedAt : null;
   }
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
@@ -657,6 +660,18 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           companyId: req.posCompanyId!,
           locationId,
           shiftId,
+          // Когда чек пробили, а не когда очередь дошла до сервера.
+          //
+          // Касса торгует без сети неделю, и без этого вся неделя ложилась
+          // одним днём — тем, в который вернулась связь. Выручка по дням
+          // считается по дате документа, так что дни без связи выходили
+          // пустыми, а день возвращения — с недельной выручкой.
+          //
+          // Время приходит с планшета, поэтому на слово ему не верят:
+          // `soldAtOrNow` берёт его только если оно не в будущем и не раньше
+          // открытия смены. Планшет со сбитыми часами получает серверное время
+          // и остаётся в своей смене, а не уезжает в прошлый месяц.
+          createdAt: soldAtOrNow(b.soldAt, shiftOpenedAt),
           type: 'sale',
           status: 'confirmed',
           paymentMethod: recordedMethod,

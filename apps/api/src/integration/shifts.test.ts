@@ -255,3 +255,75 @@ describe('a shift opened without a network', () => {
     expect(await prisma.shift.count()).toBe(2);
   });
 });
+
+describe('чек, пролежавший в очереди', () => {
+  /**
+   * Касса торгует неделю без сети, и всё это время чеки лежат у неё. Пока время
+   * продажи не приходило с кассы, сервер ставил своё «сейчас» в момент приёма:
+   * неделя офлайн-торговли складывалась в один день. Выручка по дням считается
+   * по дате документа — дни без связи выходили пустыми, а день возвращения с
+   * недельной выручкой.
+   *
+   * Здесь проверяется обвязка: доходит ли время от кассы до документа и
+   * срабатывают ли границы. Сами границы проверены отдельно, чистой функцией.
+   */
+  it('ложится тем часом, когда его пробили, а не когда он дошёл', async () => {
+    const shiftId = await openShift();
+    // Смена открыта утром, чек пробит в обед, очередь дошла только сейчас —
+    // это и есть день без связи. Смену отодвигаем назад, потому что иначе
+    // «обед» окажется раньше её открытия и будет отвергнут по праву.
+    await prisma.shift.update({
+      where: { id: shiftId },
+      data: { openedAt: new Date(Date.now() - 9 * 60 * 60 * 1000) },
+    });
+    const пробит = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+    const sale = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftId,
+      soldAt: пробит,
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+    });
+    expect(sale.status).toBe(201);
+
+    const doc = await prisma.document.findUnique({ where: { id: sale.body.id } });
+    expect(doc?.createdAt.toISOString()).toBe(пробит);
+  });
+
+  it('но не раньше, чем открылась смена', async () => {
+    // Планшет со сбитыми часами иначе отправил бы выручку в прошлый месяц —
+    // туда, где её уже никто не ищет.
+    const shiftId = await openShift();
+    const позавчера = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+    const sale = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftId,
+      soldAt: позавчера,
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+    });
+
+    const doc = await prisma.document.findUnique({ where: { id: sale.body.id } });
+    expect(doc!.createdAt.toISOString()).not.toBe(позавчера);
+    // Принято серверное время: документ моложе открытия смены.
+    expect(doc!.createdAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it('и не из будущего', async () => {
+    const shiftId = await openShift();
+    const завтра = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const sale = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftId,
+      soldAt: завтра,
+      paymentMethod: 'cash',
+      items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+    });
+
+    const doc = await prisma.document.findUnique({ where: { id: sale.body.id } });
+    expect(doc!.createdAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+});
