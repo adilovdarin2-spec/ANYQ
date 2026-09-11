@@ -489,6 +489,16 @@ button { cursor: pointer; }
   body * { visibility: hidden; }
   .receipt-card, .receipt-card * { visibility: visible; }
   .receipt-card { position: absolute; top: 0; left: 0; width: 100%; border: none; }
+
+  /* Чёрным по белому, какая бы тема ни стояла на планшете.
+     Принтер не печатает фон, а цвет текста берётся из темы: в тёмной это
+     #ECF1EE, то есть почти белый — на белой бумаге чек выходил пустым. Цена
+     печаталась зелёным по той же причине, а чековая лента одноцветная. */
+  .receipt-card, .receipt-card * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
 }
 
 /* bottom tab navigation — background spans the full shell width (matters on
