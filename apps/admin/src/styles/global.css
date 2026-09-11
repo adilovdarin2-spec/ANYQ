@@ -70,6 +70,11 @@ button, input, select, textarea { font-family: inherit; }
 .btn-secondary { background: var(--surface-2); color: var(--ink); }
 .btn-secondary:hover { background: var(--border); }
 .btn-ghost { background: transparent; color: var(--ink-muted); padding: 6px 8px; }
+/* Крестик закрытия — квадрат под палец и под неточную мышь.
+   Был 28 пикселей шириной: на телефоне это правилось отдельным правилом ниже, а
+   на большом экране так и оставалось — промахнуться по нему легче, чем попасть,
+   и промах здесь означает «карточка не закрылась», а не «ничего не случилось». */
+.drawer-header .btn-ghost { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
 .btn-ghost:hover { color: var(--ink); }
 .btn-block { width: 100%; display: block; text-align: center; }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -236,7 +241,16 @@ button.mini-card:focus-visible { outline: 2px solid var(--accent); outline-offse
     flex-direction: row; align-items: center; justify-content: space-between;
     padding: 12px 16px; border-right: none; border-bottom: 1px solid var(--border); gap: 12px;
   }
-  .sidebar .nav { display: none; }
+  /* Раньше здесь стояло `display: none`, и на телефоне разделов не было вовсе:
+     оставалась одна страница «Компании», а «Безопасность» становилась
+     недостижимой. Это не мелочь — именно туда человек идёт с телефона, чтобы
+     ввести код второго фактора по только что отсканированному QR.
+     Панель сворачивается в верхнюю строку, а разделы переезжают под неё
+     отдельным рядом: на 375 пикселях два пункта в строку с логотипом и кнопкой
+     выхода не помещаются, а в свой ряд — свободно. */
+  .sidebar { flex-wrap: wrap; }
+  .sidebar .nav { display: flex; flex-direction: row; order: 3; width: 100%; gap: 8px; }
+  .sidebar .nav-item { width: auto; padding: 10px 14px; border-radius: 999px; min-height: 40px; }
   .sidebar-footer { flex-direction: row; align-items: center; margin-top: 0; padding: 0; gap: 12px; }
 
   .content { padding: 20px 16px 48px; overflow-x: visible; }
@@ -250,7 +264,6 @@ button.mini-card:focus-visible { outline: 2px solid var(--accent); outline-offse
   .field-row .field:last-child { margin-bottom: 0; }
 
   .drawer { width: 100vw; }
-  .drawer-header .btn-ghost { padding: 11px 13px; }
 }
 
 /* error boundary fallback */
