@@ -277,8 +277,14 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .calc-card-title { font-family: Georgia, serif; font-weight: 700; font-size: 1.1rem; margin-bottom: 16px; }
 .calc-card-hint { margin: -8px 0 18px; font-size: 0.84rem; color: var(--ink-muted); line-height: 1.5; }
 .calc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
-.calc-row-label { font-size: 0.92rem; font-weight: 600; }
-.calc-row-hint { font-size: 0.76rem; color: var(--ink-muted); margin-top: 2px; }
+/* Блоками, а не строчными.
+   В строках со степпером эти же классы висят на `div` и всё было правильно, а в
+   строках с переключателем — на `span` внутри `span`: подпись и пояснение
+   слипались в одну строку, и «Модуль Supply» читалось вместе с «B2B-витрина для
+   оптовых поставщиков». Класс не должен зависеть от того, каким тегом его
+   поставили. */
+.calc-row-label { display: block; font-size: 0.92rem; font-weight: 600; }
+.calc-row-hint { display: block; font-size: 0.76rem; color: var(--ink-muted); margin-top: 2px; }
 .calc-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
 .calc-toggle-row input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
 
@@ -410,7 +416,8 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .landing-header-cta { display: none; align-items: center; gap: 8px; text-decoration: none; padding: 9px 16px; font-size: 0.88rem; }
 .landing-menu-btn {
   display: flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border);
+  /* 40, а не 38: это единственный способ открыть меню на телефоне. */
+  width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--surface); color: var(--ink); flex-shrink: 0;
 }
 .landing-mobile-nav {
