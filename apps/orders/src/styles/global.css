@@ -512,14 +512,17 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .footer-brand .landing-logo { color: #fff; margin-bottom: 10px; }
 .footer-brand .order-brand-mark { background: rgba(255, 255, 255, 0.16); }
 .footer-brand p { font-size: 0.86rem; line-height: 1.6; color: rgba(255, 255, 255, 0.72); margin: 0; max-width: 320px; }
-.footer-col-title { font-weight: 700; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.03em; color: rgba(255, 255, 255, 0.55); margin-bottom: 12px; }
+/* 0.55 белого на зелёном подвале давало 3.42 при норме 4.5 — заголовки колонок
+   («Продукт», «Аккаунт», «Контакты») читались хуже, чем ссылки под ними. 0.75
+   даёт 5.1 и остаётся заметно тише самих ссылок. */
+.footer-col-title { font-weight: 700; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.03em; color: rgba(255, 255, 255, 0.75); margin-bottom: 12px; }
 .footer-col { display: flex; flex-direction: column; align-items: flex-start; }
 .footer-col button, .footer-col a {
   background: none; border: none; padding: 0; text-align: left; cursor: pointer; text-decoration: none;
   font-size: 0.9rem; color: rgba(255, 255, 255, 0.88); display: inline-flex; align-items: center; gap: 7px;
   min-height: 40px;
 }
-.footer-bottom { border-top: 1px solid rgba(255, 255, 255, 0.16); padding-top: 20px; font-size: 0.8rem; color: rgba(255, 255, 255, 0.6); }
+.footer-bottom { border-top: 1px solid rgba(255, 255, 255, 0.16); padding-top: 20px; font-size: 0.8rem; color: rgba(255, 255, 255, 0.78); }
 
 /* ============================================================
    Landing sections — desktop (>=900px)
