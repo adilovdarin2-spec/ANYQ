@@ -63,7 +63,8 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .category-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 14px; margin-bottom: 4px; -ms-overflow-style: none; scrollbar-width: none; }
 .category-bar::-webkit-scrollbar { display: none; }
 .category-chip {
-  flex-shrink: 0; padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border);
+  /* 40 — нижняя граница для пальца; было 36. */
+  flex-shrink: 0; padding: 10px 16px; min-height: 40px; border-radius: 20px; border: 1px solid var(--border);
   background: var(--surface); color: var(--ink-muted); font-size: 0.85rem; font-weight: 600; white-space: nowrap;
 }
 .category-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -96,7 +97,13 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .qty-stepper button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 1.05rem; font-weight: 700; color: var(--ink); }
 .qty-stepper button:disabled { opacity: 0.4; }
 .qty-stepper span { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
-.add-btn { padding: 8px 16px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 700; font-size: 0.86rem; flex-shrink: 0; }
+/* 44 в высоту, а не 34. По этой кнопке закупщик бьёт десятки раз подряд,
+   собирая заказ, часто стоя и одной рукой; лишние десять пикселей здесь стоят
+   дешевле, чем один промах мимо товара. */
+.add-btn {
+  padding: 11px 16px; min-height: 44px; border-radius: 10px; border: none;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 0.86rem; flex-shrink: 0;
+}
 .add-btn:disabled { background: var(--border); color: var(--ink-muted); }
 
 .empty-state { padding: 60px 20px; text-align: center; color: var(--ink-muted); font-size: 0.92rem; }
@@ -619,6 +626,10 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
   border: none; background: transparent; color: inherit;
   font: inherit; font-weight: 700; font-variant-numeric: tabular-nums;
   padding: 0; -moz-appearance: textfield; appearance: textfield;
+  /* Высота под палец: цифру между «минус» и «плюс» нажимают, чтобы ввести
+     число, а поле было 21 пиксель — попасть в него труднее, чем в соседние
+     кнопки, ради которых его и добавляли. */
+  height: 40px;
 }
 .qty-field::-webkit-outer-spin-button,
 .qty-field::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
