@@ -924,6 +924,13 @@ export default function App() {
   function handleShowCounts() {
     setView('counts');
     void loadCounts();
+    // И свежие остатки: на этом экране рядом с каждым товаром стоит «система:
+    // N», и кладовщик сверяет с ней то, что пересчитал руками. Цифра берётся из
+    // каталога, который лежит в сессии, — без этой строки он мог показывать
+    // остаток на момент прошлого захода в кассу. На правильность это не влияет
+    // (разницу считает сервер по журналу на момент пересчёта), но человек,
+    // сверяющий с устаревшим числом, идёт искать расхождение, которого нет.
+    void refreshCatalogAfterStockChange();
   }
 
   async function loadPackagings(productId: string) {
@@ -2020,7 +2027,10 @@ export default function App() {
     }
   }
 
-  async function handleCreateCount(payload: { items: { productId: string; countedQuantity: number }[] }) {
+  async function handleCreateCount(payload: {
+    items: { productId: string; countedQuantity: number }[];
+    countedAt: string;
+  }) {
     if (!session || !currentLocationId) return false;
     setCountSubmitting(true);
     setCountsError(null);
@@ -2028,9 +2038,12 @@ export default function App() {
       await createCount(session.token, {
         ...payload,
         locationId: currentLocationId,
-        // Момент обхода, а не момент отправки. Между ними может пройти час
-        // торговли — и без этой отметки счёт отменил бы его.
-        countedAt: new Date().toISOString(),
+        // Момент обхода приходит с экрана: он засекается, когда кладовщик
+        // открыл лист. Здесь стояло `new Date()` с комментарием «момент обхода,
+        // а не момент отправки» — и это было ровно наоборот: в этой строке
+        // сейчас и есть момент отправки. Отмотка журнала становилась пустой
+        // операцией, и продажа, прошедшая во время обхода, отменялась.
+        countedAt: payload.countedAt,
       });
       await loadCounts();
       return true;
