@@ -42,6 +42,17 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
             {
               locationId: sale.locationId,
               shiftClientId: sale.shiftId,
+              // Когда чек был пробит, а не когда очередь до сервера дошла.
+              //
+              // Касса обязана торговать неделю без сети — и без этого поля вся
+              // эта неделя ложилась одним днём: сервер ставил своё «сейчас» в
+              // момент синхронизации. Выручка по дням считается по дате
+              // документа, поэтому дни отсутствия связи оказывались пустыми, а
+              // день возвращения — с недельной выручкой.
+              //
+              // Сервер этому времени не верит на слово: он принимает его,
+              // только если оно не в будущем и не раньше открытия смены.
+              soldAt: sale.createdAt,
               // Both, on purpose. `payments` is what the sale actually was;
               // `paymentMethod` keeps a server that has not been deployed yet
               // able to take it, which matters because the queue may be
