@@ -4,6 +4,7 @@ import type { IconName } from './Icon';
 import type { PaymentLine, PaymentMethod } from '../types';
 
 import { formatMoney } from '../utils';
+import { cashChange, cashShortfall, parseCashInput, suggestedCashAmounts } from '../cash';
 import { SplitPaymentEditor } from './SplitPaymentEditor';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
@@ -42,6 +43,8 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
   // that the button is not there than that it fails after being pressed.
   const methods: PaymentMethod[] = hasCustomer ? ['cash', 'kaspi', 'card', 'credit'] : ['cash', 'kaspi', 'card'];
   const [selected, setSelected] = useState<PaymentMethod | null>(null);
+  /** Сколько денег дал покупатель. Только для счёта сдачи — на сервер не уходит. */
+  const [given, setGiven] = useState('');
   const [splitting, setSplitting] = useState(false);
 
   if (splitting) {
@@ -97,8 +100,66 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
 
         {(selected === 'cash' || selected === 'card') && (
           <div style={{ textAlign: 'center', marginTop: 40 }}>
-            <div style={{ fontSize: '2.4rem' }}>{ICONS[selected]}</div>
+            {/* Иконка, а не её имя. Пока в `ICONS` лежали эмодзи, вывести
+                значение было тем же, что вывести картинку; после перехода на
+                рисованные это место осталось прежним — и экран подтверждения
+                оплаты, который кассир видит на каждой продаже, показывал
+                посреди пустоты слово «cash» в два с половиной сантиметра. */}
+            <div style={{ color: 'var(--ink-muted)' }}><Icon name={ICONS[selected]} size={40} /></div>
             <p style={{ color: 'var(--ink-muted)' }}>{t(METHOD_PHRASES[selected])} · {formatMoney(total)}</p>
+          </div>
+        )}
+
+        {/* Сдача. Поле необязательное: дали без сдачи — ничего вводить не надо,
+            и лишнего действия на каждой продаже не появляется. Считает касса,
+            потому что ошибка кассира в уме не теряется, а становится
+            недостачей в ящике, которую наутро уже никто не объяснит. */}
+        {selected === 'cash' && (
+          <div className="cash-change">
+            <div className="form-field">
+              <label htmlFor="cash-given">{t('payment.cashGiven')}</label>
+              <input
+                id="cash-given"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={given}
+                onChange={(e) => setGiven(e.target.value)}
+                placeholder={t('payment.cashGivenPlaceholder')}
+              />
+            </div>
+
+            <div className="category-bar cash-suggestions">
+              <button
+                type="button"
+                className={given === String(total) ? 'category-chip on' : 'category-chip'}
+                onClick={() => setGiven(String(total))}
+              >
+                {t('payment.cashNoChange')}
+              </button>
+              {suggestedCashAmounts(total).map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  className={given === String(amount) ? 'category-chip on' : 'category-chip'}
+                  onClick={() => setGiven(String(amount))}
+                >
+                  {formatMoney(amount)}
+                </button>
+              ))}
+            </div>
+
+            {cashChange(total, parseCashInput(given)) !== null && (
+              <div className="summary-row total">
+                <span>{t('payment.cashChange')}</span>
+                <span>{formatMoney(cashChange(total, parseCashInput(given))!)}</span>
+              </div>
+            )}
+            {cashShortfall(total, parseCashInput(given)) !== null && (
+              <p className="field-hint">
+                {t('payment.cashShort', { amount: formatMoney(cashShortfall(total, parseCashInput(given))!) })}
+              </p>
+            )}
           </div>
         )}
       </div>
