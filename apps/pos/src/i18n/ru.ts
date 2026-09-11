@@ -69,6 +69,11 @@ export const ru = {
   // --- payment ------------------------------------------------------------
   'payment.title': 'Оплата {amount}',
   'payment.cash': 'Наличные',
+  'payment.cashGiven': 'Получено от покупателя',
+  'payment.cashGivenPlaceholder': 'Напр. 1000',
+  'payment.cashNoChange': 'Без сдачи',
+  'payment.cashChange': 'Сдача',
+  'payment.cashShort': 'Не хватает {amount}',
   'payment.kaspi': 'Kaspi QR',
   'payment.card': 'Карта',
   'payment.credit': 'В долг',

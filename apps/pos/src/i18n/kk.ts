@@ -68,6 +68,11 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   // --- payment ------------------------------------------------------------
   'payment.title': 'Төлем {amount}',
   'payment.cash': 'Қолма-қол',
+  'payment.cashGiven': 'Сатып алушыдан алынды',
+  'payment.cashGivenPlaceholder': 'Мыс. 1000',
+  'payment.cashNoChange': 'Қайтарымсыз',
+  'payment.cashChange': 'Қайтарым',
+  'payment.cashShort': '{amount} жетпейді',
   'payment.kaspi': 'Kaspi QR',
   'payment.card': 'Карта',
   'payment.credit': 'Қарызға',
