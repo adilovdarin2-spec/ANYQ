@@ -117,7 +117,8 @@ export function BinsScreen({
                     <br />
                     <span className="order-meta">{formatQuantity(content.quantity)} {t('bins.atLocation')}</span>
                   </span>
-                  <button className="li-remove" onClick={() => startMove(content, '')}>{t('bins.putaway')}</button>
+                  {/* Обычная работа, а не удаление: нейтральный цвет. */}
+                  <button className="li-action" onClick={() => startMove(content, '')}>{t('bins.putaway')}</button>
                 </div>
               ))}
             </>
@@ -173,10 +174,10 @@ export function BinsScreen({
                       )}
                       {canManage && (
                         b.blocked ? (
-                          <button className="li-remove" onClick={() => onUnblockBin(b.id)}>{t('bins.unblock')}</button>
+                          <button className="li-action" onClick={() => onUnblockBin(b.id)}>{t('bins.unblock')}</button>
                         ) : (
                           <button
-                            className="li-remove"
+                            className="li-action"
                             onClick={() => {
                               setBlocking(b);
                               setBlockNote('');

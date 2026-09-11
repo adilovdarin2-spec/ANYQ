@@ -160,7 +160,19 @@ button { cursor: pointer; }
 .qty-stepper button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 1rem; font-weight: 700; color: var(--ink); }
 .qty-stepper span { min-width: 20px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
 .li-total { min-width: 70px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-.li-remove { color: var(--status-overdue); background: none; border: none; font-size: 0.78rem; padding: 4px; }
+/* Красный — только у того, что уносит.
+   Этим классом были покрашены четыре разных действия подряд: «Разместить»,
+   «Удалить», «Разблокировать», «Заблокировать» — обычная работа кладовщика
+   выглядела так же тревожно, как удаление полки. Цвет опасности, розданный
+   всем, перестаёт быть цветом опасности.
+   Высота доведена до 40: это кнопка под палец в холодном складе, а была 38. */
+.li-remove, .li-action {
+  background: none; border: none; font-size: 0.78rem;
+  padding: 10px 6px; min-height: 40px;
+}
+.li-remove { color: var(--status-overdue); }
+/* Нейтральное действие в строке: то же место и размер, спокойный цвет. */
+.li-action { color: var(--accent); }
 
 .summary-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 0.92rem; }
 .summary-row.total { font-size: 1.15rem; font-weight: 700; border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 14px; }

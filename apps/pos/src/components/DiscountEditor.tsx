@@ -62,7 +62,8 @@ export function DiscountEditor({ discount, discountAmount, onChange }: Props) {
           <button type="button" className="li-remove" onClick={clear}>{t('loyalty.remove')}</button>
         </span>
       ) : (
-        <button type="button" className="li-remove" onClick={openEditor}>{t('loyalty.attach')}</button>
+        // Привязать — обычное действие, красный цвет здесь ни при чём.
+        <button type="button" className="li-action" onClick={openEditor}>{t('loyalty.attach')}</button>
       )}
     </div>
   );
