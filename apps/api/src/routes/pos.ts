@@ -699,11 +699,19 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
       const stockMovements: Promise<unknown>[] = [...otherUpdates];
       // Across bins, because one product sits on as many shelves as it likes
       // and a sale takes from real ones.
+      // Движения журнала датируются тем же временем, что и чек. Дата документа
+      // — про отчётность, дата движения — про инвентаризацию: она отматывает
+      // журнал к моменту обхода, и продажа, физически бывшая до счёта, но
+      // записанная после, была бы отмотана как «после счёта». Полку обошли,
+      // когда товара уже не было, а система решила бы, что он был, — и
+      // пересчёт записал бы недостачу на проданное.
+      const occurredAt = document.createdAt;
       for (const deduction of deductions) {
         stockMovements.push(
           deductAcrossBins(tx, stockByProduct.get(deduction.productId) ?? [], deduction.quantity, 'sale', {
             documentId: document.id,
             createdBy: req.posUserId,
+            occurredAt,
           }),
         );
       }
@@ -712,6 +720,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           deductAcrossBins(tx, ingredientStockByProduct.get(consumption.ingredientId) ?? [], consumption.quantity, 'sale', {
             documentId: document.id,
             createdBy: req.posUserId,
+            occurredAt,
           }),
         );
       }
@@ -3703,10 +3712,14 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
       requestHash: hashRequestBody(b),
       statusCode: 201,
     }, async (tx) => {
+      const writtenOffAt = soldAtOrNow(b.occurredAt, null);
       const created = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
           locationId,
+          // Момент списания, а не момент доставки команды — по той же причине,
+          // что и у приёмки, и с тем же временем в движениях журнала.
+          createdAt: writtenOffAt,
           type: 'write_off',
           status: 'confirmed',
           reasonCode: b.reasonCode,
@@ -3728,6 +3741,7 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
         await deductAcrossBins(tx, rows, line.quantity, 'write_off', {
           documentId: created.id,
           createdBy: req.posUserId,
+          occurredAt: writtenOffAt,
         });
         // Quarantined goods that are then written off take their hold with
         // them — otherwise the block outlives the stock and eats availability
@@ -4301,11 +4315,21 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
       requestHash: hashRequestBody(b),
       statusCode: 200,
     }, async (tx) => {
-      await applyStockDelta(tx, source!, -quantity, 'adjustment', { createdBy: req.posUserId });
+      // Момент, когда товар переставили, а не когда команда дошла до сервера.
+      //
+      // Внутри локации итог не меняется, поэтому обычной инвентаризации это
+      // безразлично: два движения гасят друг друга. А пересчёт по ячейкам
+      // отматывает журнал по ячейкам — и размещение, сделанное утром, но
+      // записанное вечером, для дневного обхода выглядит случившимся после
+      // него. Кладовщик считает ячейку, куда товар уже переставили, система
+      // отматывает перестановку назад — и пересчёт пишет излишек в одной
+      // ячейке и недостачу в другой.
+      const movedAt = soldAtOrNow(b.occurredAt, null);
+      await applyStockDelta(tx, source!, -quantity, 'adjustment', { createdBy: req.posUserId, occurredAt: movedAt });
 
       const destinationRow = await tx.stock.findFirst({ where: { productId: b.productId, locationId, binLocation: toBin } });
       if (destinationRow) {
-        await applyStockDelta(tx, destinationRow, quantity, 'adjustment', { createdBy: req.posUserId });
+        await applyStockDelta(tx, destinationRow, quantity, 'adjustment', { createdBy: req.posUserId, occurredAt: movedAt });
       } else {
         await createStockWithMovement(tx, {
           productId: b.productId,
@@ -4314,6 +4338,7 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
           reason: 'adjustment',
           createdBy: req.posUserId,
           binLocation: toBin,
+          occurredAt: movedAt,
         });
       }
 
@@ -6340,10 +6365,20 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     });
     const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
 
+    const receivedAt = soldAtOrNow(b.occurredAt, null);
+
     const document = await tx.document.create({
       data: {
         companyId: req.posCompanyId!,
         locationId,
+        // Когда товар приняли на складе, а не когда команда дошла до сервера.
+        //
+        // Это не только про отчёт по закупкам за день. Инвентаризация отматывает
+        // журнал по времени движений: приёмка, физически бывшая утром, но
+        // записанная вечером, для дневного пересчёта выглядит случившейся после
+        // него — и пересчёт насчитает мнимый излишек ровно на эту поставку.
+        // Поэтому то же время уходит и в движения журнала ниже.
+        createdAt: receivedAt,
         type: 'receipt',
         status: 'confirmed',
         counterpartyId,
@@ -6391,7 +6426,13 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     for (const item of items) {
       const existing = stockByProduct.get(item.productId);
       if (existing) {
-        updates.push(applyStockDelta(tx, existing, item.quantity, 'receipt', { documentId: document.id, createdBy: req.posUserId }));
+        updates.push(
+          applyStockDelta(tx, existing, item.quantity, 'receipt', {
+            documentId: document.id,
+            createdBy: req.posUserId,
+            occurredAt: receivedAt,
+          }),
+        );
       } else {
         updates.push(
           createStockWithMovement(tx, {
@@ -6401,6 +6442,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
             reason: 'receipt',
             documentId: document.id,
             createdBy: req.posUserId,
+            occurredAt: receivedAt,
           }),
         );
       }

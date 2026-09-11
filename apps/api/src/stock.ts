@@ -129,6 +129,20 @@ export interface MovementContext {
   documentId?: string;
   /** The user who caused this. Absent only where there isn't one — a storefront customer. */
   createdBy?: string;
+  /**
+   * Когда движение случилось физически, если это не «сейчас».
+   *
+   * Касса и склад работают неделю без сети, и команда доходит до сервера
+   * позже события. Для документа время важно ради отчётности; для журнала —
+   * ради инвентаризации, которая отматывает движения по `countedAt` и
+   * применяет разницу, утверждённую на момент обхода. Приёмка, физически
+   * бывшая в 10:00, но записанная в 18:00, для пересчёта в 15:00 выглядит
+   * случившейся после счёта — отмотка её вычтет, и пересчёт насчитает мнимый
+   * излишек ровно на эту поставку.
+   *
+   * Пусто — берётся `now()` базы: это верно для всего, что происходит онлайн.
+   */
+  occurredAt?: Date;
 }
 
 // Stock.quantity is a materialized cache over the StockMovement ledger — the
@@ -183,6 +197,8 @@ export async function applyStockDelta(
       reason,
       documentId: context.documentId,
       createdBy: context.createdBy,
+      // undefined — и Prisma не пишет колонку, остаётся `now()` базы.
+      createdAt: context.occurredAt,
     },
   });
 }
@@ -360,6 +376,8 @@ export async function createStockWithMovement(
     createdBy?: string;
     /** '' — the default — means the goods aren't put away in a bin yet. */
     binLocation?: string;
+    /** Физическое время события — см. {@link MovementContext.occurredAt}. */
+    occurredAt?: Date;
   },
 ): Promise<void> {
   await Promise.all([
@@ -384,6 +402,7 @@ export async function createStockWithMovement(
         reason: input.reason,
         documentId: input.documentId,
         createdBy: input.createdBy,
+        createdAt: input.occurredAt,
       },
     }),
   ]);
