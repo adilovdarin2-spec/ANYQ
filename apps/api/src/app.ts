@@ -1,6 +1,7 @@
 import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import { pruneIdempotencyKeys } from './idempotency';
 import { sendMorningSummaries } from './morning';
 import { writeRateLimit } from './rateLimit';
@@ -86,6 +87,26 @@ app.use(
 // the rate limiter or by a parse error is still counted. Metrics that only
 // cover the requests which went well describe a server nobody is running.
 app.use(metricsMiddleware);
+
+/**
+ * Сжатие ответов.
+ *
+ * Касса возит каталог целиком — иначе она не сможет торговать без сети — и
+ * перечитывает его, пока смена открыта. Замер на пустой базе: 500 товаров —
+ * 161 КБ, 3000 — 965 КБ, 10 000 — 3,2 МБ на один ответ. Это JSON из
+ * повторяющихся ключей, он жмётся в разы, и до сих пор не жался вовсе: ни
+ * сервер, ни край Railway тела не трогали.
+ *
+ * Кому это считается деньгами: планшет на складе сидит на мобильном интернете,
+ * и оптовик с тремя тысячами позиций платил бы за мегабайт там, где хватает
+ * сотни килобайт. То же касается выгрузок и отчётов — они текстовые и жмутся
+ * так же.
+ *
+ * Порог по умолчанию — килобайт: мелкие ответы вроде `{"ok":true}` от сжатия
+ * только толстеют, и их не трогают. Стоит здесь, до маршрутов, потому что
+ * сжимать надо всё, что они отдадут.
+ */
+app.use(compression());
 app.use(express.json());
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
