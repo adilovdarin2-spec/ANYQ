@@ -44,7 +44,7 @@ button { cursor: pointer; }
   gap: 10px;
 }
 .shift-bar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.shift-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
+.shift-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent-fill); color: var(--on-accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
 .shift-info { display: flex; flex-direction: column; min-width: 0; }
 .shift-info .name { font-weight: 700; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shift-info .meta { font-size: 0.72rem; color: var(--ink-muted); }
@@ -92,7 +92,7 @@ button { cursor: pointer; }
   padding: 0 16px; border-radius: 20px; border: 1px solid var(--border);
   background: var(--surface); color: var(--ink-muted); font-size: 0.82rem; font-weight: 600; white-space: nowrap;
 }
-.category-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.category-chip.on { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
 .category-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* product grid */
@@ -128,7 +128,19 @@ button { cursor: pointer; }
 .product-tile .p-price { font-size: 0.92rem; font-weight: 700; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
 .product-tile .p-stock { font-size: 0.72rem; color: var(--ink-muted); white-space: nowrap; }
 .product-tile .p-stock.low { color: var(--status-overdue); font-weight: 600; }
-.product-tile.out { opacity: 0.55; }
+/* Приглушить, но не до нечитаемости.
+   Было 0.55, и название товара, которого нет, давало контраст 2.71 при норме
+   4.5 — кассир, которого спрашивают «а шоколад есть?», должен сперва прочесть
+   слово «Шоколад». Что товара нет, говорит подпись «нет в наличии» словами, а
+   не степень выцветания. */
+.product-tile.out { opacity: 0.78; }
+/* Свой цвет вместо служебного браузерного.
+   Плитка отсутствующего товара — это `<button disabled>`, и браузер красит ей
+   текст своим `rgba(255,255,255,0.3)`. Вместе с нашей прозрачностью получалось
+   двойное приглушение и контраст 2.71: слово «Шоколад» на плитке прочитать было
+   нельзя, а спрашивают у кассира именно про него. Приглушение остаётся одно —
+   наше, — и оно читаемо. */
+.product-tile:disabled { color: var(--ink); }
 .product-tile:disabled { cursor: not-allowed; }
 .empty-state { padding: 40px 20px; text-align: center; color: var(--ink-muted); font-size: 0.9rem; }
 
@@ -142,7 +154,7 @@ button { cursor: pointer; }
   bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom) + 8px);
   max-width: 520px; margin: 0 auto;
   padding: 12px 14px;
-  background: var(--accent); color: #fff;
+  background: var(--accent-fill); color: var(--on-accent);
   display: flex; align-items: center; justify-content: space-between;
   border-radius: 14px;
   box-shadow: var(--shadow-md);
@@ -200,7 +212,7 @@ button { cursor: pointer; }
 .discount-type-toggle button {
   border: none; background: var(--surface); color: var(--ink); padding: 8px 12px; font-size: 0.88rem; font-weight: 700;
 }
-.discount-type-toggle button.active { background: var(--accent); color: #fff; }
+.discount-type-toggle button.active { background: var(--accent-fill); color: var(--on-accent); }
 .discount-editor input {
   flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 1rem;
   background: var(--surface); color: var(--ink);
@@ -219,7 +231,7 @@ button { cursor: pointer; }
 /* buttons */
 .btn { border: none; border-radius: 10px; padding: 13px 18px; font-size: 0.95rem; font-weight: 700; }
 .btn-block { width: 100%; }
-.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary { background: var(--accent-fill); color: var(--on-accent); }
 .btn-primary:disabled { background: var(--border); color: var(--ink-muted); }
 .btn-secondary { background: var(--surface-2); color: var(--ink); }
 .btn-ghost { background: transparent; color: var(--ink-muted); }
@@ -515,7 +527,7 @@ button { cursor: pointer; }
 /* Профиль */
 .profile-card { display: flex; align-items: center; gap: 12px; padding: 4px 0 18px; }
 .profile-avatar {
-  width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: #fff;
+  width: 48px; height: 48px; border-radius: 50%; background: var(--accent-fill); color: var(--on-accent);
   display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.2rem; flex-shrink: 0;
 }
 .profile-name { font-weight: 700; font-size: 1.02rem; }
