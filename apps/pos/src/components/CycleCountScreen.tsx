@@ -12,13 +12,27 @@ interface Props {
   submitting: boolean;
   onBack: () => void;
   onRefresh: () => void;
-  onSubmit: (payload: { items: { productId: string; countedQuantity: number }[] }) => Promise<boolean>;
+  onSubmit: (payload: {
+    items: { productId: string; countedQuantity: number }[];
+    /** Момент, когда кладовщик начал обход, а не когда нажал «Сохранить». */
+    countedAt: string;
+  }) => Promise<boolean>;
 }
 
 export function CycleCountScreen({ counts, products, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [countedByProduct, setCountedByProduct] = useState<Record<string, string>>({});
+  /**
+   * Когда открыли лист пересчёта — то есть когда кладовщик подошёл к полке.
+   *
+   * Именно это время сервер отматывает назад, считая разницу. Час между
+   * открытием листа и нажатием «Сохранить» — это час торговли, и разница должна
+   * считаться от того остатка, который был виден в начале обхода: кладовщик
+   * говорит, сколько лежало тогда, а всё проданное после этого обязано
+   * остаться проданным.
+   */
+  const [startedAt, setStartedAt] = useState<string | null>(null);
 
   function setCounted(productId: string, value: string) {
     setCountedByProduct((prev) => ({ ...prev, [productId]: value }));
@@ -32,9 +46,10 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
 
   async function handleSubmit() {
     if (items.length === 0) return;
-    const success = await onSubmit({ items });
+    const success = await onSubmit({ items, countedAt: startedAt ?? new Date().toISOString() });
     if (success) {
       setCountedByProduct({});
+      setStartedAt(null);
       setView('list');
     }
   }
@@ -45,7 +60,17 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
         <button className="icon-btn" onClick={view === 'create' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
         <span className="screen-title">{t('cycle.title')}</span>
         {view === 'list' ? (
-          <button className="icon-btn" onClick={() => setView('create')} aria-label={t('cycle.new')} style={{ marginLeft: 'auto' }}>+</button>
+          <button
+            className="icon-btn"
+            onClick={() => {
+              setStartedAt(new Date().toISOString());
+              setView('create');
+            }}
+            aria-label={t('cycle.new')}
+            style={{ marginLeft: 'auto' }}
+          >
+            +
+          </button>
         ) : (
           <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
         )}
