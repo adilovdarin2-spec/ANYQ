@@ -702,6 +702,7 @@ export const ru = {
   'grid.leftWeight': 'ост. {amount}',
   'grid.removeFromStopList': 'Убрать из стоп-листа',
   'grid.addToStopList': 'В стоп-лист',
+  'grid.showingFirst': 'Показаны первые {shown} из {total}. Уточните поиск или выберите категорию.',
 
   'photo.loadFailed': 'Не удалось загрузить фото',
   'photo.attachFailed': 'Не удалось приложить фото',
