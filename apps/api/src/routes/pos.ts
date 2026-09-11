@@ -1100,14 +1100,21 @@ posRouter.post('/shifts', requirePosAuth, async (req: PosAuthedRequest, res) => 
   // The register knows when the shift actually opened; the server only knows
   // when it heard about it. For a shift that spent the morning offline those
   // are different, and the one that matters is the register's.
-  const openedAt = typeof b.openedAt === 'string' ? new Date(b.openedAt) : new Date();
+  //
+  // Будущим числом смену открыть нельзя, и это не придирка: время открытия
+  // смены — нижняя граница, по которой принимается время каждого чека в ней.
+  // Смена, открытая завтрашним числом, узаконила бы завтрашнюю выручку и
+  // спрятала бы сегодняшнюю. Прошлое не ограничено намеренно: касса, пролежавшая
+  // без связи неделю, приносит настоящее время недельной давности, и обрезать
+  // его значило бы врать о том, когда магазин работал.
+  const openedAt = soldAtOrNow(b.openedAt, null);
   const shift = await prisma.shift.create({
     data: {
       companyId: req.posCompanyId!,
       locationId,
       cashierName: user?.name ?? 'Кассир',
       userId: req.posUserId,
-      openedAt: Number.isNaN(openedAt.getTime()) ? new Date() : openedAt,
+      openedAt,
       openingCash,
       clientCommandId,
     },

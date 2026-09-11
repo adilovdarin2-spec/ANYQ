@@ -326,4 +326,34 @@ describe('чек, пролежавший в очереди', () => {
     const doc = await prisma.document.findUnique({ where: { id: sale.body.id } });
     expect(doc!.createdAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
   });
+  it('смену нельзя открыть завтрашним числом', async () => {
+    // Время открытия смены — нижняя граница, по которой принимается время
+    // каждого чека в ней. Смена из будущего узаконила бы завтрашнюю выручку и
+    // спрятала сегодняшнюю.
+    const завтра = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const res = await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 0,
+      clientCommandId: `future-${Date.now()}`,
+      openedAt: завтра,
+    });
+    expect(res.status).toBe(201);
+
+    const shift = await prisma.shift.findUnique({ where: { id: res.body.id } });
+    expect(shift!.openedAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  it('а вчерашним — можно: касса могла простоять без связи', async () => {
+    // Обрезать прошлое значило бы врать о том, когда магазин работал.
+    const вчера = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+    const res = await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 0,
+      clientCommandId: `yesterday-${Date.now()}`,
+      openedAt: вчера,
+    });
+
+    const shift = await prisma.shift.findUnique({ where: { id: res.body.id } });
+    expect(shift!.openedAt.toISOString()).toBe(вчера);
+  });
 });
