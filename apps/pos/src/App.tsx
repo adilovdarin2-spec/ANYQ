@@ -883,7 +883,15 @@ export default function App() {
       // and the router is offline several times an hour without anyone
       // deciding it was, so there is no "are we online" branch here — the
       // command is recorded either way and leaves when it can.
-      const command = queueCommand('receipt', { ...payload, locationId: currentLocationId });
+      // Время приёмки ставится здесь, когда кладовщик принял товар, а не когда
+      // очередь дошла до сервера. Это не только про отчёты: инвентаризация
+      // отматывает журнал по времени движений, и приёмка, записанная задним
+      // числом позже пересчёта, дала бы мнимый излишек на пересчёте.
+      const command = queueCommand('receipt', {
+        ...payload,
+        locationId: currentLocationId,
+        occurredAt: new Date().toISOString(),
+      });
       await outbox.drain();
       const outcome = outcomeOf(getOutbox(), command.id);
       // A refusal has to be said here, on the screen holding the form that can
@@ -1490,7 +1498,13 @@ export default function App() {
     setBinsSubmitting(true);
     setBinsError(null);
     try {
-      const command = queueCommand('putaway', { ...payload, locationId: currentLocationId });
+      // Отметка ставится здесь, в момент перестановки, а не при отправке:
+      // команда может пролежать в очереди до возвращения связи.
+      const command = queueCommand('putaway', {
+        ...payload,
+        locationId: currentLocationId,
+        occurredAt: new Date().toISOString(),
+      });
       await outbox.drain();
       const outcome = outcomeOf(getOutbox(), command.id);
       if (outcome.status === 'refused') {
@@ -1551,7 +1565,12 @@ export default function App() {
     setWriteOffSubmitting(true);
     setWriteOffError(null);
     try {
-      const command = queueCommand('writeOff', { ...payload, locationId: currentLocationId });
+      // Как и у приёмки: момент списания, а не момент доставки команды.
+      const command = queueCommand('writeOff', {
+        ...payload,
+        locationId: currentLocationId,
+        occurredAt: new Date().toISOString(),
+      });
       await outbox.drain();
       const outcome = outcomeOf(getOutbox(), command.id);
       if (outcome.status === 'refused') {

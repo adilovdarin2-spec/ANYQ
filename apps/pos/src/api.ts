@@ -299,6 +299,11 @@ export interface CreateReceiptPayload {
    * otherwise — the storeman enters what they handled, and the server converts.
    */
   items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
+  /**
+   * Когда товар приняли на складе. Отличается от момента, когда команда дошла
+   * до сервера, ровно на время, которое она пролежала в офлайн-очереди.
+   */
+  occurredAt?: string;
 }
 
 // The key is the queued command's own id, unchanged across every retry. A
@@ -595,6 +600,8 @@ export interface CreateWriteOffPayload {
   reasonCode: WriteOffReason;
   note: string;
   items: { productId: string; quantity: number }[];
+  /** Когда списали на складе, а не когда команда дошла до сервера. */
+  occurredAt?: string;
 }
 
 // Stock leaving the books because it is broken, expired or gone. Carries a
@@ -661,6 +668,12 @@ export interface PutawayPayload {
   /** '' means the goods are being put away for the first time. */
   fromBin: string;
   toBin: string;
+  /**
+   * Когда товар переставили. Команда уходит в очередь и может дойти до
+   * сервера часами позже; пересчёт по ячейкам отматывает журнал по ячейкам,
+   * и без этого времени размещение выглядит случившимся после обхода.
+   */
+  occurredAt?: string;
 }
 
 // Moving goods between shelves inside one building. Nothing enters or leaves,

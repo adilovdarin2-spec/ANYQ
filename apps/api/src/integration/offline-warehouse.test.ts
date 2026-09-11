@@ -359,3 +359,166 @@ describe('обычная инвентаризация, снятая во вре�
     expect(await stockAt(fx.productId, fx.locationId)).toBe(90);
   });
 });
+
+/**
+ * Команда, пролежавшая в очереди, датируется моментом события — и в документе,
+ * и в журнале движений.
+ *
+ * Документ датируется ради отчётности: неделя офлайн-торговли не должна
+ * ложиться одним днём возвращения связи. Движения — ради инвентаризации, и это
+ * тяжелее. Пересчёт отматывает журнал к `countedAt` и применяет разницу,
+ * которую кладовщик утверждал на момент обхода. Если приёмка, физически бывшая
+ * в 10:00, записана в 18:00, то для обхода в 15:00 она выглядит случившейся
+ * после счёта: отмотка её вычтет, система решит, что на полке было на поставку
+ * меньше, — и запишет излишек ровно на неё. Кладовщик при этом всё сделал
+ * правильно и увидит поправку, которой не делал.
+ *
+ * Здесь проверяется каждая складская команда, которая умеет лежать в очереди:
+ * приёмка, списание, размещение по ячейкам и продажа.
+ */
+describe('складская команда из очереди', () => {
+  // Две отметки в прошлом, обе позже всего, что уже записано: событие, а затем
+  // обход. Берутся от последнего движения в базе, а не от часов процесса, —
+  // сравнение идёт с `createdAt`, который пишет Postgres (см. комментарий к
+  // `afterEverythingSoFar`). Пауза после — чтобы обе гарантированно оказались в
+  // прошлом: время события сервер не примет, если оно в будущем.
+  async function событиеИОбход(): Promise<{ событие: Date; обход: Date }> {
+    const base = await afterEverythingSoFar();
+    const пара = { событие: new Date(base.getTime() + 10), обход: new Date(base.getTime() + 30) };
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    return пара;
+  }
+
+  it('приёмка, принятая до обхода, не даёт мнимого излишка', async () => {
+    const { событие, обход } = await событиеИОбход();
+
+    // Приняли 20 при неработающей сети: на полке 120.
+    await api(fx.token, 'POST', '/pos/receipts', {
+      locationId: fx.locationId,
+      supplierName: '',
+      supplierPhone: '',
+      occurredAt: событие.toISOString(),
+      items: [{ productId: fx.productId, quantity: 20, price: 100, packagingId: null }],
+    });
+
+    // Обошли полку позже приёмки и насчитали ровно то, что на ней лежит.
+    const counted = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      countedAt: обход.toISOString(),
+      items: [{ productId: fx.productId, countedQuantity: 120 }],
+    });
+
+    expect(counted.status).toBe(201);
+    expect(counted.body.adjustments ?? []).toEqual([]);
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(120);
+    expect(await findLedgerMismatches(fx.locationId)).toEqual([]);
+  });
+
+  it('без времени события та же приёмка даёт излишек — ради этого всё и сделано', async () => {
+    // Тест подпирает предыдущий: если бы отмотка не читала время движений,
+    // оба сходились бы, и первый проверял бы пустоту. Здесь же касса старой
+    // версии, которая времени не присылает, — и видно, чем это кончается:
+    // приёмка попадает в журнал «после обхода», отматывается, и пересчёт
+    // дописывает +20, которых никто не находил.
+    const обход = await afterEverythingSoFar();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await api(fx.token, 'POST', '/pos/receipts', {
+      locationId: fx.locationId,
+      supplierName: '',
+      supplierPhone: '',
+      items: [{ productId: fx.productId, quantity: 20, price: 100, packagingId: null }],
+    });
+
+    await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      countedAt: обход.toISOString(),
+      items: [{ productId: fx.productId, countedQuantity: 120 }],
+    });
+
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(140);
+  });
+
+  it('списание, сделанное до обхода, не даёт мнимой недостачи', async () => {
+    const { событие, обход } = await событиеИОбход();
+
+    // Пять разбили при разгрузке — на полке 95, и обход это увидел.
+    await api(fx.token, 'POST', '/pos/write-offs', {
+      locationId: fx.locationId,
+      reasonCode: 'damage',
+      note: 'разбили при разгрузке',
+      occurredAt: событие.toISOString(),
+      items: [{ productId: fx.productId, quantity: 5 }],
+    });
+
+    const counted = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      countedAt: обход.toISOString(),
+      items: [{ productId: fx.productId, countedQuantity: 95 }],
+    });
+
+    expect(counted.status).toBe(201);
+    // Без времени движения отмотка вернула бы пять на полку, счёт стал бы
+    // недостачей −5, и списанное списали бы дважды.
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(95);
+    expect(await findLedgerMismatches(fx.locationId)).toEqual([]);
+  });
+
+  it('размещение, сделанное до обхода, не расходит ячейки', async () => {
+    // Внутри локации итог не меняется, поэтому обычной инвентаризации
+    // размещение безразлично. Пересчёт по ячейкам отматывает журнал по
+    // ячейкам — и там перестановка, записанная позже обхода, раздваивается:
+    // излишек в той ячейке, куда товар переставили, и недостача в той, откуда.
+    await makeBin('A', '01');
+    const { событие, обход } = await событиеИОбход();
+
+    await api(fx.token, 'POST', '/pos/bins/putaway', {
+      locationId: fx.locationId,
+      productId: fx.productId,
+      quantity: 40,
+      fromBin: '',
+      toBin: 'A-01',
+      occurredAt: событие.toISOString(),
+    });
+
+    const counted = await api(fx.token, 'POST', '/pos/counts/by-bin', {
+      locationId: fx.locationId,
+      bins: ['', 'A-01'],
+      countedAt: обход.toISOString(),
+      items: [
+        { productId: fx.productId, binLocation: '', countedQuantity: 60 },
+        { productId: fx.productId, binLocation: 'A-01', countedQuantity: 40 },
+      ],
+    });
+
+    expect(counted.status).toBe(201);
+    expect(counted.body.adjustments).toEqual([]);
+
+    const bins = await api(fx.token, 'GET', `/pos/bins?locationId=${fx.locationId}`);
+    expect(binQuantity(bins.body, 'A-01')).toBe(40);
+    expect(await findLedgerMismatches(fx.locationId)).toEqual([]);
+  });
+
+  it('продажа, пробитая до обхода, не даёт мнимой недостачи', async () => {
+    // Касса торгует без сети, и её чеки доходят позже. На полке трёх уже нет —
+    // обход это и увидел; отмотка не должна возвращать их обратно.
+    const { событие, обход } = await событиеИОбход();
+
+    await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      paymentMethod: 'cash',
+      soldAt: событие.toISOString(),
+      items: [{ productId: fx.productId, quantity: 3, price: 200 }],
+    });
+
+    const counted = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      countedAt: обход.toISOString(),
+      items: [{ productId: fx.productId, countedQuantity: 97 }],
+    });
+
+    expect(counted.status).toBe(201);
+    expect(await stockAt(fx.productId, fx.locationId)).toBe(97);
+    expect(await findLedgerMismatches(fx.locationId)).toEqual([]);
+  });
+});
