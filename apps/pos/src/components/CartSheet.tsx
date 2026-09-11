@@ -61,7 +61,7 @@ export function CartSheet({
               <button className="li-remove" onClick={() => onRemove(line.id)}>{t('cart.remove')}</button>
             </div>
             {line.saleUnit === 'weight' ? (
-              <button className="li-remove" onClick={() => onEditWeight(line)}>{formatWeight(line.qty)} · {t('cart.change')}</button>
+              <button className="li-action" onClick={() => onEditWeight(line)}>{formatWeight(line.qty)} · {t('cart.change')}</button>
             ) : (
               <div className="qty-stepper">
                 <button onClick={() => onChangeQty(line.id, -1)} aria-label={t('cart.less')}>–</button>
