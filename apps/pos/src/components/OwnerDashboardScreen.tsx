@@ -1,4 +1,5 @@
 import type { OwnerDashboard, OwnerFlag } from '../types';
+import { needsOwnerAttention } from '../owner-attention';
 import { formatDateTime, formatMoney } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
@@ -300,11 +301,7 @@ export function OwnerDashboardScreen({
               </>
             )}
 
-            {dashboard.flags.length === 0 &&
-              dashboard.deadStock.length === 0 &&
-              dashboard.expiring.length === 0 &&
-              dashboard.discrepancies.counts.length === 0 &&
-              dashboard.discrepancies.transfers.length === 0 && (
+            {!needsOwnerAttention(dashboard) && (
                 <div className="empty-state">{t('owner.allClear')}</div>
               )}
           </>
