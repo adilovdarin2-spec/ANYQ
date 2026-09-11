@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { ManagedProduct } from '../api';
 import { formatMoney } from '../utils';
+import { GRID_LIMIT } from './ProductGrid';
 
 interface Props {
   products: ManagedProduct[];
@@ -20,6 +21,10 @@ export function ProductsManageScreen({ products, loading, error, onRefresh, onAd
         (p) => p.name.toLowerCase().includes(query.trim().toLowerCase()) || p.barcode.includes(query.trim()),
       )
     : products;
+  // Тот же предел, что и у сетки кассы, и по той же причине: три тысячи строк
+  // — это тысячи узлов в дереве, и каждая буква в поиске перерисовывает их
+  // все. Здесь спешка меньше, чем у кассира в очереди, но планшет тот же.
+  const shown = filtered.slice(0, GRID_LIMIT);
 
   return (
     <div className="tab-content">
@@ -37,7 +42,7 @@ export function ProductsManageScreen({ products, loading, error, onRefresh, onAd
       {!loading && !error && products.length === 0 && <div className="empty-state">{t('products.none')}</div>}
       {!loading && !error && products.length > 0 && filtered.length === 0 && <div className="empty-state">{t('products.nothingFound', { query: query.trim() })}</div>}
 
-      {filtered.map((p) => (
+      {shown.map((p) => (
         <button key={p.id} type="button" className="product-manage-row" onClick={() => onEdit(p)}>
           <div className="product-manage-main">
             <span className="product-manage-name">{p.name}</span>
@@ -51,6 +56,12 @@ export function ProductsManageScreen({ products, loading, error, onRefresh, onAd
           </div>
         </button>
       ))}
+
+      {filtered.length > shown.length && (
+        <p className="field-hint grid-overflow">
+          {t('grid.showingFirst', { shown: shown.length, total: filtered.length })}
+        </p>
+      )}
 
       <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 16 }} onClick={onAdd}>
         {t('products.addProduct')}

@@ -713,6 +713,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'grid.leftWeight': 'қалды {amount}',
   'grid.removeFromStopList': 'Стоп-тізімнен шығару',
   'grid.addToStopList': 'Стоп-тізімге',
+  'grid.showingFirst': 'Алғашқы {shown} көрсетілді, барлығы {total}. Іздеуді нақтылаңыз немесе санатты таңдаңыз.',
 
   'photo.loadFailed': 'Фотоны жүктеу мүмкін болмады',
   'photo.attachFailed': 'Фотоны тіркеу мүмкін болмады',
