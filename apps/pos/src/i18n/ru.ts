@@ -268,6 +268,7 @@ export const ru = {
   'owner.discounts': 'Скидки',
   'owner.shifts': 'Касса по сменам',
   'owner.shiftOpen': 'смена открыта',
+  'owner.shiftTooLong': 'открыта {hours} ч — ящик не пересчитан',
   'owner.expected': 'ожидается {amount}',
   'owner.matches': 'сходится',
   'owner.whatToBuy': 'Что закупить',

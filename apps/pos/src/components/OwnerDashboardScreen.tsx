@@ -1,6 +1,6 @@
 import type { OwnerDashboard, OwnerFlag } from '../types';
 import { needsOwnerAttention } from '../owner-attention';
-import { formatDateTime, formatMoney } from '../utils';
+import { formatDateTime, formatMoney, hoursSince } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 
@@ -157,6 +157,18 @@ export function OwnerDashboardScreen({
                         {formatDateTime(shift.openedAt)}
                         {shift.closedAt ? '' : ` · ${t('owner.shiftOpen')}`}
                       </span>
+                      {/* Смена, пережившая ночь, — это день, за который никто
+                          не пересчитал ящик: сверки за него не существует, и
+                          дальше будет только хуже вспоминаться. Поэтому она
+                          названа словами, а не «смена открыта» мелким серым. */}
+                      {!shift.closedAt && hoursSince(shift.openedAt) > 24 && (
+                        <>
+                          <br />
+                          <span className="pill warn">
+                            {t('owner.shiftTooLong', { hours: Math.floor(hoursSince(shift.openedAt)) })}
+                          </span>
+                        </>
+                      )}
                     </span>
                     <span>
                       {shift.difference === null ? (
