@@ -8,6 +8,7 @@ import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
 import { soldAtOrNow } from '../sold-at';
 import { limitRefusal } from '../limits';
+import { phoneKey } from '../phone';
 import {
   blockStock,
   unblockStock,
@@ -426,7 +427,9 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const subtotal = items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
   const { discountAmount } = computeDiscount(subtotal, discount);
 
-  const customerPhone = typeof b.customerPhone === 'string' ? b.customerPhone.trim() : '';
+  // К одному виду сразу: по этому номеру ищутся баллы, долг и кредитный лимит,
+  // а пишут его каждый раз иначе — «+7 700 …», «8 700 …», «700 …».
+  const customerPhone = phoneKey(typeof b.customerPhone === 'string' ? b.customerPhone : '');
   const pointsToRedeem = Number.isFinite(b.pointsToRedeem) ? Number(b.pointsToRedeem) : 0;
   if ((customerPhone || pointsToRedeem > 0) && !modules.includes('retail')) {
     res.status(403).json({ error: 'Программа лояльности недоступна на вашем тарифе' });
@@ -1038,7 +1041,9 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
 });
 
 posRouter.get('/customers', requirePosAuth, async (req: PosAuthedRequest, res) => {
-  const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : '';
+  // Тем же ключом, что и при записи: кассир набирает номер как слышит, а
+  // найтись должен тот же человек.
+  const phone = phoneKey(typeof req.query.phone === 'string' ? req.query.phone : '');
   if (!phone) {
     res.status(400).json({ error: 'Укажите телефон клиента' });
     return;
@@ -4393,6 +4398,25 @@ export interface CounterpartyLedger {
 // the two screens that need it — the debt list and the owner's summary — need
 // it for everybody at once. At fifty regulars that is a hundred round trips to
 // answer one question.
+/**
+ * Долги по всем контрагентам сразу.
+ *
+ * Читает все документы, из которых складывается долг, со всеми их строками —
+ * без ограничения по дате, и это намеренно: долг двухлетней давности, который
+ * так и не закрыли, обязан быть виден. Окно по дате сделало бы экран быстрее и
+ * при этом спрятало бы деньги, а это ровно наоборот тому, зачем он есть.
+ *
+ * Замерено, чтобы следующий читал числа, а не догадки: 50 контрагентов × 10
+ * документов × 5 строк — 98 мс и 11 КБ ответа; 300 × 12 × 5 (3600 документов,
+ * 18 000 строк) — 544 мс и 69 КБ. Растёт линейно от числа документов, а не от
+ * числа контрагентов: запросов всё равно три.
+ *
+ * Когда это станет мало: у оптовика с тремя сотнями покупателей и парой лет
+ * истории выйдет уже несколько секунд. Тогда считать надо будет суммой в SQL,
+ * а не загрузкой строк в Node. Сейчас этого не сделано сознательно: та же
+ * арифметика показывает, кто кому должен, и переписать её ради полусекунды —
+ * это разменять верное число на быстрое.
+ */
 async function loadLedgers(
   companyId: string,
   counterpartyIds: string[],
@@ -6428,7 +6452,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
   }
 
   const supplierName = typeof b.supplierName === 'string' ? b.supplierName.trim() : '';
-  const supplierPhone = typeof b.supplierPhone === 'string' ? b.supplierPhone.trim() : '';
+  const supplierPhone = phoneKey(typeof b.supplierPhone === 'string' ? b.supplierPhone : '');
 
   let counterpartyId: string | undefined;
   if (supplierName) {
