@@ -1209,11 +1209,22 @@ posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedReques
     return;
   }
 
+  // Когда смену закрыли, а не когда сервер об этом услышал.
+  //
+  // Та же болезнь, что была у продаж: смену закрывают вечером и уходят, а
+  // связь появляется утром — и закрытие ложилось утренним часом. Смена
+  // выглядела двадцатичасовой, попадала в предупреждение «смена открыта
+  // слишком долго», а её выручка — в сводку не того дня.
+  //
+  // Проверяется так же: не из будущего и не раньше открытия. Иначе касса с
+  // убежавшими часами закрыла бы смену завтрашним числом.
+  const closedAt = soldAtOrNow(b.closedAt, shift.openedAt);
+
   // Guarded on closedAt rather than checked beforehand, so two devices closing
   // the same shift at once can't both succeed with different counts.
   const { count } = await prisma.shift.updateMany({
     where: { id: shift.id, closedAt: null },
-    data: { closedAt: new Date(), closingCashCounted },
+    data: { closedAt, closingCashCounted },
   });
   if (count === 0) {
     res.status(409).json({ error: 'Смена уже закрыта' });

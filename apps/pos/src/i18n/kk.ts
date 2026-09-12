@@ -225,6 +225,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'profile.stuck': '{count} — иесіне хабарласыңыз, сатылым өткізілмеген',
   'profile.stuckWhy': 'Бұл сатылымдарды сервер қабылдамады. Ақша алынған, есепте жоқ — иесіне көрсетіңіз.',
   'profile.stuckRetry': 'Қайта жіберу',
+  'profile.closeRefused': 'Ауысым серверде жабылмаған',
+  'profile.closeRefusedShift': '{time}-дан басталған ауысым — иесіне көрсетіңіз: онда ол ашық болып тұр',
   'profile.dashboard': 'Иенің жиынтығы',
   'profile.reports': 'Есептер',
   'profile.audit': 'Өзгерістер журналы',

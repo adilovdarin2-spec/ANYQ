@@ -214,6 +214,8 @@ export const ru = {
   'profile.stuck': '{count} — обратитесь к владельцу, продажа не проведена',
   'profile.stuckWhy': 'Эти продажи сервер не принял. Деньги взяты, в отчётах их нет — покажите владельцу.',
   'profile.stuckRetry': 'Отправить ещё раз',
+  'profile.closeRefused': 'Смена не закрыта на сервере',
+  'profile.closeRefusedShift': 'Смена с {time} — покажите владельцу: у него она числится открытой',
   'profile.dashboard': 'Сводка владельца',
   'profile.reports': 'Отчёты',
   'profile.audit': 'Журнал изменений',
