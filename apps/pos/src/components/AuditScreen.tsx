@@ -41,11 +41,16 @@ export function AuditScreen({ entries, roundTrips, days, loading, error, onBack,
       <div className="screen-body">
         {error && <div className="login-error">{error}</div>}
 
-        <div className="chip-row">
+        {/* Те же классы, что у выбора периода в отчётах. Здесь стояли `chip` и
+            `chip-row`, которых в таблице стилей нет вовсе: кнопки выходили
+            системными, двадцать три пикселя высотой — на телефоне в них надо
+            целиться, а рядом, на соседнем экране, тот же выбор периода
+            выглядит пилюлями в сорок. */}
+        <div className="category-bar">
           {DAY_OPTIONS.map((option) => (
             <button
               key={option}
-              className={option === days ? 'chip chip-active' : 'chip'}
+              className={option === days ? 'category-chip on' : 'category-chip'}
               onClick={() => onChangeDays(option)}
             >
               {t('audit.days', { count: option })}
