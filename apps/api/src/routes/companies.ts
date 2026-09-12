@@ -5,6 +5,9 @@ import { phoneKey } from '../phone';
 import { requireAuth } from '../auth';
 import type { AuthedRequest } from '../auth';
 import { recordChanges } from '../audit-log';
+import { computeDiscount } from '../discounts';
+import { paymentsOrLegacy, totalsByMethod } from '../payments';
+import type { PaymentLine } from '../payments';
 
 export const companiesRouter = Router();
 companiesRouter.use(requireAuth);
@@ -161,17 +164,31 @@ companiesRouter.get('/:id/shifts', async (req, res) => {
           createdAt: { gte: shift.openedAt, ...(shift.closedAt ? { lte: shift.closedAt } : {}) },
           ...(shift.userId ? { createdBy: shift.userId } : {}),
         },
-        include: { items: true },
+        include: { items: true, payments: true },
       });
 
-      let total = 0;
-      const totalsByMethod: Record<string, number> = {};
-      for (const sale of sales) {
-        const saleTotal = sale.items.reduce((sum, it) => sum + it.price * it.quantity, 0);
-        total += saleTotal;
-        const method = sale.paymentMethod ?? 'unknown';
-        totalsByMethod[method] = (totalsByMethod[method] ?? 0) + saleTotal;
-      }
+      // Что покупатель заплатил на самом деле: со скидкой и списанными
+      // баллами. Сумма позиций — это цена до разговора у кассы, и по ней
+      // поддержка считала выручку, которой в ящике никогда не было.
+      const totals = sales.map((sale) => {
+        const subtotal = sale.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
+        const discount = computeDiscount(subtotal, sale.discountType
+          ? { type: sale.discountType as 'percent' | 'fixed', value: sale.discountValue ?? 0 }
+          : null).discountAmount;
+        return { sale, total: subtotal - discount - (sale.pointsRedeemed ?? 0) };
+      });
+
+      const total = totals.reduce((sum, row) => sum + row.total, 0);
+      // По частям, а не по пометке на чеке. У чека, разбитого между картой и
+      // наличными, способ оплаты — «mixed», и вся его сумма падала в графу
+      // «mixed»: в наличных её не было, а поддержка считает ожидаемую сумму в
+      // ящике именно по наличным. То есть на экране, куда смотрят, когда
+      // владелец звонит про расхождение, было расхождение.
+      const byMethod = totalsByMethod(
+        totals.map(({ sale, total: saleTotal }) => ({
+          payments: paymentsOrLegacy(sale.payments as PaymentLine[] | undefined, sale.paymentMethod, saleTotal),
+        })),
+      );
 
       return {
         id: shift.id,
@@ -182,7 +199,7 @@ companiesRouter.get('/:id/shifts', async (req, res) => {
         closingCashCounted: shift.closingCashCounted,
         salesCount: sales.length,
         totalSales: total,
-        totalsByMethod,
+        totalsByMethod: byMethod,
       };
     }),
   );
