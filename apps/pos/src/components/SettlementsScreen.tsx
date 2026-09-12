@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { SettlementAccount } from '../types';
-import { formatMoney } from '../utils';
+import { formatMoney, formatPhone } from '../utils';
 
 interface Props {
   type: 'customer' | 'supplier';
@@ -114,7 +114,7 @@ export function SettlementsScreen({
                 <div>
                   <div className="order-customer">{account.name}</div>
                   <div className="order-meta">
-                    {account.phone ? `${account.phone} · ` : ''}
+                    {account.phone ? `${formatPhone(account.phone)} · ` : ''}
                     {t('settle.openDocuments', { count: account.openCount })}
                   </div>
                 </div>
