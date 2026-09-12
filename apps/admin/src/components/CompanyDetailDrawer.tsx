@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Company, CompanyLocation, LocationType, ModuleKey, SupportLevel, Tariff } from '../types';
 import { LEGACY_MODULES, OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, SUPPORT_LABELS, ROLE_LABELS } from '../types';
 import { StatusChip } from './StatusChip';
-import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS } from '../utils';
+import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS, formatPhone } from '../utils';
 import type { DurationPreset } from '../utils';
 import type { ShiftSummary, TariffPayload, LocationPayload } from '../api';
 import { ORDERS_BASE } from '../api';
@@ -169,7 +169,7 @@ export function CompanyDetailDrawer({
         <div className="drawer-header">
           <div>
             <div className="content-title">{company.name}</div>
-            <div className="content-sub">{company.phone} · создана {formatDate(company.createdAt)}</div>
+            <div className="content-sub">{formatPhone(company.phone)} · создана {formatDate(company.createdAt)}</div>
           </div>
           <button className="btn btn-ghost" onClick={onClose} aria-label="Закрыть">✕</button>
         </div>

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma, Prisma } from '@anyq/db';
 import { limitRefusal } from '../limits';
+import { phoneKey } from '../phone';
 import { requireAuth } from '../auth';
 import type { AuthedRequest } from '../auth';
 import { recordChanges } from '../audit-log';
@@ -113,10 +114,13 @@ companiesRouter.post('/', async (req, res) => {
   const company = await prisma.company.create({
     data: {
       name: b.name,
-      phone: b.phone,
+      // К одному виду, как и у контрагентов: один и тот же номер, записанный
+      // «8 701 …» в одной строке и «+7 701 …» в соседней, — это список, по
+      // которому неудобно ни звонить, ни искать.
+      phone: phoneKey(b.phone),
       slug,
       locations: { create: [{ name: b.location.name, type: b.location.type, address: b.location.address ?? '' }] },
-      users: { create: [{ name: b.owner.name, role: 'owner', phone: b.owner.phone ?? '', posPin: ownerPin || null }] },
+      users: { create: [{ name: b.owner.name, role: 'owner', phone: phoneKey(b.owner.phone ?? ''), posPin: ownerPin || null }] },
       tariff: {
         create: {
           modules: JSON.stringify(b.tariff?.modules ?? []),
@@ -366,7 +370,7 @@ companiesRouter.post('/:id/users', async (req, res) => {
 
   try {
     const user = await prisma.user.create({
-      data: { companyId: company.id, name: b.name, role: b.role, phone: b.phone || null, posPin: posPin || null },
+      data: { companyId: company.id, name: b.name, role: b.role, phone: phoneKey(b.phone) || null, posPin: posPin || null },
     });
     res.status(201).json(serializeUser(user));
   } catch (err) {
@@ -427,7 +431,7 @@ companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
         data: {
           name: b.name,
           role: b.role,
-          phone: b.phone || null,
+          phone: phoneKey(b.phone) || null,
           posPin: posPin || null,
           ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
         },
