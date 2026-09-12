@@ -21,6 +21,8 @@ interface Props {
   pushSupported: boolean;
   pushEnabled: boolean;
   pushBusy: boolean;
+  /** Почему уведомления не включились — рядом с переключателем, а не в консоли. */
+  pushMessage?: string | null;
   onTogglePush: () => void;
   onShowDashboard?: () => void;
   onShowReports?: () => void;
@@ -59,6 +61,7 @@ export function ProfileScreen({
   pushSupported,
   pushEnabled,
   pushBusy,
+  pushMessage,
   onTogglePush,
   onShowDashboard,
   onShowReports,
@@ -213,10 +216,13 @@ export function ProfileScreen({
       )}
 
       {pushSupported && (
-        <button type="button" className="profile-action" onClick={onTogglePush} disabled={pushBusy}>
-          <span className="profile-action-label"><Icon name={pushEnabled ? 'bellOn' : 'bellOff'} /> {t('profile.push')}</span>
-          <span>{pushEnabled ? t('profile.pushOn') : t('profile.pushOff')}</span>
-        </button>
+        <>
+          <button type="button" className="profile-action" onClick={onTogglePush} disabled={pushBusy}>
+            <span className="profile-action-label"><Icon name={pushEnabled ? 'bellOn' : 'bellOff'} /> {t('profile.push')}</span>
+            <span>{pushEnabled ? t('profile.pushOn') : t('profile.pushOff')}</span>
+          </button>
+          {pushMessage && <div className="field-hint">{pushMessage}</div>}
+        </>
       )}
 
       <button type="button" className="profile-action" onClick={onShowInstall}>

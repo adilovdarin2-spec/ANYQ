@@ -235,6 +235,9 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'profile.push': 'Тапсырыстар туралы хабарламалар',
   'profile.pushOn': 'Қосылған',
   'profile.pushOff': 'Өшірілген',
+  'profile.pushDenied': 'Браузер хабарламаларға рұқсат бермеді. Сайт баптауларынан рұқсат беріп, қайта басыңыз.',
+  'profile.pushUnsupported': 'Бұл браузер хабарлама көрсете алмайды — кассаны Chrome-да ашыңыз.',
+  'profile.pushFailed': 'Хабарламаларды қосу мүмкін болмады — сервермен байланыс жоқ. Қайта көріңіз.',
   'profile.install': 'Қосымшаны орнату',
   'profile.closeShift': 'Ауысымды жабу',
   'profile.switchCashier': 'Кассирді ауыстыру',
@@ -774,6 +777,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'table.pickDishes': 'Тапсырыс үшін тағам таңдаңыз',
 
   // --- what could not be done ----------------------------------------------
+  'fail.stopList': 'Стоп-тізімді өзгерту мүмкін болмады — тауар бұрынғыдай қалды.',
   'fail.switchLocation': 'Нүктені ауыстыру мүмкін болмады — байланыс жоқ',
   'fail.loadOrders': 'Тапсырыстарды жүктеу мүмкін болмады',
   'fail.issueOrder': 'Тапсырысты беру мүмкін болмады',

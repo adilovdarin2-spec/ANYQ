@@ -17,10 +17,20 @@ export async function getExistingSubscription(): Promise<PushSubscription | null
   return registration.pushManager.getSubscription();
 }
 
-export async function enablePush(token: string): Promise<boolean> {
-  if (!pushSupported()) return false;
+/**
+ * Чем кончилась попытка включить уведомления.
+ *
+ * Раньше здесь было `boolean`, и «нет» означало сразу три разных вещи:
+ * браузер не умеет, человек нажал «Блокировать», что-то не получилось. Все
+ * три выглядели одинаково — переключатель оставался выключенным и молчал, — а
+ * чинятся они по-разному: одно настройками браузера, другое ничем.
+ */
+export type PushOutcome = 'enabled' | 'denied' | 'unsupported';
+
+export async function enablePush(token: string): Promise<PushOutcome> {
+  if (!pushSupported()) return 'unsupported';
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return false;
+  if (permission !== 'granted') return 'denied';
 
   const registration = await navigator.serviceWorker.ready;
   const { publicKey } = await fetchVapidPublicKey(token);
@@ -34,7 +44,7 @@ export async function enablePush(token: string): Promise<boolean> {
     endpoint: json.endpoint!,
     keys: { p256dh: json.keys!.p256dh, auth: json.keys!.auth },
   });
-  return true;
+  return 'enabled';
 }
 
 export async function disablePush(token: string): Promise<void> {
