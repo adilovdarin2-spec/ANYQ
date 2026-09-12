@@ -171,8 +171,11 @@ export function CompanyDetailDrawer({
           </div>
 
           <div className="quick-actions">
-            <button className="btn btn-secondary" onClick={onManageProducts}>📦 Товары</button>
-            <button className="btn btn-secondary" onClick={onManageUsers}>👥 Сотрудники</button>
+            {/* Без эмодзи: это единственные два цветных пиктографа во всей панели, и
+              рядом с «Заблокировать» они читаются как игрушки. Слова говорят всё
+              сами — та же причина, по которой их убрали с экрана операций в кассе. */}
+            <button className="btn btn-secondary" onClick={onManageProducts}>Товары</button>
+            <button className="btn btn-secondary" onClick={onManageUsers}>Сотрудники</button>
           </div>
 
           <div className="section-title">Продлить</div>
