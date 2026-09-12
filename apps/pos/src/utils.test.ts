@@ -18,6 +18,15 @@ describe('formatMoney', () => {
     expect(result.endsWith('₸')).toBe(true);
     expect(result.replace(/\s/g, '')).toBe('2500₸');
   });
+
+  it('пишет минус минусом, а не дефисом', () => {
+    // На закрытии смены рядом стоят «Выдано возвратов −200 ₸» и «должно быть
+    // −80 ₸». Первую строку пишем мы, вторую — toLocaleString, и до сих пор
+    // она ставила дефис: две соседние строки про деньги выглядели написанными
+    // разными людьми.
+    expect(formatMoney(-80).startsWith('−')).toBe(true);
+    expect(formatMoney(-80)).not.toContain('-');
+  });
 });
 
 describe('formatWeight', () => {

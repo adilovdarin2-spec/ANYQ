@@ -12,8 +12,16 @@ export function genId(prefix: string): string {
   return `${prefix}_${unique}`;
 }
 
+/**
+ * Сумма словами кассы: разряды пробелами, тенге на конце, минус — минусом.
+ *
+ * `toLocaleString` ставит дефис (-), а рядом на экране стоит настоящий минус
+ * (−): строка «Выдано возвратов −200 ₸» и строка «должно быть -80 ₸» на одном
+ * экране выглядели написанными разными людьми. На экране про деньги это
+ * замечают.
+ */
 export function formatMoney(n: number): string {
-  return `${n.toLocaleString('ru-RU')} ₸`;
+  return `${n.toLocaleString('ru-RU').replace('-', '\u2212')} ₸`;
 }
 
 export function formatWeight(kg: number): string {
