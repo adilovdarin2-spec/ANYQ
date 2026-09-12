@@ -9,7 +9,7 @@ import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
 import { soldAtOrNow } from '../sold-at';
 import { limitRefusal } from '../limits';
 import { phoneKey } from '../phone';
-import { capabilitiesOf, capabilityRefusal } from '../roles';
+import { can, capabilitiesOf, capabilityRefusal } from '../roles';
 import type { Capability } from '../roles';
 import {
   blockStock,
@@ -1290,6 +1290,13 @@ posRouter.post('/push/unsubscribe', requirePosAuth, async (req: PosAuthedRequest
 });
 
 posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  // Выручка, себестоимость и разбивка по кассирам. Экран этот касса показывает
+  // только владельцу и менеджеру, а сервер отдавал его любому вошедшему —
+  // включая кассира, чья собственная смена в этой разбивке и стоит.
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Отчёты смотрят владелец и менеджер' });
+    return;
+  }
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
     include: { tariff: true, locations: true, users: true },
@@ -1533,6 +1540,28 @@ async function allow(req: PosAuthedRequest, res: Response, capability: Capabilit
   const refusal = capabilityRefusal(user?.role, capability);
   if (refusal) {
     res.status(403).json({ error: refusal });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Видит ли этот человек закупочную сторону дела.
+ *
+ * Отдельно от `allow`, потому что вопрос другой: `allow` спрашивает «вправе ли
+ * он это сделать», а здесь — «вправе ли он на это смотреть». Закупочные цены,
+ * заказы поставщикам и приёмки показывают, почём магазин берёт товар, и это
+ * не то, что владелец собирался показывать кассиру. Право то же, что у самой
+ * приёмки: её проводят владелец, менеджер и кладовщик — они же и видят цены,
+ * без которых заказ не подпишешь.
+ *
+ * Проверки этой не было вовсе: меню кассы прячет такие экраны, а сервер отдал
+ * бы их любому, кто знает адрес. Меню — это вежливость, а не запрет.
+ */
+async function allowPurchasingView(req: PosAuthedRequest, res: Response): Promise<boolean> {
+  const user = req.posUserId ? await prisma.user.findUnique({ where: { id: req.posUserId } }) : null;
+  if (!can(user?.role, 'receive')) {
+    res.status(403).json({ error: 'Закупочные цены видят владелец, менеджер и кладовщик' });
     return false;
   }
   return true;
@@ -1986,6 +2015,7 @@ export async function replenishmentFor(companyId: string, locationId: string) {
 }
 
 posRouter.get('/replenishment', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allowPurchasingView(req, res))) return;
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
     include: { tariff: true, locations: true },
@@ -3543,6 +3573,7 @@ const PURCHASE_ORDER_INCLUDE = {
 } as const;
 
 posRouter.get('/purchase-orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allowPurchasingView(req, res))) return;
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
     include: { tariff: true, locations: true, users: true },
@@ -3712,6 +3743,7 @@ posRouter.post('/purchase-orders/:id/:action', requirePosAuth, async (req: PosAu
 // What this supplier charged last time, so a quiet price rise is a question
 // asked at the moment it can still be asked.
 posRouter.get('/suppliers', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allowPurchasingView(req, res))) return;
   const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
   const state = tariffState(company?.tariff ?? null);
   if (state !== 'active') {
@@ -3727,6 +3759,7 @@ posRouter.get('/suppliers', requirePosAuth, async (req: PosAuthedRequest, res) =
 });
 
 posRouter.get('/suppliers/:id/prices', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allowPurchasingView(req, res))) return;
   const supplier = await prisma.counterparty.findFirst({
     where: { id: req.params.id, companyId: req.posCompanyId, type: 'supplier' },
   });
@@ -6471,6 +6504,7 @@ posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedReq
 });
 
 posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allowPurchasingView(req, res))) return;
   const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   if (!modules.includes('warehouse')) {
