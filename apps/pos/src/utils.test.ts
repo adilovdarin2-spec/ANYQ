@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { genId, formatMoney, formatPhone, looksLikeBarcode, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode, parseSheet, detectDelimiter } from './utils';
 
@@ -170,5 +172,49 @@ describe('looksLikeBarcode', () => {
     expect(looksLikeBarcode('')).toBe(false);
     expect(looksLikeBarcode('   ')).toBe(false);
     expect(looksLikeBarcode('48701 012')).toBe(false);
+  });
+});
+
+describe('знак тенге ставит formatMoney, и только он', () => {
+  // «3 400 ₸ ₸» на экране профиля прожило ровно до первого взгляда на экран, и
+  // увидеть это можно было только глазами: тесты считают числа, а не подписи.
+  // Здесь — простой обход исходников, чтобы второй раз не искать глазами.
+  const src = resolve(__dirname);
+
+  function sources(): string[] {
+    const found: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith('.test.ts')) found.push(path);
+      }
+    };
+    walk(src);
+    return found;
+  }
+
+  it('никто не дописывает ₸ после formatMoney', () => {
+    const нарушения = sources().flatMap((file) =>
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .map((line, i) => ({ line, i }))
+        .filter(({ line }) => /formatMoney\([^)]*\)\}?\s*₸/.test(line))
+        .map(({ i }) => `${file.split(/[\/]/).pop()}:${i + 1}`),
+    );
+    expect(нарушения).toEqual([]);
+  });
+
+  it('и подстановки сумм в переводах тоже', () => {
+    // Сумма попадает в строку уже с валютой: подпись «{amount} ₸» удваивает её.
+    const нарушения = sources()
+      .filter((f) => f.includes('i18n'))
+      .flatMap((file) =>
+        readFileSync(file, 'utf8')
+          .split('\n')
+          .filter((line) => /\{(amount|sum|total)\}\s*₸/.test(line))
+          .map((line) => line.trim().slice(0, 60)),
+      );
+    expect(нарушения).toEqual([]);
   });
 });
