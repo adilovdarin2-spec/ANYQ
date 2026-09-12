@@ -126,7 +126,7 @@ export function ProfileScreen({
           {stuckSales.map((sale) => (
             <div key={sale.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <strong>
-                {formatTime(sale.createdAt)} · {formatMoney(sale.total)} ₸
+                {formatTime(sale.createdAt)} · {formatMoney(sale.total)}
               </strong>
               <span className="field-hint">{sale.syncError}</span>
               <button className="btn btn-secondary" style={{ marginTop: 4 }} onClick={() => onRetryStuck(sale.id)}>
