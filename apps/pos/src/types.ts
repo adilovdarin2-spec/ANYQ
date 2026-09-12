@@ -63,11 +63,16 @@ export type PaymentMethod = 'cash' | 'kaspi' | 'card' | 'credit';
  * changes when somebody switches language. Every map in this file that used to
  * hold Russian had that bug.
  */
-export const PAYMENT_PHRASES: Record<PaymentMethod, PhraseKey> = {
+export const PAYMENT_PHRASES: Record<PaymentMethod | 'mixed', PhraseKey> = {
   credit: 'payment.credit',
   cash: 'payment.cash',
   kaspi: 'payment.kaspi',
   card: 'payment.card',
+  // Не способ оплаты, а запись о том, что их было несколько: так помечен чек,
+  // разбитый на части. Способом его не выберешь — в списках выбора его нет, —
+  // но прочитать написанное в базе надо: без этой строки возврат по такому
+  // чеку показывал пустую плашку вместо слова.
+  mixed: 'payment.mixed',
 };
 
 /**

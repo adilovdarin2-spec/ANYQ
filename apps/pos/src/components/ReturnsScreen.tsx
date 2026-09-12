@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PaymentMethod, ReturnRecord, ReturnableSale } from '../types';
 import { PAYMENT_PHRASES } from '../types';
+import type { PhraseKey } from '../i18n';
 import { formatDateTime, formatMoney } from '../utils';
 
 interface Props {
@@ -33,6 +34,22 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+
+  /**
+   * Как вернули деньги — словом.
+   *
+   * Значение приходит с сервера строкой, и словарь может его не знать: чек,
+   * разбитый на части, помечен `mixed`, а чек, пробитый версией с неизвестным
+   * здесь способом, — чем угодно. Раньше тут стояло приведение типа, и
+   * незнакомое значение превращалось в пустую плашку: возврат есть, а чем
+   * вернули — не написано. Теперь незнакомое показывается как есть — это видно
+   * глазом и вызывает вопрос, на который есть ответ.
+   */
+  const methodLabel = (method: string | null | undefined): string => {
+    if (!method) return '—';
+    const phrase = (PAYMENT_PHRASES as Record<string, PhraseKey | undefined>)[method];
+    return phrase ? t(phrase) : method;
+  };
 
   // Only what is still outstanding on the receipt can be handed back, so a
   // fully returned sale offers nothing rather than looking available.
@@ -102,7 +119,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                     {r.createdByName ? ` · ${r.createdByName}` : ''}
                   </div>
                 </div>
-                <span className="pill">{r.paymentMethod ? t(PAYMENT_PHRASES[r.paymentMethod as PaymentMethod]) : '—'}</span>
+                <span className="pill">{methodLabel(r.paymentMethod)}</span>
               </div>
               <div className="order-items">
                 {r.items.map((it) => (
