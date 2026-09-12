@@ -37,10 +37,14 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
       </div>
 
       <div className="screen-body">
-        <p className="field-hint">
-          {t('recon.what')}
-          {t('recon.why')}
-        </p>
+        {/* Два абзаца, а не две строки подряд: рядом стоящие выражения JSX
+            склеиваются без пробела, и на экране стояло «…что так оно и
+            есть.Пока сходится…». Мелочь, но она на экране, который объясняет,
+            почему цифрам можно верить. */}
+        <div className="field-hint">
+          <p>{t('recon.what')}</p>
+          <p>{t('recon.why')}</p>
+        </div>
 
         {error && <div className="login-error">{error}</div>}
         {loading && !report && <div className="empty-state">{t('recon.checking')}</div>}
