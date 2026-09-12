@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genId, formatMoney, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode, parseSheet, detectDelimiter } from './utils';
+import { genId, formatMoney, formatPhone, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode, parseSheet, detectDelimiter } from './utils';
 
 describe('genId', () => {
   it('includes the given prefix and generates unique ids', () => {
@@ -131,5 +131,23 @@ describe('parseSheet', () => {
     // A pasted selection is unambiguous; a comma in "Вода, 1 л" would
     // otherwise win the delimiter count on its own.
     expect(detectDelimiter('Наименование\tЦена\nВода, 1 л\t250')).toBe('\t');
+  });
+});
+
+describe('formatPhone', () => {
+  it('разбивает казахстанский номер так, как его читают вслух', () => {
+    // В базе номер лежит одним куском, потому что по нему ищут. Владелец,
+    // который смотрит на список долгов и собирается позвонить, читает не ключ.
+    expect(formatPhone('+77001234567')).toBe('+7 700 123 45 67');
+    expect(formatPhone('77001234567')).toBe('+7 700 123 45 67');
+  });
+
+  it('чужой формат оставляет как есть', () => {
+    // Разбивать на группы то, чей формат неизвестен, — сделать хуже, чем не
+    // трогать: у каждой страны своя длина и своё членение.
+    expect(formatPhone('+996555123456')).toBe('+996555123456');
+    expect(formatPhone('+7700')).toBe('+7700');
+    expect(formatPhone('')).toBe('');
+    expect(formatPhone('не знаю')).toBe('не знаю');
   });
 });

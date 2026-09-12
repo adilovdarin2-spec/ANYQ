@@ -36,6 +36,25 @@ export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+/**
+ * Номер так, как его читают вслух.
+ *
+ * В базе номер лежит одним куском — `+77001234567`, — потому что по нему
+ * ищут, и пробелы в ключе только мешают. Но владелец, который смотрит на
+ * список долгов и собирается позвонить, читает не ключ: одиннадцать цифр
+ * подряд приходится разбирать глазами по одной.
+ *
+ * Казахстанский номер и только он: одиннадцать цифр, начинающихся с семёрки.
+ * Всё остальное — чужая страна или чей-то недописанный номер — отдаётся как
+ * есть, потому что разбивать на группы то, чей формат неизвестен, значит
+ * сделать хуже, чем не трогать.
+ */
+export function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length !== 11 || !digits.startsWith('7')) return raw;
+  return `+${digits[0]} ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 9)} ${digits.slice(9)}`;
+}
+
 export function hoursSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60);
 }
