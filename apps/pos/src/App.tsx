@@ -510,6 +510,33 @@ export default function App() {
   const hasRetail = session?.modules?.includes('retail') ?? false;
   const isDesktop = useIsDesktop();
   const searchRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Сканер на терминале печатает туда, где стоит курсор.
+   *
+   * Курсор уезжает от каждого нажатия: плитка, «плюс», открытое и закрытое
+   * окно. Дальше кассир сканирует, а на экране ничего — и он сканирует ещё
+   * раз. Поэтому печатный символ, пришедший мимо всех полей, возвращает курсор
+   * в поиск и попадает в него; остальные символы штрихкода приходят уже туда,
+   * а Enter добавляет товар.
+   *
+   * Только на терминале и только на экране продажи: на телефоне в поле тыкают
+   * пальцем, а перехват открывал бы экранную клавиатуру поверх товаров.
+   */
+  useEffect(() => {
+    if (!isDesktop || view !== 'sale' || !session) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (!shouldRedirectToSearch(pressFrom(event))) return;
+      const input = searchRef.current;
+      if (!input || document.activeElement === input) return;
+      event.preventDefault();
+      input.focus();
+      setQuery((current) => current + event.key);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isDesktop, view, session]);
+
   const canManageProducts = session?.user.role === 'owner' || session?.user.role === 'manager';
   // Only when this deployment was told where the storefront lives. Without it
   // there is no address to give, and inventing one sends partners elsewhere.
@@ -532,36 +559,66 @@ export default function App() {
   // was.
   const pickingOrder = orders.find((o) => o.id === pickingOrderId) ?? null;
 
+  /**
+   * Что этой роли доступно — по словам сервера.
+   *
+   * Экран не должен предлагать того, что сервер отклонит: кассир, открывший
+   * «Списание» и упёршийся в отказ, узнаёт о своих правах самым дорогим
+   * способом — посреди работы. Список приходит с сервером; старая сессия его
+   * не знает, и тогда не прячется ничего: лишний пункт меню лучше, чем кассир,
+   * выброшенный на экран входа обновлением.
+   */
+  const capabilities = session?.capabilities ?? null;
+  const may = (capability: string) => capabilities === null || capabilities.includes(capability);
+
+  // The summary is written for whoever answers for the money, so it is only
+  // offered to them — a cashier seeing colleagues' refund rates is a different
+  // product with different consequences.
+  const isOwnerOrManager = session?.user.role === 'owner' || session?.user.role === 'manager';
+
   const operationsItems: OperationItem[] = [];
-  if (hasSupply) {
+  // Заказы с витрины — там же, где их выдают: выдача снимает товар со склада,
+  // и кассиру этот экран показывать незачем, раз нажать в нём будет нечего.
+  if (hasSupply && may('moveStock')) {
     operationsItems.push({ key: 'orders', group: 'suppliers', icon: 'orders', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
   }
   if (hasPharmacy) {
     operationsItems.push({ key: 'batches', group: 'stock', icon: 'batches', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
   }
   if (hasWarehouse) {
-    operationsItems.push(
-      { key: 'transfers', group: 'stock', icon: 'transfer', label: t('ops.transfers'), onClick: handleShowTransfers },
-      { key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming },
-      { key: 'counts', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts },
+    const warehouseItems: (OperationItem & { needs?: string })[] = [
+      { key: 'transfers', group: 'stock', icon: 'transfer', label: t('ops.transfers'), onClick: handleShowTransfers, needs: 'moveStock' },
+      { key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming, needs: 'moveStock' },
+      { key: 'counts', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts, needs: 'count' },
       { key: 'returns', group: 'money', icon: 'return', label: t('ops.returns'), onClick: handleShowReturns },
-      { key: 'replenishment', group: 'suppliers', icon: 'replenish', label: t('ops.replenishment'), onClick: handleShowReplenishment },
-      { key: 'purchase-orders', group: 'suppliers', icon: 'doc', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders },
-      { key: 'bins', group: 'stock', icon: 'bins', label: t('ops.bins'), onClick: handleShowBins },
-      { key: 'bin-count', group: 'stock', icon: 'binCount', label: t('ops.binCount'), onClick: handleShowBinCount },
+      { key: 'replenishment', group: 'suppliers', icon: 'replenish', label: t('ops.replenishment'), onClick: handleShowReplenishment, needs: 'receive' },
+      { key: 'purchase-orders', group: 'suppliers', icon: 'doc', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders, needs: 'receive' },
+      { key: 'bins', group: 'stock', icon: 'bins', label: t('ops.bins'), onClick: handleShowBins, needs: 'moveStock' },
+      { key: 'bin-count', group: 'stock', icon: 'binCount', label: t('ops.binCount'), onClick: handleShowBinCount, needs: 'count' },
       { key: 'reconciliation', group: 'money', icon: 'scales', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
       { key: 'import', group: 'setup', icon: 'import', label: t('ops.import'), onClick: handleShowImport },
       { key: 'migrate', group: 'setup', icon: 'migrate', label: t('ops.migrate'), onClick: handleShowMigrate },
-      { key: 'delivery', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery },
+      { key: 'delivery', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery, needs: 'receive' },
       { key: 'price-list', group: 'suppliers', icon: 'priceList', label: t('ops.priceList'), onClick: handleShowPriceList },
       { key: 'cabinet', group: 'setup', icon: 'key', label: t('ops.cabinet'), onClick: handleShowCabinet },
       { key: 'settlements', group: 'money', icon: 'wallet', label: t('ops.settlements'), onClick: handleShowSettlements },
-      { key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs },
-      { key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns },
+      { key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs, needs: 'writeOff' },
+      { key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns, needs: 'writeOff' },
       { key: 'fiscal', group: 'money', icon: 'receipt', label: t('ops.fiscal'), onClick: handleShowFiscal },
-      { key: 'production', group: 'stock', icon: 'factory', label: t('ops.production'), onClick: handleShowProduction },
-    );
+      { key: 'production', group: 'stock', icon: 'factory', label: t('ops.production'), onClick: handleShowProduction, needs: 'produce' },
+    ];
+    /* Настройки и деньги — владельцу и менеджеру: сервер их и так не отдаст
+       никому другому, а меню, предлагающее запертую дверь, — это обещание,
+       которого продукт не держит. */
+    const ownerOnly = new Set(['reconciliation', 'import', 'migrate', 'price-list', 'cabinet', 'settlements']);
+    for (const item of warehouseItems) {
+      if (item.needs && !may(item.needs)) continue;
+      if (ownerOnly.has(item.key) && !isOwnerOrManager) continue;
+      const { needs: _needs, ...rest } = item;
+      operationsItems.push(rest);
+    }
   }
+
   if (hasRestaurant) {
     operationsItems.push(
       { key: 'floorplan', group: 'restaurant', icon: 'table', label: t('floor.title'), onClick: handleShowFloorPlan },
@@ -573,10 +630,6 @@ export default function App() {
   }
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 
-  // The summary is written for whoever answers for the money, so it is only
-  // offered to them — a cashier seeing colleagues' refund rates is a different
-  // product with different consequences.
-  const isOwnerOrManager = session?.user.role === 'owner' || session?.user.role === 'manager';
 
   const activeTab: MainTab =
     view === 'products' || view === 'product-edit' ? 'products' :
@@ -2600,31 +2653,6 @@ export default function App() {
     return <PinLogin onLogin={handleLogin} />;
   }
 
-  /**
-   * Сканер на терминале печатает туда, где стоит курсор.
-   *
-   * Курсор уезжает от каждого нажатия: плитка, «плюс», открытое и закрытое
-   * окно. Дальше кассир сканирует, а на экране ничего — и он сканирует ещё
-   * раз. Поэтому печатный символ, пришедший мимо всех полей, возвращает курсор
-   * в поиск и попадает в него; остальные символы штрихкода приходят уже туда,
-   * а Enter добавляет товар.
-   *
-   * Только на терминале и только на экране продажи: на телефоне в поле тыкают
-   * пальцем, а перехват открывал бы экранную клавиатуру поверх товаров.
-   */
-  useEffect(() => {
-    if (!isDesktop || view !== 'sale' || !session) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (!shouldRedirectToSearch(pressFrom(event))) return;
-      const input = searchRef.current;
-      if (!input || document.activeElement === input) return;
-      event.preventDefault();
-      input.focus();
-      setQuery((current) => current + event.key);
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isDesktop, view, session]);
 
   // A typed search always searches the full catalog, ignoring the category
   // filter — otherwise a cashier could type the exact product name, see

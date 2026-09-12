@@ -70,6 +70,16 @@ export interface PosSession {
   user: { id: string; name: string; role: string };
   company: { id: string; name: string; slug: string | null };
   modules: string[];
+  /**
+   * Что этой роли доступно: `receive`, `moveStock`, `count`, `writeOff`,
+   * `produce`. Считает сервер — здесь только читают.
+   *
+   * Необязательное: сессия, сохранённая прошлой сборкой, этого поля не знает,
+   * и выкидывать из-за него кассира на экран входа было бы хуже, чем показать
+   * лишний пункт меню. Отсутствие трактуется как «сервер старый, ничего не
+   * прячем»; отказ всё равно придёт с сервера, и он объяснит, кого звать.
+   */
+  capabilities?: string[];
   locations: CompanyLocation[];
   /** Which location the `products` stock figures belong to; null if the company has none. */
   catalogLocationId: string | null;
