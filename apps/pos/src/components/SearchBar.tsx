@@ -13,12 +13,19 @@ interface Props {
   query: string;
   onQueryChange: (value: string) => void;
   onEnter: () => void;
+  /**
+   * Штрихкод, который просканировали и не нашли.
+   *
+   * Стоит на месте подсказки про сканер, а не отдельной строкой: подсказка
+   * нужна, пока ничего не происходит, а когда скан не нашёлся — нужна не она.
+   */
+  scanMiss?: string | null;
   categories: string[];
   activeCategory: string | null;
   onCategoryChange: (category: string | null) => void;
 }
 
-export function SearchBar({ inputRef, query, onQueryChange, onEnter, categories, activeCategory, onCategoryChange }: Props) {
+export function SearchBar({ inputRef, query, onQueryChange, onEnter, scanMiss, categories, activeCategory, onCategoryChange }: Props) {
   const { t } = useTranslation();
   return (
     <div className="search-bar">
@@ -33,7 +40,9 @@ export function SearchBar({ inputRef, query, onQueryChange, onEnter, categories,
           if (e.key === 'Enter') onEnter();
         }}
       />
-      <div className="search-hint">{t('search.scannerHint')}</div>
+      <div className={scanMiss ? 'search-hint miss' : 'search-hint'}>
+        {scanMiss ? t('search.scanMiss', { code: scanMiss }) : t('search.scannerHint')}
+      </div>
       {categories.length > 1 && (
         <div className="category-bar">
           <button

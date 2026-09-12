@@ -82,6 +82,9 @@ button { cursor: pointer; }
 /* Одной строкой и тихо: подсказка живёт на самом рабочем экране постоянно, и
    две строки текста здесь стоят дороже, чем помогают. */
 .search-hint { font-size: 0.72rem; color: var(--ink-muted); margin: 6px 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Промах скана стоит на месте подсказки: тем же размером, но так, чтобы
+   глаз зацепился — кассир смотрит на сетку, а не на строку под полем. */
+.search-hint.miss { color: var(--status-overdue); font-weight: 600; }
 .category-bar {
   display: flex; gap: 8px; overflow-x: auto; margin: 8px -14px 0; padding: 2px 14px 4px;
   scrollbar-width: none;
