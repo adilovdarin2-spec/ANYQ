@@ -26,6 +26,20 @@ if (service === 'api') {
   // cashiers for the event loop costs a queue at the counter, and a receipt a
   // minute late costs nothing. Needs API_URL and MAINTENANCE_SECRET.
   run('node', ['scripts/maintenance.mjs', '--loop']);
+} else if (service === 'backup') {
+  // Снимает копию и уходит. Расписание держит Railway (Cron Schedule на
+  // службе), а не цикл внутри: служба, которая спит двадцать три часа из
+  // двадцати четырёх, платится как работающая и умеет проспать перезапуск.
+  //
+  // Почему отдельная служба, а не задача планировщика обслуживания: тот тикает
+  // каждую минуту и обязан быть дешёвым, а снятие дампа — это минуты работы и
+  // мегабайты трафика. И падать они должны отдельно: непришедшая копия и
+  // незакрытая очередь чеков — разные новости.
+  //
+  // Нужны переменные: DATABASE_URL и ANYQ_BACKUP_S3_* (см. BACKUP_RUNBOOK).
+  // Без них команда завершится с ошибкой, и Railway покажет красное — это и
+  // есть нужное поведение: копия, которой нет, должна быть заметна.
+  run('node', ['scripts/backup.mjs', 'create']);
 } else {
   console.error('Unknown RAILWAY_SERVICE_NAME:', JSON.stringify(service));
   process.exit(1);

@@ -8,6 +8,9 @@
 //
 //   node scripts/backup.mjs create              # write a dump
 //   node scripts/backup.mjs create --mirror D:/anyq-backups   # and copy it off
+//   node scripts/backup.mjs create --upload     # …and into off-site storage
+//   node scripts/backup.mjs pull                # вернуть последнюю из хранилища
+//   node scripts/backup.mjs pull --verify       # …и сразу доказать восстановление
 //   node scripts/backup.mjs list                # what is on disk
 //   node scripts/backup.mjs verify              # create, restore, prove, drop
 //   node scripts/backup.mjs verify --file X     # prove an existing dump
@@ -17,9 +20,14 @@
 // A dump that only exists on the machine running the database is not a backup
 // of that machine. `--mirror` (or ANYQ_BACKUP_MIRROR) copies it to a second
 // path — a mounted share or another disk on a pilot — and reads the copy back
-// to prove it is the same bytes. Not a cloud target: that needs a bucket and
-// credentials somebody has to choose, and guessing at them here would be worse
-// than saying so.
+// to prove it is the same bytes.
+//
+// Второй диск спасает от одного отказа — того, что случается с диском. От
+// пожара, кражи и удалённого по ошибке контейнера он не спасает: обе копии в
+// одной комнате. `--upload` кладёт дамп в S3-совместимое хранилище и так же
+// читает его обратно. Настройки берутся из окружения (ANYQ_BACKUP_S3_*), и
+// ничего не угадывается: бакет и ключи выбирает владелец, а без них команда
+// говорит об этом вслух и завершается с ошибкой.
 //
 // Verification does three things, and the third is the only one that is really
 // about this product:
@@ -41,10 +49,35 @@ import { createGunzip, createGzip } from 'node:zlib';
 import { createReadStream, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createS3, expired } from './lib/s3.mjs';
 
 const BACKUP_DIR = process.env.ANYQ_BACKUP_DIR || 'backups';
 const CONTAINER = process.env.ANYQ_DB_CONTAINER || 'anyq-db';
 const BACKUP_MIRROR = process.env.ANYQ_BACKUP_MIRROR || null;
+
+/**
+ * Хранилище копий вне этой машины — S3-совместимое.
+ *
+ * Ничего не угадывается: нет настроек — нет выгрузки, и команда, которую об
+ * этом просили, скажет об этом вслух и завершится с ошибкой. Молчаливое
+ * «наверное, не надо» — это ровно тот способ, которым копии перестают
+ * сниматься и никто об этом не узнаёт.
+ */
+const S3 = {
+  endpoint: process.env.ANYQ_BACKUP_S3_ENDPOINT || '',
+  bucket: process.env.ANYQ_BACKUP_S3_BUCKET || '',
+  region: process.env.ANYQ_BACKUP_S3_REGION || 'auto',
+  accessKeyId: process.env.ANYQ_BACKUP_S3_KEY || '',
+  secretAccessKey: process.env.ANYQ_BACKUP_S3_SECRET || '',
+  prefix: process.env.ANYQ_BACKUP_S3_PREFIX || 'anyq/',
+  // Адрес вида endpoint/bucket/key. Так работают MinIO, R2, Яндекс и
+  // большинство совместимых; тем, кто требует bucket.endpoint, ставят «no».
+  pathStyle: (process.env.ANYQ_BACKUP_S3_PATH_STYLE || 'yes') !== 'no',
+  keep: Number(process.env.ANYQ_BACKUP_S3_KEEP || 14),
+};
+
+const s3Configured = () => Boolean(S3.endpoint && S3.bucket && S3.accessKeyId && S3.secretAccessKey);
 
 // Read from the same place the application reads it, so a backup can never be
 // taken from a different database than the one being run.
@@ -120,7 +153,7 @@ async function serverMajor(url) {
  * Иначе — чужой сервер: одноразовый контейнер нужной версии, и подключение
  * по адресу, потому что внутри такого контейнера никакой базы нет.
  */
-const CLIENT = { image: null, hostArgs: [] };
+const CLIENT = { image: null, hostArgs: [], local: false };
 
 /** Куда вставить `-h host -p port`: сразу после имени утилиты. */
 const TOOLS = new Set(['pg_dump', 'psql', 'pg_restore', 'pg_isready']);
@@ -132,6 +165,23 @@ function withHost(args, client) {
   return [...args.slice(0, at + 1), ...client.hostArgs, ...args.slice(at + 1)];
 }
 
+/**
+ * Разобрать `env PGPASSWORD=… pg_dump …` обратно на программу и её окружение.
+ *
+ * Внутри контейнера пароль передавался через `env`, потому что это одна строка
+ * команды. Без контейнера `env` — лишний посредник, а на Windows его вовсе
+ * нет; пароль уходит в окружение процесса, где ему и место.
+ */
+function splitLocal(args) {
+  const at = args.findIndex((a) => TOOLS.has(a));
+  const password = args.slice(0, at).find((a) => a.startsWith('PGPASSWORD='));
+  return {
+    tool: args[at],
+    rest: args.slice(at + 1),
+    env: password ? { ...process.env, PGPASSWORD: password.slice('PGPASSWORD='.length) } : process.env,
+  };
+}
+
 // `client` — параметр, а не всегда CLIENT: переезд читает с одного сервера и
 // пишет на другой в пределах одного запуска.
 function pg(rawArgs, { input, onStdout, client = CLIENT } = {}) {
@@ -139,7 +189,16 @@ function pg(rawArgs, { input, onStdout, client = CLIENT } = {}) {
   const image = client.image;
   const docker = image ? ['run', '--rm', '-i', image, ...args] : ['exec', '-i', CONTAINER, ...args];
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', docker, {
+    // Утилиты прямо из системы, если они есть и той же версии, что сервер.
+    // Это не оптимизация: копия, снимаемая по расписанию на сервере, не может
+    // зависеть от Docker внутри контейнера, которого там нет.
+    const local = client.local ? splitLocal(args) : null;
+    const child = local
+      ? spawn(local.tool, local.rest, {
+          env: local.env,
+          stdio: [input ? 'pipe' : 'ignore', onStdout ? 'pipe' : 'ignore', 'pipe'],
+        })
+      : spawn('docker', docker, {
       stdio: [input ? 'pipe' : 'ignore', onStdout ? 'pipe' : 'ignore', 'pipe'],
     });
 
@@ -149,13 +208,25 @@ function pg(rawArgs, { input, onStdout, client = CLIENT } = {}) {
     });
 
     if (onStdout) onStdout(child.stdout);
-    if (input) input.pipe(child.stdin);
+    if (input) {
+      // Поток, оборвавшийся на середине, — это не редкость, а тот случай,
+      // ради которого всё это написано: скачанная наполовину копия. Без этого
+      // psql оставался ждать stdin, который больше не придёт, и команда висела
+      // молча до конца времён — хуже любого стека ошибок.
+      input.on('error', (err) => {
+        child.kill();
+        reject(err);
+      });
+      input.pipe(child.stdin);
+    }
 
     child.on('error', (err) =>
       reject(new Error(
-        image
-          ? `docker run failed — is Docker running? (${err.message})`
-          : `docker exec failed — is Docker running and «${CONTAINER}» up? (${err.message})`,
+        local
+          ? `${local.tool} не запустился — он есть в PATH? (${err.message})`
+          : image
+            ? `docker run failed — is Docker running? (${err.message})`
+            : `docker exec failed — is Docker running and «${CONTAINER}» up? (${err.message})`,
       )),
     );
     child.on('close', (code) => {
@@ -293,6 +364,94 @@ async function mirror(file, destination) {
   return target;
 }
 
+/**
+ * Та же копия, но в хранилище, которое переживёт эту машину целиком.
+ *
+ * `--mirror` кладёт дамп на второй диск и спасает от одного отказа — того, что
+ * случается с диском. От пожара, кражи ноутбука и удалённого по ошибке
+ * контейнера он не спасает: обе копии в одной комнате. Это — вне комнаты.
+ *
+ * Проверяется тем же способом, что и зеркало на диске, и по той же причине:
+ * загрузка, оборвавшаяся на середине, выглядит как загрузка, которая удалась,
+ * — ровно до того утра, когда она единственная. Поэтому объект читается
+ * обратно целиком и сверяется по sha256.
+ *
+ * Старые копии удаляются только после того, как новая прочитана обратно. Иначе
+ * неудачная ночь означала бы на одну копию меньше, чем было вчера, — а это
+ * обратная сторона любой автоматической чистки, и здесь она закрыта порядком
+ * действий, а не надеждой.
+ */
+async function upload(file) {
+  if (!s3Configured()) {
+    throw new Error(
+      'Хранилище копий не настроено. Нужны ANYQ_BACKUP_S3_ENDPOINT, ANYQ_BACKUP_S3_BUCKET, ' +
+        'ANYQ_BACKUP_S3_KEY и ANYQ_BACKUP_S3_SECRET. Без них выгружать некуда — ' +
+        'см. docs/BACKUP_RUNBOOK.md.',
+    );
+  }
+
+  const store = createS3(S3);
+  const key = `${S3.prefix}${path.basename(file)}`;
+  const body = await readFile(file);
+  const source = createHash('sha256').update(body).digest('hex');
+
+  await store.put(key, body, 'application/gzip');
+
+  const back = await store.get(key);
+  const copied = createHash('sha256').update(back).digest('hex');
+  if (copied !== source) {
+    throw new Error(
+      `Копия в хранилище не совпала с оригиналом (sha256 ${copied.slice(0, 12)} против ${source.slice(0, 12)}). ` +
+        'Локальный дамп на месте; выгрузку считать несделанной.',
+    );
+  }
+  console.log(`Копия вне машины: ${S3.bucket}/${key} (${(body.length / 1024 / 1024).toFixed(2)} МБ, sha256 ${source.slice(0, 12)}…)`);
+
+  // Только теперь, когда новая копия прочитана обратно.
+  const keys = (await store.list(S3.prefix)).map((object) => object.key);
+  for (const stale of expired(keys, S3.keep)) {
+    await store.remove(stale);
+    console.log(`Удалена старая копия в хранилище: ${stale}`);
+  }
+  return key;
+}
+
+/**
+ * Достать копию обратно.
+ *
+ * Без этого выгрузка — дорога в один конец: копии есть, а взять их в то утро,
+ * когда они понадобились, можно только через чужой клиент S3, которого у
+ * человека под рукой не будет. Скачанный файл ложится туда же, где лежат
+ * местные дампы, и дальше с ним работают обычные `verify` и `restore`.
+ *
+ * Без `--key` берётся последняя по имени: имя содержит отметку времени по
+ * построению, и «последняя» здесь означает «самая свежая», а не «та, которую
+ * поставщик отдал первой».
+ */
+async function pull(key) {
+  if (!s3Configured()) {
+    throw new Error('Хранилище копий не настроено — скачивать неоткуда. См. docs/BACKUP_RUNBOOK.md.');
+  }
+  const store = createS3(S3);
+
+  let wanted = typeof key === 'string' ? key : null;
+  if (!wanted) {
+    const keys = (await store.list(S3.prefix)).map((object) => object.key).sort();
+    wanted = keys[keys.length - 1];
+    if (!wanted) throw new Error(`В хранилище нет ни одной копии с префиксом «${S3.prefix}».`);
+  }
+
+  const body = await store.get(wanted);
+  await mkdir(BACKUP_DIR, { recursive: true });
+  const file = path.join(BACKUP_DIR, path.basename(wanted));
+  await writeFile(file, body);
+
+  const hash = createHash('sha256').update(body).digest('hex');
+  console.log(`Скачано: ${file} (${(body.length / 1024 / 1024).toFixed(2)} МБ, sha256 ${hash.slice(0, 12)}…)`);
+  console.log(`Проверить восстановление: node scripts/backup.mjs verify --file ${file}`);
+  return file;
+}
+
 // ---------------------------------------------------------------------------
 // Restoring
 // ---------------------------------------------------------------------------
@@ -319,10 +478,24 @@ async function restore(file, into, { force = false } = {}) {
   }
   await psql('postgres', `CREATE DATABASE "${into}"`, db);
 
-  await pg(
-    ['env', `PGPASSWORD=${db.password}`, 'psql', '-U', db.user, '-d', into, '-v', 'ON_ERROR_STOP=1', '--quiet'],
-    { input: createReadStream(file).pipe(createGunzip()) },
-  );
+  try {
+    await pg(
+      ['env', `PGPASSWORD=${db.password}`, 'psql', '-U', db.user, '-d', into, '-v', 'ON_ERROR_STOP=1', '--quiet'],
+      { input: createReadStream(file).pipe(createGunzip()) },
+    );
+  } catch (err) {
+    // Порча файла — не исключение, а тот самый случай, ради которого всё это
+    // написано: копия, скачанная наполовину, выглядит как копия. zlib говорит
+    // «Z_DATA_ERROR» и показывает стек, в котором не сказано ни что за файл,
+    // ни что делать.
+    if (/Z_DATA_ERROR|incorrect header check|unexpected end of file/i.test(err.message)) {
+      throw new Error(
+        `Файл «${file}» не разворачивается: это не gzip или он скачан не полностью. ` +
+          'Возьмите другую копию — эту считать негодной.',
+      );
+    }
+    throw err;
+  }
 
   return into;
 }
@@ -598,13 +771,69 @@ const command = process.argv[2];
  * контейнера никакой базы нет. Раньше выбора не было вовсе, и `create` против
  * боевой базы падал на «server version mismatch».
  */
+/**
+ * Мажорная версия установленного в системе `pg_dump`, если он есть.
+ *
+ * `null` — нет или не отвечает. Сравнение по мажорной версии, потому что
+ * именно на ней `pg_dump` отказывается говорить с сервером новее себя.
+ */
+function localToolsMajor() {
+  return new Promise((resolve) => {
+    const child = spawn('pg_dump', ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    child.stdout.on('data', (chunk) => (out += chunk.toString()));
+    child.on('error', () => resolve(null));
+    child.on('close', () => {
+      // Первое число вида «16.15» во всей строке. Debian отвечает
+      // «pg_dump (PostgreSQL) 16.15 (Debian 16.15-1.pgdg12+2)», и попытка
+      // отрезать всё до скобки жадно съедала строку до последней — версия
+      // не находилась, а копия молча уходила искать Docker, которого на
+      // сервере нет. Проверено в контейнере, где Docker недоступен.
+      const major = /\b(\d+)\.\d+/.exec(out)?.[1];
+      resolve(major ? Number(major) : null);
+    });
+  });
+}
+
 async function chooseClient() {
   if (command === 'list') return;
   const url = databaseUrl();
   const db = parseUrl(url);
-  if (isLocalContainerDb(db)) return;
+
+  // Утилиты из системы — если они есть и той же мажорной версии, что сервер.
+  // Ради одного случая, но важного: копия, которую снимает планировщик на
+  // сервере, где Docker недоступен в принципе.
+  //
+  // Версию сервера в этом случае спрашивает сам psql, а не Prisma: у ночной
+  // копии не должно быть зависимостей, которых можно не иметь. Docker-путь
+  // по-прежнему спрашивает через Prisma — там она и так рядом.
+  const local = await localToolsMajor();
+  if (local !== null) {
+    const probe = { image: null, local: true, hostArgs: ['-h', db.host, '-p', String(db.port)] };
+    const answer = await psql('postgres', 'SHOW server_version_num', db, probe).catch((err) => {
+      // Не молча: клиент в системе есть, а спросить версию не вышло — это
+      // либо чужой адрес, либо пароль, и знать об этом надо сейчас, а не
+      // выяснять, почему ночная копия каждый раз лезет в Docker.
+      console.log(`psql есть, но версию сервера спросить не удалось: ${String(err.message).split(/\r?\n/)[0]}`);
+      return '';
+    });
+    const major = Math.floor(Number(answer) / 10000);
+    if (Number.isFinite(major) && major > 0) {
+      if (major === local) {
+        CLIENT.local = true;
+        CLIENT.hostArgs = probe.hostArgs;
+        console.log(`База на ${db.host}, PostgreSQL ${major} — клиент из системы (pg_dump ${local})`);
+        return;
+      }
+      // Молча взять несовпадающий клиент нельзя: `pg_dump` старше сервера
+      // отдаст неполный дамп и не скажет об этом.
+      console.log(`pg_dump в системе версии ${local}, серверу нужна ${major} — беру клиент из Docker`);
+    }
+  }
 
   const major = await serverMajor(url);
+  if (isLocalContainerDb(db)) return;
+
   CLIENT.image = `postgres:${major}-bookworm`;
   CLIENT.hostArgs = ['-h', db.host, '-p', String(db.port)];
   console.log(`База на ${db.host}, PostgreSQL ${major} — клиент из ${CLIENT.image}`);
@@ -620,12 +849,21 @@ try {
       // than there were an hour ago.
       const destination = flag('mirror') === true ? BACKUP_MIRROR : flag('mirror') || BACKUP_MIRROR;
       if (destination) await mirror(written, destination);
+      // `--upload` просит явно; настроенное хранилище работает само — иначе
+      // расписание пришлось бы помнить отдельно от настроек, и первый же
+      // забытый флаг означал бы месяц без копий вне машины.
+      if (flag('upload') || s3Configured()) await upload(written);
       if (flag('keep')) await prune(Number(flag('keep')));
       break;
     }
     case 'list':
       await list();
       break;
+    case 'pull': {
+      const file = await pull(flag('key'));
+      if (flag('verify')) await verify(file);
+      break;
+    }
     case 'verify':
       await verify(flag('file'));
       break;
@@ -646,7 +884,8 @@ try {
     }
     default:
       console.log(
-        'Команды: create | list | verify | restore --file X --into Y [--force] | move --to <url> [--file X] [--force]',
+        'Команды: create [--mirror <путь>] [--upload] | list | pull [--key X] [--verify] | verify | ' +
+          'restore --file X --into Y [--force] | move --to <url> [--file X] [--force]',
       );
       process.exitCode = 1;
   }

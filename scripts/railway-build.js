@@ -41,6 +41,10 @@ if (service === 'api') {
   run('node', ['scripts/check-bundle.mjs', service]);
 } else if (service === 'maintenance') {
   console.log('[build] maintenance: nothing to build, it only calls the API');
+} else if (service === 'backup') {
+  // Клиент Prisma выше уже сгенерирован — им копия спрашивает версию сервера,
+  // когда `pg_dump` в системе не той версии. Фронтендов у этой службы нет.
+  console.log('[build] backup: Prisma client only; нужен pg_dump — NIXPACKS_PKGS=postgresql_16');
 } else {
   // A new service, or one whose name does not match. Building everything is the
   // safe answer for an unknown, and saying so is better than silently doing it.
