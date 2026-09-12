@@ -14,18 +14,21 @@ interface Props {
   onQueryChange: (value: string) => void;
   onEnter: () => void;
   /**
-   * Штрихкод, который просканировали и не нашли.
+   * Что касса хочет сказать про последнее действие: не нашёлся штрихкод,
+   * кончился товар.
    *
    * Стоит на месте подсказки про сканер, а не отдельной строкой: подсказка
-   * нужна, пока ничего не происходит, а когда скан не нашёлся — нужна не она.
+   * нужна, пока ничего не происходит, а когда есть что сказать — нужна не она.
+   * Текст приходит готовым: собрать его может только тот, кто знает и товар, и
+   * язык, то есть экран кассы, а не поле поиска.
    */
-  scanMiss?: string | null;
+  notice?: string | null;
   categories: string[];
   activeCategory: string | null;
   onCategoryChange: (category: string | null) => void;
 }
 
-export function SearchBar({ inputRef, query, onQueryChange, onEnter, scanMiss, categories, activeCategory, onCategoryChange }: Props) {
+export function SearchBar({ inputRef, query, onQueryChange, onEnter, notice, categories, activeCategory, onCategoryChange }: Props) {
   const { t } = useTranslation();
   return (
     <div className="search-bar">
@@ -40,8 +43,8 @@ export function SearchBar({ inputRef, query, onQueryChange, onEnter, scanMiss, c
           if (e.key === 'Enter') onEnter();
         }}
       />
-      <div className={scanMiss ? 'search-hint miss' : 'search-hint'}>
-        {scanMiss ? t('search.scanMiss', { code: scanMiss }) : t('search.scannerHint')}
+      <div className={notice ? 'search-hint miss' : 'search-hint'}>
+        {notice ?? t('search.scannerHint')}
       </div>
       {categories.length > 1 && (
         <div className="category-bar">
