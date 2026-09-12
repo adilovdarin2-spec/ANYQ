@@ -1,4 +1,4 @@
-import type { PaymentMethod, Sale } from './types';
+import type { PaymentMethod, Refund, Sale } from './types';
 import { splitQueue } from './sales-queue';
 
 /**
@@ -21,7 +21,12 @@ export interface ShiftTally {
   byMethod: Record<PaymentMethod, number>;
   /** Вся выручка смены, включая проданное в долг. */
   total: number;
-  /** Что должно быть в ящике: касса на начало плюс наличная часть продаж. */
+  /** Наличные, выданные покупателям обратно. */
+  refundedCash: number;
+  /**
+   * Что должно быть в ящике: касса на начало, плюс наличная часть продаж,
+   * минус выданные наличными возвраты.
+   */
   expectedCash: number;
 }
 
@@ -39,7 +44,7 @@ function paymentLines(sale: Sale): Array<{ method: PaymentMethod; amount: number
   return [{ method: sale.paymentMethod, amount: sale.total }];
 }
 
-export function tallyShift(sales: Sale[], openingCash: number): ShiftTally {
+export function tallyShift(sales: Sale[], openingCash: number, refunds: Refund[] = []): ShiftTally {
   const byMethod: Record<PaymentMethod, number> = { cash: 0, kaspi: 0, card: 0, credit: 0 };
   let total = 0;
 
@@ -48,9 +53,16 @@ export function tallyShift(sales: Sale[], openingCash: number): ShiftTally {
     for (const line of paymentLines(sale)) byMethod[line.method] += line.amount;
   }
 
+  // Возврат, выданный наличными, уходит из того же ящика. Не вычитать его
+  // значило требовать от кассира денег, которые он на глазах у всех отдал
+  // покупателю: сервер считает именно так, и расхождение доставалось кассиру.
+  const refundedCash = refunds
+    .filter((refund) => refund.method === 'cash')
+    .reduce((sum, refund) => sum + refund.amount, 0);
+
   // В долг — это не деньги в ящике и не деньги на счету; это обещание.
   // В выручку смены оно входит, в пересчёт наличных — нет.
-  return { byMethod, total, expectedCash: openingCash + byMethod.cash };
+  return { byMethod, total, refundedCash, expectedCash: openingCash + byMethod.cash - refundedCash };
 }
 
 /**

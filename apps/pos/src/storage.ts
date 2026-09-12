@@ -1,5 +1,5 @@
-import type { CountSheetLine, Sale, Shift } from './types';
-import { isQuotaError, keepOnlyUnsent, pruneSales, KEEP_ON_OVERFLOW } from './sales-retention';
+import type { CountSheetLine, Refund, Sale, Shift } from './types';
+import { isQuotaError, keepOnlyUnsent, pruneSales, KEEP_ON_OVERFLOW, KEEP_SYNCED_MS } from './sales-retention';
 import type { PosSession } from './api';
 
 const SHIFT_KEY = 'anyq_pos_shift';
@@ -9,6 +9,7 @@ const SESSION_KEY = 'anyq_pos_session';
 const LOCATION_KEY = 'anyq_pos_location';
 const COUNT_SHEET_KEY = 'anyq_pos_count_sheets';
 const DEVICE_KEY = 'anyq_pos_device';
+const REFUNDS_KEY = 'anyq_pos_refunds';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -106,6 +107,30 @@ export function saveSales(sales: Sale[]): void {
     }
   }
   throw new SalesStorageFullError();
+}
+
+/**
+ * Возвраты, выданные с этой кассы.
+ *
+ * Живут по тому же правилу, что и чеки: смену, которая идёт, не трогаем, а
+ * старое не копим. Досылать их не нужно — возврат проводится только при связи,
+ * и на сервере он уже есть.
+ */
+export function getRefunds(): Refund[] {
+  return read<Refund[]>(REFUNDS_KEY, []);
+}
+
+export function addRefund(refund: Refund): void {
+  const openShiftId = getShift()?.id ?? null;
+  const cutoff = Date.now() - KEEP_SYNCED_MS;
+  const kept = getRefunds().filter(
+    (r) => (openShiftId && r.shiftId === openShiftId) || new Date(r.createdAt).getTime() >= cutoff,
+  );
+  write(REFUNDS_KEY, [...kept, refund]);
+}
+
+export function refundsForShift(shiftId: string): Refund[] {
+  return getRefunds().filter((r) => r.shiftId === shiftId);
 }
 
 export function salesForShift(shiftId: string): Sale[] {

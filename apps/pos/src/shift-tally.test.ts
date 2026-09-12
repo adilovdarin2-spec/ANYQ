@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { refusedInShift, tallyShift } from './shift-tally';
-import type { PaymentLine, Sale } from './types';
+import type { PaymentLine, Refund, Sale } from './types';
 
 /**
  * Сколько должно быть в ящике на закрытии смены.
@@ -84,6 +84,46 @@ describe('пересчёт смены', () => {
     const tally = tallyShift([битый], 10_000);
     expect(tally.expectedCash).toBe(10_000);
     expect(tally.total).toBe(4000);
+  });
+});
+
+describe('возвраты за смену', () => {
+  const возврат = (over: Partial<Refund>): Refund =>
+    ({
+      id: 'r1',
+      shiftId: 'shift-1',
+      saleId: 's1',
+      amount: 2000,
+      method: 'cash',
+      createdAt: '2026-09-12T11:00:00.000Z',
+      ...over,
+    }) as Refund;
+
+  it('выданные наличными уходят из ящика', () => {
+    // Кассир отдал деньги покупателю на глазах у всех. Не вычесть их — значит
+    // потребовать их же с кассира на закрытии.
+    const tally = tallyShift([продажа({ total: 5000, paymentMethod: 'cash' })], 10_000, [возврат({ amount: 2000 })]);
+    expect(tally.refundedCash).toBe(2000);
+    expect(tally.expectedCash).toBe(13_000);
+  });
+
+  it('возврат на карту ящика не касается', () => {
+    const tally = tallyShift([продажа({ total: 5000, paymentMethod: 'cash' })], 10_000, [
+      возврат({ amount: 2000, method: 'card' }),
+    ]);
+    expect(tally.refundedCash).toBe(0);
+    expect(tally.expectedCash).toBe(15_000);
+  });
+
+  it('без возвратов ничего не меняется', () => {
+    expect(tallyShift([продажа({ total: 5000, paymentMethod: 'cash' })], 10_000).expectedCash).toBe(15_000);
+  });
+
+  it('выручку смены возврат не переписывает', () => {
+    // Возврат — отдельный документ, и на сервере он тоже не уменьшает продажу.
+    // Здесь важно, чтобы «Итого продаж» осталось тем, что пробили за смену.
+    const tally = tallyShift([продажа({ total: 5000, paymentMethod: 'cash' })], 0, [возврат({ amount: 2000 })]);
+    expect(tally.total).toBe(5000);
   });
 });
 
