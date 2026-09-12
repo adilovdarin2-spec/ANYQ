@@ -15,6 +15,7 @@ const QUIET: SummaryInput = {
   expiringValue: 0,
   unfiscalised: 0,
   ledgerMismatched: 0,
+  openShifts: 0,
 };
 
 const GOOD_DAY: SummaryInput = {
@@ -129,6 +130,24 @@ describe('текст сводки', () => {
     expect(body).not.toContain('сошлась');
   });
 
+  it('незакрытая вчерашняя смена — новость первой величины', () => {
+    // Пока смена открыта, ящик не пересчитан: сверки за вчера не существует.
+    // Утром это чинится одним подходом к кассе, к обеду — уже ничем.
+    const { body } = buildSummary({ ...GOOD_DAY, openShifts: 1 });
+    expect(body).toContain('смена не закрыта');
+  });
+
+  it('две незакрытые считает по-русски', () => {
+    const { body } = buildSummary({ ...GOOD_DAY, openShifts: 2 });
+    expect(body.toLowerCase()).toContain('не закрыто 2 смены');
+  });
+
+  it('ради одной незакрытой смены сводку разбудят', () => {
+    // День без выручки и без находок молчит — но не тогда, когда вчерашняя
+    // смена так и висит открытой.
+    expect(worthSending({ ...QUIET, openShifts: 1 })).toBe(true);
+  });
+
   it('текст помещается в уведомление', () => {
     // Всё, что длиннее, обрезает система — и обрезает ровно на том, что мы
     // поставили в конец.
@@ -142,6 +161,7 @@ describe('текст сводки', () => {
       expiringValue: 38400,
       unfiscalised: 7,
       ledgerMismatched: 3,
+      openShifts: 1,
     });
     expect(worst.title.length).toBeLessThanOrEqual(65);
     expect(worst.body.length).toBeLessThanOrEqual(180);

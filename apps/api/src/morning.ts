@@ -104,6 +104,10 @@ export async function summaryFor(companyId: string, locationId: string, shopName
     expiringValue: dashboard.expiring.reduce((sum, batch) => sum + batch.value, 0),
     unfiscalised: dashboard.unfiscalised.count,
     ledgerMismatched: dashboard.ledgerCheck.mismatched,
+    // Смены вчерашнего дня, которые всё ещё открыты. Сводка приходит утром,
+    // то есть открытая смена здесь — это смена, пережившая ночь, а не та,
+    // которую только что начали.
+    openShifts: dashboard.money.shifts.filter((shift) => !shift.closedAt).length,
   };
 }
 

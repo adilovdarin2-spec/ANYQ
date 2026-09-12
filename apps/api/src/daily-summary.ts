@@ -35,6 +35,14 @@ export interface SummaryInput {
   unfiscalised: number;
   /** Позиции, у которых остаток разошёлся с журналом. */
   ledgerMismatched: number;
+  /**
+   * Смены, которые к утру так и не закрыли.
+   *
+   * Не мелочь: пока смена открыта, ящик не пересчитан, и сверки за тот день не
+   * существует. К обеду о вчерашних деньгах уже никто ничего не вспомнит, а
+   * утром достаточно подойти и закрыть.
+   */
+  openShifts: number;
 }
 
 export interface SummaryMessage {
@@ -69,6 +77,7 @@ function plural(count: number, one: string, few: string, many: string): string {
 const POSITIONS = (n: number) => plural(n, 'позиция', 'позиции', 'позиций');
 const RECEIPTS = (n: number) => plural(n, 'чек', 'чека', 'чеков');
 const SHIFTS = (n: number) => plural(n, 'смене', 'сменам', 'сменам');
+const OPEN_SHIFTS = (n: number) => plural(n, 'смена', 'смены', 'смен');
 
 /**
  * Стоит ли вообще будить владельца.
@@ -83,7 +92,8 @@ export function worthSending(input: SummaryInput): boolean {
     input.runningOut > 0 ||
     input.expiringValue > 0 ||
     input.unfiscalised > 0 ||
-    input.ledgerMismatched > 0
+    input.ledgerMismatched > 0 ||
+    input.openShifts > 0
   );
 }
 
@@ -103,6 +113,18 @@ export function buildSummary(input: SummaryInput): SummaryMessage {
     alarms.push(`наличных не хватает ${money(-input.cashDifference)}`);
   } else if (input.cashDifference > 0) {
     alarms.push(`наличных больше на ${money(input.cashDifference)}`);
+  }
+  // Сразу после денег: это и есть деньги — те, которых вчера никто не считал.
+  if (input.openShifts > 0) {
+    // Коротко, потому что бюджет уведомления — две строки на всё: длинная
+    // оговорка про ящик вытеснит из сообщения следующую тревогу. Что это
+    // значит, написано там, куда владелец пойдёт дальше, — в строке смены на
+    // сводке.
+    alarms.push(
+      input.openShifts === 1
+        ? 'вчерашняя смена не закрыта'
+        : `не закрыто ${input.openShifts} ${OPEN_SHIFTS(input.openShifts)}`,
+    );
   }
   if (input.ledgerMismatched > 0) {
     alarms.push(`журнал не сходится: ${input.ledgerMismatched} ${POSITIONS(input.ledgerMismatched)}`);
