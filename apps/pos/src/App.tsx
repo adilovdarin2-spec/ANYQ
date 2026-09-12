@@ -5,7 +5,7 @@ import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
 import type { RefreshTrigger } from './catalog-refresh';
-import { genId, resolveScannedBarcode } from './utils';
+import { genId, looksLikeBarcode, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useOutboxSync } from './hooks/useOutboxSync';
 import { getOutbox, outcomeOf, queueCommand } from './outbox';
@@ -510,6 +510,13 @@ export default function App() {
   const hasRetail = session?.modules?.includes('retail') ?? false;
   const isDesktop = useIsDesktop();
   const searchRef = useRef<HTMLInputElement>(null);
+  /**
+   * Последний скан, которому нечего было сопоставить.
+   *
+   * Раньше в этом случае не происходило ничего: кассир подносил сканер, касса
+   * молчала, и он не знал, сканер не сработал или товара нет. Подносил ещё раз.
+   */
+  const [scanMiss, setScanMiss] = useState<string | null>(null);
 
   /**
    * Сканер на терминале печатает туда, где стоит курсор.
@@ -2570,9 +2577,15 @@ export default function App() {
     // lookup answers both which product and how many of it. Scanning a case
     // adds the case, not one bottle out of it.
     const scanned = resolveScannedBarcode(query, session.products);
-    if (!scanned) return;
-    const match = session.products.find((p) => p.id === scanned.productId);
-    if (!match) return;
+    const match = scanned ? session.products.find((p) => p.id === scanned.productId) : null;
+    if (!scanned || !match) {
+      // Молчим, когда печатали название: сетка и так отфильтрована, и «не
+      // найден» на каждое нажатие Enter было бы шумом. Говорим, когда это был
+      // скан, — там тишина неотличима от поломки.
+      setScanMiss(looksLikeBarcode(query) ? query.trim() : null);
+      return;
+    }
+    setScanMiss(null);
     addToCart(match, undefined, scanned.unitsPerPack > 1 ? scanned.unitsPerPack : undefined, true);
     setQuery('');
   }
@@ -2710,7 +2723,8 @@ export default function App() {
             <SearchBar
               inputRef={searchRef}
               query={query}
-              onQueryChange={setQuery}
+              scanMiss={scanMiss}
+              onQueryChange={(value) => { setScanMiss(null); setQuery(value); }}
               onEnter={handleSearchEnter}
               categories={categories}
               activeCategory={effectiveCategoryFilter}
@@ -2749,7 +2763,8 @@ export default function App() {
         <>
           <SearchBar
             query={query}
-            onQueryChange={setQuery}
+            scanMiss={scanMiss}
+            onQueryChange={(value) => { setScanMiss(null); setQuery(value); }}
             onEnter={handleSearchEnter}
             categories={categories}
             activeCategory={effectiveCategoryFilter}

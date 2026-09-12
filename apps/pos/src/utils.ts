@@ -79,6 +79,24 @@ export function pluralizeRu(n: number, one: string, few: string, many: string): 
  * A unit barcode wins over a pack barcode on a tie — whatever someone is
  * holding at a register is far more likely to be the unit.
  */
+/**
+ * Похоже ли набранное на штрихкод, а не на название.
+ *
+ * Нужно ровно для одного вопроса: молчать или сказать. Кассир, который печатает
+ * «хле» и жмёт Enter, ничего не ждёт — сетка и так фильтруется. Кассир, который
+ * поднёс сканер и получил тишину, не знает, что случилось: то ли сканер не
+ * сработал, то ли товара нет, то ли касса зависла. Он подносит ещё раз, и ещё.
+ *
+ * Отличить можно по форме: сканер присылает только цифры, и штрихкоды бывают от
+ * восьми знаков (EAN-8) до четырнадцати (GTIN-14). Внутренние коды весов и
+ * маркировки бывают длиннее, но они и не должны молча теряться — про них тоже
+ * честнее сказать «не найден».
+ */
+export function looksLikeBarcode(value: string): boolean {
+  const code = value.trim();
+  return /^\d{8,}$/.test(code);
+}
+
 export function resolveScannedBarcode(
   barcode: string,
   products: { id: string; barcode: string; packagings: { id: string; unitsPerPack: number; barcode: string }[] }[],

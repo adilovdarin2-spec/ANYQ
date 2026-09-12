@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genId, formatMoney, formatPhone, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode, parseSheet, detectDelimiter } from './utils';
+import { genId, formatMoney, formatPhone, looksLikeBarcode, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode, parseSheet, detectDelimiter } from './utils';
 
 describe('genId', () => {
   it('includes the given prefix and generates unique ids', () => {
@@ -149,5 +149,26 @@ describe('formatPhone', () => {
     expect(formatPhone('+7700')).toBe('+7700');
     expect(formatPhone('')).toBe('');
     expect(formatPhone('не знаю')).toBe('не знаю');
+  });
+});
+
+describe('looksLikeBarcode', () => {
+  it('узнаёт то, что присылает сканер', () => {
+    expect(looksLikeBarcode('4870101234567')).toBe(true);
+    expect(looksLikeBarcode('48701012')).toBe(true);
+    // Код маркировки длиннее обычного — про него тоже честнее сказать
+    // «не найден», чем промолчать.
+    expect(looksLikeBarcode('04601234567890123')).toBe(true);
+  });
+
+  it('не принимает за штрихкод то, что печатают руками', () => {
+    // Кассир, набирающий название, ничего от Enter не ждёт — сетка и так
+    // отфильтрована, и сообщение «не найден» было бы здесь шумом.
+    expect(looksLikeBarcode('хлеб')).toBe(false);
+    expect(looksLikeBarcode('кола 0.5')).toBe(false);
+    expect(looksLikeBarcode('123')).toBe(false);
+    expect(looksLikeBarcode('')).toBe(false);
+    expect(looksLikeBarcode('   ')).toBe(false);
+    expect(looksLikeBarcode('48701 012')).toBe(false);
   });
 });
