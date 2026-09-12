@@ -3,6 +3,7 @@ import { prisma } from '@anyq/db';
 import { tariffState, tariffDenialMessage } from '../tariff';
 import { availableQuantity, findStockShortages, aggregateRequestedQuantities, groupStockByProduct, reserveAcrossBins, ConcurrentStockChangeError } from '../stock';
 import { loginRateLimit } from '../rateLimit';
+import { phoneKey } from '../phone';
 import { sendPushToCompany } from '../push';
 
 export const supplyRouter = Router();
@@ -77,7 +78,9 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
   const b = req.body ?? {};
   const items: OrderItemInput[] = Array.isArray(b.items) ? b.items : [];
   const customerName = typeof b.customerName === 'string' ? b.customerName.trim() : '';
-  const customerPhone = typeof b.customerPhone === 'string' ? b.customerPhone.trim() : '';
+  // К одному виду: партнёр, заказавший вчера «+7 700 …», а сегодня
+  // «8 700 …», — это один партнёр с одним долгом, а не два.
+  const customerPhone = phoneKey(typeof b.customerPhone === 'string' ? b.customerPhone : '');
   const deliveryAddress = typeof b.deliveryAddress === 'string' ? b.deliveryAddress.trim() : '';
 
   if (!customerName || !customerPhone || !deliveryAddress || items.length === 0) {
