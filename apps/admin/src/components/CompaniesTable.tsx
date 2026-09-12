@@ -2,7 +2,7 @@ import type { Company } from '../types';
 import { SUPPORT_LABELS } from '../types';
 import { StatusChip } from './StatusChip';
 import { ModuleBadges } from './ModuleBadges';
-import { EXPIRING_SOON_DAYS, daysUntil, formatDate, getTariffState, pluralizeRu } from '../utils';
+import { EXPIRING_SOON_DAYS, daysUntil, formatDate, getTariffState, pluralizeRu, formatPhone } from '../utils';
 
 /**
  * «Кончается через N дней» рядом с датой.
@@ -58,7 +58,7 @@ export function CompaniesTable({ companies, onSelect }: { companies: Company[]; 
             >
               <td>
                 <div className="company-name">{c.name}</div>
-                <div className="company-bin">{c.phone}</div>
+                <div className="company-bin">{formatPhone(c.phone)}</div>
               </td>
               <td>{c.locations.length}</td>
               <td><ModuleBadges modules={c.tariff.modules} /></td>
@@ -79,7 +79,7 @@ export function CompaniesTable({ companies, onSelect }: { companies: Company[]; 
             <div className="company-card-head">
               <div>
                 <div className="company-name">{c.name}</div>
-                <div className="company-bin">{c.phone}</div>
+                <div className="company-bin">{formatPhone(c.phone)}</div>
               </div>
               <StatusChip state={getTariffState(c.tariff)} />
             </div>

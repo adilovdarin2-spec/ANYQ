@@ -89,3 +89,19 @@ export function extendValidUntil(currentValidUntil: string, preset: DurationPres
   const base = current > today ? current : today;
   return toLocalISODate(addPreset(base, preset));
 }
+
+/**
+ * Номер так, как его читают вслух.
+ *
+ * В базе он лежит одним куском — по такому виду ищут и сверяют, — а в списке
+ * компаний по нему звонят: одиннадцать цифр подряд приходится разбирать
+ * глазами. Казахстанский номер и только он; всё остальное отдаётся как есть,
+ * потому что разбивать на группы номер неизвестного формата — сделать хуже,
+ * чем не трогать.
+ */
+export function formatPhone(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length !== 11 || !digits.startsWith('7')) return raw;
+  return `+${digits[0]} ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 9)} ${digits.slice(9)}`;
+}
