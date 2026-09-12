@@ -1,5 +1,6 @@
 import type { Shift } from '../types';
 import { formatTime, hoursSince } from '../utils';
+import { pluralPhrase } from '../i18n';
 import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
@@ -30,7 +31,14 @@ export function ShiftBar({ shift, cashierName, locationName, online, pendingCoun
           </div>
         </div>
         <div className="shift-bar-right">
-          {stuckCount > 0 && <span className="pill warn">⚠ {t('shift.bar.needAttention', { count: stuckCount })}</span>}
+          {/* «1 требуют внимания» стояло в шапке кассы с тех пор, как эта
+              плашка появилась. Русский счётный оборот требует трёх форм, и
+              казахский дословно повторяет одну — этим занимается pluralPhrase. */}
+          {stuckCount > 0 && (
+            <span className="pill warn">
+              ⚠ {t(pluralPhrase(stuckCount, 'shift.bar.needAttentionOne', 'shift.bar.needAttentionFew', 'shift.bar.needAttentionMany'), { count: stuckCount })}
+            </span>
+          )}
           {pendingCount > 0 && <span className="pill warn">⏳ {t('shift.bar.notSent', { count: pendingCount })}</span>}
           <span className="pill">
             <span className={`dot ${online ? 'online' : 'offline'}`}></span>

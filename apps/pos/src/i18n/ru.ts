@@ -36,7 +36,9 @@ export const ru = {
   'shift.bar.since': 'смена с {time}',
   'shift.bar.online': 'Онлайн',
   'shift.bar.offline': 'Офлайн',
-  'shift.bar.needAttention': '{count} требуют внимания',
+  'shift.bar.needAttentionOne': '{count} требует внимания',
+  'shift.bar.needAttentionFew': '{count} требуют внимания',
+  'shift.bar.needAttentionMany': '{count} требуют внимания',
   'shift.bar.notSent': '{count} не отправлено',
   'shift.bar.longShift': 'Смена открыта {hours} ч — рекомендуем закрыть и снять Z-отчёт до 24 часов',
 
