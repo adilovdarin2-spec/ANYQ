@@ -20,6 +20,14 @@ interface Props {
    * queue and the drawer count from each growing a second code path.
    */
   onConfirm: (payments: PaymentLine[]) => void;
+  /**
+   * Почему продажа не прошла — здесь, а не где-то на другом экране.
+   *
+   * Когда оплата не записалась, касса остаётся на этом же экране. Без строки
+   * тут это выглядит как незасчитанное нажатие: кассир жмёт «Оплатить» ещё
+   * раз, потом ещё, держа перед собой покупателя.
+   */
+  error?: string | null;
 }
 
 // Рисованные, а не эмодзи: на этом экране их четыре подряд, и раньше это были
@@ -36,7 +44,7 @@ const METHOD_PHRASES: Record<PaymentMethod, PhraseKey> = {
   credit: 'payment.credit',
 };
 
-export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props) {
+export function PaymentModal({ total, hasCustomer, onCancel, onConfirm, error }: Props) {
   const { t } = useTranslation();
   // Offered only once a customer is attached: selling on credit to nobody in
   // particular is giving goods away, and the server refuses it anyway — better
@@ -51,6 +59,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
     return (
       <div className="screen">
         <SplitPaymentEditor total={total} onBack={() => setSplitting(false)} onConfirm={onConfirm} />
+        {error && <div className="login-error" style={{ margin: '12px 16px' }}>{error}</div>}
       </div>
     );
   }
@@ -62,6 +71,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm }: Props)
         <span className="screen-title">{t('payment.title', { amount: formatMoney(total) })}</span>
       </div>
       <div className="screen-body">
+        {error && <div className="login-error" style={{ marginBottom: 12 }}>{error}</div>}
         {selected === null && (
           <div className="payment-options">
             {methods.map((m) => (

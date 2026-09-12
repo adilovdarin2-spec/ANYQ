@@ -1,4 +1,5 @@
 import type { CountSheetLine, Sale, Shift } from './types';
+import { isQuotaError, keepOnlyUnsent, pruneSales, KEEP_ON_OVERFLOW } from './sales-retention';
 import type { PosSession } from './api';
 
 const SHIFT_KEY = 'anyq_pos_shift';
@@ -63,14 +64,46 @@ export function getSales(): Sale[] {
   return read<Sale[]>(SALES_KEY, []);
 }
 
+/**
+ * Место кончилось, и чек записать некуда.
+ *
+ * Отдельный тип, потому что кассиру про это нужно сказать словами, а не
+ * уронить экран: деньги он уже взял.
+ */
+export class SalesStorageFullError extends Error {
+  constructor() {
+    super('sales storage full');
+    this.name = 'SalesStorageFullError';
+  }
+}
+
 export function addSale(sale: Sale): void {
-  const sales = getSales();
-  sales.push(sale);
-  write(SALES_KEY, sales);
+  // Чистим на записи, а не по таймеру: это единственный момент, когда список
+  // точно растёт, и стоит он один проход по массиву, который и так
+  // переписывается целиком.
+  const sales = [...pruneSales(getSales()), sale];
+  saveSales(sales);
 }
 
 export function saveSales(sales: Sale[]): void {
-  write(SALES_KEY, sales);
+  try {
+    write(SALES_KEY, sales);
+    return;
+  } catch (err) {
+    if (!isQuotaError(err)) throw err;
+  }
+  // Браузер сказал «места нет». Уступаем тем, что уже есть на сервере: сперва
+  // оставляем хвост отправленных — по ним на закрытии считают кассу, — а если
+  // и он не влезает, то только очередь. Чек в руках дороже любой истории.
+  for (const keepSynced of [KEEP_ON_OVERFLOW, 0]) {
+    try {
+      write(SALES_KEY, keepOnlyUnsent(sales, keepSynced));
+      return;
+    } catch (err) {
+      if (!isQuotaError(err)) throw err;
+    }
+  }
+  throw new SalesStorageFullError();
 }
 
 export function salesForShift(shiftId: string): Sale[] {
