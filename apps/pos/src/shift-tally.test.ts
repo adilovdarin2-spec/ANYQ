@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { refusedInShift, tallyShift } from './shift-tally';
-import type { PaymentLine, Refund, Sale } from './types';
+import type { DrawerEntry, PaymentLine, Sale } from './types';
 
 /**
  * Сколько должно быть в ящике на закрытии смены.
@@ -87,17 +87,19 @@ describe('пересчёт смены', () => {
   });
 });
 
-describe('возвраты за смену', () => {
-  const возврат = (over: Partial<Refund>): Refund =>
+describe('деньги мимо чека', () => {
+  const движение = (over: Partial<DrawerEntry>): DrawerEntry =>
     ({
       id: 'r1',
       shiftId: 'shift-1',
-      saleId: 's1',
+      kind: 'refund',
+      direction: 'out',
       amount: 2000,
       method: 'cash',
       createdAt: '2026-09-12T11:00:00.000Z',
       ...over,
-    }) as Refund;
+    }) as DrawerEntry;
+  const возврат = движение;
 
   it('выданные наличными уходят из ящика', () => {
     // Кассир отдал деньги покупателю на глазах у всех. Не вычесть их — значит
@@ -117,6 +119,32 @@ describe('возвраты за смену', () => {
 
   it('без возвратов ничего не меняется', () => {
     expect(tallyShift([продажа({ total: 5000, paymentMethod: 'cash' })], 10_000).expectedCash).toBe(15_000);
+  });
+
+  it('долг, погашенный наличными, приходит в ящик', () => {
+    // Клиент принёс деньги за прошлую поставку. Чека нет, а деньги в ящике
+    // есть — и до сих пор кассир отвечал за них как за излишек.
+    const tally = tallyShift([продажа({ total: 5000, paymentMethod: 'cash' })], 10_000, [
+      движение({ kind: 'settlement', direction: 'in', amount: 30_000 }),
+    ]);
+    expect(tally.settledIn).toBe(30_000);
+    expect(tally.expectedCash).toBe(45_000);
+  });
+
+  it('оплата поставщику из ящика — уходит', () => {
+    const tally = tallyShift([продажа({ total: 5000, paymentMethod: 'cash' })], 10_000, [
+      движение({ kind: 'settlement', direction: 'out', amount: 4000 }),
+    ]);
+    expect(tally.settledOut).toBe(4000);
+    expect(tally.expectedCash).toBe(11_000);
+  });
+
+  it('безналичный расчёт ящика не касается', () => {
+    const tally = tallyShift([], 10_000, [
+      движение({ kind: 'settlement', direction: 'in', amount: 30_000, method: 'card' }),
+    ]);
+    expect(tally.settledIn).toBe(0);
+    expect(tally.expectedCash).toBe(10_000);
   });
 
   it('выручку смены возврат не переписывает', () => {

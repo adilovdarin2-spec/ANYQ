@@ -169,6 +169,60 @@ describe('which shift a sale belongs to', () => {
   });
 });
 
+describe('деньги мимо чека', () => {
+  /** Клиент заводится продажей с телефоном — так он и появляется в жизни. */
+  async function клиентСДолгом(shiftId: string) {
+    const res = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftId,
+      paymentMethod: 'kaspi',
+      customerPhone: '+7 700 555 44 33',
+      customerName: 'ТОО «Покупатель»',
+      items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const counterparty = await prisma.counterparty.findFirst({
+      where: { companyId: fx.companyId, type: 'customer' },
+    });
+    expect(counterparty, 'клиент заведён').toBeTruthy();
+    return counterparty!.id;
+  }
+
+  it('долг, погашенный наличными, приходит в ящик', async () => {
+    // Оптовая половина продукта: клиент приносит деньги за прошлую поставку.
+    // Чека нет, а деньги в ящике есть, и сверка смены их не видела вовсе —
+    // кассир каждый такой день оказывался с необъяснимым излишком.
+    const shiftId = await openShift(10_000);
+    const counterpartyId = await клиентСДолгом(shiftId);
+
+    const paid = await api(fx.token, 'POST', '/pos/settlements', {
+      locationId: fx.locationId,
+      counterpartyId,
+      amount: 30_000,
+      paymentMethod: 'cash',
+    });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(201);
+
+    // 10 000 в кассу на начало + 30 000 наличными по долгу. Продажа, которой
+    // клиента завели, прошла по Kaspi и ящика не касается.
+    expect((await shiftCash(shiftId)).expected).toBe(40_000);
+  });
+
+  it('безналичный расчёт ящика не касается', async () => {
+    const shiftId = await openShift(10_000);
+    const counterpartyId = await клиентСДолгом(shiftId);
+
+    await api(fx.token, 'POST', '/pos/settlements', {
+      locationId: fx.locationId,
+      counterpartyId,
+      amount: 30_000,
+      paymentMethod: 'kaspi',
+    });
+
+    expect((await shiftCash(shiftId)).expected).toBe(10_000);
+  });
+});
+
 describe('смена, закрытая без связи', () => {
   it('ложится тем часом, когда её закрыли, а не когда сервер услышал', async () => {
     // Смену закрывают вечером и уходят домой, связь появляется утром. С
