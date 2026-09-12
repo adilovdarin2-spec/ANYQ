@@ -1,13 +1,13 @@
 export type ModuleKey = 'shop' | 'warehouse' | 'pharmacy' | 'supply' | 'terminal' | 'restaurant' | 'retail';
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
-  shop: 'Магазин',
+  shop: 'Магазин (ничего не включает — см. «Розница»)',
   warehouse: 'Склад',
   pharmacy: 'Аптека',
   supply: 'Оптовый склад (B2B-витрина)',
   terminal: 'ПК/Терминал (отчёты и печать)',
   restaurant: 'Кафе/Ресторан (legacy)',
-  retail: 'Розница (скидки, лояльность)',
+  retail: 'Магазин / розница (скидки, лояльность, весовой товар)',
 };
 
 /**
@@ -22,16 +22,28 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
  * Not removed from `ModuleKey`: a company that has it must still be able to
  * have it taken away, which means the switch has to exist somewhere.
  */
-export const LEGACY_MODULES: ModuleKey[] = ['restaurant'];
+export const LEGACY_MODULES: ModuleKey[] = ['restaurant', 'shop'];
 
-/** What may be offered when creating a company, or added to an existing one. */
+/**
+ * What may be offered when creating a company, or added to an existing one.
+ *
+ * `shop` не предлагается, потому что не делает ничего. В коссе и на сервере
+ * проверяются `retail`, `warehouse`, `terminal`, `supply`, `pharmacy` и
+ * `restaurant`; строки «shop» нет ни в одной проверке. Галочка «Магазин» при
+ * этом стояла по умолчанию у каждой новой компании — то есть магазин,
+ * заведённый по умолчанию, получал кассу без скидок, без лояльности и без
+ * весового товара, и понять почему было нельзя: в карточке компании написано
+ * «Магазин».
+ *
+ * Модуль остаётся в `LEGACY_MODULES`: у заведённых компаний он записан, и
+ * снять его должно быть чем.
+ */
 export const OFFERABLE_MODULES: ModuleKey[] = [
-  'shop',
+  'retail',
   'warehouse',
   'pharmacy',
   'supply',
   'terminal',
-  'retail',
 ];
 
 export type SupportLevel = 'basic' | 'priority' | 'dedicated';

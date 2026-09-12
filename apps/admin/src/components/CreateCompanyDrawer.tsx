@@ -40,7 +40,8 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
   // это через неделю словами «а я и не заходил ни разу».
   const [ownerPin, setOwnerPin] = useState('');
 
-  const [modules, setModules] = useState<ModuleKey[]>(['shop']);
+  // Розница, а не «Магазин»: последний не включает ничего — см. OFFERABLE_MODULES.
+  const [modules, setModules] = useState<ModuleKey[]>(['retail']);
   const [locationLimit, setLocationLimit] = useState('');
   const [userLimit, setUserLimit] = useState('');
   const [skuLimit, setSkuLimit] = useState('');
