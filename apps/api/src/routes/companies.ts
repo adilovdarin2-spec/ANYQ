@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma, Prisma } from '@anyq/db';
 import { limitRefusal } from '../limits';
+import { moduleListRefusal } from '../modules';
 import { phoneKey } from '../phone';
 import { requireAuth } from '../auth';
 import type { AuthedRequest } from '../auth';
@@ -81,6 +82,13 @@ companiesRouter.post('/', async (req, res) => {
   const b = req.body ?? {};
   if (!b.name || !b.phone || !b.location?.name || !b.owner?.name) {
     res.status(400).json({ error: 'Заполните название, телефон, точку и владельца' });
+    return;
+  }
+
+  // Модуль, которого не бывает, ничего не включает и выглядит включённым.
+  const modulesRefusal = moduleListRefusal(b.tariff?.modules);
+  if (modulesRefusal) {
+    res.status(400).json({ error: modulesRefusal });
     return;
   }
 
@@ -531,6 +539,12 @@ companiesRouter.patch('/:id/tariff', async (req, res) => {
   const exists = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!exists) {
     res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  const modulesRefusal = moduleListRefusal(b.modules);
+  if (modulesRefusal) {
+    res.status(400).json({ error: modulesRefusal });
     return;
   }
 

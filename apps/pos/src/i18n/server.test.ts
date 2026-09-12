@@ -169,6 +169,10 @@ const NOT_A_MESSAGE = new Set<string>([
   // Never rendered: a corrupt secret is a server fault, not something a cashier
   // can act on, and the note beside a queued receipt is read in the log.
   'Недопустимый символ в ключе: 7', 'попытка 7, повторим', 'попыток исчерпано (7)',
+  // Отказы админки: их видит сотрудник ANYQ, заводящий компанию, а не кассир.
+  // Касса про модули не спрашивает вовсе — этот ответ приходит только на
+  // создание компании и правку тарифа, и приходит он в админку.
+  'Модули передаются списком', 'Таких модулей нет: 7. Доступны: 7', 'пустое значение',
   // Written into a document's own reason line, which the register shows verbatim
   // because the shop's own wording sits in the same field.
   'Пересчёт ячеек: 7', 'Сверка журнала: исправлено позиций 7',

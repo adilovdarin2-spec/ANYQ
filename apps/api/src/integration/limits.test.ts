@@ -69,6 +69,46 @@ describe('лимит точек', () => {
   });
 });
 
+describe('модули компании', () => {
+  it('опечатку в названии модуля не принимают', async () => {
+    // Такой модуль не включает ничего и выглядит включённым: в карточке стоит
+    // галочка, а касса про эту строку не спрашивает никогда.
+    const res = await api(adminToken, 'PATCH', `/companies/${fx.companyId}/tariff`, {
+      modules: ['wharehouse'],
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('warehouse');
+
+    const tariff = await prisma.tariff.findUnique({ where: { companyId: fx.companyId } });
+    expect(JSON.parse(tariff!.modules)).not.toContain('wharehouse');
+  });
+
+  it('настоящие модули сохраняются', async () => {
+    const res = await api(adminToken, 'PATCH', `/companies/${fx.companyId}/tariff`, {
+      modules: ['retail', 'warehouse'],
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    const tariff = await prisma.tariff.findUnique({ where: { companyId: fx.companyId } });
+    expect(JSON.parse(tariff!.modules)).toEqual(['retail', 'warehouse']);
+  });
+
+  it('компанию с несуществующим модулем не заводят', async () => {
+    const res = await api(adminToken, 'POST', '/companies', {
+      name: 'ТОО «Опечатка»',
+      phone: '+7 700 000 00 00',
+      location: { name: 'Магазин', type: 'shop' },
+      owner: { name: 'Владелец' },
+      tariff: { modules: ['retale'], validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('retail');
+    expect(await prisma.company.count({ where: { name: 'ТОО «Опечатка»' } })).toBe(0);
+  });
+});
+
 describe('лимит сотрудников', () => {
   it('не даёт завести сверх тарифа', async () => {
     await setLimits({ userLimit: 1 });
