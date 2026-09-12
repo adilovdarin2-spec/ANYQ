@@ -49,6 +49,7 @@ export const ru = {
   'shift.close.matches': 'Сходится',
   'shift.close.short': 'Недостача {amount}',
   'shift.close.over': 'Излишек {amount}',
+  'shift.close.refused': 'Сервер не принял продаж: {count} на {amount} ₸. Деньги за них в ящике есть, в отчёте владельца их не будет — покажите ему до закрытия.',
   'shift.close.submit': 'Закрыть смену',
 
   // --- selling ------------------------------------------------------------

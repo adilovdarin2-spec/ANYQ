@@ -59,7 +59,14 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
     setSale(picked);
     setQuantities({});
     setReason('');
-    setPaymentMethod((picked.paymentMethod as PaymentMethod) ?? 'cash');
+    // Только то, что есть в списке ниже. Чек, разбитый на части, помечен
+    // как `mixed`, а долг — как `credit`; ни того, ни другого в выборе нет,
+    // и подставленное значение просто не совпадало ни с одним пунктом:
+    // селект стоял пустым, а уходило на сервер «mixed». В сверке смены такой
+    // возврат не вычитался из ящика — то есть кассир, отдавший деньги из
+    // кассы, оказывался в конце смены должен ровно эту сумму.
+    const original = picked.paymentMethod as PaymentMethod;
+    setPaymentMethod(PAYMENT_METHODS.includes(original) ? original : 'cash');
     setView('compose');
   }
 
