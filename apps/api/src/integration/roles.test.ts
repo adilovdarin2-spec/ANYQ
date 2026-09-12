@@ -159,3 +159,36 @@ describe('владелец и менеджер', () => {
     }
   });
 });
+
+describe('смена роли', () => {
+  it('старый вход перестаёт действовать сразу', async () => {
+    // Права выдаются при входе и лежат в сессии. Если бы токен пережил смену
+    // роли, повышенный кладовщик ходил бы со старыми правами до конца месяца —
+    // а разжалованный кассир продолжал бы списывать с телефона, который у него
+    // уже забрали.
+    const pin = String(nextPin++);
+    const user = await prisma.user.create({
+      data: { companyId: fx.companyId, name: 'Асель', role: 'cashier', posPin: pin },
+    });
+    const login = await api(null, 'POST', '/pos/login', { pin });
+    expect(login.body.capabilities).toEqual([]);
+
+    const admin = await prisma.adminUser.create({
+      data: { email: `roles-${Date.now()}@anyq.kz`, name: 'Админ', passwordHash: 'x' },
+    });
+    expect(admin.id).toBeTruthy();
+
+    // Роль меняют мимо кассы — так это и происходит: в админке платформы.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { role: 'warehouse_staff', tokenVersion: { increment: 1 } },
+    });
+
+    const сталоПоздно = await api(login.body.token, 'GET', '/pos/catalog');
+    expect(сталоПоздно.status).toBe(401);
+
+    const снова = await api(null, 'POST', '/pos/login', { pin });
+    expect(снова.body.capabilities).toContain('count');
+    expect(снова.body.capabilities).not.toContain('writeOff');
+  });
+});
