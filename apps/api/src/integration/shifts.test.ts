@@ -132,6 +132,41 @@ describe('which shift a sale belongs to', () => {
     // 10 000 float + 1 000 taken − 400 handed back.
     expect((await shiftCash(shiftId)).expected).toBe(10600);
   });
+
+  it('возврат по чеку, разбитому на части, всё равно уходит из ящика', async () => {
+    // Способ оплаты у такого чека — «mixed», и возврат наследовал его. А
+    // выданные деньги сверка считает по этому полю и «mixed» не знает: наличные
+    // из ящика уходили, а в сверке их не было. Кассир, вернувший деньги
+    // покупателю, оказывался должен ровно эту сумму.
+    const shiftId = await openShift(10000);
+    const sold = await api(fx.token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftId,
+      payments: [
+        { method: 'card', amount: 600 },
+        { method: 'cash', amount: 400 },
+      ],
+      items: [{ productId: fx.productId, quantity: 5, price: 200 }],
+    });
+    expect(sold.status, JSON.stringify(sold.body)).toBe(201);
+
+    const sales = await api(fx.token, 'GET', `/pos/sales?locationId=${fx.locationId}`);
+    const line = sales.body.find((s: { id: string }) => s.id === sold.body.id).items[0];
+
+    // Способ возврата не назван — так уходит запрос старой кассы.
+    const refund = await api(fx.token, 'POST', '/pos/returns', {
+      saleId: sold.body.id,
+      reason: 'не подошёл',
+      items: [{ documentItemId: line.id, quantity: 2 }],
+    });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+
+    const document = await prisma.document.findUnique({ where: { id: refund.body.id } });
+    expect(document?.paymentMethod).toBe('cash');
+
+    // 10 000 в кассу + 400 наличными с чека − 400 отданных.
+    expect((await shiftCash(shiftId)).expected).toBe(10000);
+  });
 });
 
 describe('a shift opened without a network', () => {

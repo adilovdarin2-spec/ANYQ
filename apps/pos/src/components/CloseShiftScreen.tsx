@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Sale, Shift } from '../types';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
+import { refusedInShift, tallyShift } from '../shift-tally';
 
 interface Props {
   shift: Shift;
@@ -14,11 +15,11 @@ export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
   const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
-  const cashSum = sales.filter((s) => s.paymentMethod === 'cash').reduce((sum, s) => sum + s.total, 0);
-  const kaspiSum = sales.filter((s) => s.paymentMethod === 'kaspi').reduce((sum, s) => sum + s.total, 0);
-  const cardSum = sales.filter((s) => s.paymentMethod === 'card').reduce((sum, s) => sum + s.total, 0);
-  const total = cashSum + kaspiSum + cardSum;
-  const expectedCash = shift.openingCash + cashSum;
+  const { byMethod, total, expectedCash } = tallyShift(sales, shift.openingCash);
+  // Их деньги в ящике есть, а в Z-отчёте на сервере не будет. Сказать об этом
+  // нужно здесь — на этом экране человек последний раз смотрит на смену.
+  const refused = refusedInShift(sales);
+  const refusedSum = refused.reduce((sum, s) => sum + s.total, 0);
 
   const countedValue = counted === '' ? null : Number(counted);
   const diff = countedValue === null ? null : countedValue - expectedCash;
@@ -32,9 +33,14 @@ export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
       <div className="screen-body">
         <div className="summary-row"><span className="sr-muted">{t('shift.close.openedAt')}</span><span>{formatTime(shift.openedAt)}</span></div>
         <div className="summary-row"><span className="sr-muted">{t('shift.close.salesCount')}</span><span>{sales.length}</span></div>
-        <div className="summary-row"><span className="sr-muted">{t('payment.cash')}</span><span>{formatMoney(cashSum)}</span></div>
-        <div className="summary-row"><span className="sr-muted">{t('payment.kaspi')}</span><span>{formatMoney(kaspiSum)}</span></div>
-        <div className="summary-row"><span className="sr-muted">{t('payment.card')}</span><span>{formatMoney(cardSum)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('payment.cash')}</span><span>{formatMoney(byMethod.cash)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('payment.kaspi')}</span><span>{formatMoney(byMethod.kaspi)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('payment.card')}</span><span>{formatMoney(byMethod.card)}</span></div>
+        {/* Долг показываем, только когда он есть: в магазине, где в долг не
+            отпускают, лишняя строка с нулём — это вопрос «а что это». */}
+        {byMethod.credit > 0 && (
+          <div className="summary-row"><span className="sr-muted">{t('payment.credit')}</span><span>{formatMoney(byMethod.credit)}</span></div>
+        )}
         <div className="summary-row total"><span>{t('shift.close.total')}</span><span>{formatMoney(total)}</span></div>
 
         <div className="summary-row" style={{ marginTop: 18 }}>
@@ -53,6 +59,12 @@ export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
             onChange={(e) => setCounted(e.target.value)}
           />
         </div>
+
+        {refused.length > 0 && (
+          <div className="reconcile-diff short" style={{ marginTop: 12 }}>
+            {t('shift.close.refused', { count: refused.length, amount: formatMoney(refusedSum) })}
+          </div>
+        )}
 
         {diff !== null && (
           <div className={`reconcile-diff ${diff === 0 ? 'ok' : diff < 0 ? 'short' : 'over'}`}>

@@ -337,6 +337,29 @@ posRouter.get('/catalog', requirePosAuth, async (req: PosAuthedRequest, res) => 
 // A document stores its discount as a loose type/value pair; this is the
 // narrowed shape the money maths takes, and the same reading has to be used
 // everywhere or a refund won't match the sale it reverses.
+/**
+ * Как деньги ушли обратно — так, чтобы это увидела сверка кассы.
+ *
+ * Сверка смены считает выданные из ящика деньги по одному полю: способ оплаты
+ * возврата. Поэтому здесь допустимы только те способы, которыми деньги
+ * действительно выдают. Раньше поле принимало любую строку, а по умолчанию
+ * наследовало способ оплаты чека — и чек, разбитый на части, отдавал возврату
+ * свой `mixed`. Наличные из ящика уходили, а в сверке их не было: кассир
+ * оказывался должен ровно сумму возврата.
+ *
+ * Когда клиент не сказал ничего внятного, берём способ оплаты чека, если им
+ * можно выдать деньги, и только в последнюю очередь — наличные. Угадывание
+ * здесь дорогое в обе стороны: чужой способ либо придумает недостачу, либо
+ * спишет её.
+ */
+const REFUND_METHODS = ['cash', 'kaspi', 'card'];
+
+function refundMethod(requested: unknown, saleMethod: string | null): string {
+  if (typeof requested === 'string' && REFUND_METHODS.includes(requested)) return requested;
+  if (saleMethod && REFUND_METHODS.includes(saleMethod)) return saleMethod;
+  return 'cash';
+}
+
 function saleDiscount(document: { discountType: string | null; discountValue: number | null }) {
   return document.discountType === 'percent' || document.discountType === 'fixed'
     ? { type: document.discountType as DiscountType, value: document.discountValue ?? 0 }
@@ -971,7 +994,13 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
           type: 'return',
           status: 'confirmed',
           // How the money went back, which is not always how it came in.
-          paymentMethod: typeof b.paymentMethod === 'string' ? b.paymentMethod : sale.paymentMethod,
+          //
+          // One of the three ways money actually leaves a till, or nothing.
+          // Anything else — an unknown string, or `mixed` inherited from a
+          // split sale — makes the return invisible to the shift's cash
+          // reconciliation, which counts refunds by this very field: the money
+          // left the drawer and the figures say it did not.
+          paymentMethod: refundMethod(b.paymentMethod, sale.paymentMethod),
           counterpartyId: sale.counterpartyId,
           originalDocumentId: sale.id,
           reason,
