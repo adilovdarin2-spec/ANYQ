@@ -7,6 +7,7 @@ import {
   shouldRetry,
 } from './fiscal';
 import type { FiscalProvider } from './fiscal';
+import type { PaymentLine } from './payments';
 import { computeDiscount } from './discounts';
 import type { DiscountInput } from './discounts';
 
@@ -85,7 +86,7 @@ export async function drainFiscalQueue(
     take: limit * 4,
     include: {
       document: {
-        include: { items: { include: { product: true } }, location: true },
+        include: { items: { include: { product: true } }, location: true, payments: true },
       },
     },
   });
@@ -113,6 +114,7 @@ export async function drainFiscalQueue(
       registrationNumber: device.registrationNumber,
       createdAt: receipt.document.createdAt,
       paymentMethod: receipt.document.paymentMethod,
+      payments: receipt.document.payments as PaymentLine[],
       lines: receipt.document.items.map((it) => ({
         name: it.product.name,
         quantity: it.quantity,

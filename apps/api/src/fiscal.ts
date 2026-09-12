@@ -1,3 +1,6 @@
+import { paymentsOrLegacy } from './payments';
+import type { PaymentLine } from './payments';
+
 export interface FiscalLine {
   name: string;
   /** Base units. */
@@ -24,6 +27,17 @@ export interface FiscalPayload {
   registrationNumber: string;
   createdAt: string;
   paymentMethod: string;
+  /**
+   * Чем заплатили, по частям.
+   *
+   * Фискальный чек в Казахстане обязан показывать наличные и безналичные
+   * отдельно: это разные строки в чеке и разные суммы в отчётности. Одной
+   * пометки `paymentMethod` для этого не хватает — у чека, разбитого между
+   * картой и наличными, она равна «mixed», то есть не говорит ОФД ничего.
+   * Подставить вместо неё «наличные» нельзя: зарегистрированный чек — это
+   * документ, и исправлять его придётся через налоговую.
+   */
+  payments: PaymentLine[];
   lines: FiscalLine[];
   /** Money actually collected, after discount and points. */
   total: number;
@@ -44,6 +58,8 @@ export function buildFiscalPayload(input: {
   registrationNumber: string;
   createdAt: Date;
   paymentMethod: string | null;
+  /** Строки оплаты продажи; у чека прошлых сборок их нет. */
+  payments?: PaymentLine[];
   lines: FiscalLine[];
   total: number;
   discount: number;
@@ -54,6 +70,9 @@ export function buildFiscalPayload(input: {
     registrationNumber: input.registrationNumber,
     createdAt: input.createdAt.toISOString(),
     paymentMethod: input.paymentMethod ?? 'cash',
+    // Чек, пробитый до появления разбивки, — это вся сумма одним способом;
+    // так его и раскладываем, а не теряем.
+    payments: paymentsOrLegacy(input.payments, input.paymentMethod, input.total),
     lines: input.lines,
     total: input.total,
     discount: input.discount,
