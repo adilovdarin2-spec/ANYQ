@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { refusalIsAboutThisRequest } from '../refusal';
 import { ApiError, createReceipt, createWriteOff, putawayStock, submitBinCount } from '../api';
 import type { BinCountPayload, CreateReceiptPayload, CreateWriteOffPayload, PutawayPayload } from '../api';
 import {
@@ -63,7 +64,7 @@ export function useOutboxSync(token: string | null) {
           results.set(command.id, await send(token, command));
           saveOutbox(markSent(getOutbox(), command.id));
         } catch (err) {
-          if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
+          if (refusalIsAboutThisRequest(err)) {
             // The server was reached and refused this command specifically.
             // Record why and stop: everything behind it was given against the
             // world this command was supposed to make, and replaying that on
@@ -72,8 +73,10 @@ export function useOutboxSync(token: string | null) {
             saveOutbox(markRefused(getOutbox(), command.id, err.message));
           } else {
             // Unreachable, or the server failed in a way that says nothing
-            // about this command. Keep it — marking it refused here would
-            // strand a perfectly good delivery over a momentary fault.
+            // about this command — a 5xx, a revoked session, a lapsed tariff.
+            // Keep it: marking it refused here would strand a perfectly good
+            // delivery over a momentary fault, and put the storeman in front
+            // of a decision that belongs to somebody else entirely.
             saveOutbox(markAttempted(getOutbox(), command.id));
           }
           break;

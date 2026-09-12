@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSales, saveSales } from '../storage';
 import type { Sale } from '../types';
 import { clearRefusal, splitQueue } from '../sales-queue';
+import { refusalIsAboutThisRequest } from '../refusal';
 import { useOnlineStatus } from './useOnlineStatus';
 import { submitSale, ApiError } from '../api';
 
@@ -87,15 +88,7 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
           const updated = getSales().map((s) => (s.id === sale.id ? { ...s, synced: true, syncError: undefined } : s));
           saveSales(updated);
         } catch (err) {
-          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-            // Не про эту продажу: доступ отозван или тариф закрыт. Продажа
-            // хорошая, а войти заново или заплатить — дело минуты. Пометить её
-            // здесь «отказанной» значило бы отправить кассира разбирать
-            // каждый утренний чек по одному, когда на самом деле разобрать
-            // нужно одно.
-            break;
-          }
-          if (err instanceof ApiError && err.status < 500) {
+          if (refusalIsAboutThisRequest(err)) {
             // The server was reached and explicitly rejected this specific
             // sale (stale price, insufficient stock, etc). Record why and
             // move on — one bad sale must not block every sale queued behind
@@ -104,11 +97,11 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
             saveSales(updated);
             continue;
           }
-          // Either the server couldn't be reached, or it failed in a way that
-          // says nothing about this sale (5xx). Keep the whole queue for the
-          // next attempt: marking a sale stuck here would put a perfectly good
-          // sale in front of the cashier as a refusal over a momentary server
-          // fault.
+          // Сервер недоступен, ответил пятисотой или отказал не про эту
+          // продажу — отозванный доступ, кончившийся тариф. Очередь остаётся
+          // как есть: пометить её здесь «отказанной» значило бы показать
+          // кассиру хорошие продажи как испорченные и отправить разбирать
+          // каждую по одной вместо одного входа в кассу.
           break;
         }
       }
