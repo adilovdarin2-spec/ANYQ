@@ -169,6 +169,30 @@ describe('приёмка на складе с ячейками', () => {
     expect(await rows()).toEqual({ 'приёмка': 72, 'A-01': 40 });
   });
 
+  it('излишек пересчёта по точке ложится в приёмку, а не на полку наугад', async () => {
+    // Пересчёт по точке не говорит, на какой полке нашлись лишние штуки: это
+    // знает только пересчёт по ячейкам. Полка, выбранная наугад, потом
+    // показывает на себе излишек, которого там нет.
+    const count = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      items: [{ productId: fx.productId, countedQuantity: 105 }],
+    });
+    expect(count.status, JSON.stringify(count.body)).toBe(201);
+
+    expect(await rows()).toEqual({ 'приёмка': 65, 'A-01': 40 });
+  });
+
+  it('недостача пересчёта снимается с полок, где товар лежит', async () => {
+    const count = await api(fx.token, 'POST', '/pos/counts', {
+      locationId: fx.locationId,
+      items: [{ productId: fx.productId, countedQuantity: 95 }],
+    });
+    expect(count.status, JSON.stringify(count.body)).toBe(201);
+
+    const где = await rows();
+    expect((где['приёмка'] ?? 0) + (где['A-01'] ?? 0)).toBe(95);
+  });
+
   it('журнал при этом сходится', async () => {
     // Товар и раньше не терялся — он лежал не там. Проверяем, что починка
     // адреса не сломала главного: остаток равен сумме своих движений.

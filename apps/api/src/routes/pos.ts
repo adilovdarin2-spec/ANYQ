@@ -6838,13 +6838,18 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     for (const adj of adjustments) {
       const rows = stockByProduct.get(adj.productId) ?? [];
       if (rows.length > 0) {
-        // A shortfall is taken off the shelves the goods were on; a surplus
-        // lands in the first one, since a count cannot say which shelf the
-        // extra units were found on until counting is done per bin.
+        // Недостача снимается с полок, где товар лежал. Излишек класть на
+        // полку нельзя: пересчёт по точке не говорит, на какой полке нашлись
+        // лишние штуки, — это знает только пересчёт по ячейкам. Поэтому
+        // излишек ложится туда же, куда всё, у чего адреса пока нет: в строку
+        // без адреса. «Первая попавшаяся строка» была адресом наугад, и
+        // следующий пересчёт этой полки показывал на ней излишек, которого
+        // там нет.
+        const surplusRow = rows.find((row) => row.binLocation === '') ?? rows[0];
         updates.push(
           adj.delta < 0
             ? deductAcrossBins(tx, rows, -adj.delta, 'adjustment', { documentId: document.id, createdBy: req.posUserId })
-            : applyStockDelta(tx, rows[0], adj.delta, 'adjustment', { documentId: document.id, createdBy: req.posUserId }),
+            : applyStockDelta(tx, surplusRow, adj.delta, 'adjustment', { documentId: document.id, createdBy: req.posUserId }),
         );
       } else if (adj.countedQuantity > 0) {
         updates.push(
