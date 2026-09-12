@@ -134,6 +134,16 @@ const NOT_A_MESSAGE = new Set<string>([
   // edited by the shop from then on, so translating it would rename their
   // tablets under them.
   'Устройство',
+  // Куски фразы про лимит тарифа, которая собирается из частей в
+  // apps/api/src/limits.ts. По отдельности это не сообщения: «точки» и «сейчас
+  // 7» никто не показывает. Собранная фраза переведена образцом ниже, и
+  // отдельный тест в этом файле проверяет, что образец её ловит, — иначе
+  // список исключений извинил бы её целиком.
+  'Тариф допускает 7 — 7. Поднять лимит может менеджер ANYQ.',
+  'сейчас 7', 'сейчас 7, добавляется 7',
+  'точку', 'точки', 'точек',
+  'сотрудника', 'сотрудников',
+  'товар', 'товара', 'товаров',
   // Cells of the export, again: the reason a movement happened and how a sale
   // was paid for. These used to go out as `write_off` and `cash` — English
   // values in Russian columns, in a file that opens in the owner's Excel. The
@@ -182,6 +192,29 @@ describe('the server, in the cashier\'s language', () => {
       (text) => !NOT_A_MESSAGE.has(text) && !hasServerTranslation(text),
     );
     expect(missing).toEqual([]);
+  });
+
+  it('говорит по-казахски и про лимит тарифа', () => {
+    // Фраза собирается из частей, поэтому в исходниках её целиком нет и
+    // извлекатель её не видит. Здесь она написана в том виде, в каком её
+    // отдаёт сервер: если форма в limits.ts изменится, извлекатель наткнётся
+    // на новый скелет, которого нет в списке исключений, и предыдущий тест
+    // упадёт.
+    const формы = [
+      'Тариф допускает 3 точки — сейчас 3. Поднять лимит может менеджер ANYQ.',
+      'Тариф допускает 1 сотрудника — сейчас 1. Поднять лимит может менеджер ANYQ.',
+      'Тариф допускает 500 товаров — сейчас 400, добавляется 200. Поднять лимит может менеджер ANYQ.',
+    ];
+    for (const форма of формы) {
+      expect(hasServerTranslation(форма), форма).toBe(true);
+      const переведено = translateServerMessage('kk', форма);
+      expect(переведено).not.toBe(форма);
+      expect(переведено).toContain('ANYQ');
+    }
+    // Числа доезжают в перевод — иначе казахский кассир прочитает фразу без
+    // единственного, что в ней важно.
+    expect(translateServerMessage('kk', формы[0])).toContain('3');
+    expect(translateServerMessage('kk', формы[2])).toContain('200');
   });
 
   it('does not keep entries for messages the server no longer sends', () => {

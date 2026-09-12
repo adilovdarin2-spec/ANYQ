@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma, Prisma } from '@anyq/db';
+import { limitRefusal } from '../limits';
 import { requireAuth } from '../auth';
 import type { AuthedRequest } from '../auth';
 import { recordChanges } from '../audit-log';
@@ -229,9 +230,18 @@ companiesRouter.post('/:id/products', async (req, res) => {
     return;
   }
 
-  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  const company = await prisma.company.findUnique({
+    where: { id: req.params.id },
+    include: { tariff: true, _count: { select: { products: true } } },
+  });
   if (!company) {
     res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  const refusal = limitRefusal('products', company.tariff?.skuLimit, company._count.products);
+  if (refusal) {
+    res.status(409).json({ error: refusal });
     return;
   }
 
@@ -331,9 +341,18 @@ companiesRouter.post('/:id/users', async (req, res) => {
     return;
   }
 
-  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  const company = await prisma.company.findUnique({
+    where: { id: req.params.id },
+    include: { tariff: true, _count: { select: { users: true } } },
+  });
   if (!company) {
     res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  const refusal = limitRefusal('users', company.tariff?.userLimit, company._count.users);
+  if (refusal) {
+    res.status(409).json({ error: refusal });
     return;
   }
 
@@ -446,9 +465,18 @@ companiesRouter.post('/:id/locations', async (req, res) => {
     return;
   }
 
-  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  const company = await prisma.company.findUnique({
+    where: { id: req.params.id },
+    include: { tariff: true, _count: { select: { locations: true } } },
+  });
   if (!company) {
     res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  const refusal = limitRefusal('locations', company.tariff?.locationLimit, company._count.locations);
+  if (refusal) {
+    res.status(409).json({ error: refusal });
     return;
   }
 

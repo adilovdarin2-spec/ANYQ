@@ -7,6 +7,7 @@ import type { PosAuthedRequest } from '../pos-auth';
 import { loginRateLimit } from '../rateLimit';
 import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
 import { soldAtOrNow } from '../sold-at';
+import { limitRefusal } from '../limits';
 import {
   blockStock,
   unblockStock,
@@ -1564,6 +1565,19 @@ posRouter.post('/products', requirePosAuth, async (req: PosAuthedRequest, res) =
   const salePrice = Number(b.salePrice);
   if (!b.name || !b.unit || !Number.isFinite(purchasePrice) || !Number.isFinite(salePrice) || purchasePrice < 0 || salePrice < 0) {
     res.status(400).json({ error: 'Заполните название, единицу измерения и цены' });
+    return;
+  }
+
+  // Лимит SKU тарифа. Только на создании: компания, оказавшаяся сверх лимита,
+  // продолжает торговать тем, что уже заведено, — отказ на продаже был бы
+  // остановленным магазином, а это никогда не стоит того, о чём здесь речь.
+  const [tariff, productCount] = await Promise.all([
+    prisma.tariff.findUnique({ where: { companyId: req.posCompanyId! }, select: { skuLimit: true } }),
+    prisma.product.count({ where: { companyId: req.posCompanyId! } }),
+  ]);
+  const refusal = limitRefusal('products', tariff?.skuLimit, productCount);
+  if (refusal) {
+    res.status(409).json({ error: refusal });
     return;
   }
 
@@ -5396,6 +5410,19 @@ posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest,
   if (plan.rows.length === 0) {
     res.status(400).json({ error: 'В файле нет ни одной строки, которую можно импортировать', problems: plan.problems.slice(0, MAX_REPORTED_PROBLEMS) });
     return;
+  }
+
+  // Лимит SKU считается по всей пачке сразу, до записи. Обрезать импорт по
+  // лимиту молча — худшее из возможного: человек видит «готово», а половины
+  // каталога нет, и какой именно половины — он узнает у прилавка.
+  const adding = plan.rows.filter((row) => !row.existingProductId).length;
+  if (adding > 0) {
+    const productCount = await prisma.product.count({ where: { companyId: req.posCompanyId! } });
+    const refusal = limitRefusal('products', company?.tariff?.skuLimit, productCount, adding);
+    if (refusal) {
+      res.status(409).json({ error: refusal });
+      return;
+    }
   }
 
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
