@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { LoyaltySelection } from '../types';
+import { ApiError } from '../api';
 import type { CustomerLookupResult } from '../api';
 import { formatMoney } from '../utils';
 
@@ -17,7 +18,7 @@ export function LoyaltyEditor({ netAfterDiscount, selection, onChange, onLookup 
   const [phone, setPhone] = useState(selection?.phone ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [found, setFound] = useState<{ name: string; loyaltyPoints: number } | null>(
+  const [found, setFound] = useState<{ name: string; loyaltyPoints: number; isNew?: boolean } | null>(
     selection ? { name: selection.name, loyaltyPoints: selection.pointsAvailable } : null,
   );
   const [redeemInput, setRedeemInput] = useState(selection && selection.pointsToRedeem > 0 ? String(selection.pointsToRedeem) : '');
@@ -29,9 +30,15 @@ export function LoyaltyEditor({ netAfterDiscount, selection, onChange, onLookup 
     setError(null);
     try {
       const result = await onLookup(trimmed);
-      setFound({ name: result.name ?? trimmed, loyaltyPoints: result.loyaltyPoints });
-    } catch {
-      setError(t('loyalty.notFound'));
+      // Незнакомый номер — это не отказ: человек просто покупает впервые, и
+      // карточка заведётся этой же продажей. Раньше он выглядел так же, как
+      // найденный, только с нулём баллов, и кассир не знал, что произойдёт.
+      setFound({ name: result.name ?? trimmed, loyaltyPoints: result.loyaltyPoints, isNew: !result.found });
+    } catch (err) {
+      // Сервер отвечает по делу: «недоступно на вашем тарифе», «нет сети».
+      // Общее «не удалось найти клиента» на все случаи отправляло кассира
+      // искать несуществующего человека вместо того, чтобы позвать владельца.
+      setError(err instanceof ApiError ? err.message : t('loyalty.notFound'));
     } finally {
       setLoading(false);
     }
@@ -66,7 +73,9 @@ export function LoyaltyEditor({ netAfterDiscount, selection, onChange, onLookup 
           </div>
         ) : (
           <>
-            <div className="loyalty-found">{t('loyalty.found', { name: found.name, points: found.loyaltyPoints })}</div>
+            <div className="loyalty-found">
+              {found.isNew ? t('loyalty.newCustomer') : t('loyalty.found', { name: found.name, points: found.loyaltyPoints })}
+            </div>
             <div className="loyalty-lookup-row">
               <input
                 type="number"

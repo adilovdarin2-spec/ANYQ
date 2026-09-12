@@ -691,6 +691,7 @@ export const ru = {
   'loyalty.phone': 'Телефон клиента',
   'loyalty.find': 'Найти',
   'loyalty.found': '{name} · баллы: {points}',
+  'loyalty.newCustomer': 'Новый клиент — баллы начнут копиться с этой продажи',
   'loyalty.redeem': 'Списать баллов',
   'loyalty.remove': 'убрать',
   'loyalty.attach': 'добавить',
