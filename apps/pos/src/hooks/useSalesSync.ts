@@ -163,5 +163,30 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
     [refreshPendingCount, sync],
   );
 
-  return { online, pendingCount, stuckSales, stuckCount: stuckSales.length, retryStuck, refreshPendingCount, sync };
+  /**
+   * И все сразу.
+   *
+   * Причина отказа у всех обычно одна: не хватило остатка, закрылась смена,
+   * кончился тариф. Её чинят один раз, а чеков за офлайн-утро может быть
+   * тридцать — нажимать «ещё раз» тридцать раз человек не станет, он бросит
+   * это дело, и тридцать продаж останутся ненайденными.
+   */
+  const retryAllStuck = useCallback(() => {
+    let sales = getSales();
+    for (const stuck of splitQueue(sales).stuck) sales = clearRefusal(sales, stuck.id);
+    saveSales(sales);
+    refreshPendingCount();
+    void sync();
+  }, [refreshPendingCount, sync]);
+
+  return {
+    online,
+    pendingCount,
+    stuckSales,
+    stuckCount: stuckSales.length,
+    retryStuck,
+    retryAllStuck,
+    refreshPendingCount,
+    sync,
+  };
 }

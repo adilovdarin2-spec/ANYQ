@@ -17,6 +17,8 @@ interface Props {
   /** Продажи, которые сервер отказался принять, с его же объяснением почему. */
   stuckSales: Sale[];
   onRetryStuck: (id: string) => void;
+  /** Отправить заново все отказанные разом — когда причина у них общая. */
+  onRetryAllStuck: () => void;
   /**
    * Смены, которые закрыли на кассе, а на сервере закрыть не дали.
    *
@@ -64,6 +66,7 @@ export function ProfileScreen({
   pendingCount,
   stuckSales,
   onRetryStuck,
+  onRetryAllStuck,
   refusedCloses,
   storefrontUrl,
   pushSupported,
@@ -146,6 +149,13 @@ export function ProfileScreen({
         <div className="profile-section">
           <div className="section-title">⚠ {t('profile.needAttention')}</div>
           <div className="field-hint" style={{ marginBottom: 8 }}>{t('profile.stuckWhy')}</div>
+          {/* Одна кнопка на всех — когда чеков за офлайн-утро тридцать, а
+              причина у них одна. */}
+          {stuckSales.length > 1 && (
+            <button className="btn btn-secondary btn-block" style={{ marginBottom: 12 }} onClick={onRetryAllStuck}>
+              {t('profile.stuckRetryAll', { count: stuckSales.length })}
+            </button>
+          )}
           {stuckSales.map((sale) => (
             <div key={sale.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <strong>
