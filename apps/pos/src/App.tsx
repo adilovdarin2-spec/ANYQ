@@ -522,6 +522,8 @@ export default function App() {
   const [saleNotice, setSaleNotice] = useState<string | null>(null);
   /** Почему не удалось записать продажу. Показывается на экране оплаты. */
   const [saleError, setSaleError] = useState<string | null>(null);
+  /** Почему уведомления не включились. Показывается рядом с переключателем. */
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
 
   /**
    * Сканер на терминале печатает туда, где стоит курсор.
@@ -723,16 +725,24 @@ export default function App() {
   async function handleTogglePush() {
     if (!session) return;
     setPushBusy(true);
+    setPushMessage(null);
     try {
       if (pushEnabled) {
         await disablePush(session.token);
         setPushEnabled(false);
       } else {
-        const ok = await enablePush(session.token);
-        setPushEnabled(ok);
+        const outcome = await enablePush(session.token);
+        setPushEnabled(outcome === 'enabled');
+        // Молчаливый отказ выглядел как несработавшее нажатие: переключатель
+        // остаётся выключенным, объяснения нет. Владелец при этом уверен, что
+        // заказы будут приходить, — и не приходят они молча тоже.
+        if (outcome === 'denied') setPushMessage(t('profile.pushDenied'));
+        if (outcome === 'unsupported') setPushMessage(t('profile.pushUnsupported'));
       }
     } catch {
-      // permission denied or subscribe failed — leave state as-is, user can retry
+      // Сеть или сервер. Повторить можно тем же нажатием, но сказать об этом
+      // нужно: иначе это опять тишина в ответ на действие.
+      setPushMessage(t('profile.pushFailed'));
     } finally {
       setPushBusy(false);
     }
@@ -842,8 +852,12 @@ export default function App() {
       };
       saveSession(updatedSession);
       setSession(updatedSession);
-    } catch {
-      // offline or server unavailable — leave the product as-is, try again next time
+    } catch (err) {
+      // Товар остаётся как был — и об этом нужно сказать. Стоп-лист ставят на
+      // то, что продавать нельзя: просрочку, отзыв, брак. Человек, нажавший
+      // кнопку и не увидевший ничего, уверен, что товар снят с продажи, а он
+      // стоит в сетке и продаётся.
+      setSaleNotice(err instanceof ApiError ? err.message : t('fail.stopList'));
     }
   }
 
@@ -3373,6 +3387,7 @@ export default function App() {
           pushSupported={hasSupply && pushSupported()}
           pushEnabled={pushEnabled}
           pushBusy={pushBusy}
+          pushMessage={pushMessage}
           onTogglePush={handleTogglePush}
           onShowDashboard={isOwnerOrManager ? handleShowDashboard : undefined}
           onShowAudit={isOwnerOrManager ? handleShowAudit : undefined}

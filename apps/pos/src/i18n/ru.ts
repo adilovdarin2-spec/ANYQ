@@ -224,6 +224,9 @@ export const ru = {
   'profile.push': 'Уведомления о заказах',
   'profile.pushOn': 'Включены',
   'profile.pushOff': 'Выключены',
+  'profile.pushDenied': 'Браузер не разрешил уведомления. Разрешите их в настройках сайта и нажмите ещё раз.',
+  'profile.pushUnsupported': 'Этот браузер не умеет показывать уведомления — откройте кассу в Chrome.',
+  'profile.pushFailed': 'Не получилось включить уведомления — нет связи с сервером. Попробуйте ещё раз.',
   'profile.install': 'Установить приложение',
   'profile.closeShift': 'Закрыть смену',
   'profile.switchCashier': 'Сменить кассира',
@@ -773,6 +776,7 @@ export const ru = {
   // message of its own — which is exactly the offline case a cashier hits on a
   // bad connection. Leaving them untranslated would mean the app speaks Kazakh
   // until something goes wrong.
+  'fail.stopList': 'Не удалось изменить стоп-лист — товар остался как был.',
   'fail.switchLocation': 'Не удалось переключить точку — нет связи',
   'fail.loadOrders': 'Не удалось загрузить заказы',
   'fail.issueOrder': 'Не удалось выдать заказ',
