@@ -35,7 +35,9 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'shift.bar.since': 'ауысым {time}-дан',
   'shift.bar.online': 'Желіде',
   'shift.bar.offline': 'Желіден тыс',
-  'shift.bar.needAttention': '{count} назар аударуды қажет етеді',
+  'shift.bar.needAttentionOne': '{count} назар аударуды қажет етеді',
+  'shift.bar.needAttentionFew': '{count} назар аударуды қажет етеді',
+  'shift.bar.needAttentionMany': '{count} назар аударуды қажет етеді',
   'shift.bar.notSent': '{count} жіберілмеген',
   'shift.bar.longShift': 'Ауысым {hours} сағат ашық — 24 сағатқа дейін жабуды және Z-есепті алуды ұсынамыз',
 
