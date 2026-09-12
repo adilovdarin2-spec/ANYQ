@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Sale, Shift } from '../types';
+import type { Refund, Sale, Shift } from '../types';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import { refusedInShift, tallyShift } from '../shift-tally';
@@ -7,15 +7,17 @@ import { refusedInShift, tallyShift } from '../shift-tally';
 interface Props {
   shift: Shift;
   sales: Sale[];
+  /** Возвраты, выданные за эту смену: наличные из них ушли из ящика. */
+  refunds: Refund[];
   onCancel: () => void;
   onConfirm: (closingCashCounted: number) => void;
 }
 
-export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
+export function CloseShiftScreen({ shift, sales, refunds, onCancel, onConfirm }: Props) {
   const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
-  const { byMethod, total, expectedCash } = tallyShift(sales, shift.openingCash);
+  const { byMethod, total, refundedCash, expectedCash } = tallyShift(sales, shift.openingCash, refunds);
   // Их деньги в ящике есть, а в Z-отчёте на сервере не будет. Сказать об этом
   // нужно здесь — на этом экране человек последний раз смотрит на смену.
   const refused = refusedInShift(sales);
@@ -42,6 +44,15 @@ export function CloseShiftScreen({ shift, sales, onCancel, onConfirm }: Props) {
           <div className="summary-row"><span className="sr-muted">{t('payment.credit')}</span><span>{formatMoney(byMethod.credit)}</span></div>
         )}
         <div className="summary-row total"><span>{t('shift.close.total')}</span><span>{formatMoney(total)}</span></div>
+
+        {/* Показываем, только когда возвращали: строка «0 ₸» в отчёте о смене
+            заставляет искать, чего не было. */}
+        {refundedCash > 0 && (
+          <div className="summary-row">
+            <span className="sr-muted">{t('shift.close.refundedCash')}</span>
+            <span>−{formatMoney(refundedCash)}</span>
+          </div>
+        )}
 
         <div className="summary-row" style={{ marginTop: 18 }}>
           <span className="sr-muted">{t('shift.close.expectedCash')}</span>

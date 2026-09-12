@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
-import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, refusedShiftCloses, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { addClosedShift, addRefund, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, refundsForShift, refusedShiftCloses, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
@@ -2116,7 +2116,21 @@ export default function App() {
     try {
       // A fresh key per attempt at a new refund, stable across the retries
       // inside one attempt — a lost reply must not hand the money back twice.
-      await createReturn(session.token, payload, genId('return'));
+      const made = await createReturn(session.token, payload, genId('return'));
+      // Записываем у себя: деньги достали из этого ящика, и на закрытии смены
+      // их надо вычесть из ожидаемой суммы. Сервер свою половину считает так
+      // же, а касса до сих пор не считала никак — и обвиняла кассира в
+      // недостаче ровно на сумму, которую он отдал покупателю.
+      if (shift) {
+        addRefund({
+          id: made.id,
+          shiftId: shift.id,
+          saleId: payload.saleId,
+          amount: made.refundAmount,
+          method: payload.paymentMethod,
+          createdAt: made.createdAt,
+        });
+      }
       await loadReturns();
       return true;
     } catch (err) {
@@ -2955,6 +2969,7 @@ export default function App() {
         <CloseShiftScreen
           shift={shift}
           sales={salesForShift(shift.id)}
+          refunds={refundsForShift(shift.id)}
           onCancel={() => setView('sale')}
           onConfirm={closeShift}
         />
