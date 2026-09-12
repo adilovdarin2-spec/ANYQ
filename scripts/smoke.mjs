@@ -111,7 +111,11 @@ const run = async () => {
   }
 
   console.log('\n== login ==');
-  const login = await call('POST', '/pos/login', { pin: '4444' });
+  // PIN настраивается: у боевого магазина он свой, и требовать демо-четвёрок
+  // от того, кто проверяет своё развёртывание, — значит требовать завести
+  // лишнего пользователя ради проверки.
+  const pin = process.env.ANYQ_SMOKE_PIN || '4444';
+  const login = await call('POST', '/pos/login', { pin });
   check('POS login', login.status === 200, JSON.stringify(login.data).slice(0, 200));
   if (login.status !== 200) return;
   token = login.data.token;
@@ -119,6 +123,24 @@ const run = async () => {
   const products = login.data.products;
   note(`company=${login.data.company.name} locations=${locations.length} products=${products.length} catalogLocation=${login.data.catalogLocationId}`);
   check('login names the catalog location', !!login.data.catalogLocationId);
+
+  // Роль этого PIN-а решает, дойдёт ли прогон до середины. Складские шаги —
+  // приёмка, перемещение, пересчёт, списание — доступны не всем, и без этой
+  // строки кассирский PIN давал бы десяток отказов подряд, в которых не
+  // сказано, что дело в роли.
+  const capabilities = login.data.capabilities ?? null;
+  if (capabilities === null) {
+    note('сервер не прислал список прав — старая сборка; складские шаги могут не пройти');
+  } else {
+    const нужно = ['receive', 'moveStock', 'count', 'writeOff'];
+    const нет = нужно.filter((c) => !capabilities.includes(c));
+    check(
+      'у этого PIN хватает прав на складские шаги',
+      нет.length === 0,
+      нет.length ? `роль «${login.data.user?.role}» не может: ${нет.join(', ')} — возьмите PIN владельца` : '',
+    );
+    if (нет.length) return;
+  }
 
   const locationId = login.data.catalogLocationId;
   const sellable = products.find((p) => p.stock > 5 && p.saleUnit === 'piece' && p.variants.length === 0 && p.modifiers.length === 0);
