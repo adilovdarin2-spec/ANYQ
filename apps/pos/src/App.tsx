@@ -15,6 +15,7 @@ import { useIsDesktop } from './hooks/useIsDesktop';
 import { useOfflineReadiness } from './hooks/useOfflineReadiness';
 import {
   ApiError,
+  setUnauthorizedHandler,
   ORDERS_BASE,
   actOnPurchaseOrder,
   blockBin,
@@ -450,6 +451,13 @@ export default function App() {
   useEffect(() => {
     refreshCatalogRef.current = () => void refreshCatalogAfterStockChange();
   });
+
+  // Один обработчик на все запросы кассы: 401 приходит откуда угодно, а
+  // ответ на него один и тот же — вернуть человека ко входу и сказать, почему.
+  useEffect(() => {
+    setUnauthorizedHandler(handleUnauthorized);
+    return () => setUnauthorizedHandler(null);
+  }, []);
   useEffect(() => {
     if (!session?.token || !currentLocationId) return;
     let lastAt = 0;
@@ -524,6 +532,8 @@ export default function App() {
   const [saleError, setSaleError] = useState<string | null>(null);
   /** Почему уведомления не включились. Показывается рядом с переключателем. */
   const [pushMessage, setPushMessage] = useState<string | null>(null);
+  /** Почему касса вернулась на экран входа. Слова сервера, не наши. */
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
 
   /**
    * Сканер на терминале печатает туда, где стоит курсор.
@@ -654,6 +664,24 @@ export default function App() {
   function handleLogin(newSession: PosSession) {
     saveSession(newSession);
     setSession(newSession);
+    setSessionNotice(null);
+  }
+
+  /**
+   * Сервер отозвал доступ этой кассы.
+   *
+   * Так бывает не от поломки: владелец поменял человеку роль, отключил
+   * устройство или удалил сотрудника. Раньше касса этого не замечала и
+   * оставалась «в сессии» с мёртвым токеном — на каждое действие отказ, и
+   * непонятно, что делать. Теперь она возвращает к PIN и передаёт туда слова
+   * сервера. Очередь неотправленных продаж при этом остаётся на месте: она
+   * привязана к устройству, а не к сессии, и уйдёт, как только кто-нибудь
+   * войдёт.
+   */
+  function handleUnauthorized(message: string) {
+    setSessionNotice(message);
+    saveSession(null);
+    setSession(null);
   }
 
   function handleLogout() {
@@ -2811,7 +2839,7 @@ export default function App() {
     // Двигать баннер выше значило бы чинить одну высоту экрана и ломать другую.
     // Предлагать установку до входа и так рано: человек ещё не знает, нужна ли
     // ему эта касса. Ниже, после входа, предложение остаётся.
-    return <PinLogin onLogin={handleLogin} />;
+    return <PinLogin onLogin={handleLogin} notice={sessionNotice} />;
   }
 
 

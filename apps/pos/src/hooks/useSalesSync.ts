@@ -87,6 +87,14 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
           const updated = getSales().map((s) => (s.id === sale.id ? { ...s, synced: true, syncError: undefined } : s));
           saveSales(updated);
         } catch (err) {
+          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+            // Не про эту продажу: доступ отозван или тариф закрыт. Продажа
+            // хорошая, а войти заново или заплатить — дело минуты. Пометить её
+            // здесь «отказанной» значило бы отправить кассира разбирать
+            // каждый утренний чек по одному, когда на самом деле разобрать
+            // нужно одно.
+            break;
+          }
           if (err instanceof ApiError && err.status < 500) {
             // The server was reached and explicitly rejected this specific
             // sale (stale price, insufficient stock, etc). Record why and

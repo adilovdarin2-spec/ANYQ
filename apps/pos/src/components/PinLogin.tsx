@@ -5,11 +5,19 @@ import type { PosSession } from '../api';
 
 interface Props {
   onLogin: (session: PosSession) => void;
+  /**
+   * Почему касса вернулась на этот экран.
+   *
+   * Без этой строки выход выглядит как самопроизвольный: человек стоял за
+   * прилавком, а касса вдруг спросила PIN. Слова сервера объясняют, что
+   * произошло, — «доступ отозван», «устройство отключено», — и кому идти.
+   */
+  notice?: string | null;
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
 
-export function PinLogin({ onLogin }: Props) {
+export function PinLogin({ onLogin, notice }: Props) {
   const { t } = useTranslation();
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +53,9 @@ export function PinLogin({ onLogin }: Props) {
         <h1>{t('login.title')}</h1>
         <p className="sub">{t('login.prompt')}</p>
         <div className="pin-display">{pin ? pin.split('').map(() => '•').join(' ') : '—'}</div>
+        {/* Сначала — почему вернули сюда, потом — что не так с набранным PIN.
+            Первое человек читает один раз, второе меняется на каждую попытку. */}
+        {!error && notice && <div className="login-error">{notice}</div>}
         {error && <div className="login-error">{error}</div>}
         <div className="pin-pad">
           {KEYS.map((k, i) =>
