@@ -3,6 +3,7 @@ import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, Bin
 import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
+import { pressFrom, shouldRedirectToSearch } from './scanner';
 import type { RefreshTrigger } from './catalog-refresh';
 import { genId, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -508,6 +509,7 @@ export default function App() {
   const hasWarehouse = session?.modules?.includes('warehouse') ?? false;
   const hasRetail = session?.modules?.includes('retail') ?? false;
   const isDesktop = useIsDesktop();
+  const searchRef = useRef<HTMLInputElement>(null);
   const canManageProducts = session?.user.role === 'owner' || session?.user.role === 'manager';
   // Only when this deployment was told where the storefront lives. Without it
   // there is no address to give, and inventing one sends partners elsewhere.
@@ -2598,6 +2600,32 @@ export default function App() {
     return <PinLogin onLogin={handleLogin} />;
   }
 
+  /**
+   * Сканер на терминале печатает туда, где стоит курсор.
+   *
+   * Курсор уезжает от каждого нажатия: плитка, «плюс», открытое и закрытое
+   * окно. Дальше кассир сканирует, а на экране ничего — и он сканирует ещё
+   * раз. Поэтому печатный символ, пришедший мимо всех полей, возвращает курсор
+   * в поиск и попадает в него; остальные символы штрихкода приходят уже туда,
+   * а Enter добавляет товар.
+   *
+   * Только на терминале и только на экране продажи: на телефоне в поле тыкают
+   * пальцем, а перехват открывал бы экранную клавиатуру поверх товаров.
+   */
+  useEffect(() => {
+    if (!isDesktop || view !== 'sale' || !session) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (!shouldRedirectToSearch(pressFrom(event))) return;
+      const input = searchRef.current;
+      if (!input || document.activeElement === input) return;
+      event.preventDefault();
+      input.focus();
+      setQuery((current) => current + event.key);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isDesktop, view, session]);
+
   // A typed search always searches the full catalog, ignoring the category
   // filter — otherwise a cashier could type the exact product name, see
   // "Ничего не найдено", and not realize a forgotten category chip is why.
@@ -2652,6 +2680,7 @@ export default function App() {
         <div className="pos-main">
           <div>
             <SearchBar
+              inputRef={searchRef}
               query={query}
               onQueryChange={setQuery}
               onEnter={handleSearchEnter}
