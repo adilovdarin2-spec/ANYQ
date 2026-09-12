@@ -133,6 +133,48 @@ describe('кассир', () => {
   });
 });
 
+/** Экраны, на которых видно, почём магазин берёт товар. */
+const ЗАКУПОЧНЫЕ = (fx: Fixture) => [
+  [`/pos/reports?locationId=${fx.locationId}`, 'отчёты'],
+  ['/pos/suppliers', 'поставщики'],
+  [`/pos/replenishment?locationId=${fx.locationId}`, 'что заказать'],
+  [`/pos/purchase-orders?locationId=${fx.locationId}`, 'заказы поставщикам'],
+  ['/pos/receipts', 'приёмки'],
+] as const;
+
+describe('закупочная сторона', () => {
+  it('кассиру не показывается', async () => {
+    // Меню кассы прячет эти экраны, но меню — это вежливость, а не запрет:
+    // сервер отдавал их любому, кто знает адрес. Себестоимость и цены
+    // поставщиков владелец кассиру показывать не собирался.
+    const token = await loginAs('cashier');
+    for (const [path, название] of ЗАКУПОЧНЫЕ(fx)) {
+      const res = await api(token, 'GET', path);
+      expect(res.status, название).toBe(403);
+    }
+  });
+
+  it('кладовщику показывается всё, кроме отчётов владельца', async () => {
+    // Без цен поставщика заказ не подпишешь, а разбивка выручки по кассирам —
+    // не его дело.
+    const token = await loginAs('warehouse_staff');
+    const [отчёты, ...закупки] = ЗАКУПОЧНЫЕ(fx);
+    expect((await api(token, 'GET', отчёты[0])).status, отчёты[1]).toBe(403);
+    for (const [path, название] of закупки) {
+      const res = await api(token, 'GET', path);
+      expect(res.status, название).toBe(200);
+    }
+  });
+
+  it('владельцу показывается всё', async () => {
+    const token = await loginAs('owner');
+    for (const [path, название] of ЗАКУПОЧНЫЕ(fx)) {
+      const res = await api(token, 'GET', path);
+      expect(res.status, название).toBe(200);
+    }
+  });
+});
+
 describe('кладовщик', () => {
   it('делает складскую работу', async () => {
     const token = await loginAs('warehouse_staff');
