@@ -36,8 +36,19 @@ describe('csvCell', () => {
     expect(csvCell(false)).toBe('нет');
   });
 
-  it('writes dates in a form that sorts', () => {
-    expect(csvCell(new Date('2026-09-08T10:00:00.000Z'))).toBe('2026-09-08T10:00:00.000Z');
+  it('writes dates as local time in a form Excel reads as a date', () => {
+    // Was `toISOString()`, which is wrong twice over for the person opening the
+    // file. Russian Excel does not recognise `2026-09-08T10:00:00.000Z` as a
+    // date at all, so the column cannot be sorted or filtered by day; and the
+    // hour shown is UTC, five behind the shop, which moves every evening
+    // receipt to the previous day.
+    //
+    // The format is not lexicographically sortable, and that is the trade:
+    // this file is already written for Russian Excel — semicolons, a BOM — and
+    // a real date column sorts as a date, which is what sorting means here.
+    expect(csvCell(new Date('2026-09-08T10:00:00.000Z'))).toBe('08.09.2026 15:00');
+    // Past local midnight: 20:30 UTC is half past one the next morning here.
+    expect(csvCell(new Date('2026-09-08T20:30:00.000Z'))).toBe('09.09.2026 01:30');
   });
 
   it('does not mistake a zero for nothing', () => {

@@ -375,7 +375,13 @@ export type StockMovementReason =
   | 'transfer_cancelled'
   | 'return'
   | 'opening'
-  | 'batch_receipt';
+  | 'batch_receipt'
+  // Списание и возврат поставщику сервер пишет с самого начала, а здесь их не
+  // было: `STOCK_MOVEMENT_PHRASES[reason]` возвращал `undefined`, React рисовал
+  // пустоту, и в истории склада списание стояло без причины — в единственном
+  // месте, где списание объясняют. Теперь список сверяется с серверным тестом.
+  | 'write_off'
+  | 'supplier_return';
 
 export const STOCK_MOVEMENT_PHRASES: Record<StockMovementReason, PhraseKey> = {
   sale: 'movement.sale',
@@ -391,6 +397,8 @@ export const STOCK_MOVEMENT_PHRASES: Record<StockMovementReason, PhraseKey> = {
   production_out: 'movement.productionOut',
   table_order: 'movement.tableOrder',
   batch_receipt: 'movement.batchReceipt',
+  write_off: 'movement.writeOff',
+  supplier_return: 'movement.supplierReturn',
 };
 
 export interface StockMovementRecord {

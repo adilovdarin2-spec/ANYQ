@@ -846,6 +846,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'movement.tableOrder': 'Үстелге тапсырыс',
   'movement.batchReceipt': 'Партияны қабылдау',
   'movement.supplierReturn': 'Жеткізушіге қайтару',
+  'movement.writeOff': 'Есептен шығару',
 
   // --- why goods left the books --------------------------------------------
   'reason.damage': 'Зақымдану',

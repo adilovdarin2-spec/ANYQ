@@ -134,6 +134,16 @@ const NOT_A_MESSAGE = new Set<string>([
   // edited by the shop from then on, so translating it would rename their
   // tablets under them.
   'Устройство',
+  // Cells of the export, again: the reason a movement happened and how a sale
+  // was paid for. These used to go out as `write_off` and `cash` — English
+  // values in Russian columns, in a file that opens in the owner's Excel. The
+  // register never sees them: it is answered with the code and says the word
+  // in its own dictionary, which is why the same word appears twice in this
+  // repository and only one of them is a message.
+  'В долг', 'Возврат от покупателя', 'Выдача заказа', 'Заказ на стол', 'Карта',
+  'Наличные', 'Начальный остаток', 'Перемещение (куда)', 'Перемещение (откуда)',
+  'Перемещение отменено', 'Приёмка партии', 'Приёмка товара',
+  'Производство (выпуск)', 'Производство (расход)', 'Смешанная',
   // Document types, write-off reasons and picking stages: the register has the
   // code and says these in its own words.
   'Продажа', 'Возврат покупателю', 'Приёмка', 'Перемещение', 'Списание',
