@@ -137,7 +137,7 @@ export function ReportsScreen({ report, loading, error, rangeDays, onRangeChange
               <>
                 <div className="orders-section-title">{t('reports.dishMargin')}</div>
                 {report.foodCost.map((d) => (
-                  <div key={d.productId} className="report-row food-cost">
+                  <div key={d.productId} className="report-row">
                     <span>{d.name} × {d.quantitySold}</span>
                     <span className="food-cost-figures">
                       <span>{formatMoney(d.margin)}</span>

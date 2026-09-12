@@ -164,14 +164,20 @@ button { cursor: pointer; }
 .cart-bar-label { font-size: 0.88rem; font-weight: 600; }
 
 /* full screens (cart / payment / receipt / shift forms) */
+/* Экран поверх кассы: колонка по центру, а фон — во всю ширину.
+   `max-width` с `margin: 0 auto` на самом фиксированном слое давал полосу в
+   520 пикселей посреди экрана, а по бокам от неё оставалась видна касса: шапка
+   со сменой слева, «Онлайн» справа, баннер установки поверх всего. На телефоне
+   этого не видно — там 520 и есть вся ширина, — а на терминале открытая
+   приёмка выглядела как два интерфейса сразу. */
 .screen {
   position: fixed; inset: 0; z-index: 30;
-  max-width: 520px; margin: 0 auto;
   background: var(--bg);
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; align-items: center;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
+.screen > * { width: 100%; max-width: 520px; }
 .screen-header {
   display: flex; align-items: center; gap: 12px;
   padding: 16px 14px; border-bottom: 1px solid var(--border); background: var(--surface);
@@ -235,6 +241,10 @@ button { cursor: pointer; }
 .btn-primary:disabled { background: var(--border); color: var(--ink-muted); }
 .btn-secondary { background: var(--surface-2); color: var(--ink); }
 .btn-ghost { background: transparent; color: var(--ink-muted); }
+/* Кнопка, после которой что-то не вернуть. Класс стоял в разметке, правила не
+   было: «сбросить кабинет» выглядела так же, как «сохранить». */
+.btn-danger { background: var(--status-overdue-bg); color: var(--status-overdue); }
+.btn-danger:disabled { background: var(--surface-2); color: var(--ink-muted); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Splitting one sale across methods. The fill button does the subtraction the
@@ -313,6 +323,11 @@ button { cursor: pointer; }
 }
 .form-field input:focus-visible, .form-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* Галочка с подписью в один ряд: без правила чекбокс и текст стояли вплотную,
+   и попасть пальцем можно было только в сам квадратик. */
+.cab-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 0.9rem; }
+.cab-check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
 .reconcile-diff { text-align: center; padding: 14px; border-radius: 10px; margin: 12px 0 4px; font-weight: 700; }
 .reconcile-diff.ok { background: var(--status-active-bg); color: var(--status-active); }
 .reconcile-diff.short { background: var(--status-overdue-bg); color: var(--status-overdue); }
@@ -333,8 +348,14 @@ button { cursor: pointer; }
 .text-link { background: none; border: none; color: var(--ink-muted); font-size: 0.8rem; text-decoration: underline; }
 
 /* orders (HoReCa supply fulfillment) */
-.orders-section-title { font-size: 0.76rem; font-weight: 700; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 18px 0 8px; }
-.orders-section-title:first-child { margin-top: 0; }
+/* Заголовок раздела внутри экрана. Два имени у одного и того же: половина
+   экранов писала `section-title`, и правила под этим именем не было вовсе —
+   «Язык», «Что возвращаете», «Товары» выходили обычным текстом в шестнадцать
+   пикселей там, где на соседнем экране стоит серая строчная подпись. */
+.orders-section-title,
+.section-title { font-size: 0.76rem; font-weight: 700; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 18px 0 8px; }
+.orders-section-title:first-child,
+.section-title:first-child { margin-top: 0; }
 .order-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
 .order-card.resolved { opacity: 0.65; }
 .order-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
@@ -488,7 +509,15 @@ button { cursor: pointer; }
 @media print {
   body * { visibility: hidden; }
   .receipt-card, .receipt-card * { visibility: visible; }
-  .receipt-card { position: absolute; top: 0; left: 0; width: 100%; border: none; }
+  /* Ширина чека, а не ширина бумаги. На термопринтере лента и так узкая, а на
+     обычном A4 чек растягивался во весь лист: товар у левого края, цена у
+     правого, между ними пятнадцать сантиметров пустоты. 80 мм — ширина
+     чековой ленты, и на листе получается то же самое, только по центру. */
+  .receipt-card {
+    position: absolute; top: 0; left: 0; right: 0;
+    width: auto; max-width: 80mm; margin: 0 auto;
+    border: none;
+  }
 
   /* Чёрным по белому, какая бы тема ни стояла на планшете.
      Принтер не печатает фон, а цвет текста берётся из темы: в тёмной это
