@@ -158,8 +158,20 @@ const run = async () => {
   }
 
   console.log('\n== shift ==');
-  const shift = await call('POST', '/pos/shifts', { locationId, openingCash: 20000 });
+  // Смена открывается утренним часом, а не «сейчас»: так она и открывается в
+  // жизни, и только на такой смене можно проверить, что закрытие принимает
+  // собственное время кассы. Закрытие раньше открытия сервер не примет — и
+  // правильно сделает.
+  const openedAt = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+  const shift = await call('POST', '/pos/shifts', {
+    locationId,
+    openingCash: 20000,
+    clientCommandId: `smoke_shift_${Date.now()}`,
+    openedAt,
+  });
   check('open shift', shift.status === 201, JSON.stringify(shift.data).slice(0, 200));
+  check('the shift opened at the hour the register says', shift.data?.openedAt === openedAt,
+    `sent=${openedAt} stored=${shift.data?.openedAt}`);
 
   console.log('\n== sale, and the same sale again ==');
   const saleBody = {
@@ -263,6 +275,19 @@ const run = async () => {
   const bin = await call('POST', '/pos/bins', { locationId, zone: 'Z', rack: String(Date.now()).slice(-4), shelf: '', bin: '' });
   check('bin created', bin.status === 201, JSON.stringify(bin.data).slice(0, 200));
   if (bin.status === 201) {
+    // Товар для раскладки принимаем здесь же. Раньше шаг брал то, что лежало
+    // в безымянной ячейке от прошлых шагов, и на втором прогоне подряд падал
+    // с «в исходной ячейке свободно 1»: предыдущий прогон уже разложил это по
+    // своим полкам. Проверка развёртывания должна отвечать про развёртывание,
+    // а не про то, сколько раз её запускали.
+    const forPutaway = await call('POST', '/pos/receipts', {
+      locationId,
+      supplierName: 'Smoke',
+      supplierPhone: '',
+      items: [{ productId: sellable.id, quantity: 2, price: 100, packagingId: null }],
+    });
+    check('goods to put away are received', forPutaway.status === 201, JSON.stringify(forPutaway.data).slice(0, 200));
+
     const putaway = await call('POST', '/pos/bins/putaway', {
       locationId,
       productId: sellable.id,
@@ -330,6 +355,27 @@ const run = async () => {
     const orders = await call('GET', `/pos/purchase-orders?locationId=${locationId}`);
     const reloaded = Array.isArray(orders.data) ? orders.data.find((o) => o.id === po.data.id) : null;
     check('order is now partly received', reloaded?.status === 'partially_received', `status=${reloaded?.status}`);
+  }
+
+  console.log('\n== closing the shift ==');
+  // Конец дня, ради которого всё остальное и считается. Проверяется то, на
+  // чём держится сверка кассы: закрытие принимает время, когда смену
+  // действительно закрыли — её могли закрыть без связи и дослать утром, —
+  // пересчитанная наличность запоминается, а повторное закрытие получает
+  // отказ, потому что второй пересчёт поверх первого стирает недостачу.
+  if (shift.status === 201) {
+    const closedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const closed = await call('PATCH', `/pos/shifts/${shift.data.id}/close`, {
+      closingCashCounted: 24000,
+      closedAt,
+    });
+    check('shift closes', closed.status === 200, JSON.stringify(closed.data).slice(0, 200));
+    check('closed at the hour the register says, not the hour the server heard',
+      closed.data?.closedAt === closedAt,
+      `sent=${closedAt} stored=${closed.data?.closedAt}`);
+
+    const again = await call('PATCH', `/pos/shifts/${shift.data.id}/close`, { closingCashCounted: 1 });
+    check('a closed shift stays closed on the first count', again.status === 409, `status=${again.status}`);
   }
 
   console.log('\n== owner dashboard ==');

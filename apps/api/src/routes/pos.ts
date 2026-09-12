@@ -1020,8 +1020,18 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
         },
       });
 
+      // Возвращённый товар кладётся туда же, куда привезённый, — в строку без
+      // адреса. Он физически лежит у кассы, и куда его поставить, решает
+      // кладовщик размещением.
+      //
+      // Без фильтра по ячейке здесь получалось то же самое, что в приёмке:
+      // из нескольких строк одного товара в карте оставалась последняя, какую
+      // вернул Postgres, и возврат прибавлялся к случайной полке. С какой
+      // полки товар ушёл, никто не знает — продажа берёт его из ячеек по
+      // остатку и адрес в документе не пишет, — так что вернуть его «на место»
+      // всё равно нельзя. Можно вернуть туда, где его найдут.
       const stockRows = await tx.stock.findMany({
-        where: { locationId: sale.locationId, productId: { in: lines.map((l) => l.productId) } },
+        where: { locationId: sale.locationId, binLocation: '', productId: { in: lines.map((l) => l.productId) } },
       });
       const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
 
@@ -6327,8 +6337,13 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
       });
       if (claimed.count === 0) throw new TransferClosedError();
 
+      // В зону приёмки принимающей точки — как и любая другая поставка. Без
+      // фильтра по ячейке из нескольких строк одного товара в карте оставалась
+      // последняя, какую вернул Postgres: привезённое с другого склада
+      // прибавлялось к случайной полке, и найти его там, где написано, было
+      // нельзя.
       const destStockRows = await tx.stock.findMany({
-        where: { locationId: toLocationId, productId: { in: receipt.lines.map((l) => l.productId) } },
+        where: { locationId: toLocationId, binLocation: '', productId: { in: receipt.lines.map((l) => l.productId) } },
       });
       const destStockByProduct = new Map(destStockRows.map((s) => [s.productId, s]));
 
@@ -6406,8 +6421,11 @@ posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedReq
       });
       if (claimed.count === 0) throw new TransferClosedError();
 
+      // Отменённое перемещение возвращает товар на ту же точку — и туда же,
+      // куда попадает всё вернувшееся: в строку без адреса. Разнести по
+      // полкам — отдельное действие, которое делает человек.
       const sourceStockRows = await tx.stock.findMany({
-        where: { locationId: fromLocationId, productId: { in: transferDoc.items.map((it) => it.productId) } },
+        where: { locationId: fromLocationId, binLocation: '', productId: { in: transferDoc.items.map((it) => it.productId) } },
       });
       const sourceStockByProduct = new Map(sourceStockRows.map((s) => [s.productId, s]));
 
@@ -6576,8 +6594,19 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
       requestHash: hashRequestBody(b),
       statusCode: 201,
     }, async (tx) => {
+    // Только приёмочная строка — та, что без адреса.
+    //
+    // Читалось это без фильтра по ячейке, а карта складывалась по товару: из
+    // нескольких строк одного товара в ней оставалась последняя, какую вернул
+    // Postgres. То есть на складе с адресным хранением привезённый товар
+    // прибавлялся к случайной полке — к той, где он уже лежал. Кладовщик шёл
+    // в зону приёмки и не находил там ничего, а пересчёт дальней полки
+    // показывал излишек на размер поставки.
+    //
+    // Товар приезжает в зону приёмки и расходится по местам размещением —
+    // именно этого ждёт `putaway`, который берёт из строки без адреса.
     const stockRows = await tx.stock.findMany({
-      where: { locationId, productId: { in: items.map((it) => it.productId) } },
+      where: { locationId, binLocation: '', productId: { in: items.map((it) => it.productId) } },
     });
     const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
 
@@ -6966,7 +6995,10 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
     }, async (tx) => {
       const [ingredientStockRows, finishedStockRows] = await Promise.all([
         tx.stock.findMany({ where: { locationId, productId: { in: ingredients.map((i) => i.ingredientId) } } }),
-        tx.stock.findMany({ where: { locationId, productId: recipe.productId } }),
+        // Готовая продукция выходит из цеха в зону приёмки, а не на ту полку,
+        // где остался прошлый выпуск: `finishedStockRows[0]` — это была любая
+        // строка, какую вернул Postgres.
+        tx.stock.findMany({ where: { locationId, binLocation: '', productId: recipe.productId } }),
       ]);
       const ingredientStockByProduct = groupStockByProduct(ingredientStockRows);
       const ingredientQuantityByProduct = new Map(
