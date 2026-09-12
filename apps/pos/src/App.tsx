@@ -2896,7 +2896,10 @@ export default function App() {
         locationName={session.locations.length > 1 ? currentLocation?.name ?? null : null}
         online={online}
         pendingCount={pendingCount}
-        stuckCount={stuckCount}
+        // Продажи, которые не приняли, и смены, которые не дали закрыть, — в
+        // шапке это одно и то же: «есть что разобрать, откройте профиль».
+        // Разделять их здесь значит рисовать две одинаковые плашки подряд.
+        stuckCount={stuckCount + refusedShiftCloses().length}
       />
 
       {/* Весь день висит только в последние сутки — см. urgentOnly. */}
