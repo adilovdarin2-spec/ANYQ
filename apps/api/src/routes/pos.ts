@@ -5676,6 +5676,11 @@ posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => 
 });
 
 posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  // Приход партии — это приёмка товара, только с номером и сроком годности.
+  // Право на неё то же самое: кассир не принимает поставки. Здесь этой
+  // проверки не было вовсе — из всех способов увеличить остаток аптечный
+  // остался единственным, который мог провести кто угодно.
+  if (!(await allow(req, res, 'receive'))) return;
   const b = req.body ?? {};
   const quantity = Number(b.quantity);
   const batchNumber = typeof b.batchNumber === 'string' ? b.batchNumber.trim() : '';

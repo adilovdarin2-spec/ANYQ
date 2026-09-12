@@ -33,7 +33,13 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await resetDatabase();
-  fx = await createFixture({ openingQuantity: 100 });
+  // Аптечный модуль — ради прихода партии: это тот же приём товара, и право
+  // на него проверяется здесь же, а без модуля отказ пришёл бы от тарифа и
+  // ничего не сказал бы о роли.
+  fx = await createFixture({
+    openingQuantity: 100,
+    modules: ['retail', 'warehouse', 'terminal', 'supply', 'pharmacy'],
+  });
 });
 
 let nextPin = 700000;
@@ -70,6 +76,13 @@ const ОПЕРАЦИИ = (fx: Fixture) => ({
   }] as const,
   карантин: () => ['POST', '/pos/quarantine/block', {
     locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 1 }], note: 'на проверку',
+  }] as const,
+  // Приход партии — та же приёмка, только с номером и сроком годности. Право
+  // на неё то же, и проверки здесь не было вовсе: из всех способов увеличить
+  // остаток аптечный оставался единственным, доступным кому угодно.
+  партия: () => ['POST', '/pos/batches', {
+    locationId: fx.locationId, productId: fx.productId, batchNumber: 'П-1',
+    expiryDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), quantity: 5,
   }] as const,
 });
 
