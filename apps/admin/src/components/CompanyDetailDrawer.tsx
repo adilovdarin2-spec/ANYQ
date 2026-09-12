@@ -54,6 +54,18 @@ function toPayload(t: Tariff): TariffPayload {
   };
 }
 
+/**
+ * «Точки (1 из 1)» вместо «Точки (1)», когда лимит задан.
+ *
+ * Лимиты тарифа теперь действительно запрещают создание, и упереться в них
+ * можно на этом же экране. Потолок, видимый заранее, лучше любого сообщения об
+ * ошибке: отказ объясняет, почему не вышло, а это показывает, что не выйдет.
+ * Пустой лимит ничего не ограничивает — тогда и писать нечего.
+ */
+function withLimit(count: number, limit: number | null | undefined): string {
+  return limit && limit > 0 ? `${count} из ${limit}` : String(count);
+}
+
 export function CompanyDetailDrawer({
   company,
   onClose,
@@ -191,7 +203,7 @@ export function CompanyDetailDrawer({
               : <button className="btn btn-danger" disabled={busy} onClick={toggleBlocked}>Заблокировать</button>}
           </div>
 
-          <div className="section-title">Точки ({company.locations.length})</div>
+          <div className="section-title">Точки ({withLimit(company.locations.length, tariff.locationLimit)})</div>
           {locationError && <div className="login-error">{locationError}</div>}
 
           {!creatingLocation && (
@@ -259,7 +271,7 @@ export function CompanyDetailDrawer({
             ),
           )}
 
-          <div className="section-title">Пользователи ({company.users.length})</div>
+          <div className="section-title">Пользователи ({withLimit(company.users.length, tariff.userLimit)})</div>
           {company.users.map((u) => (
             <div key={u.id} className="mini-card">
               <span>{u.name}</span>
