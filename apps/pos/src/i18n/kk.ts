@@ -49,6 +49,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'shift.close.matches': 'Сәйкес келеді',
   'shift.close.short': 'Кем шықты: {amount}',
   'shift.close.over': 'Артық шықты: {amount}',
+  'search.stockReserved': '(тағы {count} тапсырысқа уәде етілген)',
   'sale.storageFull': 'Кассаның жады толы — чек сақталмады. Кезек серверге кеткенше күтіп, қайта өткізіңіз.',
   'shift.close.refused': 'Сервер қабылдамаған сатылым: {count}, {amount}. Ақшасы жәшікте бар, иесінің есебінде болмайды — жаппас бұрын көрсетіңіз.',
   'shift.close.submit': 'Ауысымды жабу',

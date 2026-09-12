@@ -202,3 +202,27 @@ describe('витрина и касса вместе', () => {
     expect(await reservedTotal()).toBe(0);
   });
 });
+
+describe('обещанное по заказу видно кассе', () => {
+  it('каталог отдаёт и доступный остаток, и сколько из него обещано', async () => {
+    // Кассир видит на полке десять, а касса не даёт пробить девятую. Без
+    // цифры «два обещано» касса выглядит ошибающейся — и следующим действием
+    // остаток «исправляют» пересчётом, то есть продают чужое.
+    const placed = await api(null, 'POST', `/supply/${fx.companyId}/orders`, заказ(2));
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+
+    const res = await api(fx.token, 'GET', `/pos/catalog?locationId=${fx.locationId}`);
+    expect(res.status).toBe(200);
+    const product = res.body.products.find((p: { id: string }) => p.id === fx.productId);
+    expect(product.reserved).toBe(2);
+    expect(product.stock).toBe(98);
+  });
+
+  it('без заказов обещано ноль, а не пусто', async () => {
+    // Ноль — это ответ. Отсутствие поля касса прочитает как «старый сервер»
+    // и промолчит там, где должна объяснить.
+    const res = await api(fx.token, 'GET', `/pos/catalog?locationId=${fx.locationId}`);
+    const product = res.body.products.find((p: { id: string }) => p.id === fx.productId);
+    expect(product.reserved).toBe(0);
+  });
+});

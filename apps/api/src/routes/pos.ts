@@ -218,12 +218,20 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
   const products = await prisma.product.findMany({ where: { companyId, sellable: true } });
   const stockRows = locationId ? await prisma.stock.findMany({ where: { locationId } }) : [];
   const stockByProduct = new Map<string, number>();
+  // Сколько единиц обещано по открытым заказам. Само по себе число в сетке не
+  // показывается — оно нужно ровно в тот момент, когда касса отказывается
+  // пробить ещё одну штуку: на полке их видно десять, а продать можно восемь,
+  // и без этой строки касса выглядит ошибающейся.
+  const reservedByProduct = new Map<string, number>();
   for (const row of stockRows) {
     // One product can hold stock in several bins at a location; the grid shows
     // what's sellable there in total, not whatever bin sorted last. Sellable
     // means available, not on hand — units held for an open order are on the
     // shelf but already somebody else's.
     stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + availableQuantity(row));
+    if (row.reserved > 0) {
+      reservedByProduct.set(row.productId, (reservedByProduct.get(row.productId) ?? 0) + row.reserved);
+    }
   }
 
   // For a batch-tracked product the figure above is wrong, and wrong in the
@@ -294,6 +302,7 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
     barcode: p.barcode ?? '',
     category: p.category ?? '',
     stock: dishProductIds.has(p.id) ? 9999 : (stockByProduct.get(p.id) ?? 0),
+    reserved: reservedByProduct.get(p.id) ?? 0,
     stopListed: p.stopListed,
     // Weight-based sale is part of the same Retail Pack bundle as variants —
     // non-retail companies always see 'piece' regardless of what's stored,

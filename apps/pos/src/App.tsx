@@ -2602,7 +2602,7 @@ export default function App() {
         // сканер к последней бутылке второй раз, в корзине по-прежнему одна, и
         // почему — не написано нигде.
         if (nextQty > product.stock) {
-          setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+          setSaleNotice(stockNotice(product));
           return prev;
         }
         if (existing) {
@@ -2613,7 +2613,7 @@ export default function App() {
       const existing = prev.find((l) => l.id === lineId);
       const currentQty = existing?.qty ?? 0;
       if (currentQty + 1 > product.stock) {
-        setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+        setSaleNotice(stockNotice(product));
         return prev;
       }
       if (existing) {
@@ -2626,6 +2626,20 @@ export default function App() {
   /** Сколько осталось — штуками или килограммами, смотря чем торгуют. */
   function formatQuantityLeft(product: Product): string {
     return product.saleUnit === 'weight' ? formatWeight(product.stock) : String(product.stock);
+  }
+
+  /**
+   * «Осталось 8» — и почему не десять, если на полке десять.
+   *
+   * Товар, обещанный по заказу, физически лежит на месте, но продать его
+   * нельзя. Без этой оговорки касса выглядит ошибающейся ровно в ту минуту,
+   * когда кассир держит товар в руках, — и дальше он идёт «исправлять»
+   * остаток пересчётом, то есть продаёт чужое.
+   */
+  function stockNotice(product: Product): string {
+    const left = t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) });
+    const reserved = product.reserved ?? 0;
+    return reserved > 0 ? `${left} ${t('search.stockReserved', { count: reserved })}` : left;
   }
 
   function handleProductClick(product: Product) {
@@ -2685,7 +2699,7 @@ export default function App() {
           // этом на оплате, когда покупатель уже достал деньги.
           const product = session?.products.find((p) => p.id === l.productId);
           if (product && delta > 0 && next > product.stock) {
-            setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+            setSaleNotice(stockNotice(product));
             return l;
           }
           return { ...l, qty: next };
@@ -2716,7 +2730,7 @@ export default function App() {
           const product = session?.products.find((p) => p.id === l.productId);
           const limit = product?.stock ?? clean;
           if (clean > limit && product) {
-            setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+            setSaleNotice(stockNotice(product));
             return { ...l, qty: limit };
           }
           return { ...l, qty: clean };
