@@ -95,6 +95,10 @@ describe('taking the data out', () => {
   it('spells out a split payment rather than writing the word mixed', async () => {
     // "mixed" in a spreadsheet is a dead end: the owner cannot reconcile the
     // card column against the terminal's own report from it.
+    //
+    // And it spells it out in Russian. The file opens in the owner's Excel,
+    // every column heading in it is Russian, and `kaspi 1500 + cash 500` asks
+    // them to know the names this program uses internally.
     await api(fx.token, 'POST', '/pos/sales', {
       locationId: fx.locationId,
       items: [{ productId: fx.productId, quantity: 10, price: 200 }],
@@ -102,13 +106,28 @@ describe('taking the data out', () => {
     });
 
     const rows = lines((await exportCsv('sales')).body).slice(1);
-    expect(rows[0]).toContain('kaspi 1500 + cash 500');
+    expect(rows[0]).toContain('Kaspi QR 1500 + Наличные 500');
   });
 
   it('exports the ledger with its author and reason', async () => {
+    await api(fx.token, 'POST', '/pos/write-offs', {
+      locationId: fx.locationId,
+      reasonCode: 'damage',
+      note: 'разбили при разгрузке',
+      items: [{ productId: fx.productId, quantity: 2 }],
+    });
+
     const [header, ...rows] = lines((await exportCsv('movements')).body);
     expect(header).toBe('Дата;Товар;Ячейка;Изменение;Причина;Документ;Кто');
     expect(rows.length).toBeGreaterThan(0);
+
+    // Причина словом, а не значением из кода. В колонке стояло `write_off` —
+    // английское слово в русском файле, который открывают в Excel.
+    expect(rows.some((r) => r.includes('Списание'))).toBe(true);
+    expect(rows.some((r) => r.includes('write_off'))).toBe(false);
+
+    // И дата, которую Excel понимает как дату, в местном времени магазина.
+    expect(rows[0]).toMatch(/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2};/);
   });
 
   it('exports counterparties with their credit terms', async () => {

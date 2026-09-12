@@ -37,3 +37,18 @@ export function startOfLocalDay(now: Date): Date {
   const localMidnight = new Date(`${localDay(now)}T00:00:00.000Z`).getTime();
   return new Date(localMidnight - KZ_OFFSET_HOURS * HOUR_MS);
 }
+
+/**
+ * Момент времени так, как его читает человек и как его понимает Excel.
+ *
+ * `17.09.2026 22:52` — местное время магазина, а не UTC. До этого выгрузки
+ * отдавали дату как `toISOString()`: владелец открывал файл и видел
+ * `2026-09-11T17:52:02.074Z` — не дата для Excel с русской локалью (сортировать
+ * и фильтровать по ней нельзя) и не то время, когда это произошло у него в
+ * магазине: пять часов разницы переносят вечерние чеки на предыдущий день.
+ */
+export function localDateTime(at: Date): string {
+  const shifted = new Date(at.getTime() + KZ_OFFSET_HOURS * HOUR_MS);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(shifted.getUTCDate())}.${pad(shifted.getUTCMonth() + 1)}.${shifted.getUTCFullYear()} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
+}

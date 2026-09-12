@@ -68,6 +68,7 @@ import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy
 import { recordChanges, resolveActor } from '../audit-log';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
+import { movementReasonRu, paymentMethodRu } from '../export-labels';
 import { resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
 import { resolvePick, resolveShipment, pickErrorMessage, orderStage, orderStageLabel } from '../picking';
 import { xlsxToGrid, xlsxErrorMessage, MAX_XLSX_BYTES } from '../xlsx';
@@ -2518,8 +2519,8 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
     header = ['Дата', 'Чек', 'Кассир', 'Товар', 'Количество', 'Цена', 'Сумма', 'Оплата'];
     rows = sales.flatMap((sale) => {
       const method = sale.payments.length > 1
-        ? sale.payments.map((line) => `${line.method} ${line.amount}`).join(' + ')
-        : sale.paymentMethod ?? '';
+        ? sale.payments.map((line) => `${paymentMethodRu(line.method)} ${line.amount}`).join(' + ')
+        : paymentMethodRu(sale.paymentMethod);
       return sale.items.map((item) => [
         sale.createdAt,
         // Номер, а не cuid. Идентификатор из двадцати пяти знаков в колонке
@@ -2550,7 +2551,7 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
       m.product.name,
       m.binLocation || 'не размещено',
       m.quantity,
-      m.reason,
+      movementReasonRu(m.reason),
       m.document?.number ?? m.documentId ?? '',
       m.createdBy ? nameByUserId.get(m.createdBy) ?? 'Удалённый сотрудник' : '',
     ]);

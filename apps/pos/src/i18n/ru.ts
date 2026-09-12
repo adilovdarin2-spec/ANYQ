@@ -845,6 +845,7 @@ export const ru = {
   'movement.tableOrder': 'Заказ на стол',
   'movement.batchReceipt': 'Приёмка партии',
   'movement.supplierReturn': 'Возврат поставщику',
+  'movement.writeOff': 'Списание',
 
   // --- why goods left the books --------------------------------------------
   'reason.damage': 'Повреждение',

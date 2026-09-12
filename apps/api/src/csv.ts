@@ -16,6 +16,8 @@
  *    support call.
  */
 
+import { localDateTime } from './kz-time';
+
 export const CSV_SEPARATOR = ';';
 
 /** UTF-8 BOM. Excel reads the file as cp1251 without it. */
@@ -30,7 +32,11 @@ export const CSV_BOM = '﻿';
  */
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  if (value instanceof Date) return value.toISOString();
+  // Местное время в формате, который русский Excel понимает как дату. ISO с
+  // буквами T и Z он датой не считает — колонку нельзя ни отсортировать, ни
+  // отфильтровать по дню, — и показывает UTC, то есть не тот час, когда это
+  // случилось в магазине.
+  if (value instanceof Date) return localDateTime(value);
   if (typeof value === 'boolean') return value ? 'да' : 'нет';
 
   const text = String(value);
