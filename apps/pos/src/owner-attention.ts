@@ -15,7 +15,21 @@ import type { OwnerDashboard } from './types';
  * Теперь это функция, у неё есть тест на каждое основание, и следующее забыть
  * будет дороже: тест на «пусто» перечисляет всё, что должно быть пусто.
  */
-export function needsOwnerAttention(dashboard: OwnerDashboard): boolean {
+/**
+ * Сколько смена может стоять открытой, прежде чем это станет делом владельца.
+ *
+ * Сутки. Касса просит кассира закрыть смену через двадцать часов, и до конца
+ * его рабочего дня это его забота. Смена, пережившая ночь, — уже не его:
+ * деньги за тот день никто не пересчитывал, сверки за него не существует, и
+ * чем дальше, тем труднее будет вспомнить, сколько в ящике было.
+ */
+const SHIFT_TOO_LONG_HOURS = 24;
+
+function hoursOpen(openedAt: string, now: number): number {
+  return (now - new Date(openedAt).getTime()) / 3_600_000;
+}
+
+export function needsOwnerAttention(dashboard: OwnerDashboard, now: number = Date.now()): boolean {
   if (dashboard.flags.length > 0) return true;
   if (dashboard.deadStock.length > 0) return true;
   if (dashboard.expiring.length > 0) return true;
@@ -25,5 +39,11 @@ export function needsOwnerAttention(dashboard: OwnerDashboard): boolean {
   // ящике, смена не пересчитана, и «расхождение» до пересчёта это просто
   // выручка, которую ещё не сверяли.
   if (dashboard.money.shifts.some((shift) => shift.closedAt && shift.difference)) return true;
+  // Смена, которую забыли закрыть. У открытой смены расхождение ничего не
+  // значит — а вот сама открытость через сутки значит: день прошёл, деньги не
+  // пересчитаны, сверки за него нет и не будет, пока кто-нибудь не закроет.
+  if (dashboard.money.shifts.some((shift) => !shift.closedAt && hoursOpen(shift.openedAt, now) > SHIFT_TOO_LONG_HOURS)) {
+    return true;
+  }
   return false;
 }

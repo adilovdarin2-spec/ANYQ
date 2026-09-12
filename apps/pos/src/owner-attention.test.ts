@@ -62,7 +62,56 @@ describe('needsOwnerAttention', () => {
     // рабочего дня из-за неё значит приучить его не читать сводку.
     const d = {
       ...пусто,
-      money: { shifts: [смена({ closedAt: null, counted: null, difference: 800 })] },
+      money: {
+        // Открыта сегодня: иначе сработало бы другое основание — смена,
+        // пережившая ночь, — и тест перестал бы проверять то, ради чего написан.
+        shifts: [
+          смена({
+            closedAt: null,
+            counted: null,
+            difference: 800,
+            openedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+          }),
+        ],
+      },
+    } as OwnerDashboard;
+    expect(needsOwnerAttention(d)).toBe(false);
+  });
+
+  it('смена, открытая вторые сутки, — дело владельца', () => {
+    // Кассира касса просит закрыть смену через двадцать часов. Смена, пережившая
+    // ночь, — уже не его забота: день прошёл, ящик никто не пересчитал, сверки
+    // за этот день не существует.
+    const d = {
+      ...пусто,
+      money: {
+        shifts: [
+          смена({
+            closedAt: null,
+            counted: null,
+            difference: 0,
+            openedAt: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString(),
+          }),
+        ],
+      },
+    } as OwnerDashboard;
+    expect(needsOwnerAttention(d)).toBe(true);
+  });
+
+  it('смена, открытая сегодня утром, — ещё не дело владельца', () => {
+    // Иначе сводка будит его каждый рабочий день в обед.
+    const d = {
+      ...пусто,
+      money: {
+        shifts: [
+          смена({
+            closedAt: null,
+            counted: null,
+            difference: 0,
+            openedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+          }),
+        ],
+      },
     } as OwnerDashboard;
     expect(needsOwnerAttention(d)).toBe(false);
   });
@@ -85,8 +134,16 @@ describe('needsOwnerAttention', () => {
     // сводку и забыли его здесь — тест останется зелёным, и это единственное
     // место, где о таком пропуске вообще можно вспомнить. Поэтому список тут
     // написан словами, а не выведен из типа.
-    const проверяем = ['flags', 'deadStock', 'expiring', 'discrepancies.counts', 'discrepancies.transfers', 'money.shifts'];
-    expect(проверяем).toHaveLength(6);
+    const проверяем = [
+      'flags',
+      'deadStock',
+      'expiring',
+      'discrepancies.counts',
+      'discrepancies.transfers',
+      'money.shifts: расхождение по закрытой',
+      'money.shifts: открытая вторые сутки',
+    ];
+    expect(проверяем).toHaveLength(7);
     expect(needsOwnerAttention(пусто)).toBe(false);
   });
 });

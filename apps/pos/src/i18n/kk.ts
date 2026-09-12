@@ -279,6 +279,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'owner.discounts': 'Жеңілдіктер',
   'owner.shifts': 'Ауысымдар бойынша касса',
   'owner.shiftOpen': 'ауысым ашық',
+  'owner.shiftTooLong': '{hours} сағат ашық — касса саналмаған',
   'owner.expected': 'күтіледі {amount}',
   'owner.matches': 'сәйкес келеді',
   'owner.whatToBuy': 'Не сатып алу керек',
