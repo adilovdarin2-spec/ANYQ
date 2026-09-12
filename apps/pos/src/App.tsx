@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
-import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, salesForShift, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
@@ -520,6 +520,8 @@ export default function App() {
    * не на покупателя, а на экран.
    */
   const [saleNotice, setSaleNotice] = useState<string | null>(null);
+  /** Почему не удалось записать продажу. Показывается на экране оплаты. */
+  const [saleError, setSaleError] = useState<string | null>(null);
 
   /**
    * Сканер на терминале печатает туда, где стоит курсор.
@@ -2665,6 +2667,7 @@ export default function App() {
 
   function completeSale(payments: PaymentLine[]) {
     if (!shift || !session) return;
+    setSaleError(null);
     // One method keeps its own name, so every receipt and report written
     // before splits existed still means what it meant. Several become 'mixed',
     // which is honest — naming the largest would file a card payment as cash.
@@ -2686,7 +2689,19 @@ export default function App() {
       createdAt: new Date().toISOString(),
       synced: false,
     };
-    addSale(sale);
+    try {
+      addSale(sale);
+    } catch (err) {
+      // Память кассы переполнена, и чек записать некуда. Молча это проглотить
+      // нельзя: деньги кассир уже взял, а продажи не существует нигде — ни
+      // здесь, ни на сервере. Корзину не трогаем, чтобы её можно было пробить
+      // ещё раз, когда место появится.
+      if (err instanceof SalesStorageFullError) {
+        setSaleError(t('sale.storageFull'));
+        return;
+      }
+      throw err;
+    }
     refreshPendingCount();
     void sync();
     setLastSaleId(sale.id);
@@ -2849,7 +2864,13 @@ export default function App() {
       )}
 
       {view === 'payment' && (
-        <PaymentModal total={cartTotal} hasCustomer={!!loyalty} onCancel={() => setView('cart')} onConfirm={completeSale} />
+        <PaymentModal
+          total={cartTotal}
+          hasCustomer={!!loyalty}
+          error={saleError}
+          onCancel={() => { setSaleError(null); setView('cart'); }}
+          onConfirm={completeSale}
+        />
       )}
 
       {view === 'receipt' && lastSale && (
