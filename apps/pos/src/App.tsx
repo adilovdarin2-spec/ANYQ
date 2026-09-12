@@ -637,7 +637,6 @@ export default function App() {
       { key: 'delivery', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery, needs: 'receive' },
       { key: 'price-list', group: 'suppliers', icon: 'priceList', label: t('ops.priceList'), onClick: handleShowPriceList },
       { key: 'cabinet', group: 'setup', icon: 'key', label: t('ops.cabinet'), onClick: handleShowCabinet },
-      { key: 'settlements', group: 'money', icon: 'wallet', label: t('ops.settlements'), onClick: handleShowSettlements },
       { key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs, needs: 'writeOff' },
       { key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns, needs: 'writeOff' },
       { key: 'fiscal', group: 'money', icon: 'receipt', label: t('ops.fiscal'), onClick: handleShowFiscal },
@@ -646,7 +645,7 @@ export default function App() {
     /* Настройки и деньги — владельцу и менеджеру: сервер их и так не отдаст
        никому другому, а меню, предлагающее запертую дверь, — это обещание,
        которого продукт не держит. */
-    const ownerOnly = new Set(['reconciliation', 'import', 'migrate', 'price-list', 'cabinet', 'settlements']);
+    const ownerOnly = new Set(['reconciliation', 'import', 'migrate', 'price-list', 'cabinet']);
     for (const item of warehouseItems) {
       if (item.needs && !may(item.needs)) continue;
       if (ownerOnly.has(item.key) && !isOwnerOrManager) continue;
@@ -663,6 +662,21 @@ export default function App() {
   }
   if (hasTerminal) {
     operationsItems.push({ key: 'stock-history', group: 'money', icon: 'history', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
+  }
+  // Расчёты с контрагентами — не складская история, а денежная, и стояли они
+  // внутри складского блока по недоразумению. Продать в долг может любая
+  // касса: способ оплаты «в долг» предлагается всюду, где к чеку привязан
+  // клиент. А записать, что долг вернули, до сих пор мог только тот, у кого
+  // подключён склад: оптовик на витрине заказов — то есть ровно тот, у кого
+  // половина расчётов идёт по долгам, — этого экрана не видел вовсе.
+  if (isOwnerOrManager) {
+    operationsItems.push({
+      key: 'settlements',
+      group: 'money',
+      icon: 'wallet',
+      label: t('ops.settlements'),
+      onClick: handleShowSettlements,
+    });
   }
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { LEGACY_MODULES, MODULE_LABELS, OFFERABLE_MODULES } from './types';
 import {
   pluralizeRu,
   toLocalISODate,
@@ -135,5 +136,27 @@ describe('daysUntil', () => {
 
   it('через месяц — месяц, а не «скоро»', () => {
     expect(daysUntil('2026-10-30', at('2026-09-30'))).toBe(30);
+  });
+});
+
+describe('модули, которые продаём', () => {
+  // «Магазин» (`shop`) не проверяется нигде: ни в кассе, ни на сервере. А
+  // галочка стояла по умолчанию у каждой новой компании — магазин, заведённый
+  // по умолчанию, получал кассу без скидок, без лояльности и без весового
+  // товара, и в карточке при этом было написано «Магазин».
+  it('не предлагают того, что ничего не включает', () => {
+    expect(OFFERABLE_MODULES).not.toContain('shop');
+    expect(OFFERABLE_MODULES).toContain('retail');
+  });
+
+  it('но снять его у заведённой компании можно', () => {
+    // Иначе модуль, который когда-то поставили, останется навсегда.
+    expect(LEGACY_MODULES).toContain('shop');
+  });
+
+  it('у каждого предлагаемого модуля есть подпись', () => {
+    for (const m of OFFERABLE_MODULES) {
+      expect(MODULE_LABELS[m], m).toBeTruthy();
+    }
   });
 });
