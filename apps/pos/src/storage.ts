@@ -114,10 +114,18 @@ export function getShiftHistory(): Shift[] {
   return read<Shift[]>(SHIFT_HISTORY_KEY, []);
 }
 
+/**
+ * Сколько закрытых смен касса помнит у себя.
+ *
+ * Примерно год односменной работы. Дальше — не помнит: отчёты за прошлый год
+ * берут с сервера, а место в браузере одно на всё, и делить его с очередью
+ * неотправленных продаж эта история не должна.
+ */
+const SHIFT_HISTORY_LIMIT = 400;
+
 export function addClosedShift(shift: Shift): void {
-  const history = getShiftHistory();
-  history.push(shift);
-  write(SHIFT_HISTORY_KEY, history);
+  const history = [...getShiftHistory(), shift];
+  write(SHIFT_HISTORY_KEY, history.slice(-SHIFT_HISTORY_LIMIT));
 }
 
 // The location this register works at, remembered across reloads so a device

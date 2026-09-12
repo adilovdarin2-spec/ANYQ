@@ -43,7 +43,13 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
       // morning's takings land in nobody's reconciliation.
       await ensureShiftSynced();
 
-      const pending = getSales().filter((s) => !s.synced);
+      // Только то, что ждёт связи. Отказанную продажу сервер посмотрел и не
+      // принял: причина у неё снаружи кассы — не хватило остатка, изменились
+      // цены, — и сама собой она не исчезнет. Слать её на каждом проходе
+      // значит на каждой продаже долбиться в тот же отказ, а с десятком таких
+      // чеков в памяти — десятком лишних запросов. Её отправят по кнопке,
+      // когда причину починят; экран профиля показывает и продажу, и причину.
+      const { pending } = splitQueue(getSales());
       for (const sale of pending) {
         if (getSales().find((s) => s.id === sale.id)?.synced) continue;
         try {
