@@ -70,8 +70,7 @@ async function sendTo(subscriptions: Subscription[], payload: PushPayload): Prom
         );
         delivered += 1;
       } catch (err) {
-        const statusCode = (err as { statusCode?: number }).statusCode;
-        if (statusCode === 404 || statusCode === 410) {
+        if (subscriptionIsGone(err)) {
           await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
         }
       }
@@ -79,6 +78,24 @@ async function sendTo(subscriptions: Subscription[], payload: PushPayload): Prom
   );
 
   return delivered;
+}
+
+/**
+ * Означает ли ошибка отправки, что подписки больше нет.
+ *
+ * Отдельной функцией, потому что различить здесь надо ровно две вещи, и цена у
+ * них разная. 404 и 410 — браузер выбросил подписку: человек удалил приложение
+ * или отозвал разрешение, и слать туда больше некуда никогда. Всё остальное —
+ * сеть легла, служба ответила пятисоткой, ключи просрочены: подписка жива, и
+ * удалить её значило бы отключить человеку уведомления из-за чужой аварии.
+ *
+ * Сама отправка проверяется только живым сервисом и настоящим телефоном — это
+ * отдельный пункт в списке запуска. Решение, удалять или нет, проверяется
+ * здесь.
+ */
+export function subscriptionIsGone(err: unknown): boolean {
+  const statusCode = (err as { statusCode?: number } | null)?.statusCode;
+  return statusCode === 404 || statusCode === 410;
 }
 
 /** Всем устройствам компании. Годится для того, что касается всей смены. */
