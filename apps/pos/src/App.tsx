@@ -490,7 +490,7 @@ export default function App() {
   // Whether the till can be opened without a network at all, as opposed to
   // whether it has one right now. See offline.ts.
   const offlineReadiness = useOfflineReadiness();
-  const { online, pendingCount, stuckCount, refreshPendingCount, sync } = useSalesSync(
+  const { online, pendingCount, stuckSales, stuckCount, retryStuck, refreshPendingCount, sync } = useSalesSync(
     session?.token ?? null,
     ensureShiftSyncedStable,
   );
@@ -3346,7 +3346,8 @@ export default function App() {
           online={online}
           offlineReadiness={offlineReadiness}
           pendingCount={pendingCount}
-          stuckCount={stuckCount}
+          stuckSales={stuckSales}
+          onRetryStuck={retryStuck}
           storefrontUrl={storefrontUrl}
           pushSupported={hasSupply && pushSupported()}
           pushEnabled={pushEnabled}
