@@ -702,6 +702,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'loyalty.phone': 'Клиент телефоны',
   'loyalty.find': 'Табу',
   'loyalty.found': '{name} · ұпай: {points}',
+  'loyalty.newCustomer': 'Жаңа клиент — ұпайлар осы сатылымнан бастап жинала бастайды',
   'loyalty.redeem': 'Ұпай есептен шығару',
   'loyalty.remove': 'алып тастау',
   'loyalty.attach': 'қосу',
