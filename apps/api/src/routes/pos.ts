@@ -9,6 +9,8 @@ import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
 import { soldAtOrNow } from '../sold-at';
 import { limitRefusal } from '../limits';
 import { phoneKey } from '../phone';
+import { capabilitiesOf, capabilityRefusal } from '../roles';
+import type { Capability } from '../roles';
 import {
   blockStock,
   unblockStock,
@@ -188,6 +190,10 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   res.json({
     token: signPosToken(user.id, user.companyId, user.tokenVersion, device?.id),
     user: { id: user.id, name: user.name, role: user.role },
+    // Что этой роли доступно. Считает сервер — иначе касса заведёт вторую
+    // копию таблицы прав, и они разойдутся в сторону «на экране есть, а
+    // делать нельзя».
+    capabilities: capabilitiesOf(user.role),
     company: { id: user.company.id, name: user.company.name, slug: user.company.slug },
     modules,
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
@@ -1456,6 +1462,23 @@ posRouter.patch('/products/:id/stop-list', requirePosAuth, async (req: PosAuthed
 // sellable=false, the same flag /pos/login already filters the sale grid on
 // — nothing else references it, so hiding a product never breaks a
 // historical Stock/DocumentItem row the way a real delete could.
+/**
+ * Пускает ли роль этого человека к такой операции — и если нет, отвечает сама.
+ *
+ * Возвращает `true`, когда можно продолжать; иначе ответ уже отправлен, и
+ * маршруту остаётся выйти. Так проверка читается одной строкой в начале
+ * маршрута и не превращается в четыре.
+ */
+async function allow(req: PosAuthedRequest, res: Response, capability: Capability): Promise<boolean> {
+  const user = req.posUserId ? await prisma.user.findUnique({ where: { id: req.posUserId } }) : null;
+  const refusal = capabilityRefusal(user?.role, capability);
+  if (refusal) {
+    res.status(403).json({ error: refusal });
+    return false;
+  }
+  return true;
+}
+
 async function requireOwnerOrManager(userId: string | undefined): Promise<boolean> {
   if (!userId) return false;
   const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -2032,6 +2055,7 @@ posRouter.get('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest,
 });
 
 posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'writeOff'))) return;
   const b = req.body ?? {};
   const requested: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
 
@@ -3480,6 +3504,7 @@ posRouter.get('/purchase-orders', requirePosAuth, async (req: PosAuthedRequest, 
 // Created as a draft, always. An order that appears already approved is one
 // nobody agreed to pay for.
 posRouter.post('/purchase-orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'receive'))) return;
   const b = req.body ?? {};
   const rawItems: { productId: string; quantity: number; price: number; packagingId?: string | null }[] = Array.isArray(b.items)
     ? b.items
@@ -3676,6 +3701,7 @@ posRouter.get('/suppliers/:id/prices', requirePosAuth, async (req: PosAuthedRequ
 // reason, a written one, and a name — and the owner's summary surfaces it
 // without any threshold at all.
 posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'writeOff'))) return;
   const b = req.body ?? {};
   const note = typeof b.note === 'string' ? b.note.trim() : '';
   const lines: { productId: string; quantity: number; batchId?: string | null }[] = Array.isArray(b.items) ? b.items : [];
@@ -3837,6 +3863,7 @@ posRouter.get('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res) 
 // shop's; they simply cannot be sold until somebody decides. Nothing moves, so
 // no ledger row is written — what explains it is this document.
 posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'writeOff'))) return;
   const action = req.params.action;
   if (action !== 'block' && action !== 'release') {
     res.status(404).json({ error: 'Не найдено' });
@@ -4277,6 +4304,7 @@ posRouter.post('/bins/:id/unblock', requirePosAuth, async (req: PosAuthedRequest
 });
 
 posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const b = req.body ?? {};
   const quantity = Number(b.quantity);
   const fromBin = typeof b.fromBin === 'string' ? b.fromBin.trim().toUpperCase() : '';
@@ -4820,6 +4848,7 @@ posRouter.get('/counts/sheet', requirePosAuth, async (req: PosAuthedRequest, res
 // the whole rack is settled each time rather than only the lines somebody
 // happened to type.
 posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'count'))) return;
   const b = req.body ?? {};
   const rawLines: { productId: string; binLocation?: string; countedQuantity: number }[] = Array.isArray(b.items)
     ? b.items
@@ -5276,6 +5305,7 @@ posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthed
  * файлу означала бы, что недостачу подписали не глядя.
  */
 posRouter.post('/deliveries/match', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'receive'))) return;
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
     include: { tariff: true, locations: true },
@@ -5681,6 +5711,7 @@ posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
 // whatever was picked for it before, so a picker can submit rack A and then
 // rack B without rack A being forgotten.
 posRouter.post('/orders/:id/pick', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const b = req.body ?? {};
   const picked: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
 
@@ -5755,6 +5786,7 @@ posRouter.post('/orders/:id/pick', requirePosAuth, async (req: PosAuthedRequest,
 // will never claim them, invisible until a count disagrees with what the
 // register will sell.
 posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const order = await prisma.document.findFirst({
     where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' },
     include: { items: true },
@@ -5870,6 +5902,7 @@ posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest,
 });
 
 posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const order = await prisma.document.findFirst({
     where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' },
     include: { items: true },
@@ -5966,6 +5999,7 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
 });
 
 posRouter.post('/orders/:id/reject', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const order = await prisma.document.findFirst({
     where: { id: req.params.id, companyId: req.posCompanyId, type: 'order' },
     include: { items: true },
@@ -6054,6 +6088,7 @@ posRouter.get('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) =
 });
 
 posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const b = req.body ?? {};
   const items: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
   if (items.length === 0 || hasInvalidQuantity(items)) {
@@ -6179,6 +6214,7 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
 // leave them in transit forever. The shortfall is written onto the document
 // instead, where it can be looked into.
 posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const b = req.body ?? {};
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
@@ -6282,6 +6318,7 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
 // The van turned back. Goods that never left the yard belong to the source
 // again — leaving them in transit would strand them at neither end.
 posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'moveStock'))) return;
   const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   if (!modules.includes('warehouse')) {
@@ -6390,6 +6427,7 @@ posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =>
 });
 
 posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'receive'))) return;
   const b = req.body ?? {};
   const rawItems: { productId: string; quantity: number; price: number; packagingId?: string | null }[] = Array.isArray(b.items)
     ? b.items
@@ -6622,6 +6660,7 @@ posRouter.get('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {
 });
 
 posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'count'))) return;
   const b = req.body ?? {};
   const items: { productId: string; countedQuantity: number }[] = Array.isArray(b.items) ? b.items : [];
   if (items.length === 0 || hasInvalidCountedQuantity(items)) {
@@ -6812,6 +6851,7 @@ posRouter.get('/production', requirePosAuth, async (req: PosAuthedRequest, res) 
 });
 
 posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'produce'))) return;
   const b = req.body ?? {};
   const quantity = Number(b.quantity);
   if (!b.productId || !Number.isFinite(quantity) || quantity <= 0) {
