@@ -33,7 +33,13 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
               the paper is the difference between a shop that knows that and one
               that finds out from an inspector. */}
           <div className="r-sub">{t('receipt.notFiscal')}</div>
-          <div className="r-sub">{formatDateTime(sale.createdAt)}{!sale.synced ? ` · ${t('receipt.notSynced')}` : ''}</div>
+          {/* «Не синхронизирован» — это про очередь: продажа лежит и уйдёт.
+              Отказанная продажа не уйдёт никогда, и на бумаге это должно
+              читаться по-разному: одно ждёт связи, другое ждёт человека. */}
+          <div className="r-sub">
+            {formatDateTime(sale.createdAt)}
+            {sale.syncError ? ` · ${t('receipt.refused')}` : !sale.synced ? ` · ${t('receipt.notSynced')}` : ''}
+          </div>
           {sale.items.map((line) => (
             <div key={line.id} className="receipt-line">
               <span>{line.name} × {line.saleUnit === 'weight' ? formatWeight(line.qty) : line.qty}</span>

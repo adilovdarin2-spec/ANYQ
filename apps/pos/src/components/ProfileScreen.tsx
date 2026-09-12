@@ -3,8 +3,8 @@ import { Icon } from './Icon';
 import { LANGUAGES } from '../i18n';
 import type { PhraseKey } from '../i18n';
 import { useTranslation } from '../i18n/useLanguage';
-import type { Shift } from '../types';
-import { formatTime, hoursSince } from '../utils';
+import type { Sale, Shift } from '../types';
+import { formatMoney, formatTime, hoursSince } from '../utils';
 
 interface Props {
   cashierName: string;
@@ -14,7 +14,9 @@ interface Props {
   /** 'unavailable' when the service worker did not register. See offline.ts. */
   offlineReadiness: 'unknown' | 'ready' | 'unavailable';
   pendingCount: number;
-  stuckCount: number;
+  /** Продажи, которые сервер отказался принять, с его же объяснением почему. */
+  stuckSales: Sale[];
+  onRetryStuck: (id: string) => void;
   storefrontUrl: string | null;
   pushSupported: boolean;
   pushEnabled: boolean;
@@ -51,7 +53,8 @@ export function ProfileScreen({
   online,
   offlineReadiness,
   pendingCount,
-  stuckCount,
+  stuckSales,
+  onRetryStuck,
   storefrontUrl,
   pushSupported,
   pushEnabled,
@@ -112,10 +115,25 @@ export function ProfileScreen({
           <span className="field-hint">{t('profile.offlineBrokenWhy')}</span>
         </div>
       )}
-      {stuckCount > 0 && (
-        <div className="profile-row">
-          <span>⚠ {t('profile.needAttention')}</span>
-          <span>{t('profile.stuck', { count: stuckCount })}</span>
+      {/* Не число, а сами продажи: какая, на сколько и что ответил сервер.
+          «1 требует внимания» — это просьба к кассиру догадаться, какой из
+          сегодняшних чеков не прошёл, и к владельцу — поверить на слово. А
+          причина всё это время лежала рядом, в той же записи. */}
+      {stuckSales.length > 0 && (
+        <div className="profile-section">
+          <div className="section-title">⚠ {t('profile.needAttention')}</div>
+          <div className="field-hint" style={{ marginBottom: 8 }}>{t('profile.stuckWhy')}</div>
+          {stuckSales.map((sale) => (
+            <div key={sale.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <strong>
+                {formatTime(sale.createdAt)} · {formatMoney(sale.total)} ₸
+              </strong>
+              <span className="field-hint">{sale.syncError}</span>
+              <button className="btn btn-secondary" style={{ marginTop: 4 }} onClick={() => onRetryStuck(sale.id)}>
+                {t('profile.stuckRetry')}
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

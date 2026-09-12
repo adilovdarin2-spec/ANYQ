@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSales, saveSales } from '../storage';
+import type { Sale } from '../types';
+import { clearRefusal, splitQueue } from '../sales-queue';
 import { useOnlineStatus } from './useOnlineStatus';
 import { submitSale, ApiError } from '../api';
 
@@ -13,14 +15,22 @@ const RETRY_MS = 20_000;
 
 export function useSalesSync(token: string | null, ensureShiftSynced: () => Promise<void>) {
   const online = useOnlineStatus();
-  const [pendingCount, setPendingCount] = useState(() => getSales().filter((s) => !s.synced && !s.syncError).length);
-  const [stuckCount, setStuckCount] = useState(() => getSales().filter((s) => s.syncError).length);
+  const [pendingCount, setPendingCount] = useState(() => splitQueue(getSales()).pending.length);
+  /**
+   * Продажи, которые сервер отказался принять, — целиком, а не числом.
+   *
+   * Числа хватало, чтобы написать «1 требует внимания», и не хватало ни на
+   * что дальше: ни кассир, ни владелец не могли узнать, какая это продажа и
+   * почему её не приняли. Причину сервер присылает, касса её сохраняет —
+   * и до сих пор не показывала никому.
+   */
+  const [stuckSales, setStuckSales] = useState<Sale[]>(() => splitQueue(getSales()).stuck);
   const syncingRef = useRef(false);
 
   const refreshPendingCount = useCallback(() => {
-    const sales = getSales();
-    setPendingCount(sales.filter((s) => !s.synced && !s.syncError).length);
-    setStuckCount(sales.filter((s) => s.syncError).length);
+    const queue = splitQueue(getSales());
+    setPendingCount(queue.pending.length);
+    setStuckSales(queue.stuck);
   }, []);
 
   const sync = useCallback(async () => {
@@ -82,9 +92,9 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
           }
           // Either the server couldn't be reached, or it failed in a way that
           // says nothing about this sale (5xx). Keep the whole queue for the
-          // next attempt: marking a sale stuck here would strand a perfectly
-          // good one over a momentary server fault, and it is never retried
-          // again once it carries a syncError.
+          // next attempt: marking a sale stuck here would put a perfectly good
+          // sale in front of the cashier as a refusal over a momentary server
+          // fault.
           break;
         }
       }
@@ -118,5 +128,26 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
     return () => window.clearInterval(timer);
   }, [online, token, pendingCount, sync]);
 
-  return { online, pendingCount, stuckCount, refreshPendingCount, sync };
+  /**
+   * Отправить отказанную продажу ещё раз — по нажатию, а не по таймеру.
+   *
+   * Причина отказа чаще всего снаружи кассы: не хватило остатка, пока чек
+   * пробивали, не было такого товара, закрыли смену на сервере. Это чинят
+   * руками — и после починки человеку нужна кнопка «теперь», а не ожидание
+   * следующей продажи: таймер досылки заводится только пока есть обычная
+   * очередь, а на одних отказанных продажах касса ничего не делает.
+   *
+   * Ключ идемпотентности у продажи тот же, что и в первый раз, поэтому
+   * повтор ничем не грозит: сервер либо примет её, либо откажет так же.
+   */
+  const retryStuck = useCallback(
+    (id: string) => {
+      saveSales(clearRefusal(getSales(), id));
+      refreshPendingCount();
+      void sync();
+    },
+    [refreshPendingCount, sync],
+  );
+
+  return { online, pendingCount, stuckSales, stuckCount: stuckSales.length, retryStuck, refreshPendingCount, sync };
 }
