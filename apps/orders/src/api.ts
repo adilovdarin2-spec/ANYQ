@@ -41,7 +41,11 @@ export interface PlaceOrderPayload {
   items: { productId: string; quantity: number }[];
 }
 
-export function placeOrder(companyId: string, payload: PlaceOrderPayload): Promise<{ id: string; createdAt: string }> {
+/** `number` — короткий номер заказа вроде ЗАК-2026-000004; его ставит база. */
+export function placeOrder(
+  companyId: string,
+  payload: PlaceOrderPayload,
+): Promise<{ id: string; number: string | null; createdAt: string }> {
   return request(`/supply/${companyId}/orders`, { method: 'POST', body: JSON.stringify(payload) });
 }
 

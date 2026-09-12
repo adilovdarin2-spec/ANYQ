@@ -11,12 +11,42 @@ interface Props {
   onSubmit: (name: string, phone: string, address: string) => void;
 }
 
+/**
+ * «Телефон и адрес доставки», а не «телефон, адрес доставки».
+ *
+ * Перечисление через запятую до конца читается как список из формы, а не как
+ * фраза, — а это последнее, что человек читает перед тем, как решить, стоит ли
+ * заказ возни.
+ */
+function listRu(items: string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} и ${items[items.length - 1]}`;
+}
+
 export function CheckoutSheet({ cart, total, submitting, error, onBack, onSubmit }: Props) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
 
-  const valid = name.trim() !== '' && normalizePhone(phone).length >= 10 && address.trim() !== '' && cart.length > 0;
+  /**
+   * Чего не хватает, чтобы отправить заказ.
+   *
+   * Кнопка была просто серой. Партнёр заполняет название, пропускает телефон и
+   * упирается в кнопку, которая не нажимается и ничего не объясняет: что
+   * именно не так — не написано нигде, и остаётся тыкать в неё или уйти. Уйти
+   * дешевле, а стоит это заказа, который магазин не получит и о котором не
+   * узнает.
+   *
+   * Короткий телефон назван отдельно от пустого: «телефон» человек, который
+   * его уже вписал, прочитает как «я же вписал» и будет искать ошибку в другом
+   * месте.
+   */
+  const missing: string[] = [];
+  if (name.trim() === '') missing.push('название или имя');
+  if (normalizePhone(phone).length < 10) missing.push(phone.trim() === '' ? 'телефон' : 'телефон целиком');
+  if (address.trim() === '') missing.push('адрес доставки');
+
+  const valid = missing.length === 0 && cart.length > 0;
 
   return (
     <div className="screen">
@@ -66,6 +96,9 @@ export function CheckoutSheet({ cart, total, submitting, error, onBack, onSubmit
       </div>
       <div className="screen-footer">
         <div className="screen-footer-inner">
+          {missing.length > 0 && (
+            <p className="checkout-missing">Осталось заполнить: {listRu(missing)}.</p>
+          )}
           <button
             className="btn btn-primary btn-block"
             disabled={!valid || submitting}

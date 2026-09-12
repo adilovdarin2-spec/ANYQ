@@ -1,5 +1,5 @@
 import type { Prisma } from '@anyq/db';
-import { allocateFromBins } from './bins';
+import { allocateFromBins, allocateRelease } from './bins';
 import type { BinStock } from './bins';
 
 export interface SaleItemInput {
@@ -331,6 +331,51 @@ export async function reserveStock(
     UPDATE "stocks" SET "reserved" = "reserved" + ${quantity}
     WHERE "id" = ${stock.id} AND "quantity" - "reserved" >= ${quantity}`;
   if (affected === 0) throw new ConcurrentStockChangeError(stock.productId);
+}
+
+/**
+ * Бронь под заказ — по ячейкам, а не по одной строке остатка.
+ *
+ * Товар одного наименования лежит на нескольких полках, и бронь ложится на те
+ * же строки, с которых потом уйдёт товар. До этого витрина брала из запроса
+ * одну строку на товар — ту, что вернулась последней, — и на неё же ставила
+ * бронь: на складе с ячейками это означало отказ «часть товара уже разобрали»
+ * при полных полках, потому что в той одной строке столько не лежало.
+ */
+export async function reserveAcrossBins(
+  tx: Prisma.TransactionClient,
+  rows: BinnedStock[],
+  quantity: number,
+): Promise<void> {
+  const allocation = allocateFromBins(
+    quantity,
+    rows.map((row) => ({ stockId: row.id, binCode: row.binLocation, available: availableQuantity(row) })),
+  );
+  if (allocation.status !== 'ok') {
+    throw new ConcurrentStockChangeError(rows[0]?.productId ?? '');
+  }
+  for (const part of allocation.allocations) {
+    await reserveStock(tx, { id: part.stockId, productId: rows[0]?.productId ?? '' }, part.quantity);
+  }
+}
+
+/**
+ * Снятие брони — оттуда же, куда её ставили.
+ *
+ * Зеркало {@link reserveAcrossBins}. Раньше снимали с первой строки товара на
+ * полную величину заказа: при одной полке это та же строка, при двух — чужая.
+ * Снятое сверх брони гасил `GREATEST(…, 0)`, а настоящая бронь оставалась
+ * стоять вечно: товар лежит на полке и больше никогда не продаётся, потому что
+ * числится занятым под заказ, которого нет.
+ */
+export async function releaseAcrossBins(
+  tx: Prisma.TransactionClient,
+  rows: { id: string; reserved: number }[],
+  quantity: number,
+): Promise<void> {
+  for (const part of allocateRelease(quantity, rows.map((row) => ({ stockId: row.id, reserved: row.reserved })))) {
+    await releaseStock(tx, part.stockId, part.quantity);
+  }
 }
 
 // Releasing must never fail: it runs when an order is fulfilled, rejected or

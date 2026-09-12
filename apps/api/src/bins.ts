@@ -103,6 +103,44 @@ export function allocateFromBins(required: number, bins: BinStock[]): BinAllocat
   return { status: 'ok', allocations };
 }
 
+/** Сколько снять с брони в каждой ячейке. */
+export interface ReleaseAllocation {
+  stockId: string;
+  quantity: number;
+}
+
+/**
+ * Откуда снимать бронь.
+ *
+ * Бронь кладётся по ячейкам — товар одного наименования лежит на нескольких
+ * полках, — и снимать её надо оттуда же. До этого и постановка, и снятие
+ * молча считали, что строка остатка у товара одна: бронь ставилась на ту
+ * строку, которая последней вернулась из запроса, а снималась с той, которая
+ * оказалась первой. Пока полка одна, это одна и та же строка. Как только их
+ * две, бронь на одной остаётся навсегда — товар лежит и больше никогда не
+ * продаётся, потому что для кассы он занят под заказ, которого уже нет.
+ *
+ * Отказать здесь нельзя: снятие происходит при выдаче, отмене и отклонении
+ * заказа, и отказ означал бы товар, забронированный навечно. Если в сумме
+ * забронировано меньше, чем просят снять, снимается сколько есть.
+ */
+export function allocateRelease(required: number, rows: { stockId: string; reserved: number }[]): ReleaseAllocation[] {
+  const usable = rows.filter((row) => row.reserved > 0);
+  // Сначала те, где брони больше: так снятие задевает меньше строк, а остаток
+  // брони, если он есть, остаётся размазанным по мелочи, а не по главной ячейке.
+  const ordered = [...usable].sort((a, b) => b.reserved - a.reserved || (a.stockId < b.stockId ? -1 : 1));
+
+  const allocations: ReleaseAllocation[] = [];
+  let remaining = required;
+  for (const row of ordered) {
+    if (remaining <= 0) break;
+    const take = Math.min(row.reserved, remaining);
+    allocations.push({ stockId: row.stockId, quantity: take });
+    remaining -= take;
+  }
+  return allocations;
+}
+
 export type PutawayResult =
   | { status: 'ok' }
   /** More than is free in the bin it is being moved out of. */

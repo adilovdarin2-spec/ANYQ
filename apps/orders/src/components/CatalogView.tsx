@@ -36,8 +36,24 @@ export function CatalogView({
     return activeCategory === 'Все' || p.category === activeCategory;
   });
 
+  /**
+   * Сколько строк рисуется за раз.
+   *
+   * Оптовик держит тысячи позиций, а заказывает у него партнёр с телефона —
+   * часто недорогого. Замер на кассе, где список устроен так же: три тысячи
+   * карточек это восемнадцать тысяч узлов в дереве и 169–351 мс на каждую
+   * букву в поиске; на телефоне за тридцать тысяч тенге — в разы больше, то
+   * есть страница замирает между буквами.
+   *
+   * Дальше полутора сотен строк никто не листает: товар ищут поиском или
+   * категорией. Остальное не прячется молча — под списком стоит строка о том,
+   * сколько всего нашлось.
+   */
+  const LIMIT = 150;
+  const shown = filtered.slice(0, LIMIT);
+
   const grouped = new Map<string, CatalogProduct[]>();
-  for (const p of filtered) {
+  for (const p of shown) {
     const key = p.category || 'Без категории';
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(p);
@@ -87,6 +103,12 @@ export function CatalogView({
           </div>
         </div>
       ))}
+
+      {filtered.length > shown.length && (
+        <p className="catalog-overflow">
+          Показаны первые {shown.length} из {filtered.length}. Уточните поиск или выберите категорию.
+        </p>
+      )}
     </div>
   );
 }

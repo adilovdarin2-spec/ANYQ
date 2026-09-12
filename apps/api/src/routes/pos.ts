@@ -24,7 +24,7 @@ import {
   createStockWithMovement,
   decrementBatchQuantity,
   reserveStock,
-  releaseStock,
+  releaseAcrossBins,
   ConcurrentStockChangeError,
 } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
@@ -5733,11 +5733,33 @@ posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest,
         // the part that ships because the deduction respects reservations and
         // this order's own hold would block it, and the part that does not
         // because nothing is coming for it.
-        await releaseStock(tx, rows[0].id, item.quantity);
+        //
+        // По всем ячейкам товара, а не по первой: бронь лежит там, где лежит
+        // товар, и на складе с полками это не одна строка. Снятие с первой
+        // оставляло бронь на остальных — навсегда.
+        await releaseAcrossBins(tx, rows, item.quantity);
       }
 
+      // Перечитать после снятия брони — до того, как считать, из каких ячеек
+      // брать.
+      //
+      // Выдача уважает бронь: `deductAcrossBins` считает доступным остаток за
+      // вычетом брони и по этим числам раскладывает, откуда брать. Строки
+      // были прочитаны в начале транзакции, когда бронь этого же заказа ещё
+      // стояла, — и заказ на большую часть полки не мог быть выдан вообще:
+      // раскладка видела свободным только то, что этот заказ не занял, то есть
+      // меньше, чем сам заказ, и отвечала «остаток изменился, обновите и
+      // повторите». Навсегда, сколько ни повторяй.
+      //
+      // Условие внутри `UPDATE` при этом проверялось по свежим данным и
+      // проходило бы — не доходило дело: отказ случался раньше, на раскладке.
+      const freedRows = await tx.stock.findMany({
+        where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
+      });
+      const freedByProduct = groupStockByProduct(freedRows);
+
       for (const line of shipment.lines) {
-        await deductAcrossBins(tx, stockByProduct.get(line.productId) ?? [], line.picked, 'order_fulfill', {
+        await deductAcrossBins(tx, freedByProduct.get(line.productId) ?? [], line.picked, 'order_fulfill', {
           documentId: order.id,
           createdBy: req.posUserId,
         });
@@ -5812,12 +5834,33 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
       }
 
       for (const item of order.items) {
-        const rows = stockByProduct.get(item.productId) ?? [];
-        // Released before the deduction, in this order: the deduction respects
-        // reservations, so this order's own hold would otherwise block it. The
-        // hold was taken against one row, so it comes off the same one.
-        if (rows[0]) await releaseStock(tx, rows[0].id, item.quantity);
-        await deductAcrossBins(tx, rows, item.quantity, 'order_fulfill', {
+        // Released before the deduction: the deduction respects reservations,
+        // so this order's own hold would otherwise block it. It comes off the
+        // same rows it was put on — один товар живёт в скольких угодно
+        // ячейках, и бронь разложена по ним же.
+        await releaseAcrossBins(tx, stockByProduct.get(item.productId) ?? [], item.quantity);
+      }
+
+      // Перечитать после снятия брони — до того, как считать, из каких ячеек
+      // брать.
+      //
+      // Выдача уважает бронь: `deductAcrossBins` считает доступным остаток за
+      // вычетом брони и по этим числам раскладывает, откуда брать. Строки
+      // были прочитаны в начале транзакции, когда бронь этого же заказа ещё
+      // стояла, — и заказ на большую часть полки не мог быть выдан вообще:
+      // раскладка видела свободным только то, что этот заказ не занял, то есть
+      // меньше, чем сам заказ, и отвечала «остаток изменился, обновите и
+      // повторите». Навсегда, сколько ни повторяй.
+      //
+      // Условие внутри `UPDATE` при этом проверялось по свежим данным и
+      // проходило бы — не доходило дело: отказ случался раньше, на раскладке.
+      const freedRows = await tx.stock.findMany({
+        where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
+      });
+      const freedByProduct = groupStockByProduct(freedRows);
+
+      for (const item of order.items) {
+        await deductAcrossBins(tx, freedByProduct.get(item.productId) ?? [], item.quantity, 'order_fulfill', {
           documentId: order.id,
           createdBy: req.posUserId,
         });
@@ -5869,10 +5912,9 @@ posRouter.post('/orders/:id/reject', requirePosAuth, async (req: PosAuthedReques
       const stockRows = await tx.stock.findMany({
         where: { locationId: order.locationId, productId: { in: order.items.map((it) => it.productId) } },
       });
-      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
+      const stockByProduct = groupStockByProduct(stockRows);
       for (const item of order.items) {
-        const stock = stockByProduct.get(item.productId);
-        if (stock) await releaseStock(tx, stock.id, item.quantity);
+        await releaseAcrossBins(tx, stockByProduct.get(item.productId) ?? [], item.quantity);
       }
     });
   } catch (err) {
