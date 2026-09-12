@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -15,9 +15,31 @@ import { describe, expect, it } from 'vitest';
  */
 const REPO_ROOT = resolve(__dirname, '../../..');
 
-function migrationSql(): string {
+/**
+ * Последнее определение функции приставок — то, что сейчас в базе.
+ *
+ * Не первая миграция и не все сразу: функция заменяется целиком через
+ * CREATE OR REPLACE, поэтому в силе последняя по времени. Читать первую значило
+ * бы проверять то, чего в базе давно нет, — и именно так этот тест едва не
+ * начал охранять прошлое, когда у сверки появилась своя приставка.
+ */
+/** Первая миграция нумерации: там заведены триггер и уникальный индекс. */
+function numberingSql(): string {
   const dir = join(REPO_ROOT, 'packages/db/prisma/migrations');
   const folder = readdirSync(dir).find((name) => name.endsWith('_document_numbers'));
+  if (!folder) throw new Error('Миграция с нумерацией документов не найдена');
+  return readFileSync(join(dir, folder, 'migration.sql'), 'utf8');
+}
+
+function migrationSql(): string {
+  const dir = join(REPO_ROOT, 'packages/db/prisma/migrations');
+  const folders = readdirSync(dir)
+    .filter((name) => {
+      const file = join(dir, name, 'migration.sql');
+      return existsSync(file) && readFileSync(file, 'utf8').includes('FUNCTION document_number_prefix');
+    })
+    .sort();
+  const folder = folders[folders.length - 1];
   if (!folder) throw new Error('Миграция с нумерацией документов не найдена');
   return readFileSync(join(dir, folder, 'migration.sql'), 'utf8');
 }
@@ -62,12 +84,12 @@ describe('номер документа', () => {
     // Смысл всей конструкции: место, где создают документ, не обязано помнить
     // про нумерацию. Если триггер станет AFTER или исчезнет, следующий
     // разработчик узнает об этом здесь, а не от бухгалтера клиента.
-    const sql = migrationSql();
+    const sql = numberingSql();
     expect(sql).toMatch(/CREATE TRIGGER\s+documents_assign_number/);
     expect(sql).toMatch(/BEFORE INSERT ON "documents"/);
   });
 
   it('два документа одной компании не могут получить один номер', () => {
-    expect(migrationSql()).toMatch(/CREATE UNIQUE INDEX .*ON "documents"\("companyId", "number"\)/);
+    expect(numberingSql()).toMatch(/CREATE UNIQUE INDEX .*ON "documents"\("companyId", "number"\)/);
   });
 });

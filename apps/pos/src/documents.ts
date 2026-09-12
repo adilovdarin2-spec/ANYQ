@@ -24,6 +24,7 @@ const DOCUMENT_TYPE_PHRASES: Record<string, PhraseKey> = {
   'supplier_return': 'docType.supplier_return',
   production: 'docType.production',
   'purchase_order': 'docType.purchase_order',
+  reconciliation: 'docType.reconciliation',
 };
 
 export function documentTypeLabel(t: Translator['t'], type: string, serverLabel: string): string {

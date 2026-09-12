@@ -913,6 +913,7 @@ export const ru = {
   'docType.supplier_return': 'Возврат поставщику',
   'docType.production': 'Производство',
   'docType.purchase_order': 'Заказ поставщику',
+  'docType.reconciliation': 'Сверка журнала',
 
   // --- where an order has got to -------------------------------------------
   //
