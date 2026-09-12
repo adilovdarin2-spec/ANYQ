@@ -81,7 +81,9 @@ export function addSale(sale: Sale): void {
   // Чистим на записи, а не по таймеру: это единственный момент, когда список
   // точно растёт, и стоит он один проход по массиву, который и так
   // переписывается целиком.
-  const sales = [...pruneSales(getSales()), sale];
+  // Смену, которая идёт прямо сейчас, чистка не трогает: по её чекам считают
+  // деньги в ящике на закрытии.
+  const sales = [...pruneSales(getSales(), Date.now(), getShift()?.id ?? null), sale];
   saveSales(sales);
 }
 

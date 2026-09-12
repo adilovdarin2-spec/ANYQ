@@ -43,12 +43,17 @@ export const KEEP_MAX = 3000;
  * Порядок сохраняется: экран чека ищет продажу по идентификатору, а закрытие
  * смены считает по ним деньги.
  */
-export function pruneSales(sales: Sale[], now: number = Date.now()): Sale[] {
+export function pruneSales(sales: Sale[], now: number = Date.now(), openShiftId?: string | null): Sale[] {
   const { pending, stuck } = splitQueue(sales);
   const unsynced = pending.length + stuck.length;
 
   const kept = sales.filter((sale) => {
     if (!sale.synced || sale.syncError) return true;
+    // Смену, которая ещё открыта, не трогаем совсем. Касса просит закрыть её
+    // через двадцать часов, но просить — не значит закрыть: смена, забытая на
+    // несколько дней, — обычное дело. Если из неё пропадут первые чеки,
+    // ожидаемая сумма в ящике упадёт, и кассир получит излишек на ровном месте.
+    if (openShiftId && sale.shiftId === openShiftId) return true;
     return now - new Date(sale.createdAt).getTime() < KEEP_SYNCED_MS;
   });
   if (kept.length <= KEEP_MAX) return kept;
@@ -63,6 +68,7 @@ export function pruneSales(sales: Sale[], now: number = Date.now()): Sale[] {
   return kept.filter((sale) => {
     if (dropped >= excess) return true;
     if (!sale.synced || sale.syncError) return true;
+    if (openShiftId && sale.shiftId === openShiftId) return true;
     dropped += 1;
     return false;
   });
