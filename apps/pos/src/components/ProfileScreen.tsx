@@ -26,6 +26,8 @@ interface Props {
    * сверка за этот день не посчитается, пока это не разберут.
    */
   refusedCloses: Shift[];
+  /** Отправить закрытие смены заново — после того, как вошли под тем, кто вправе. */
+  onRetryClose: (id: string) => void;
   storefrontUrl: string | null;
   pushSupported: boolean;
   pushEnabled: boolean;
@@ -68,6 +70,7 @@ export function ProfileScreen({
   onRetryStuck,
   onRetryAllStuck,
   refusedCloses,
+  onRetryClose,
   storefrontUrl,
   pushSupported,
   pushEnabled,
@@ -140,6 +143,14 @@ export function ProfileScreen({
             <div key={closed.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <strong>{t('profile.closeRefusedShift', { time: formatTime(closed.openedAt) })}</strong>
               <span className="field-hint">{closed.closeError}</span>
+              {/* Отказ почти всегда про того, кто отправляет: «закрыть смену
+                  может только её кассир, владелец или менеджер». Значит
+                  владелец входит под собой и нажимает — без кнопки ему
+                  пришлось бы закрывать смену заново в кабинете, которого для
+                  этого нет. */}
+              <button className="btn btn-secondary" style={{ marginTop: 4 }} onClick={() => onRetryClose(closed.id)}>
+                {t('profile.stuckRetry')}
+              </button>
             </div>
           ))}
         </div>
