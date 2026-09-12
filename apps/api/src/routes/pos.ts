@@ -2990,7 +2990,7 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
   const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const deadStockSince = new Date(now.getTime() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
 
-  const [products, stockRows, salesDocs, returnDocs, adjustmentDocs, receiptLines, lastSales, batches, shifts] =
+  const [products, stockRows, salesDocs, returnDocs, adjustmentDocs, receiptLines, lastSales, batches, shifts, cashSettlements] =
     await Promise.all([
       prisma.product.findMany({ where: { companyId: companyId }, select: { id: true, name: true, unit: true, purchasePrice: true } }),
       prisma.stock.findMany({ where: { locationId } }),
@@ -3032,6 +3032,15 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
         orderBy: { expiryDate: 'asc' },
       }),
       prisma.shift.findMany({ where: { companyId: companyId, locationId, openedAt: { gte: from } }, orderBy: { openedAt: 'desc' } }),
+      // Наличные, прошедшие мимо чека: клиент погасил долг, поставщику
+      // заплатили из ящика. Это те же деньги в том же ящике, и до сих пор их
+      // не считала ни одна из двух сверок — ни серверная, ни кассовая. Для
+      // оптовика, у которого половина расчётов идёт наличными по долгам, это
+      // расхождение в конце каждой смены.
+      prisma.settlement.findMany({
+        where: { companyId, locationId, paymentMethod: 'cash', createdAt: { gte: from } },
+        select: { direction: true, amount: true, createdAt: true, createdBy: true },
+      })
     ]);
 
   // Имена сотрудников нужны только чтобы подписать смены и выбросы. Отдельный
@@ -3101,13 +3110,25 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
     // Refunds leave the same drawer, so they belong in the same figure.
     const paidOut = returnDocs.filter(matches).reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
 
+    // Расчёты наличными — туда же. У них нет ссылки на смену, поэтому только
+    // по времени и по тому, кто провёл: это тот же способ, каким сюда
+    // попадают чеки, написанные до появления такой ссылки.
+    const settled = cashSettlements.reduce((sum, row) => {
+      const mine =
+        row.createdAt >= shift.openedAt &&
+        row.createdAt <= until &&
+        (!shift.userId || row.createdBy === shift.userId);
+      if (!mine) return sum;
+      return sum + (row.direction === 'in' ? row.amount : -row.amount);
+    }, 0);
+
     return {
       shiftId: shift.id,
       cashierName: shift.cashierName,
       openedAt: shift.openedAt,
       closedAt: shift.closedAt,
       openingCash: shift.openingCash,
-      cashMovement: takings - paidOut,
+      cashMovement: takings - paidOut + settled,
       countedAtClose: shift.closingCashCounted,
     };
   });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Refund, Sale, Shift } from '../types';
+import type { DrawerEntry, Sale, Shift } from '../types';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import { refusedInShift, tallyShift } from '../shift-tally';
@@ -7,17 +7,17 @@ import { refusedInShift, tallyShift } from '../shift-tally';
 interface Props {
   shift: Shift;
   sales: Sale[];
-  /** Возвраты, выданные за эту смену: наличные из них ушли из ящика. */
-  refunds: Refund[];
+  /** Движения наличных мимо чека за эту смену: возвраты и расчёты. */
+  drawer: DrawerEntry[];
   onCancel: () => void;
   onConfirm: (closingCashCounted: number) => void;
 }
 
-export function CloseShiftScreen({ shift, sales, refunds, onCancel, onConfirm }: Props) {
+export function CloseShiftScreen({ shift, sales, drawer, onCancel, onConfirm }: Props) {
   const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
-  const { byMethod, total, refundedCash, expectedCash } = tallyShift(sales, shift.openingCash, refunds);
+  const { byMethod, total, refundedCash, settledIn, settledOut, expectedCash } = tallyShift(sales, shift.openingCash, drawer);
   // Их деньги в ящике есть, а в Z-отчёте на сервере не будет. Сказать об этом
   // нужно здесь — на этом экране человек последний раз смотрит на смену.
   const refused = refusedInShift(sales);
@@ -50,7 +50,22 @@ export function CloseShiftScreen({ shift, sales, refunds, onCancel, onConfirm }:
         {refundedCash > 0 && (
           <div className="summary-row">
             <span className="sr-muted">{t('shift.close.refundedCash')}</span>
-            <span>−{formatMoney(refundedCash)}</span>
+            <span>{formatMoney(-refundedCash)}</span>
+          </div>
+        )}
+        {/* Долги, погашенные наличными, и оплаты поставщикам из ящика. Каждая
+            строка появляется, только если такое за смену было: в магазине, где
+            в долг не торгуют, лишние нули — это вопрос «а что это». */}
+        {settledIn > 0 && (
+          <div className="summary-row">
+            <span className="sr-muted">{t('shift.close.settledIn')}</span>
+            <span>+{formatMoney(settledIn)}</span>
+          </div>
+        )}
+        {settledOut > 0 && (
+          <div className="summary-row">
+            <span className="sr-muted">{t('shift.close.settledOut')}</span>
+            <span>{formatMoney(-settledOut)}</span>
           </div>
         )}
 

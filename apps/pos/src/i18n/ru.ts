@@ -47,6 +47,8 @@ export const ru = {
   'shift.close.salesCount': 'Продаж за смену',
   'shift.close.total': 'Итого продаж',
   'shift.close.refundedCash': 'Выдано возвратов наличными',
+  'shift.close.settledIn': 'Принято наличными по долгам',
+  'shift.close.settledOut': 'Выдано наличными поставщикам',
   'shift.close.expectedCash': 'Наличными должно быть в кассе',
   'shift.close.countedCash': 'Пересчитано наличными фактически',
   'shift.close.matches': 'Сходится',

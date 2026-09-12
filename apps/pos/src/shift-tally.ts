@@ -1,4 +1,4 @@
-import type { PaymentMethod, Refund, Sale } from './types';
+import type { DrawerEntry, PaymentMethod, Sale } from './types';
 import { splitQueue } from './sales-queue';
 
 /**
@@ -23,9 +23,13 @@ export interface ShiftTally {
   total: number;
   /** Наличные, выданные покупателям обратно. */
   refundedCash: number;
+  /** Наличные, принятые по долгам клиентов мимо чека. */
+  settledIn: number;
+  /** Наличные, выданные из ящика поставщикам. */
+  settledOut: number;
   /**
-   * Что должно быть в ящике: касса на начало, плюс наличная часть продаж,
-   * минус выданные наличными возвраты.
+   * Что должно быть в ящике: касса на начало, плюс наличная часть продаж и
+   * принятые долги, минус выданные возвраты и оплаты поставщикам.
    */
   expectedCash: number;
 }
@@ -44,7 +48,7 @@ function paymentLines(sale: Sale): Array<{ method: PaymentMethod; amount: number
   return [{ method: sale.paymentMethod, amount: sale.total }];
 }
 
-export function tallyShift(sales: Sale[], openingCash: number, refunds: Refund[] = []): ShiftTally {
+export function tallyShift(sales: Sale[], openingCash: number, drawer: DrawerEntry[] = []): ShiftTally {
   const byMethod: Record<PaymentMethod, number> = { cash: 0, kaspi: 0, card: 0, credit: 0 };
   let total = 0;
 
@@ -53,16 +57,31 @@ export function tallyShift(sales: Sale[], openingCash: number, refunds: Refund[]
     for (const line of paymentLines(sale)) byMethod[line.method] += line.amount;
   }
 
-  // Возврат, выданный наличными, уходит из того же ящика. Не вычитать его
-  // значило требовать от кассира денег, которые он на глазах у всех отдал
-  // покупателю: сервер считает именно так, и расхождение доставалось кассиру.
-  const refundedCash = refunds
-    .filter((refund) => refund.method === 'cash')
-    .reduce((sum, refund) => sum + refund.amount, 0);
+  // Всё, что прошло через ящик мимо чека. Возврат, выданный наличными, уходит
+  // из того же ящика — не вычитать его значило требовать от кассира денег,
+  // которые он на глазах у всех отдал покупателю. Долг, погашенный наличными,
+  // в ящик приходит; оплата поставщику из ящика — уходит. Сервер считает
+  // именно так, и до сих пор расхождение доставалось кассиру.
+  const cash = drawer.filter((entry) => entry.method === 'cash');
+  const sumOf = (kind: DrawerEntry['kind'], direction: DrawerEntry['direction']) =>
+    cash
+      .filter((entry) => entry.kind === kind && entry.direction === direction)
+      .reduce((sum, entry) => sum + entry.amount, 0);
+
+  const refundedCash = sumOf('refund', 'out');
+  const settledIn = sumOf('settlement', 'in');
+  const settledOut = sumOf('settlement', 'out');
 
   // В долг — это не деньги в ящике и не деньги на счету; это обещание.
   // В выручку смены оно входит, в пересчёт наличных — нет.
-  return { byMethod, total, refundedCash, expectedCash: openingCash + byMethod.cash - refundedCash };
+  return {
+    byMethod,
+    total,
+    refundedCash,
+    settledIn,
+    settledOut,
+    expectedCash: openingCash + byMethod.cash + settledIn - refundedCash - settledOut,
+  };
 }
 
 /**

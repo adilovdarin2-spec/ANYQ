@@ -1,4 +1,4 @@
-import type { CountSheetLine, Refund, Sale, Shift } from './types';
+import type { CountSheetLine, DrawerEntry, Sale, Shift } from './types';
 import { isQuotaError, keepOnlyUnsent, pruneSales, KEEP_ON_OVERFLOW, KEEP_SYNCED_MS } from './sales-retention';
 import type { PosSession } from './api';
 
@@ -9,6 +9,8 @@ const SESSION_KEY = 'anyq_pos_session';
 const LOCATION_KEY = 'anyq_pos_location';
 const COUNT_SHEET_KEY = 'anyq_pos_count_sheets';
 const DEVICE_KEY = 'anyq_pos_device';
+const DRAWER_KEY = 'anyq_pos_drawer';
+/** Ключ, под которым лежали одни только возвраты. Читается на переходе. */
 const REFUNDS_KEY = 'anyq_pos_refunds';
 
 function read<T>(key: string, fallback: T): T {
@@ -109,27 +111,32 @@ export function saveSales(sales: Sale[]): void {
 }
 
 /**
- * Возвраты, выданные с этой кассы.
+ * Движения наличных мимо чека: возвраты и расчёты.
  *
  * Живут по тому же правилу, что и чеки: смену, которая идёт, не трогаем, а
- * старое не копим. Досылать их не нужно — возврат проводится только при связи,
- * и на сервере он уже есть.
+ * старое не копим. Досылать их не нужно — и возврат, и расчёт проводятся
+ * только при связи, и на сервере они уже есть.
  */
-export function getRefunds(): Refund[] {
-  return read<Refund[]>(REFUNDS_KEY, []);
+export function getDrawerEntries(): DrawerEntry[] {
+  const stored = read<DrawerEntry[]>(DRAWER_KEY, []);
+  if (stored.length > 0) return stored;
+  // Записи предыдущей сборки, где в этом списке были одни возвраты. Читаются
+  // один раз, чтобы смена, начатая до обновления кассы, сошлась на закрытии.
+  const legacy = read<Array<Omit<DrawerEntry, 'kind' | 'direction'>>>(REFUNDS_KEY, []);
+  return legacy.map((entry) => ({ ...entry, kind: 'refund', direction: 'out' }));
 }
 
-export function addRefund(refund: Refund): void {
+export function addDrawerEntry(entry: DrawerEntry): void {
   const openShiftId = getShift()?.id ?? null;
   const cutoff = Date.now() - KEEP_SYNCED_MS;
-  const kept = getRefunds().filter(
-    (r) => (openShiftId && r.shiftId === openShiftId) || new Date(r.createdAt).getTime() >= cutoff,
+  const kept = getDrawerEntries().filter(
+    (e) => (openShiftId && e.shiftId === openShiftId) || new Date(e.createdAt).getTime() >= cutoff,
   );
-  write(REFUNDS_KEY, [...kept, refund]);
+  write(DRAWER_KEY, [...kept, entry]);
 }
 
-export function refundsForShift(shiftId: string): Refund[] {
-  return getRefunds().filter((r) => r.shiftId === shiftId);
+export function drawerEntriesForShift(shiftId: string): DrawerEntry[] {
+  return getDrawerEntries().filter((e) => e.shiftId === shiftId);
 }
 
 export function salesForShift(shiftId: string): Sale[] {

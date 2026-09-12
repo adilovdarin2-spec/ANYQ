@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
-import { addClosedShift, addRefund, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, refundsForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
@@ -1507,6 +1507,20 @@ export default function App() {
         amount,
         paymentMethod: 'cash',
       });
+      // Эти деньги прошли через ящик: клиент принёс наличные по долгу или их
+      // выдали поставщику. На закрытии смены их считают наравне с чеками —
+      // иначе кассир отвечает за сумму, которую при нём же и приняли.
+      if (shift) {
+        addDrawerEntry({
+          id: `settlement_${Date.now()}_${counterpartyId}`,
+          shiftId: shift.id,
+          kind: 'settlement',
+          direction: settlementType === 'customer' ? 'in' : 'out',
+          amount,
+          method: 'cash',
+          createdAt: new Date().toISOString(),
+        });
+      }
       await loadSettlements(settlementType);
       return true;
     } catch (err) {
@@ -2162,10 +2176,11 @@ export default function App() {
       // же, а касса до сих пор не считала никак — и обвиняла кассира в
       // недостаче ровно на сумму, которую он отдал покупателю.
       if (shift) {
-        addRefund({
+        addDrawerEntry({
           id: made.id,
           shiftId: shift.id,
-          saleId: payload.saleId,
+          kind: 'refund',
+          direction: 'out',
           amount: made.refundAmount,
           method: payload.paymentMethod,
           createdAt: made.createdAt,
@@ -3038,7 +3053,7 @@ export default function App() {
         <CloseShiftScreen
           shift={shift}
           sales={salesForShift(shift.id)}
-          refunds={refundsForShift(shift.id)}
+          drawer={drawerEntriesForShift(shift.id)}
           onCancel={() => setView('sale')}
           onConfirm={closeShift}
         />

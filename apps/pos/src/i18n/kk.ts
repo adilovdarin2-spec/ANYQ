@@ -46,6 +46,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'shift.close.salesCount': 'Ауысымдағы сатылым саны',
   'shift.close.total': 'Сатылым жиыны',
   'shift.close.refundedCash': 'Қолма-қол қайтарылды',
+  'shift.close.settledIn': 'Қарыз бойынша қолма-қол қабылданды',
+  'shift.close.settledOut': 'Жеткізушілерге қолма-қол берілді',
   'shift.close.expectedCash': 'Кассада қолма-қол болуы тиіс',
   'shift.close.countedCash': 'Нақты қайта саналған қолма-қол ақша',
   'shift.close.matches': 'Сәйкес келеді',
