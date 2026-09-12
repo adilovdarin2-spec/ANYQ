@@ -46,6 +46,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Кого позвать, когда сервер сказал «войдите заново».
+ *
+ * Токен кассы перестаёт действовать, когда владелец меняет роль человека,
+ * отключает устройство или удаляет сотрудника. До сих пор касса этого не
+ * замечала: она оставалась «в сессии», и на каждое действие приходил отказ
+ * «Доступ отозван», ничего при этом не объясняя целиком, — а кассир жал
+ * кнопки и не понимал, почему касса перестала работать. Выход был один:
+ * найти «Сменить кассира» в профиле, до которого ещё надо догадаться дойти.
+ */
+type UnauthorizedHandler = (message: string) => void;
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  onUnauthorized = handler;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -56,7 +73,12 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(serverSaid(data.error) || say('net.requestFailed'), res.status);
+    const message = serverSaid(data.error) || say('net.requestFailed');
+    // 401 — это не про запрос, это про сессию: она кончилась. Говорим об этом
+    // один раз, в одном месте, вместо того чтобы каждый экран разбирался сам.
+    // Запрос всё равно падает: вызвавший его код должен узнать об отказе.
+    if (res.status === 401 && token) onUnauthorized?.(message);
+    throw new ApiError(message, res.status);
   }
   return data as T;
 }
