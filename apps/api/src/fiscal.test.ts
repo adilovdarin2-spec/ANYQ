@@ -27,6 +27,47 @@ describe('buildFiscalPayload', () => {
     expect(payload.createdAt).toBe('2026-09-04T10:00:00.000Z');
   });
 
+  it('раскладывает разбитый чек по частям, а не шлёт «mixed»', () => {
+    // Фискальный чек обязан показывать наличные и безналичные отдельно, и
+    // «mixed» не говорит ОФД ничего. Зарегистрированный чек — документ:
+    // ошибку в нём исправляют через налоговую, а не следующей выкаткой.
+    const payload = buildFiscalPayload({
+      documentId: 'doc_2',
+      registrationNumber: 'РНМ-123',
+      createdAt: new Date('2026-09-12T10:00:00Z'),
+      paymentMethod: 'mixed',
+      payments: [
+        { method: 'card', amount: 600 },
+        { method: 'cash', amount: 400 },
+      ],
+      lines: [],
+      total: 1000,
+      discount: 0,
+      pointsRedeemed: 0,
+    });
+    expect(payload.payments).toEqual([
+      { method: 'card', amount: 600 },
+      { method: 'cash', amount: 400 },
+    ]);
+    expect(payload.payments.reduce((sum, p) => sum + p.amount, 0)).toBe(payload.total);
+  });
+
+  it('чек прошлой сборки — это вся сумма одним способом', () => {
+    // У него нет строк оплаты, и пустая разбивка означала бы чек, за который
+    // будто бы не заплатили.
+    const payload = buildFiscalPayload({
+      documentId: 'doc_3',
+      registrationNumber: 'РНМ-123',
+      createdAt: new Date('2026-09-12T10:00:00Z'),
+      paymentMethod: 'kaspi',
+      lines: [],
+      total: 700,
+      discount: 0,
+      pointsRedeemed: 0,
+    });
+    expect(payload.payments).toEqual([{ method: 'kaspi', amount: 700 }]);
+  });
+
   it('defaults a missing payment method to cash rather than sending nothing', () => {
     const payload = buildFiscalPayload({
       documentId: 'doc_1',
