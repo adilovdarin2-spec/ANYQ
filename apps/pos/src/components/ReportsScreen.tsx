@@ -1,5 +1,6 @@
 import type { Report } from '../types';
 import { formatMoney } from '../utils';
+import { pluralPhrase } from '../i18n';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 
@@ -152,7 +153,7 @@ export function ReportsScreen({ report, loading, error, rangeDays, onRangeChange
             {report.byCashier.length === 0 && <div className="empty-state">{t('common.nothing')}</div>}
             {report.byCashier.map((c) => (
               <div key={c.userId} className="report-row">
-                <span>{c.name} · {t('reports.salesBy', { count: c.salesCount })}</span>
+                <span>{c.name} · {t(pluralPhrase(c.salesCount, 'reports.salesByOne', 'reports.salesByFew', 'reports.salesByMany'), { count: c.salesCount })}</span>
                 <span>{formatMoney(c.revenue)}</span>
               </div>
             ))}
