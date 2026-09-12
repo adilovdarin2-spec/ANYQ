@@ -36,6 +36,7 @@ const {
   markShiftCloseSynced,
   pendingShiftCloses,
   refusedShiftCloses,
+  retryShiftClose,
 } = await import('./storage');
 
 const смена = (id: string, over: Partial<Shift> = {}): Shift => ({
@@ -96,6 +97,19 @@ describe('долги по закрытию смен', () => {
 
     expect(refusedShiftCloses()).toEqual([]);
     expect(pendingShiftCloses()).toEqual([]);
+  });
+
+  it('отказ можно снять и попробовать снова', () => {
+    // Отказ почти всегда про того, кто отправляет: закрыть чужую смену может
+    // владелец или менеджер. Он входит под собой и нажимает — без этого
+    // закрытие осталось бы у кассы навсегда, потому что сама она к отказанному
+    // закрытию больше не возвращается.
+    addClosedShift(смена('вчера'));
+    markShiftCloseRefused('вчера', 'Закрыть смену может только её кассир, владелец или менеджер');
+    retryShiftClose('вчера');
+
+    expect(refusedShiftCloses()).toEqual([]);
+    expect(pendingShiftCloses().map((s) => s.id)).toEqual(['вчера']);
   });
 
   it('несколько смен ждут каждая своей очереди', () => {

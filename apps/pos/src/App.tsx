@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
-import { addClosedShift, addRefund, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, refundsForShift, refusedShiftCloses, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { addClosedShift, addRefund, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, refundsForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
@@ -534,6 +534,18 @@ export default function App() {
   const [pushMessage, setPushMessage] = useState<string | null>(null);
   /** Почему касса вернулась на экран входа. Слова сервера, не наши. */
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  /**
+   * Счётчик изменений в долгах по закрытию смен.
+   *
+   * Сами долги лежат в localStorage — в состоянии их держать нечего, их
+   * читают в двух местах и меняет фоновая досылка. Но React о хранилище не
+   * знает, и без этого счётчика нажатие «отправить ещё раз» меняло бы
+   * хранилище, не меняя экрана: отказ остался бы на месте, и человек нажал бы
+   * ещё раз.
+   */
+  const [shiftClosesVersion, setShiftClosesVersion] = useState(0);
+  /** Смены, закрытие которых сервер не принял. Читаются из хранилища. */
+  const refusedCloses = useMemo(() => refusedShiftCloses(), [shiftClosesVersion]);
 
   /**
    * Сканер на терминале печатает туда, где стоит курсор.
@@ -2544,6 +2556,17 @@ export default function App() {
    * вызов находит уже созданную, а не открывает вторую с ещё одной кассой на
    * начало.
    */
+  /**
+   * Снять отказ с закрытия смены и попробовать снова.
+   *
+   * Экран после этого перерисуется сам: список отказов читается из хранилища
+   * на каждой отрисовке, а досылка меняет то же хранилище.
+   */
+  function handleRetryShiftClose(id: string) {
+    retryShiftClose(id);
+    void flushShiftCloses();
+  }
+
   async function flushShiftCloses(): Promise<void> {
     if (!session) return;
     for (const closed of pendingShiftCloses()) {
@@ -2584,6 +2607,7 @@ export default function App() {
         break;
       }
     }
+    setShiftClosesVersion((version) => version + 1);
   }
 
   function addToCart(product: Product, modifier?: ProductModifierOption, explicitQty?: number, addQty = false) {
@@ -2899,7 +2923,7 @@ export default function App() {
         // Продажи, которые не приняли, и смены, которые не дали закрыть, — в
         // шапке это одно и то же: «есть что разобрать, откройте профиль».
         // Разделять их здесь значит рисовать две одинаковые плашки подряд.
-        stuckCount={stuckCount + refusedShiftCloses().length}
+        stuckCount={stuckCount + refusedCloses.length}
       />
 
       {/* Весь день висит только в последние сутки — см. urgentOnly. */}
@@ -3504,7 +3528,8 @@ export default function App() {
           stuckSales={stuckSales}
           onRetryStuck={retryStuck}
           onRetryAllStuck={retryAllStuck}
-          refusedCloses={refusedShiftCloses()}
+          refusedCloses={refusedCloses}
+          onRetryClose={handleRetryShiftClose}
           storefrontUrl={storefrontUrl}
           pushSupported={hasSupply && pushSupported()}
           pushEnabled={pushEnabled}

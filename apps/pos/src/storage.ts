@@ -165,6 +165,19 @@ export function refusedShiftCloses(): Shift[] {
   return getShiftHistory().filter((shift) => Boolean(shift.closeError) && !shift.closeSyncedToServer);
 }
 
+/**
+ * Забыть отказ и попробовать закрыть смену ещё раз.
+ *
+ * Отказ у закрытия почти всегда про того, кто его отправляет: «закрыть смену
+ * может только её кассир, владелец или менеджер». Значит чинится он входом
+ * под тем, кто вправе, — и после этого нужно, чтобы кто-то нажал. Само оно
+ * больше не повторяется намеренно: иначе касса до бесконечности стучалась бы
+ * в отказ, который сам не пройдёт.
+ */
+export function retryShiftClose(id: string): void {
+  write(SHIFT_HISTORY_KEY, getShiftHistory().map((shift) => (shift.id === id ? { ...shift, closeError: undefined } : shift)));
+}
+
 export function markShiftCloseRefused(id: string, error: string): void {
   write(SHIFT_HISTORY_KEY, getShiftHistory().map((shift) => (shift.id === id ? { ...shift, closeError: error } : shift)));
 }
