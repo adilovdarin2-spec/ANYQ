@@ -1486,6 +1486,10 @@ const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   supplier_return: 'Возврат поставщику',
   production: 'Производство',
   purchase_order: 'Заказ поставщику',
+  // Документ, которым записана починка кэша остатков по журналу. Его тут не
+  // было, и в истории документов он показывался словом `reconciliation` —
+  // единственное английское слово на русском экране.
+  reconciliation: 'Сверка журнала',
 };
 
 function documentTypeLabel(type: string): string {
@@ -5026,6 +5030,16 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
     where: { id: req.posCompanyId },
     include: { tariff: true, locations: true },
   });
+  // Как и у самой сверки: отчёт закончившийся тариф не показывает, а починка
+  // — пишет документ и правит остатки. Пропускать сюда то, чего не пускают
+  // посмотреть, значит оставить незакрытой единственную дверь, через которую
+  // компания с кончившимся тарифом что-то пишет в свой учёт.
+  const state = tariffState(company?.tariff ?? null);
+  if (state !== 'active') {
+    res.status(403).json({ error: tariffDenialMessage(state) });
+    return;
+  }
+
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
@@ -5071,8 +5085,26 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
       // Set, not incremented: the point is to make the cache equal the ledger,
       // and an increment computed from a value read a moment ago is exactly
       // the pattern that let them drift apart in the first place.
+      //
+      // Сумма журнала считается здесь же, в самом запросе, а не берётся из
+      // прочитанного выше. Список расхождений читается до транзакции — пока
+      // сервер его собирал и грузил названия товаров, магазин продолжал
+      // торговать. Записанное «сколько было в журнале минуту назад» затёрло бы
+      // все продажи этой минуты: кэш снова разошёлся бы с журналом, и виноват
+      // в этом был бы инструмент, который чинит ровно это. Подзапрос внутри
+      // UPDATE берёт итог на момент записи, и продажа, случившаяся секунду
+      // назад, в нём уже учтена.
+      //
+      // Прочитанный список при этом остаётся списком того, какие строки
+      // трогать. Строка, успевшая сойтись сама, переписывается своим же
+      // значением — это ничего не портит.
       await tx.$executeRaw`
-        UPDATE "stocks" SET "quantity" = ${mismatch.ledger}
+        UPDATE "stocks" SET "quantity" = COALESCE((
+          SELECT SUM(m."quantity") FROM "stock_movements" m
+          WHERE m."locationId" = "stocks"."locationId"
+            AND m."productId" = "stocks"."productId"
+            AND m."binLocation" = "stocks"."binLocation"
+        ), 0)
         WHERE "locationId" = ${locationId}
           AND "productId" = ${mismatch.productId}
           AND "binLocation" = ${mismatch.binLocation}`;

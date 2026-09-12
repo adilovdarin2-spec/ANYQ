@@ -906,6 +906,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'docType.supplier_return': 'Жеткізушіге қайтару',
   'docType.production': 'Өндіріс',
   'docType.purchase_order': 'Жеткізушіге тапсырыс',
+  'docType.reconciliation': 'Журнал салыстыруы',
 
   // --- where an order has got to -------------------------------------------
   'stage.pending': 'Жинауды күтуде',
