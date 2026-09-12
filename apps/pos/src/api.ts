@@ -214,12 +214,20 @@ export function createRemoteShift(
   return request('/pos/shifts', { method: 'POST', body: JSON.stringify(payload) }, token);
 }
 
+// Время закрытия передаётся вместе с суммой: смену закрывают вечером и уходят,
+// а связь появляется утром. Сервер принимает его, если оно не в будущем и не
+// раньше открытия смены, — иначе ставит своё.
 export function closeRemoteShift(
   token: string,
   shiftId: string,
   closingCashCounted: number,
+  closedAt?: string,
 ): Promise<{ id: string; closedAt: string }> {
-  return request(`/pos/shifts/${shiftId}/close`, { method: 'PATCH', body: JSON.stringify({ closingCashCounted }) }, token);
+  return request(
+    `/pos/shifts/${shiftId}/close`,
+    { method: 'PATCH', body: JSON.stringify({ closingCashCounted, ...(closedAt ? { closedAt } : {}) }) },
+    token,
+  );
 }
 
 export function fetchOrders(token: string): Promise<Order[]> {

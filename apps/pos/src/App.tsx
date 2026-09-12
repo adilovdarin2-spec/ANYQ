@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
-import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { addClosedShift, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, refusedShiftCloses, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
@@ -2431,6 +2431,9 @@ export default function App() {
       closedAt: null,
       closingCashCounted: null,
       syncedToServer: false,
+      // Запоминается при открытии: досылать закрытие, возможно, придётся
+      // после того, как кассу переключили на другую точку.
+      locationId: currentLocationId ?? undefined,
     };
 
     saveShift(s);
@@ -2466,22 +2469,79 @@ export default function App() {
   async function ensureShiftSynced(): Promise<void> {
     const current = getShift();
     if (current) await syncShift(current);
+    // Вчерашняя смена, закрытая без связи, уходит здесь же: эта функция
+    // вызывается перед каждой отправкой очереди продаж и при появлении сети.
+    await flushShiftCloses();
   }
 
   async function closeShift(closingCashCounted: number) {
     if (!shift) return;
-    if (shift.syncedToServer && session) {
-      try {
-        await closeRemoteShift(session.token, shift.id, closingCashCounted);
-      } catch {
-        // offline or server unavailable — local close still proceeds below
-      }
-    }
-    addClosedShift({ ...shift, closedAt: new Date().toISOString(), closingCashCounted });
+    const closed: Shift = { ...shift, closedAt: new Date().toISOString(), closingCashCounted };
+
+    // Закрываем локально в любом случае: смену закрывают, чтобы уйти домой, и
+    // отсутствие связи этому мешать не должно. А вот забыть об этом закрытии
+    // нельзя — до сих пор именно так и происходило: если связи не было, оно
+    // не отправлялось никогда и не повторялось ничем. У владельца смена
+    // оставалась открытой навсегда, без пересчитанной наличности, то есть
+    // сверка за этот день не считалась вообще.
+    addClosedShift(closed);
     saveShift(null);
     setShift(null);
     setCart([]);
     setView('sale');
+
+    void flushShiftCloses();
+  }
+
+  /**
+   * Досылка закрытых смен.
+   *
+   * Сначала — само открытие: смена, которую целиком проработали без связи, на
+   * сервере не существует, и закрывать там нечего. Создание идемпотентно по
+   * тому же идентификатору, который касса выдала себе сама, так что повторный
+   * вызов находит уже созданную, а не открывает вторую с ещё одной кассой на
+   * начало.
+   */
+  async function flushShiftCloses(): Promise<void> {
+    if (!session) return;
+    for (const closed of pendingShiftCloses()) {
+      if (closed.closingCashCounted === null) {
+        // Закрытие без пересчёта сервер не примет, и слать тут нечего.
+        markShiftCloseSynced(closed.id);
+        continue;
+      }
+      const locationId = closed.locationId ?? currentLocationId;
+      if (!locationId) continue;
+      try {
+        if (!closed.syncedToServer) {
+          await createRemoteShift(session.token, {
+            locationId,
+            openingCash: closed.openingCash,
+            clientCommandId: closed.id,
+            openedAt: closed.openedAt,
+          });
+        }
+        await closeRemoteShift(session.token, closed.id, closed.closingCashCounted, closed.closedAt ?? undefined);
+        markShiftCloseSynced(closed.id);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          // «Смена уже закрыта» — значит закрытие всё-таки дошло, просто ответ
+          // не вернулся. Повторять больше нечего.
+          markShiftCloseSynced(closed.id);
+          continue;
+        }
+        if (err instanceof ApiError && err.status < 500) {
+          // Сервер посмотрел и отказал: например, закрывать чужую смену может
+          // только владелец или менеджер, а утром за кассой другой человек.
+          // Повторять это вечно бессмысленно — отказ показывается в профиле.
+          markShiftCloseRefused(closed.id, err.message);
+          continue;
+        }
+        // Нет связи или сервер молчит. Остальные тоже подождут: порядок
+        // закрытий важнее скорости, а следующая попытка будет при синхронизации.
+        break;
+      }
+    }
   }
 
   function addToCart(product: Product, modifier?: ProductModifierOption, explicitQty?: number, addQty = false) {
@@ -3383,6 +3443,7 @@ export default function App() {
           pendingCount={pendingCount}
           stuckSales={stuckSales}
           onRetryStuck={retryStuck}
+          refusedCloses={refusedShiftCloses()}
           storefrontUrl={storefrontUrl}
           pushSupported={hasSupply && pushSupported()}
           pushEnabled={pushEnabled}

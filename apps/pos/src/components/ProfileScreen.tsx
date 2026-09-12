@@ -17,6 +17,13 @@ interface Props {
   /** Продажи, которые сервер отказался принять, с его же объяснением почему. */
   stuckSales: Sale[];
   onRetryStuck: (id: string) => void;
+  /**
+   * Смены, которые закрыли на кассе, а на сервере закрыть не дали.
+   *
+   * У владельца такая смена висит открытой и без пересчитанной наличности:
+   * сверка за этот день не посчитается, пока это не разберут.
+   */
+  refusedCloses: Shift[];
   storefrontUrl: string | null;
   pushSupported: boolean;
   pushEnabled: boolean;
@@ -57,6 +64,7 @@ export function ProfileScreen({
   pendingCount,
   stuckSales,
   onRetryStuck,
+  refusedCloses,
   storefrontUrl,
   pushSupported,
   pushEnabled,
@@ -122,6 +130,18 @@ export function ProfileScreen({
           «1 требует внимания» — это просьба к кассиру догадаться, какой из
           сегодняшних чеков не прошёл, и к владельцу — поверить на слово. А
           причина всё это время лежала рядом, в той же записи. */}
+      {refusedCloses.length > 0 && (
+        <div className="profile-section">
+          <div className="section-title">⚠ {t('profile.closeRefused')}</div>
+          {refusedCloses.map((closed) => (
+            <div key={closed.id} className="mini-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <strong>{t('profile.closeRefusedShift', { time: formatTime(closed.openedAt) })}</strong>
+              <span className="field-hint">{closed.closeError}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {stuckSales.length > 0 && (
         <div className="profile-section">
           <div className="section-title">⚠ {t('profile.needAttention')}</div>

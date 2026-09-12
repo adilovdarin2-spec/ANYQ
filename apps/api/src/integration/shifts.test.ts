@@ -169,6 +169,96 @@ describe('which shift a sale belongs to', () => {
   });
 });
 
+describe('смена, закрытая без связи', () => {
+  it('ложится тем часом, когда её закрыли, а не когда сервер услышал', async () => {
+    // Смену закрывают вечером и уходят домой, связь появляется утром. С
+    // серверным «сейчас» смена выглядела двадцатичасовой, попадала в
+    // предупреждение о слишком долгой смене, а её закрытие — в другой день.
+    // Смена открылась вчера утром — иначе закрывать её вчерашним вечером
+    // нельзя, и это правильно: закрытие не бывает раньше открытия.
+    const открыта = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+    const opened = await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 10000,
+      clientCommandId: `shift_${Date.now()}_вечер`,
+      openedAt: открыта,
+    });
+    const shiftId = opened.body.id as string;
+    await sell(2, shiftId);
+    const вечером = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+
+    const res = await api(fx.token, 'PATCH', `/pos/shifts/${shiftId}/close`, {
+      closingCashCounted: 10400,
+      closedAt: вечером,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.closedAt).toBe(вечером);
+  });
+
+  it('завтрашним числом закрыть нельзя', async () => {
+    // Касса с убежавшими часами иначе закрыла бы смену в будущем, и день, за
+    // который её считают, оказался бы не тот.
+    const shiftId = await openShift(0);
+    const завтра = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const res = await api(fx.token, 'PATCH', `/pos/shifts/${shiftId}/close`, {
+      closingCashCounted: 0,
+      closedAt: завтра,
+    });
+    expect(res.status).toBe(200);
+    expect(new Date(res.body.closedAt).getTime()).toBeLessThan(new Date(завтра).getTime());
+  });
+
+  it('и раньше собственного открытия — тоже', async () => {
+    const shiftId = await openShift(0);
+    const прошлыйГод = '2025-01-01T00:00:00.000Z';
+
+    const res = await api(fx.token, 'PATCH', `/pos/shifts/${shiftId}/close`, {
+      closingCashCounted: 0,
+      closedAt: прошлыйГод,
+    });
+    expect(res.status).toBe(200);
+    expect(new Date(res.body.closedAt).getTime()).toBeGreaterThan(new Date(прошлыйГод).getTime());
+  });
+
+  it('смену, которой на сервере не было, создают и закрывают одним заходом', async () => {
+    // Целый день без связи: смены на сервере нет вовсе. Касса досылает сперва
+    // открытие — по своему же идентификатору, — потом закрытие.
+    const свой = `shift_${Date.now()}`;
+    const утро = new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString();
+
+    const opened = await api(fx.token, 'POST', '/pos/shifts', {
+      locationId: fx.locationId,
+      openingCash: 5000,
+      clientCommandId: свой,
+      openedAt: утро,
+    });
+    expect(opened.status).toBe(201);
+
+    const closed = await api(fx.token, 'PATCH', `/pos/shifts/${свой}/close`, {
+      closingCashCounted: 7300,
+      closedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+
+    const stored = await prisma.shift.findFirst({ where: { clientCommandId: свой } });
+    expect(stored?.closingCashCounted).toBe(7300);
+  });
+
+  it('повторная досылка закрытия не переписывает пересчёт', async () => {
+    // Ответ мог не дойти, и касса пошлёт закрытие ещё раз. Второй пересчёт
+    // поверх первого стёр бы недостачу, ради которой всё это считается.
+    const shiftId = await openShift(0);
+    expect((await api(fx.token, 'PATCH', `/pos/shifts/${shiftId}/close`, { closingCashCounted: 900 })).status).toBe(200);
+
+    const второй = await api(fx.token, 'PATCH', `/pos/shifts/${shiftId}/close`, { closingCashCounted: 5 });
+    expect(второй.status).toBe(409);
+
+    const stored = await prisma.shift.findUnique({ where: { id: shiftId } });
+    expect(stored?.closingCashCounted).toBe(900);
+  });
+});
+
 describe('a shift opened without a network', () => {
   it('is opened once however many times the register retries', async () => {
     // Every retry that opened a second shift would add a second opening float

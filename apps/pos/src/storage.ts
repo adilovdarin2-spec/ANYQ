@@ -125,6 +125,33 @@ export function getShiftHistory(): Shift[] {
  */
 const SHIFT_HISTORY_LIMIT = 400;
 
+/**
+ * Закрытые смены, о которых сервер ещё не знает.
+ *
+ * Смену, закрытую без связи, досылают потом — иначе у владельца она навсегда
+ * остаётся открытой и без пересчитанной наличности, то есть дневная сверка по
+ * ней не считается никогда.
+ */
+export function pendingShiftCloses(): Shift[] {
+  return getShiftHistory().filter((shift) => shift.closedAt && !shift.closeSyncedToServer && !shift.closeError);
+}
+
+/** Закрытия, которые сервер отказался принять: их разбирает человек. */
+export function refusedShiftCloses(): Shift[] {
+  return getShiftHistory().filter((shift) => Boolean(shift.closeError) && !shift.closeSyncedToServer);
+}
+
+export function markShiftCloseRefused(id: string, error: string): void {
+  write(SHIFT_HISTORY_KEY, getShiftHistory().map((shift) => (shift.id === id ? { ...shift, closeError: error } : shift)));
+}
+
+export function markShiftCloseSynced(id: string): void {
+  const history = getShiftHistory().map((shift) =>
+    shift.id === id ? { ...shift, closeSyncedToServer: true, closeError: undefined } : shift,
+  );
+  write(SHIFT_HISTORY_KEY, history);
+}
+
 export function addClosedShift(shift: Shift): void {
   const history = [...getShiftHistory(), shift];
   write(SHIFT_HISTORY_KEY, history.slice(-SHIFT_HISTORY_LIMIT));
