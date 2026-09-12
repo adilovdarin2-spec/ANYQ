@@ -1,6 +1,15 @@
+import type { Ref } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 
 interface Props {
+  /**
+   * Поле поиска само по себе, чтобы касса могла вернуть в него курсор.
+   *
+   * Нужно только терминалу: там курсор уезжает от каждого нажатия, а сканер
+   * печатает туда, где курсор. На телефоне остаётся пустым — фокусировать поле
+   * там значит открывать экранную клавиатуру поверх товаров.
+   */
+  inputRef?: Ref<HTMLInputElement>;
   query: string;
   onQueryChange: (value: string) => void;
   onEnter: () => void;
@@ -9,11 +18,12 @@ interface Props {
   onCategoryChange: (category: string | null) => void;
 }
 
-export function SearchBar({ query, onQueryChange, onEnter, categories, activeCategory, onCategoryChange }: Props) {
+export function SearchBar({ inputRef, query, onQueryChange, onEnter, categories, activeCategory, onCategoryChange }: Props) {
   const { t } = useTranslation();
   return (
     <div className="search-bar">
       <input
+        ref={inputRef}
         type="text"
         inputMode="search"
         placeholder={t('search.placeholder')}
