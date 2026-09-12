@@ -107,6 +107,10 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .add-btn:disabled { background: var(--border); color: var(--ink-muted); }
 
 .empty-state { padding: 60px 20px; text-align: center; color: var(--ink-muted); font-size: 0.92rem; }
+/* «Показаны первые сто пятьдесят» — под списком, а не вместо него. */
+.success-number { margin-top: 14px; padding: 8px 14px; display: inline-block; font-weight: 700; letter-spacing: 0.02em; background: var(--surface-2); border-radius: 10px; }
+.checkout-missing { margin: 0 0 10px; font-size: 0.82rem; color: var(--ink-muted); text-align: center; }
+.catalog-overflow { margin: 18px 0 0; padding: 12px 14px; text-align: center; font-size: 0.85rem; color: var(--ink-muted); background: var(--surface-2); border-radius: 10px; }
 .empty-state-icon { display: block; font-size: 2rem; margin-bottom: 10px; opacity: 0.5; }
 
 /* cart bar */

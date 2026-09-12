@@ -1,9 +1,11 @@
 interface Props {
   companyName: string;
+  /** Короткий номер заказа. `null` — если сервер старой версии его не прислал. */
+  orderNumber: string | null;
   onNewOrder: () => void;
 }
 
-export function SuccessScreen({ companyName, onNewOrder }: Props) {
+export function SuccessScreen({ companyName, orderNumber, onNewOrder }: Props) {
   return (
     <div className="screen">
       <div className="screen-header">
@@ -18,6 +20,10 @@ export function SuccessScreen({ companyName, onNewOrder }: Props) {
               первом же предложении, которое видит клиент. */}
           Заказ передан в {companyName}. С вами свяжутся для подтверждения и уточнения времени выдачи.
         </p>
+        {/* Номер, а не идентификатор из двадцати пяти знаков. Это то, что
+            человек называет по телефону, когда звонит уточнить время выдачи, —
+            и до сих пор называть было нечего. */}
+        {orderNumber && <div className="success-number">Заказ {orderNumber}</div>}
       </div>
       <div className="screen-footer">
         <div className="screen-footer-inner">

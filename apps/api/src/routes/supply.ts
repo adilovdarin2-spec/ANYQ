@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '@anyq/db';
 import { tariffState, tariffDenialMessage } from '../tariff';
-import { availableQuantity, findStockShortages, aggregateRequestedQuantities, reserveStock, ConcurrentStockChangeError } from '../stock';
+import { availableQuantity, findStockShortages, aggregateRequestedQuantities, groupStockByProduct, reserveAcrossBins, ConcurrentStockChangeError } from '../stock';
 import { loginRateLimit } from '../rateLimit';
 import { sendPushToCompany } from '../push';
 
@@ -37,11 +37,23 @@ supplyRouter.get('/:companyId/catalog', async (req, res) => {
   }
 
   const location = company.locations[0];
-  const products = await prisma.product.findMany({ where: { companyId: company.id } });
+  // Только то, что вообще продаётся. Здесь стояло «все товары компании», и на
+  // публичную витрину попадало всё подряд: снятое с продажи владельцем и
+  // полуфабрикаты, из которых на этом же складе что-то делают. Касса такие
+  // товары не показывает с самого начала — витрина показывала.
+  const products = await prisma.product.findMany({ where: { companyId: company.id, sellable: true } });
   const stockRows = location ? await prisma.stock.findMany({ where: { locationId: location.id } }) : [];
   // What a customer can actually order: units already held for someone
   // else's open order are on the shelf but not on offer.
-  const stockByProduct = new Map(stockRows.map((s) => [s.productId, availableQuantity(s)]));
+  //
+  // Суммой по ячейкам, а не «одна строка на товар». `new Map(rows.map(...))`
+  // молча оставлял последнюю строку: на складе с ячейками товар, разложенный
+  // по трём полкам, показывался в размере одной из них — и заказ на настоящий
+  // остаток витрина отклоняла как нехватку.
+  const stockByProduct = new Map<string, number>();
+  for (const row of stockRows) {
+    stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + availableQuantity(row));
+  }
 
   res.json({
     company: { id: company.id, name: company.name },
@@ -115,8 +127,15 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
       const stockRows = await tx.stock.findMany({
         where: { locationId: location.id, productId: { in: ordered.map((it) => it.productId) } },
       });
-      const stockByProduct = new Map(stockRows.map((s) => [s.productId, s]));
-      const availableByProduct = new Map(stockRows.map((s) => [s.productId, availableQuantity(s)]));
+      // По ячейкам: один товар лежит на скольких угодно полках, и обе величины
+      // ниже — сколько свободно и куда класть бронь — считаются по всем сразу.
+      const stockByProduct = groupStockByProduct(stockRows);
+      const availableByProduct = new Map(
+        [...stockByProduct.entries()].map(([productId, rows]) => [
+          productId,
+          rows.reduce((sum, row) => sum + availableQuantity(row), 0),
+        ]),
+      );
 
       const shortages = findStockShortages(ordered, availableByProduct);
       if (shortages.length > 0) throw new OrderStockError(shortages);
@@ -153,7 +172,7 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
       });
 
       for (const item of ordered) {
-        await reserveStock(tx, stockByProduct.get(item.productId)!, item.quantity);
+        await reserveAcrossBins(tx, stockByProduct.get(item.productId) ?? [], item.quantity);
       }
 
       return created;
@@ -177,7 +196,15 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
     url: '/',
   }).catch(() => {});
 
-  res.status(201).json({ id: document.id, createdAt: document.createdAt.toISOString() });
+  // Номер заказа. Его ставит триггер базы, и до сих пор он оставался внутри:
+  // клиент получал идентификатор из двадцати пяти знаков и экран «спасибо», в
+  // котором сослаться на заказ было нечем. Когда он звонит уточнить время
+  // выдачи, назвать нужно что-то короткое — и это оно.
+  res.status(201).json({
+    id: document.id,
+    number: document.number,
+    createdAt: document.createdAt.toISOString(),
+  });
 });
 
 // Not enough on the shelf for what was just ordered. Named separately from the

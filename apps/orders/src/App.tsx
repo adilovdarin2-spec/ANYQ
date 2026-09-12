@@ -45,6 +45,8 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Все');
   const [submitting, setSubmitting] = useState(false);
+  /** Номер отправленного заказа — его показывают на экране «спасибо». */
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const install = useInstallPrompt();
 
@@ -108,12 +110,13 @@ export default function App() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await placeOrder(companyId, {
+      const placed = await placeOrder(companyId, {
         customerName,
         customerPhone,
         deliveryAddress,
         items: cart.map((l) => ({ productId: l.productId, quantity: l.qty })),
       });
+      setOrderNumber(placed.number ?? null);
       setCart([]);
       setView('success');
     } catch (err) {
@@ -202,7 +205,13 @@ export default function App() {
         />
       )}
 
-      {view === 'success' && <SuccessScreen companyName={catalog.company.name} onNewOrder={() => setView('catalog')} />}
+      {view === 'success' && (
+        <SuccessScreen
+          companyName={catalog.company.name}
+          orderNumber={orderNumber}
+          onNewOrder={() => setView('catalog')}
+        />
+      )}
 
     </div>
   );

@@ -4,6 +4,7 @@ import {
   resolveBinAddress,
   binAddressErrorMessage,
   allocateFromBins,
+  allocateRelease,
   validatePutaway,
   putawayErrorMessage,
 } from './bins';
@@ -159,5 +160,47 @@ describe('validatePutaway', () => {
     expect(putawayErrorMessage({ status: 'insufficient', available: 10 })).toBe(
       'В исходной ячейке свободно 10 — переместить больше нельзя',
     );
+  });
+});
+
+describe('allocateRelease', () => {
+  it('снимает бронь оттуда, где она стоит', () => {
+    const rows = [
+      { stockId: 'a', reserved: 0 },
+      { stockId: 'b', reserved: 4 },
+    ];
+    expect(allocateRelease(4, rows)).toEqual([{ stockId: 'b', quantity: 4 }]);
+  });
+
+  it('разносит снятие по нескольким ячейкам', () => {
+    const rows = [
+      { stockId: 'a', reserved: 3 },
+      { stockId: 'b', reserved: 5 },
+    ];
+    // Сначала та, где брони больше.
+    expect(allocateRelease(7, rows)).toEqual([
+      { stockId: 'b', quantity: 5 },
+      { stockId: 'a', quantity: 2 },
+    ]);
+  });
+
+  it('не снимает с ячейки больше, чем в ней забронировано', () => {
+    const rows = [{ stockId: 'a', reserved: 2 }];
+    expect(allocateRelease(10, rows)).toEqual([{ stockId: 'a', quantity: 2 }]);
+  });
+
+  it('без брони ничего не снимает и не падает', () => {
+    // Повторное снятие — обычное дело: заказ можно отменить после выдачи
+    // только один раз, но код, который это делает, вызывается и там, и там.
+    expect(allocateRelease(5, [{ stockId: 'a', reserved: 0 }])).toEqual([]);
+    expect(allocateRelease(5, [])).toEqual([]);
+  });
+
+  it('лишних строк не трогает', () => {
+    const rows = [
+      { stockId: 'a', reserved: 10 },
+      { stockId: 'b', reserved: 10 },
+    ];
+    expect(allocateRelease(4, rows)).toEqual([{ stockId: 'a', quantity: 4 }]);
   });
 });
