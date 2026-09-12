@@ -732,6 +732,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'search.placeholder': 'Атауы немесе штрихкод',
   'search.scannerHint': 'Сканер пернетақта сияқты — бағыттап, басыңыз',
   'search.scanMiss': '{code} штрихкоды табылмады — атауы бойынша іздеңіз немесе тауарды қосыңыз',
+  'search.stockLeft': '{name} — {left} қалды',
   'search.all': 'Барлығы',
   'ops.noneOnTariff': 'Сіздің тарифте қосымша операциялар жоқ',
   'pick.enterFound': 'Қаншасын тапқаныңызды жазыңыз. Нөл — қоймада бұл жоқ дегені, бұл да нәтиже: толық емес тапсырысты да жіберуге болады, кемістік көрініп қалады.',

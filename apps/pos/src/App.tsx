@@ -5,7 +5,7 @@ import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
 import type { RefreshTrigger } from './catalog-refresh';
-import { genId, looksLikeBarcode, resolveScannedBarcode } from './utils';
+import { formatWeight, genId, looksLikeBarcode, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
 import { useOutboxSync } from './hooks/useOutboxSync';
 import { getOutbox, outcomeOf, queueCommand } from './outbox';
@@ -511,12 +511,15 @@ export default function App() {
   const isDesktop = useIsDesktop();
   const searchRef = useRef<HTMLInputElement>(null);
   /**
-   * Последний скан, которому нечего было сопоставить.
+   * Что сказать кассиру про последнее действие — одной строкой под полем.
    *
-   * Раньше в этом случае не происходило ничего: кассир подносил сканер, касса
-   * молчала, и он не знал, сканер не сработал или товара нет. Подносил ещё раз.
+   * Раньше в этих случаях не происходило ничего: поднёс сканер к незнакомому
+   * коду — тишина; нажал на плитку товара, которого осталось три штуки, и в
+   * корзине по-прежнему три — тишина. Из-за прилавка это неотличимо от
+   * сломанного сканера и зависшей кассы, и человек повторяет действие, глядя
+   * не на покупателя, а на экран.
    */
-  const [scanMiss, setScanMiss] = useState<string | null>(null);
+  const [saleNotice, setSaleNotice] = useState<string | null>(null);
 
   /**
    * Сканер на терминале печатает туда, где стоит курсор.
@@ -2477,7 +2480,13 @@ export default function App() {
         if (explicitQty <= 0) return prev;
         const existing = prev.find((l) => l.id === lineId);
         const nextQty = addQty ? (existing?.qty ?? 0) + explicitQty : explicitQty;
-        if (nextQty > product.stock) return prev;
+        // Отказ вслух. Молчаливый `return prev` выглядел так: кассир подносит
+        // сканер к последней бутылке второй раз, в корзине по-прежнему одна, и
+        // почему — не написано нигде.
+        if (nextQty > product.stock) {
+          setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+          return prev;
+        }
         if (existing) {
           return prev.map((l) => (l.id === lineId ? { ...l, qty: nextQty } : l));
         }
@@ -2485,12 +2494,20 @@ export default function App() {
       }
       const existing = prev.find((l) => l.id === lineId);
       const currentQty = existing?.qty ?? 0;
-      if (currentQty + 1 > product.stock) return prev;
+      if (currentQty + 1 > product.stock) {
+        setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+        return prev;
+      }
       if (existing) {
         return prev.map((l) => (l.id === lineId ? { ...l, qty: l.qty + 1 } : l));
       }
       return [...prev, { id: lineId, productId: product.id, name: displayName, price, qty: 1, saleUnit: product.saleUnit }];
     });
+  }
+
+  /** Сколько осталось — штуками или килограммами, смотря чем торгуют. */
+  function formatQuantityLeft(product: Product): string {
+    return product.saleUnit === 'weight' ? formatWeight(product.stock) : String(product.stock);
   }
 
   function handleProductClick(product: Product) {
@@ -2542,7 +2559,19 @@ export default function App() {
   function changeQty(lineId: string, delta: number) {
     setCart((prev) =>
       prev
-        .map((l) => (l.id === lineId ? { ...l, qty: l.qty + delta } : l))
+        .map((l) => {
+          if (l.id !== lineId) return l;
+          const next = l.qty + delta;
+          // «Плюс» в корзине не проверял остаток вовсе — в отличие от плитки и
+          // сканера. Кассир мог набрать больше, чем лежит на полке, и узнать об
+          // этом на оплате, когда покупатель уже достал деньги.
+          const product = session?.products.find((p) => p.id === l.productId);
+          if (product && delta > 0 && next > product.stock) {
+            setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+            return l;
+          }
+          return { ...l, qty: next };
+        })
         .filter((l) => l.qty > 0),
     );
   }
@@ -2559,7 +2588,23 @@ export default function App() {
    */
   function setQty(lineId: string, qty: number) {
     const clean = Number.isFinite(qty) ? Math.max(0, Math.floor(qty)) : 0;
-    setCart((prev) => prev.map((l) => (l.id === lineId ? { ...l, qty: clean } : l)).filter((l) => l.qty > 0));
+    setCart((prev) =>
+      prev
+        .map((l) => {
+          if (l.id !== lineId) return l;
+          // Прижимаем к остатку здесь, а не на оплате. Набранные «999» сервер
+          // всё равно не примет, и узнать об этом лучше сейчас, чем в момент,
+          // когда покупатель уже достал деньги.
+          const product = session?.products.find((p) => p.id === l.productId);
+          const limit = product?.stock ?? clean;
+          if (clean > limit && product) {
+            setSaleNotice(t('search.stockLeft', { name: product.name, left: formatQuantityLeft(product) }));
+            return { ...l, qty: limit };
+          }
+          return { ...l, qty: clean };
+        })
+        .filter((l) => l.qty > 0),
+    );
   }
 
   function removeLine(lineId: string) {
@@ -2582,10 +2627,10 @@ export default function App() {
       // Молчим, когда печатали название: сетка и так отфильтрована, и «не
       // найден» на каждое нажатие Enter было бы шумом. Говорим, когда это был
       // скан, — там тишина неотличима от поломки.
-      setScanMiss(looksLikeBarcode(query) ? query.trim() : null);
+      setSaleNotice(looksLikeBarcode(query) ? t('search.scanMiss', { code: query.trim() }) : null);
       return;
     }
-    setScanMiss(null);
+    setSaleNotice(null);
     addToCart(match, undefined, scanned.unitsPerPack > 1 ? scanned.unitsPerPack : undefined, true);
     setQuery('');
   }
@@ -2723,8 +2768,8 @@ export default function App() {
             <SearchBar
               inputRef={searchRef}
               query={query}
-              scanMiss={scanMiss}
-              onQueryChange={(value) => { setScanMiss(null); setQuery(value); }}
+              notice={saleNotice}
+              onQueryChange={(value) => { setSaleNotice(null); setQuery(value); }}
               onEnter={handleSearchEnter}
               categories={categories}
               activeCategory={effectiveCategoryFilter}
@@ -2763,8 +2808,8 @@ export default function App() {
         <>
           <SearchBar
             query={query}
-            scanMiss={scanMiss}
-            onQueryChange={(value) => { setScanMiss(null); setQuery(value); }}
+            notice={saleNotice}
+            onQueryChange={(value) => { setSaleNotice(null); setQuery(value); }}
             onEnter={handleSearchEnter}
             categories={categories}
             activeCategory={effectiveCategoryFilter}
