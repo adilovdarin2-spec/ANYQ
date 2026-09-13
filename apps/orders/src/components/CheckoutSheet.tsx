@@ -101,7 +101,7 @@ export function CheckoutSheet({ cart, total, submitting, error, staleLines, onBa
             {error && <div className="form-error">{error}</div>}
             {staleLines && staleLines.length > 0 && (
               <div className="form-error">
-                Уберите из заказа: {staleLines.join(', ')}
+                Поправьте в заказе: {staleLines.join('; ')}
               </div>
             )}
           </div>

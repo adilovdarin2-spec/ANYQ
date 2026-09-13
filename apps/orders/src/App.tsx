@@ -84,11 +84,30 @@ export default function App() {
     try {
       const fresh = await fetchCatalog(companyId);
       setCatalog(fresh);
-      const offered = new Set(fresh.products.map((p) => p.id));
-      const пропали = cart.filter((line) => !offered.has(line.productId));
-      if (пропали.length > 0) {
-        setStaleLines(пропали.map((line) => line.name));
+
+      const offered = new Map(fresh.products.map((p) => [p.id, p]));
+      const проблемы: string[] = [];
+      for (const line of cart) {
+        const product = offered.get(line.productId);
+        if (!product) {
+          проблемы.push(line.name);
+          continue;
+        }
+        // Остаток мог упасть, пока страница была открыта: заказ на большее
+        // сервер всё равно не примет, и лучше это знать здесь.
+        if (line.qty > product.stock) {
+          проблемы.push(`${line.name} — осталось ${product.stock} ${product.unit}`);
+        }
       }
+      // Потолок в строке тоже подтягиваем: иначе «+» продолжал бы разрешать
+      // количество, которого на складе уже нет.
+      setCart((prev) =>
+        prev.map((line) => {
+          const product = offered.get(line.productId);
+          return product ? { ...line, maxStock: product.stock, price: product.price } : line;
+        }),
+      );
+      setStaleLines(проблемы);
     } catch {
       // Каталог не перечитался — сообщение об отказе уже показано, и второе
       // сообщение про неудачную перезагрузку человеку ничем не поможет.
