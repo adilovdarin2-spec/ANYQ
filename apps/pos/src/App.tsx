@@ -52,6 +52,7 @@ import {
   fetchDocuments,
   fetchKdsTickets,
   fetchManagedProducts,
+  fetchOpenShifts,
   fetchOrders,
   fetchOwnerDashboard,
   fetchPackagings,
@@ -101,7 +102,7 @@ import {
 import type { DocumentFilter, ImportSource } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
-import type { PosSession, CustomerLookupResult, PosDevice } from './api';
+import type { PosSession, CustomerLookupResult, PosDevice, OpenShiftInfo } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
 import { ShiftBar } from './components/ShiftBar';
@@ -535,6 +536,8 @@ export default function App() {
   const [pushMessage, setPushMessage] = useState<string | null>(null);
   /** Почему касса вернулась на экран входа. Слова сервера, не наши. */
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  /** Смены, уже открытые на выбранной точке. Спрашиваются перед открытием своей. */
+  const [openShiftsHere, setOpenShiftsHere] = useState<OpenShiftInfo[]>([]);
   /**
    * Счётчик изменений в долгах по закрытию смен.
    *
@@ -2534,6 +2537,31 @@ export default function App() {
     }
   }
 
+  /**
+   * Смены, уже открытые на выбранной точке.
+   *
+   * Спрашивается только на экране открытия смены — там, где это решение и
+   * принимают. Молчаливый отказ: не ответил сервер, значит просто не скажем;
+   * открыть смену это не мешает, а открытие смены — начало рабочего дня.
+   */
+  useEffect(() => {
+    if (shift || !session?.token || !currentLocationId) {
+      setOpenShiftsHere([]);
+      return;
+    }
+    let cancelled = false;
+    fetchOpenShifts(session.token, currentLocationId)
+      .then((list) => {
+        if (!cancelled) setOpenShiftsHere(list);
+      })
+      .catch(() => {
+        if (!cancelled) setOpenShiftsHere([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shift, session?.token, currentLocationId]);
+
   async function openShift(openingCash: number) {
     // The register's own id, kept whatever happens next. Replacing it with the
     // server's on success used to mean a shift opened offline had one identity
@@ -2968,6 +2996,7 @@ export default function App() {
           locationError={locationSwitchError}
           onSwitchLocation={handleSwitchLocation}
           onOpen={openShift}
+          openShifts={openShiftsHere}
         />
       </>
     );

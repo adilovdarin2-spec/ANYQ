@@ -246,6 +246,20 @@ export function createRemoteShift(
 // Время закрытия передаётся вместе с суммой: смену закрывают вечером и уходят,
 // а связь появляется утром. Сервер принимает его, если оно не в будущем и не
 // раньше открытия смены, — иначе ставит своё.
+export interface OpenShiftInfo {
+  id: string;
+  cashierName: string;
+  openedAt: string;
+  /** Своя ли это смена: чужую закрывает владелец или менеджер. */
+  mine: boolean;
+}
+
+// Смены, уже открытые на этой точке. Касса знает только свою, а их может быть
+// несколько — и тогда деньги одного ящика раскладываются по двум сверкам.
+export function fetchOpenShifts(token: string, locationId: string): Promise<OpenShiftInfo[]> {
+  return request(`/pos/shifts/open?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
 export function closeRemoteShift(
   token: string,
   shiftId: string,

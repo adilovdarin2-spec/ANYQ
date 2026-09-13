@@ -1205,6 +1205,44 @@ posRouter.post('/shifts', requirePosAuth, async (req: PosAuthedRequest, res) => 
   });
 });
 
+/**
+ * Какие смены на этой точке уже открыты.
+ *
+ * Касса знает только свою смену, а их на точке может быть сколько угодно:
+ * кассир ушёл, не закрыв, сменщик открыл свою на другом планшете — и деньги
+ * одного ящика оказались разложены по двум сверкам. Продукт этого не
+ * запрещает намеренно: две настоящие кассы на одной точке — обычное дело, и
+ * запрет означал бы, что вторая не может торговать.
+ *
+ * Но сказать об этом перед открытием — обязан. Дальше решает человек: если
+ * это его собственная вчерашняя смена, он её закроет.
+ */
+posRouter.get('/shifts/open', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { locations: true },
+  });
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const shifts = await prisma.shift.findMany({
+    where: { companyId: req.posCompanyId, locationId, closedAt: null },
+    orderBy: { openedAt: 'asc' },
+    select: { id: true, cashierName: true, openedAt: true, userId: true },
+  });
+
+  res.json(
+    shifts.map((shift) => ({
+      id: shift.id,
+      cashierName: shift.cashierName,
+      openedAt: shift.openedAt.toISOString(),
+      // Своя ли это смена. Чужую закрыть может только владелец или менеджер, и
+      // предлагать кассиру закрыть чужую значило бы предлагать отказ.
+      mine: shift.userId === req.posUserId,
+    })),
+  );
+});
+
 posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const closingCashCounted = Number(b.closingCashCounted);

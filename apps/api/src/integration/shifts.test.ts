@@ -169,6 +169,51 @@ describe('which shift a sale belongs to', () => {
   });
 });
 
+describe('смены, уже открытые на точке', () => {
+  it('перечисляются перед открытием своей', async () => {
+    // Две открытые смены на одной точке — не поломка: там может стоять две
+    // кассы. Но чаще это забытая вчерашняя, и тогда деньги одного ящика
+    // раскладываются по двум сверкам.
+    const первая = await openShift(10_000);
+
+    const res = await api(fx.token, 'GET', `/pos/shifts/open?locationId=${fx.locationId}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ id: первая, mine: true });
+    expect(res.body[0].cashierName).toBeTruthy();
+  });
+
+  it('закрытых среди них нет', async () => {
+    const shiftId = await openShift(0);
+    await api(fx.token, 'PATCH', `/pos/shifts/${shiftId}/close`, { closingCashCounted: 0 });
+
+    const res = await api(fx.token, 'GET', `/pos/shifts/open?locationId=${fx.locationId}`);
+    expect(res.body).toEqual([]);
+  });
+
+  it('чужая смена помечена чужой', async () => {
+    // Закрыть её кассир не сможет, и предлагать ему это значит предлагать отказ.
+    const shiftId = await openShift(0);
+    await prisma.shift.update({ where: { id: shiftId }, data: { userId: null, cashierName: 'Асель' } });
+
+    const res = await api(fx.token, 'GET', `/pos/shifts/open?locationId=${fx.locationId}`);
+    expect(res.body[0]).toMatchObject({ mine: false, cashierName: 'Асель' });
+  });
+
+  it('смены другой точки сюда не попадают', async () => {
+    await openShift(0);
+    const res = await api(fx.token, 'GET', `/pos/shifts/open?locationId=${fx.otherLocationId}`);
+    expect(res.body).toEqual([]);
+  });
+
+  it('чужой компании не отдаётся', async () => {
+    await openShift(0);
+    const чужая = await createFixture();
+    const res = await api(чужая.token, 'GET', `/pos/shifts/open?locationId=${fx.locationId}`);
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('деньги мимо чека', () => {
   /** Клиент заводится продажей с телефоном — так он и появляется в жизни. */
   async function клиентСДолгом(shiftId: string) {
