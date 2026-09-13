@@ -203,6 +203,32 @@ describe('витрина и касса вместе', () => {
   });
 });
 
+describe('партнёр, который и покупает, и поставляет', () => {
+  it('заказ ложится на покупателя, а не на его поставщицкую запись', async () => {
+    // Обычное дело в опте: он возит вам яйца, вы продаёте ему воду. Долг вам и
+    // ваш долг ему — разные записи, и заказ, привязанный к поставщику, считал
+    // бы их вместе.
+    const поставщик = await prisma.counterparty.create({
+      data: { companyId: fx.companyId, name: 'ТОО «Оба»', phone: '+77005554433', type: 'supplier' },
+    });
+
+    const res = await api(null, 'POST', `/supply/${fx.companyId}/orders`, {
+      ...заказ(2),
+      customerPhone: '+7 700 555 44 33',
+      customerName: 'ТОО «Оба»',
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+
+    const order = await prisma.document.findUnique({ where: { id: res.body.id } });
+    expect(order?.counterpartyId).not.toBe(поставщик.id);
+
+    const покупатель = await prisma.counterparty.findFirst({
+      where: { companyId: fx.companyId, phone: '+77005554433', type: 'customer' },
+    });
+    expect(order?.counterpartyId).toBe(покупатель?.id);
+  });
+});
+
 describe('заказ на то, что сняли с продажи', () => {
   it('не принимается', async () => {
     // Каталог такой товар не показывает, но страница партнёра могла быть
