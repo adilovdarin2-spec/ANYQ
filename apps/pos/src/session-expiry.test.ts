@@ -77,6 +77,20 @@ describe('отозванный доступ', () => {
     expect(calls).toEqual([]);
   });
 
+  it('оборванная связь приходит словами, а не голым TypeError', async () => {
+    // Каждый экран ловил TypeError от fetch отдельно и показывал свою
+    // заглушку: «Не удалось оформить возврат» — ни слова о том, что дело в
+    // связи и что делать. Статус 0 отличает это от отказа сервера.
+    const было = globalThis.fetch;
+    globalThis.fetch = (async () => { throw new TypeError('Failed to fetch'); }) as typeof fetch;
+    try {
+      await expect(fetchOrders('токен')).rejects.toMatchObject({ status: 0 });
+      expect(calls).toEqual([]);
+    } finally {
+      globalThis.fetch = было;
+    }
+  });
+
   it('и на удачном ответе тоже', async () => {
     status = 200;
     body = [];

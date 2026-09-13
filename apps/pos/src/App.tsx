@@ -4,6 +4,7 @@ import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurren
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
+import { refusalIsAboutThisRequest } from './refusal';
 import type { RefreshTrigger } from './catalog-refresh';
 import { formatWeight, genId, looksLikeBarcode, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
@@ -2684,7 +2685,7 @@ export default function App() {
           markShiftCloseSynced(closed.id);
           continue;
         }
-        if (err instanceof ApiError && err.status < 500) {
+        if (refusalIsAboutThisRequest(err)) {
           // Сервер посмотрел и отказал: например, закрывать чужую смену может
           // только владелец или менеджер, а утром за кассой другой человек.
           // Повторять это вечно бессмысленно — отказ показывается в профиле.
