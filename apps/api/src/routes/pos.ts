@@ -9,6 +9,7 @@ import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
 import { soldAtOrNow } from '../sold-at';
 import { limitRefusal } from '../limits';
 import { phoneKey } from '../phone';
+import { storefrontLocation } from './supply';
 import { can, capabilitiesOf, capabilityRefusal } from '../roles';
 import type { Capability } from '../roles';
 import {
@@ -198,6 +199,13 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     modules,
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
     catalogLocationId,
+    // С какой точки торгует витрина заказов. Считает сервер — той же
+    // функцией, которой витрина и выбирает точку: две копии этого правила
+    // разошлись бы, и владелец читал бы на экране одно, а бронь вставала бы
+    // в другое место.
+    storefrontLocationId: modules.includes('supply')
+      ? storefrontLocation(user.company.locations, user.company.storefrontLocationId)?.id ?? null
+      : null,
     products: groupedProducts,
     // Сколько магазину осталось работать. Касса покажет это заранее, чтобы
     // тариф не кончался впервые в восемь утра при очереди.
@@ -3371,6 +3379,43 @@ posRouter.get('/cabinet', requirePosAuth, async (req: PosAuthedRequest, res) => 
  * потому что для владельца это одно и то же действие: сделать так, чтобы
  * старое перестало работать.
  */
+/**
+ * Какой точкой торгует витрина заказов.
+ *
+ * Решение владельца, а не алфавита: до этой настройки витрина брала первую
+ * точку по списку, отсортированному по названию, — и туда же ставила бронь под
+ * заказ. У компании с одной точкой ничего не меняется.
+ */
+posRouter.patch('/company/storefront-location', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Точку витрины выбирает владелец или менеджер' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const asked = typeof b.locationId === 'string' && b.locationId ? b.locationId : null;
+
+  // Чужая точка — это чужой склад: заказы уходили бы в другую компанию. Тем же
+  // помощником, что и везде, где точка приходит от того, кто вызвал, — чтобы
+  // ответ на «эта точка ваша?» в этом репозитории был один.
+  let chosen: string | null = null;
+  if (asked) {
+    const company = await prisma.company.findUnique({
+      where: { id: req.posCompanyId },
+      include: { locations: true },
+    });
+    chosen = resolveLocationOrRespond(company?.locations ?? [], asked, res);
+    if (!chosen) return;
+  }
+
+  await prisma.company.update({
+    where: { id: req.posCompanyId },
+    data: { storefrontLocationId: chosen },
+  });
+
+  res.json({ storefrontLocationId: chosen });
+});
+
 posRouter.post('/cabinet/reset', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await requireOwner(req.posUserId))) {
     res.status(403).json({ error: 'Кабинет владельца настраивает владелец' });

@@ -18,6 +18,29 @@ function findCompanyBySlugOrId(param: string) {
   });
 }
 
+/**
+ * С какой точки витрина продаёт.
+ *
+ * Выбранная владельцем, а если он не выбирал — первая по списку, как было
+ * всегда. Список отсортирован по названию, то есть у компании с двумя точками
+ * витрина торговала остатками той, чьё имя раньше по алфавиту, и туда же
+ * вставала бронь под заказ. Переименовали точку — витрина стала продавать
+ * другую. Нигде об этом не было сказано ни слова.
+ *
+ * Угадывать по типу точки («витрина — значит склад») я пробовал и отказался:
+ * у компании, которая держит товар в магазине и завела пустой склад, витрина
+ * молча опустела бы. Такое решение принимает владелец, а продукт обязан
+ * показать, что он выбрал, — имя точки теперь написано рядом со ссылкой на
+ * витрину.
+ */
+export function storefrontLocation<T extends { id: string }>(
+  locations: T[],
+  chosenId?: string | null,
+): T | undefined {
+  const chosen = chosenId ? locations.find((location) => location.id === chosenId) : undefined;
+  return chosen ?? locations[0];
+}
+
 supplyRouter.get('/:companyId/catalog', async (req, res) => {
   const company = await findCompanyBySlugOrId(req.params.companyId);
   if (!company) {
@@ -37,7 +60,7 @@ supplyRouter.get('/:companyId/catalog', async (req, res) => {
     return;
   }
 
-  const location = company.locations[0];
+  const location = storefrontLocation(company.locations, company.storefrontLocationId);
   // Только то, что вообще продаётся. Здесь стояло «все товары компании», и на
   // публичную витрину попадало всё подряд: снятое с продажи владельцем и
   // полуфабрикаты, из которых на этом же складе что-то делают. Касса такие
@@ -101,7 +124,7 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
     return;
   }
 
-  const location = company.locations[0];
+  const location = storefrontLocation(company.locations, company.storefrontLocationId);
   if (!location) {
     res.status(400).json({ error: 'У склада не настроена точка выдачи' });
     return;

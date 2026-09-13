@@ -105,6 +105,13 @@ export interface PosSession {
   locations: CompanyLocation[];
   /** Which location the `products` stock figures belong to; null if the company has none. */
   catalogLocationId: string | null;
+  /**
+   * Точка, остатками которой торгует витрина заказов.
+   *
+   * Необязательное: сессия, сохранённая прошлой сборкой, этого поля не знает,
+   * и тогда касса просто не пишет, откуда уходит товар, — как и раньше.
+   */
+  storefrontLocationId?: string | null;
   products: Product[];
   /**
    * Сколько магазину осталось работать по тарифу. `daysLeft === 0` — сегодня
@@ -753,6 +760,19 @@ export function recordSettlement(
   payload: RecordSettlementPayload,
 ): Promise<{ applied: { documentId: string; amount: number }[]; unapplied: number; balance: number }> {
   return request('/pos/settlements', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+// Какой точкой торгует витрина заказов. Пустое значение возвращает прежнее
+// поведение — «первая точка по списку».
+export function setStorefrontLocation(
+  token: string,
+  locationId: string | null,
+): Promise<{ storefrontLocationId: string | null }> {
+  return request(
+    '/pos/company/storefront-location',
+    { method: 'PATCH', body: JSON.stringify({ locationId }) },
+    token,
+  );
 }
 
 export function setCounterpartyCredit(
