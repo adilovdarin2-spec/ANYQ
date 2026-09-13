@@ -13,6 +13,26 @@
  * of manufacturing credit out of nothing.
  */
 
+/**
+ * За что возвращают поставщику.
+ *
+ * Свой список, а не тот же, что у списания: у списания есть «недостача», а
+ * здесь — «привезли не то». Код нужен, чтобы претензии можно было посчитать:
+ * поставщик, у которого треть возвратов «привезли не то», — это разговор о
+ * его сборке, а не сто рукописных заметок.
+ *
+ * Проверяется на входе, потому что сохранённый код никто потом не поправит:
+ * он попадает в документ, в отчёт по поставщику и в выгрузку.
+ */
+export const SUPPLIER_RETURN_REASONS = ['damage', 'quality', 'expiry', 'wrong', 'other'] as const;
+
+export type SupplierReturnReason = (typeof SUPPLIER_RETURN_REASONS)[number];
+
+export function isSupplierReturnReason(value: unknown): value is SupplierReturnReason {
+  return typeof value === 'string' && (SUPPLIER_RETURN_REASONS as readonly string[]).includes(value);
+}
+
+
 export interface ReceivedLine {
   productId: string;
   quantity: number;
