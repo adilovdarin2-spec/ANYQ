@@ -38,7 +38,10 @@ describe('чей это отказ', () => {
   });
 
   it('оборванная сеть — не отказ', () => {
-    // Сюда приходит обычный TypeError от fetch. Это не ответ сервера.
+    // Обрыв связи приходит сюда как ApiError со статусом 0: касса говорит о
+    // нём словами, но это не ответ сервера, и очередь из-за него не
+    // помечается отказанной.
+    expect(refusalIsAboutThisRequest(new ApiError('Нет связи с сервером', 0))).toBe(false);
     expect(refusalIsAboutThisRequest(new TypeError('Failed to fetch'))).toBe(false);
     expect(refusalIsAboutThisRequest('нет сети')).toBe(false);
   });

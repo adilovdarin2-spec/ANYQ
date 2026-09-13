@@ -892,6 +892,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'queue.binCount': 'Санау',
 
   // --- the network layer ----------------------------------------------------
+  'net.offline': 'Сервермен байланыс жоқ — интернет пайда болғанда қайталаңыз',
   'net.requestFailed': 'Сұрау қатесі',
   'net.exportFailed': 'Жүктеп алу мүмкін болмады',
   'net.photoFailed': 'Фотоны жүктеу мүмкін болмады',

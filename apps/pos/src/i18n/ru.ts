@@ -891,6 +891,7 @@ export const ru = {
   'queue.binCount': 'Пересчёт',
 
   // --- the network layer ----------------------------------------------------
+  'net.offline': 'Нет связи с сервером — попробуйте, когда появится интернет',
   'net.requestFailed': 'Ошибка запроса',
   'net.exportFailed': 'Не удалось выгрузить',
   'net.photoFailed': 'Не удалось загрузить фото',

@@ -70,7 +70,20 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  // Обрыв связи — это тоже ответ, и сказать его нужно словами. Без этого
+  // `fetch` бросал TypeError, каждый экран ловил его отдельно и показывал
+  // свою заглушку: «Не удалось оформить возврат» — без единого слова о том,
+  // что дело в связи и что делать дальше.
+  //
+  // Статус 0: это не отказ сервера, и правило `refusalIsAboutThisRequest`
+  // читает его именно так — очередь продаж и складских команд не помечает
+  // такие попытки отказанными.
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch {
+    throw new ApiError(say('net.offline'), 0);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message = serverSaid(data.error) || say('net.requestFailed');
