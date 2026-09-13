@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { DeliveryMatch } from '../types';
+import { readSheetFile } from '../sheet-encoding';
 import type { ImportSource } from '../api';
 import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney, parseSheet } from '../utils';
@@ -75,12 +76,14 @@ export function DeliveryNoteScreen({
       reader.readAsArrayBuffer(file);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
+    // Кодировку определяет сам файл: выгрузка из 1С и CSV, сохранённый Excel
+    // на русской Windows, приходят в windows-1251, и до сих пор касса читала
+    // их как UTF-8 и показывала «Ð’Ð¾Ð´Ð° 1 Ð»». Владельцу с этим делать было
+    // нечего: файл ему выгрузила программа, в которой он ничего не настраивал.
+    void readSheetFile(file).then((decoded) => {
       setXlsx(null);
-      setText(String(reader.result ?? ''));
-    };
-    reader.readAsText(file, 'utf-8');
+      setText(decoded);
+    });
   }
 
   const chosen = match

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ImportPreview, SourceSystemInfo } from '../types';
+import { readSheetFile } from '../sheet-encoding';
 import type { ImportSource } from '../api';
 import { useTranslation } from '../i18n/useLanguage';
 import { parseSheet } from '../utils';
@@ -71,16 +72,14 @@ export function ImportScreen({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
+    // Кодировку определяет сам файл: выгрузка из 1С и CSV, сохранённый Excel
+    // на русской Windows, приходят в windows-1251, и до сих пор касса читала
+    // их как UTF-8 и показывала «Ð’Ð¾Ð´Ð° 1 Ð»». Владельцу с этим делать было
+    // нечего: файл ему выгрузила программа, в которой он ничего не настраивал.
+    void readSheetFile(file).then((decoded) => {
       setXlsx(null);
-      setText(String(reader.result ?? ''));
-    };
-    // Excel on Windows still saves CSV in the system codepage more often than
-    // not, but UTF-8 is what a modern export gives and what a paste always is.
-    // A file that comes out as gibberish is visible immediately in the preview,
-    // which is better than a silent mis-import.
-    reader.readAsText(file, 'utf-8');
+      setText(decoded);
+    });
   }
 
   return (
