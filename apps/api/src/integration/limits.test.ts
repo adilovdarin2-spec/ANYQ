@@ -109,6 +109,31 @@ describe('модули компании', () => {
   });
 });
 
+describe('роль сотрудника', () => {
+  it('опечатку не принимают', async () => {
+    const res = await api(adminToken, 'POST', `/companies/${fx.companyId}/users`, {
+      name: 'Новый',
+      role: 'cashir',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('cashier');
+    expect(await prisma.user.count({ where: { companyId: fx.companyId, name: 'Новый' } })).toBe(0);
+  });
+
+  it('и при правке тоже', async () => {
+    // Иначе роль можно сломать у человека, который уже работает.
+    const user = await prisma.user.findFirst({ where: { companyId: fx.companyId } });
+    const res = await api(adminToken, 'PATCH', `/companies/${fx.companyId}/users/${user!.id}`, {
+      name: user!.name,
+      role: 'warehouse',
+    });
+    expect(res.status).toBe(400);
+
+    const after = await prisma.user.findUnique({ where: { id: user!.id } });
+    expect(after?.role).toBe(user!.role);
+  });
+});
+
 describe('лимит сотрудников', () => {
   it('не даёт завести сверх тарифа', async () => {
     await setLimits({ userLimit: 1 });
