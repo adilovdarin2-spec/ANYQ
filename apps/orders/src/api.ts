@@ -32,10 +32,18 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> | undefined) },
-  });
+  // Обрыв связи — это ответ, и сказать его нужно словами. Витрину открывают с
+  // телефона на складе и в машине, где связь пропадает посреди заказа, а
+  // «Не удалось отправить заказ» не говорит ни что случилось, ни что делать.
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> | undefined) },
+    });
+  } catch {
+    throw new ApiError('Нет связи — заказ не отправлен. Попробуйте, когда появится интернет.', 0);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new ApiError(data.error || 'Ошибка запроса', res.status);
