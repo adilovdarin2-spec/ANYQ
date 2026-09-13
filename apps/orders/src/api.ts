@@ -16,7 +16,20 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export const POS_LOGIN_URL: string = import.meta.env.VITE_POS_URL || '';
 export const WHATSAPP_NUMBER = '77784175136';
 
-export class ApiError extends Error {}
+/**
+ * Отказ сервера — со статусом.
+ *
+ * Статус нужен не для красоты: 409 на оформлении заказа означает, что
+ * страница открыта давно и каталог с тех пор изменился, и витрина отвечает на
+ * это не так, как на «заполните телефон».
+ */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -25,7 +38,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.error || 'Ошибка запроса');
+    throw new ApiError(data.error || 'Ошибка запроса', res.status);
   }
   return data as T;
 }
