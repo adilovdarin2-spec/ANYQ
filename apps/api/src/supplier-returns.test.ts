@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSupplierReturn, supplierReturnErrorMessage, unitCost } from './supplier-returns';
+import {
+  isSupplierReturnReason,
+  resolveSupplierReturn,
+  supplierReturnErrorMessage,
+  SUPPLIER_RETURN_REASONS,
+  unitCost,
+} from './supplier-returns';
 import type { ReceivedLine } from './supplier-returns';
 
 const line = (over: Partial<ReceivedLine> = {}): ReceivedLine => ({
@@ -139,5 +145,26 @@ describe('what the storeman is told', () => {
   it('explains why a product cannot be returned on this delivery', () => {
     expect(supplierReturnErrorMessage({ status: 'notDelivered', productId: 'bread' }))
       .toContain('не было в этой поставке');
+  });
+});
+
+describe('за что возвращают поставщику', () => {
+  // Код нужен, чтобы претензии можно было посчитать: поставщик, у которого
+  // треть возвратов «привезли не то», — это разговор о его сборке. Сто
+  // рукописных заметок такого разговора не дают.
+  it('«привезли не то» — своя причина, которой нет у списания', () => {
+    expect(isSupplierReturnReason('wrong')).toBe(true);
+  });
+
+  it('чужого кода не принимает', () => {
+    // «Недостача» бывает у списания и не бывает у возврата поставщику: это
+    // претензия по поставке, а не пропажа со склада.
+    expect(isSupplierReturnReason('theft')).toBe(false);
+    expect(isSupplierReturnReason('брак')).toBe(false);
+    expect(isSupplierReturnReason(undefined)).toBe(false);
+  });
+
+  it('все причины из списка проходят', () => {
+    for (const reason of SUPPLIER_RETURN_REASONS) expect(isSupplierReturnReason(reason), reason).toBe(true);
   });
 });

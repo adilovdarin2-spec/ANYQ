@@ -74,7 +74,7 @@ import { recordChanges, resolveActor } from '../audit-log';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { movementReasonRu, paymentMethodRu } from '../export-labels';
-import { resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
+import { isSupplierReturnReason, resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
 import { resolvePick, resolveShipment, pickErrorMessage, orderStage, orderStageLabel } from '../picking';
 import { xlsxToGrid, xlsxErrorMessage, MAX_XLSX_BYTES } from '../xlsx';
 import { readPhoto, photoErrorMessage } from '../photos';
@@ -2289,7 +2289,9 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
           // the supplier would let it be credited to the wrong account.
           counterpartyId: receipt.counterpartyId,
           reason: note,
-          reasonCode: typeof b.reasonCode === 'string' ? b.reasonCode : 'quality',
+          // Из списка, а не любой строкой: код попадает в документ, в отчёт по
+          // поставщику и в выгрузку, и поправить его там потом будет некому.
+          reasonCode: isSupplierReturnReason(b.reasonCode) ? b.reasonCode : 'quality',
           // What the supplier is credited. Recorded rather than recomputed,
           // because the delivery's prices can change afterwards and the credit
           // agreed today must not move with them.
@@ -4388,7 +4390,9 @@ posRouter.post('/bins/:id/block', requirePosAuth, async (req: PosAuthedRequest, 
           status: 'confirmed',
           binLocation: bin.code,
           reason: note,
-          reasonCode: typeof b.reasonCode === 'string' ? b.reasonCode : 'quality',
+          // Причина карантина — из того же списка, что и у списания: карантин
+          // и есть «решаем, списывать ли», и считаются они вместе.
+          reasonCode: isWriteOffReason(b.reasonCode) ? b.reasonCode : 'quality',
           createdBy: req.posUserId!,
           items: {
             create: toBlock.map((entry) => ({
