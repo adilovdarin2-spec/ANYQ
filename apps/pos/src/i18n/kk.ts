@@ -239,6 +239,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'profile.audit': 'Өзгерістер журналы',
   'profile.export': 'Деректерді жүктеп алу',
   'profile.storefront': 'Клиенттерге дүкен сілтемесі',
+  'profile.storefrontChoose': 'Витрина қай нүктемен сауда жасайды',
+  'profile.storefrontLocation': '«{name}» нүктесінің қалдығын сатады — тапсырыс брондауы да сонда тұрады',
   'profile.copyLink': 'Сілтемені көшіру',
   'profile.copied': 'Көшірілді ✓',
   'profile.push': 'Тапсырыстар туралы хабарламалар',
@@ -789,6 +791,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'table.pickDishes': 'Тапсырыс үшін тағам таңдаңыз',
 
   // --- what could not be done ----------------------------------------------
+  'fail.storefrontLocation': 'Витрина нүктесін ауыстыру мүмкін болмады — ол бұрынғысымен сауда жасап тұр.',
   'fail.stopList': 'Стоп-тізімді өзгерту мүмкін болмады — тауар бұрынғыдай қалды.',
   'fail.switchLocation': 'Нүктені ауыстыру мүмкін болмады — байланыс жоқ',
   'fail.loadOrders': 'Тапсырыстарды жүктеу мүмкін болмады',

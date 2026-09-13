@@ -29,6 +29,17 @@ interface Props {
   /** Отправить закрытие смены заново — после того, как вошли под тем, кто вправе. */
   onRetryClose: (id: string) => void;
   storefrontUrl: string | null;
+  /**
+   * Название точки, остатками которой торгует витрина.
+   *
+   * Владелец с двумя точками иначе не может этого узнать никак: витрина
+   * выбирает её сама, а заказ бронирует товар именно там.
+   */
+  storefrontLocationName?: string | null;
+  /** Точки компании — чтобы владелец мог выбрать, какой торгует витрина. */
+  storefrontChoices?: { id: string; name: string }[];
+  storefrontLocationId?: string | null;
+  onChooseStorefrontLocation?: (locationId: string) => void;
   pushSupported: boolean;
   pushEnabled: boolean;
   pushBusy: boolean;
@@ -72,6 +83,10 @@ export function ProfileScreen({
   refusedCloses,
   onRetryClose,
   storefrontUrl,
+  storefrontLocationName,
+  storefrontChoices,
+  storefrontLocationId,
+  onChooseStorefrontLocation,
   pushSupported,
   pushEnabled,
   pushBusy,
@@ -244,14 +259,47 @@ export function ProfileScreen({
         </button>
       )}
 
-      {storefrontUrl && (
+      {/* Раздел про витрину виден и без ссылки: адрес касса показывает только
+          когда развёртывание знает, где витрина живёт, а выбор точки нужен
+          владельцу в любом случае — заказы приходят и по ссылке с
+          идентификатором компании, которую могли раздать партнёрам. */}
+      {(storefrontUrl || (storefrontChoices?.length ?? 0) > 1) && (
         <div className="profile-section">
           <div className="section-title">{t('profile.storefront')}</div>
           <div className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-            <div style={{ fontSize: '0.85rem', wordBreak: 'break-all', color: 'var(--ink-muted)' }}>{storefrontUrl}</div>
-            <button type="button" className="btn btn-secondary" onClick={copyLink}>
-              {copied ? t('profile.copied') : t('profile.copyLink')}
-            </button>
+            {storefrontUrl && (
+              <div style={{ fontSize: '0.85rem', wordBreak: 'break-all', color: 'var(--ink-muted)' }}>{storefrontUrl}</div>
+            )}
+            {/* Чем именно торгует эта ссылка. У компании с одной точкой это
+                очевидно и не пишется; у компании с двумя — это единственное
+                место, где вообще можно узнать, откуда уйдёт товар. */}
+            {storefrontLocationName && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                {t('profile.storefrontLocation', { name: storefrontLocationName })}
+              </div>
+            )}
+            {/* Выбор — там же, где написано, что выбрано. Появляется только у
+                компании с несколькими точками: где точка одна, выбирать не из
+                чего, и селект был бы вопросом без ответа. */}
+            {onChooseStorefrontLocation && storefrontChoices && storefrontChoices.length > 1 && (
+              <div className="form-field" style={{ marginBottom: 0 }}>
+                <label htmlFor="storefront-location">{t('profile.storefrontChoose')}</label>
+                <select
+                  id="storefront-location"
+                  value={storefrontLocationId ?? ''}
+                  onChange={(e) => onChooseStorefrontLocation(e.target.value)}
+                >
+                  {storefrontChoices.map((location) => (
+                    <option key={location.id} value={location.id}>{location.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {storefrontUrl && (
+              <button type="button" className="btn btn-secondary" onClick={copyLink}>
+                {copied ? t('profile.copied') : t('profile.copyLink')}
+              </button>
+            )}
           </div>
         </div>
       )}

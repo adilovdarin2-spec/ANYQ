@@ -92,6 +92,7 @@ import {
   sendToKitchen,
   setCounterpartyCredit,
   setStopListed,
+  setStorefrontLocation,
   shipOrder,
   unblockBin,
   updateKitchenItemStatus,
@@ -578,6 +579,13 @@ export default function App() {
   // there is no address to give, and inventing one sends partners elsewhere.
   const storefrontUrl =
     hasSupply && session?.company.slug && ORDERS_BASE ? `${ORDERS_BASE}/${session.company.slug}` : null;
+  // Название точки, с которой витрина торгует. Выбирает её сервер; здесь
+  // только подставляется имя, и только когда точек больше одной — там, где
+  // точка одна, это и так очевидно.
+  const storefrontLocationName =
+    session && hasSupply && session.locations.length > 1
+      ? session.locations.find((l) => l.id === session.storefrontLocationId)?.name ?? null
+      : null;
   const categories = useMemo(
     () => Array.from(new Set((session?.products ?? []).map((p) => p.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru')),
     [session?.products],
@@ -708,6 +716,30 @@ export default function App() {
     setSessionNotice(message);
     saveSession(null);
     setSession(null);
+  }
+
+  /**
+   * Сменить точку, которой торгует витрина.
+   *
+   * Сессия правится на месте: список точек и ссылка на витрину читаются из
+   * неё, и без этого экран показывал бы старое название до следующего входа.
+   */
+  async function handleChooseStorefrontLocation(locationId: string) {
+    if (!session) return;
+    const previous = session.storefrontLocationId ?? null;
+    const optimistic: PosSession = { ...session, storefrontLocationId: locationId };
+    saveSession(optimistic);
+    setSession(optimistic);
+    try {
+      await setStorefrontLocation(session.token, locationId);
+    } catch (err) {
+      // Возвращаем как было и говорим словами: витрина продолжает торговать
+      // прежней точкой, и владелец должен это знать, а не думать, что выбрал.
+      const rolledBack: PosSession = { ...session, storefrontLocationId: previous };
+      saveSession(rolledBack);
+      setSession(rolledBack);
+      setSaleNotice(err instanceof ApiError ? err.message : t('fail.storefrontLocation'));
+    }
   }
 
   function handleLogout() {
@@ -3560,6 +3592,10 @@ export default function App() {
           refusedCloses={refusedCloses}
           onRetryClose={handleRetryShiftClose}
           storefrontUrl={storefrontUrl}
+          storefrontLocationName={storefrontLocationName}
+          storefrontChoices={hasSupply && isOwnerOrManager ? session.locations : undefined}
+          storefrontLocationId={session.storefrontLocationId ?? null}
+          onChooseStorefrontLocation={isOwnerOrManager ? handleChooseStorefrontLocation : undefined}
           pushSupported={hasSupply && pushSupported()}
           pushEnabled={pushEnabled}
           pushBusy={pushBusy}

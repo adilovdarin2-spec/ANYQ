@@ -228,6 +228,8 @@ export const ru = {
   'profile.audit': 'Журнал изменений',
   'profile.export': 'Выгрузка данных',
   'profile.storefront': 'Ссылка магазина для клиентов',
+  'profile.storefrontChoose': 'Какой точкой торгует витрина',
+  'profile.storefrontLocation': 'Продаёт остатки точки «{name}» — туда же встаёт бронь под заказ',
   'profile.copyLink': 'Скопировать ссылку',
   'profile.copied': 'Скопировано ✓',
   'profile.push': 'Уведомления о заказах',
@@ -788,6 +790,7 @@ export const ru = {
   // message of its own — which is exactly the offline case a cashier hits on a
   // bad connection. Leaving them untranslated would mean the app speaks Kazakh
   // until something goes wrong.
+  'fail.storefrontLocation': 'Не удалось сменить точку витрины — она торгует прежней.',
   'fail.stopList': 'Не удалось изменить стоп-лист — товар остался как был.',
   'fail.switchLocation': 'Не удалось переключить точку — нет связи',
   'fail.loadOrders': 'Не удалось загрузить заказы',

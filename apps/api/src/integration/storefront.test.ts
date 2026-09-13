@@ -203,6 +203,56 @@ describe('витрина и касса вместе', () => {
   });
 });
 
+describe('точка, с которой торгует витрина', () => {
+  it('по умолчанию — первая по списку, как было всегда', async () => {
+    // Витрина брала первую точку, а список отсортирован по названию. Менять
+    // это молча нельзя: у компании, которая держит товар в магазине и завела
+    // пустой склад, витрина бы опустела.
+    const login = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(login.body.storefrontLocationId).toBe(fx.locationId);
+  });
+
+  it('выбранная владельцем точка становится витриной', async () => {
+    await prisma.stock.create({
+      data: { productId: fx.productId, locationId: fx.otherLocationId, quantity: 7, binLocation: '' },
+    });
+    await prisma.stockMovement.create({
+      data: { productId: fx.productId, locationId: fx.otherLocationId, binLocation: '', quantity: 7, reason: 'opening' },
+    });
+
+    const chosen = await api(fx.token, 'PATCH', '/pos/company/storefront-location', {
+      locationId: fx.otherLocationId,
+    });
+    expect(chosen.status, JSON.stringify(chosen.body)).toBe(200);
+
+    const res = await api(null, 'GET', `/supply/${fx.companyId}/catalog`);
+    const product = res.body.products.find((p: { id: string }) => p.id === fx.productId);
+    // Семь со склада, а не сотня из магазина.
+    expect(product.stock).toBe(7);
+
+    const login = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(login.body.storefrontLocationId).toBe(fx.otherLocationId);
+  });
+
+  it('чужую точку выбрать нельзя', async () => {
+    // Иначе заказы уходили бы на склад другой компании.
+    const чужая = await createFixture({ openingQuantity: 10 });
+    const res = await api(fx.token, 'PATCH', '/pos/company/storefront-location', {
+      locationId: чужая.locationId,
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('кассиру этого не доверяют', async () => {
+    const кассир = await createFixture({ openingQuantity: 10, role: 'cashier' });
+    const res = await api(кассир.token, 'PATCH', '/pos/company/storefront-location', {
+      locationId: кассир.locationId,
+    });
+    expect(res.status).toBe(403);
+    expect(String(res.body.error)).toMatch(/владелец|менеджер/);
+  });
+});
+
 describe('обещанное по заказу видно кассе', () => {
   it('каталог отдаёт и доступный остаток, и сколько из него обещано', async () => {
     // Кассир видит на полке десять, а касса не даёт пробить девятую. Без
