@@ -186,8 +186,13 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
 
       // Created inside the transaction: done outside, a customer row was left
       // behind whenever the order itself failed.
+      // Покупатель, а не однофамилец-поставщик. Без типа заказ привязывался к
+      // той записи с этим телефоном, какая нашлась первой, — а партнёр,
+      // который и возит вам товар, и покупает у вас, заводится обеими
+      // сторонами: его долг вам и ваш долг ему живут в разных записях, и
+      // класть заказ в поставщика значило считать эти долги вместе.
       let counterparty = await tx.counterparty.findFirst({
-        where: { companyId: company.id, phone: customerPhone },
+        where: { companyId: company.id, phone: customerPhone, type: 'customer' },
       });
       if (!counterparty) {
         counterparty = await tx.counterparty.create({
