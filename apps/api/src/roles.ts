@@ -51,6 +51,22 @@ const REFUSALS: Record<Capability, string> = {
   produce: 'Производство проводит владелец, менеджер или кладовщик',
 };
 
+/**
+ * Роли, которые существуют.
+ *
+ * Роль — это не подпись в карточке: по ней считаются права. Роль, которой нет
+ * в этой таблице, не даёт ничего и выглядит при этом настоящей — в карточке
+ * компании написано «cashir», человек упирается в отказы, и понять, что дело
+ * в опечатке, можно только чтением базы.
+ */
+export const KNOWN_ROLES = Object.keys(BY_ROLE);
+
+/** Что не так с ролью — словами, или `null`, если всё в порядке. */
+export function roleRefusal(role: unknown): string | null {
+  if (typeof role === 'string' && KNOWN_ROLES.includes(role)) return null;
+  return `Такой роли нет. Доступны: ${KNOWN_ROLES.join(', ')}`;
+}
+
 export function can(role: string | null | undefined, capability: Capability): boolean {
   if (!role) return false;
   return (BY_ROLE[role] ?? []).includes(capability);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma, Prisma } from '@anyq/db';
 import { limitRefusal } from '../limits';
 import { moduleListRefusal } from '../modules';
+import { roleRefusal } from '../roles';
 import { phoneKey } from '../phone';
 import { requireAuth } from '../auth';
 import type { AuthedRequest } from '../auth';
@@ -364,6 +365,15 @@ companiesRouter.post('/:id/users', async (req, res) => {
     return;
   }
 
+  // Роль решает, что человек сможет делать. Опечатка в ней не даёт ничего и
+  // выглядит настоящей ролью — в карточке написано «cashir», сотрудник
+  // упирается в отказы, и найти причину можно только чтением базы.
+  const badRole = roleRefusal(b.role);
+  if (badRole) {
+    res.status(400).json({ error: badRole });
+    return;
+  }
+
   const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
   if (posPin && !PIN_PATTERN.test(posPin)) {
     res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
@@ -414,6 +424,11 @@ companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
   }
   if (!b.name || !b.role) {
     res.status(400).json({ error: 'Заполните имя и роль' });
+    return;
+  }
+  const badRole = roleRefusal(b.role);
+  if (badRole) {
+    res.status(400).json({ error: badRole });
     return;
   }
 

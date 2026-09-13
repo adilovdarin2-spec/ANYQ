@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { can, capabilityRefusal } from './roles';
+import { can, capabilityRefusal, KNOWN_ROLES, roleRefusal } from './roles';
 import type { Capability } from './roles';
 
 /**
@@ -69,5 +69,26 @@ describe('отказ', () => {
     const тексты = ВСЕ.map((c) => capabilityRefusal('cashier', c));
     expect(new Set(тексты).size).toBe(ВСЕ.length);
     for (const текст of тексты) expect(текст?.length ?? 0).toBeGreaterThan(20);
+  });
+});
+
+describe('роль, которой нет', () => {
+  // Роль — это не подпись в карточке: по ней считаются права. Опечатка не даёт
+  // ничего и выглядит настоящей ролью: в карточке написано «cashir», человек
+  // упирается в отказы, и найти причину можно только чтением базы.
+  it('называется и показывает настоящие', () => {
+    const refusal = roleRefusal('cashir');
+    expect(refusal).toContain('cashier');
+    expect(refusal).toContain('Такой роли нет');
+  });
+
+  it('настоящие роли проходят', () => {
+    for (const role of KNOWN_ROLES) expect(roleRefusal(role), role).toBeNull();
+  });
+
+  it('пустая роль — тоже отказ', () => {
+    expect(roleRefusal('')).toBeTruthy();
+    expect(roleRefusal(undefined)).toBeTruthy();
+    expect(roleRefusal(7)).toBeTruthy();
   });
 });
