@@ -130,11 +130,29 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
     return;
   }
 
+  // Только то, что продаётся. Каталог витрины фильтрует `sellable` с тех пор,
+  // как на неё перестало попадать снятое с продажи, а заказ — не фильтровал:
+  // партнёр с открытой со вчера страницей заказывал то, что сегодня уже сняли,
+  // и заказ принимался.
   const products = await prisma.product.findMany({
-    where: { companyId: company.id, id: { in: items.map((it) => it.productId) } },
+    where: { companyId: company.id, sellable: true, id: { in: items.map((it) => it.productId) } },
   });
   const productById = new Map(products.map((p) => [p.id, p]));
   const validItems = items.filter((it) => productById.has(it.productId) && it.quantity > 0);
+
+  // Строку, которую нельзя выполнить, раньше просто выбрасывали: заказ уходил
+  // без неё, а покупатель узнавал об этом при получении — если замечал вообще.
+  // Отказ целиком честнее: пусть он уберёт её сам и увидит, что заказывает.
+  if (validItems.length !== items.length) {
+    const пропавшие = items.filter((it) => !productById.has(it.productId)).length;
+    res.status(409).json({
+      error: пропавшие > 0
+        ? 'Часть товаров больше не продаётся — обновите страницу и соберите заказ заново'
+        : 'Некорректный список товаров',
+    });
+    return;
+  }
+
   if (validItems.length === 0) {
     res.status(400).json({ error: 'Некорректный список товаров' });
     return;
