@@ -203,6 +203,26 @@ describe('витрина и касса вместе', () => {
   });
 });
 
+describe('заказ на то, что сняли с продажи', () => {
+  it('не принимается', async () => {
+    // Каталог такой товар не показывает, но страница партнёра могла быть
+    // открыта со вчера. Раньше строка молча выбрасывалась, заказ уходил без
+    // неё, и покупатель узнавал об этом при получении — если замечал.
+    await prisma.product.update({ where: { id: fx.productId }, data: { sellable: false } });
+
+    const res = await api(null, 'POST', `/supply/${fx.companyId}/orders`, заказ(2));
+    expect(res.status).toBe(409);
+    expect(String(res.body.error)).toContain('больше не продаётся');
+    expect(await prisma.document.count({ where: { type: 'order' } })).toBe(0);
+  });
+
+  it('и брони по нему не остаётся', async () => {
+    await prisma.product.update({ where: { id: fx.productId }, data: { sellable: false } });
+    await api(null, 'POST', `/supply/${fx.companyId}/orders`, заказ(2));
+    expect(await reservedTotal()).toBe(0);
+  });
+});
+
 describe('точка, с которой торгует витрина', () => {
   it('по умолчанию — первая по списку, как было всегда', async () => {
     // Витрина брала первую точку, а список отсортирован по названию. Менять
