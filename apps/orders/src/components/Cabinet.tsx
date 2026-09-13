@@ -80,8 +80,14 @@ export function Cabinet({ secret }: { secret: string }) {
       .catch((err) => {
         if (cancelled) return;
         // Сессия кончилась или пароль сменили из кассы — это не ошибка,
-        // а «войдите заново».
-        if (err instanceof ApiError) signOut();
+        // а «войдите заново». Всё остальное — ошибка, и выкидывать из-за неё
+        // владельца ко входу значит отвечать на упавший сервер требованием
+        // ввести пароль, который и так верный.
+        if (err instanceof ApiError && err.status === 401) {
+          signOut();
+          return;
+        }
+        setError(err instanceof ApiError ? err.message : 'Сервер не ответил');
       });
     return () => {
       cancelled = true;
