@@ -7,6 +7,14 @@ interface Props {
   total: number;
   submitting: boolean;
   error: string | null;
+  /**
+   * Строки корзины, которых в каталоге больше нет.
+   *
+   * Отказ сервера говорит «часть товаров больше не продаётся», и без этого
+   * списка закупщик из десяти строк должен угадать, какая лишняя. Вычеркнуть
+   * их за него нельзя: заказ его.
+   */
+  staleLines?: string[];
   onBack: () => void;
   onSubmit: (name: string, phone: string, address: string) => void;
 }
@@ -23,7 +31,7 @@ function listRu(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} и ${items[items.length - 1]}`;
 }
 
-export function CheckoutSheet({ cart, total, submitting, error, onBack, onSubmit }: Props) {
+export function CheckoutSheet({ cart, total, submitting, error, staleLines, onBack, onSubmit }: Props) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -91,6 +99,11 @@ export function CheckoutSheet({ cart, total, submitting, error, onBack, onSubmit
             </div>
 
             {error && <div className="form-error">{error}</div>}
+            {staleLines && staleLines.length > 0 && (
+              <div className="form-error">
+                Уберите из заказа: {staleLines.join(', ')}
+              </div>
+            )}
           </div>
         </div>
       </div>

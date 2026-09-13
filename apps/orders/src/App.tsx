@@ -48,6 +48,8 @@ export default function App() {
   /** Номер отправленного заказа — его показывают на экране «спасибо». */
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Названия строк корзины, которых больше нет в каталоге. */
+  const [staleLines, setStaleLines] = useState<string[]>([]);
   const install = useInstallPrompt();
 
   useEffect(() => {
@@ -70,6 +72,29 @@ export default function App() {
     );
   }, [catalog]);
 
+  /**
+   * Перечитать каталог и сказать, каких строк корзины в нём больше нет.
+   *
+   * Сама корзина не трогается: заказ чужой, и вычёркивать из него строки за
+   * человека — это ровно то, чем занимался сервер, когда молча выбрасывал их
+   * из заказа.
+   */
+  async function refreshCatalogAndMarkStale() {
+    if (!companyId) return;
+    try {
+      const fresh = await fetchCatalog(companyId);
+      setCatalog(fresh);
+      const offered = new Set(fresh.products.map((p) => p.id));
+      const пропали = cart.filter((line) => !offered.has(line.productId));
+      if (пропали.length > 0) {
+        setStaleLines(пропали.map((line) => line.name));
+      }
+    } catch {
+      // Каталог не перечитался — сообщение об отказе уже показано, и второе
+      // сообщение про неудачную перезагрузку человеку ничем не поможет.
+    }
+  }
+
   function addToCart(product: CatalogProduct) {
     setCart((prev) => {
       const existing = prev.find((l) => l.productId === product.id);
@@ -90,6 +115,7 @@ export default function App() {
    * поставщика то, чего у него нет.
    */
   function setQty(productId: string, qty: number) {
+    setStaleLines([]);
     setCart((prev) =>
       prev
         .map((l) => (l.productId === productId ? { ...l, qty: Math.min(Math.max(qty, 0), l.maxStock) } : l))
@@ -121,6 +147,14 @@ export default function App() {
       setView('success');
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : 'Не удалось отправить заказ');
+      // Отказ «часть товаров больше не продаётся» означает, что страница
+      // открыта со вчера. Просить обновить её и оставить всё как есть —
+      // значит требовать от закупщика самому угадать, какая из десяти строк
+      // лишняя. Перечитываем каталог и называем те строки, которых в нём
+      // больше нет; убирает их он сам — это его заказ.
+      if (err instanceof ApiError && err.status === 409 && companyId) {
+        await refreshCatalogAndMarkStale();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -200,6 +234,7 @@ export default function App() {
           total={cartTotal}
           submitting={submitting}
           error={submitError}
+          staleLines={staleLines}
           onBack={() => setView('catalog')}
           onSubmit={handleSubmitOrder}
         />
