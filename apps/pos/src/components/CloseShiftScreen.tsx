@@ -69,7 +69,10 @@ export function CloseShiftScreen({ shift, sales, drawer, onCancel, onConfirm }: 
           </div>
         )}
 
-        <div className="summary-row" style={{ marginTop: 18 }}>
+        {/* Число, ради которого этот экран и открывают: с ним сравнивают то,
+            что лежит в ящике. Оно стояло здесь тем же кеглем, что «Kaspi QR»
+            строкой выше, — то есть ровно как справочная величина. */}
+        <div className="summary-row expected-cash">
           <span className="sr-muted">{t('shift.close.expectedCash')}</span>
           <span>{formatMoney(expectedCash)}</span>
         </div>
