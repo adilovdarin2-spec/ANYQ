@@ -1,4 +1,4 @@
-import type { Prisma } from '@anyq/db';
+import type { Tx } from '@anyq/db';
 import { allocateFromBins, allocateRelease } from './bins';
 import type { BinStock } from './bins';
 
@@ -162,7 +162,7 @@ export interface MovementContext {
 // invalidated since; `gte` re-checks at write time, where the row is locked,
 // so stock can't be driven negative by a race.
 export async function applyStockDelta(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   stock: StockLike,
   delta: number,
   reason: StockMovementReason,
@@ -249,7 +249,7 @@ export interface BinnedStock {
 // it, writing one movement per bin so the ledger says where each unit came
 // from.
 export async function deductAcrossBins(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   rows: BinnedStock[],
   quantity: number,
   reason: StockMovementReason,
@@ -279,7 +279,7 @@ export async function deductAcrossBins(
 // they are still here, still the shop's, and simply not for sale until
 // somebody decides. Conditional on there being that much actually free.
 export async function blockStock(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   stock: { id: string; productId: string },
   quantity: number,
 ): Promise<void> {
@@ -292,7 +292,7 @@ export async function blockStock(
 // Back on sale. Conditional on that much actually being in quarantine, so a
 // double release can't invent availability that isn't on the shelf.
 export async function unblockStock(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   stock: { id: string; productId: string },
   quantity: number,
 ): Promise<void> {
@@ -307,7 +307,7 @@ export async function unblockStock(
 // availability that no longer exists. Floored, because a write-off may take
 // more than was ever blocked.
 export async function releaseBlockedOnWriteOff(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   stockId: string,
   quantity: number,
 ): Promise<void> {
@@ -323,7 +323,7 @@ export async function releaseBlockedOnWriteOff(
 // No movement row: nothing moved, and the ledger records physical movement.
 // What explains a reservation is the order document that made it.
 export async function reserveStock(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   stock: { id: string; productId: string },
   quantity: number,
 ): Promise<void> {
@@ -343,7 +343,7 @@ export async function reserveStock(
  * при полных полках, потому что в той одной строке столько не лежало.
  */
 export async function reserveAcrossBins(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   rows: BinnedStock[],
   quantity: number,
 ): Promise<void> {
@@ -369,7 +369,7 @@ export async function reserveAcrossBins(
  * числится занятым под заказ, которого нет.
  */
 export async function releaseAcrossBins(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   rows: { id: string; reserved: number }[],
   quantity: number,
 ): Promise<void> {
@@ -383,7 +383,7 @@ export async function releaseAcrossBins(
 // floor at zero guards against a double release inventing availability that
 // isn't on the shelf.
 export async function releaseStock(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   stockId: string,
   quantity: number,
 ): Promise<void> {
@@ -395,7 +395,7 @@ export async function releaseStock(
 // Same conditional-decrement reasoning as applyStockDelta, for the batch rows
 // FEFO allocation draws down alongside the product's stock row.
 export async function decrementBatchQuantity(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   batch: { id: string; productId: string },
   quantity: number,
 ): Promise<void> {
@@ -410,7 +410,7 @@ export async function decrementBatchQuantity(
 // product+location (first receipt of a product, first transfer into a new
 // location, etc.) — the only place a new Stock row is ever created.
 export async function createStockWithMovement(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   input: {
     productId: string;
     locationId: string;
