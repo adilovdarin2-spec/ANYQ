@@ -7,6 +7,7 @@ import { sendMorningSummaries } from './morning';
 import { writeRateLimit } from './rateLimit';
 import { metricsMiddleware, report } from './metrics-store';
 import { drainFiscalQueue } from './fiscal-worker';
+import { deepHealth } from './health';
 import { networkFiscalProvider } from './fiscal-network';
 import { authRouter } from './routes/auth';
 import { companiesRouter } from './routes/companies';
@@ -126,7 +127,19 @@ app.use((req, res, next) => {
   writeRateLimit(req, res, next);
 });
 
+// Жив ли процесс — и больше ничего. По этому адресу Railway решает, удался ли
+// деплой и не пора ли перезапустить службу, поэтому он намеренно ни от чего не
+// зависит: падение здесь из-за недоступной базы заставило бы перезапускать API,
+// который в этом не виноват и от перезапуска не починится.
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// Может ли касса работать. Это зовёт внешняя проверка, которая живёт не на
+// Railway (`scripts/uptime-check.mjs`), и падать здесь можно: по этому адресу
+// никто службу не перезапускает. Почему проверок две, написано в health.ts.
+app.get('/health/deep', async (_req, res) => {
+  const health = await deepHealth();
+  res.status(health.ok ? 200 : 503).json(health);
+});
 
 // The two numbers the pilot charter is written in, and the routes missing
 // them. Guarded by the same shared secret as the maintenance hooks rather than

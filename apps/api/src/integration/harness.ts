@@ -199,6 +199,14 @@ export async function createFixture(options: FixtureOptions = {}): Promise<Fixtu
 export interface ApiResponse<T = any> {
   status: number;
   body: T;
+  /**
+   * Заголовки ответа, в нижнем регистре.
+   *
+   * Нужны не всем, но без них нельзя проверить то, что ответ не только про
+   * содержимое: имя файла в `content-disposition` — это имя, по которому 1С
+   * ищет выгрузку, и оно такая же часть работы, как сам XML внутри.
+   */
+  headers: Record<string, string>;
 }
 
 export async function api<T = any>(
@@ -224,7 +232,11 @@ export async function api<T = any>(
   } catch {
     parsed = text;
   }
-  return { status: res.status, body: parsed as T };
+  const responseHeaders: Record<string, string> = {};
+  res.headers.forEach((value, key) => {
+    responseHeaders[key.toLowerCase()] = value;
+  });
+  return { status: res.status, body: parsed as T, headers: responseHeaders };
 }
 
 export interface LedgerMismatchRow {
