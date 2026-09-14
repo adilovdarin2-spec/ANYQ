@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { RestaurantTable } from '../types';
 import { formatMoney } from '../utils';
+import { pluralPhrase } from '../i18n';
 
 interface Props {
   tables: RestaurantTable[];
@@ -47,7 +48,7 @@ export function FloorPlanScreen({ tables, loading, error, submitting, onBack, on
           {tables.map((table) => (
             <button key={table.id} className={`table-tile ${table.status}`} onClick={() => onSelectTable(table)}>
               <span className="t-name">{table.name}</span>
-              <span className="t-seats">{t('floor.seats', { count: table.seats })}</span>
+              <span className="t-seats">{t(pluralPhrase(table.seats, 'floor.seatsOne', 'floor.seatsFew', 'floor.seatsMany'), { count: table.seats })}</span>
               {table.status === 'occupied' && <span className="t-total">{formatMoney(table.total)}</span>}
             </button>
           ))}
