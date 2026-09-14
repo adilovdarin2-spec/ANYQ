@@ -212,6 +212,10 @@ button { cursor: pointer; }
 
 .summary-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 0.92rem; }
 .summary-row.total { font-size: 1.15rem; font-weight: 700; border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 14px; }
+/* Сколько наличных должно оказаться в ящике. Это не справка в столбце итогов,
+   а величина, с которой сверяют пересчитанные деньги: если она не выделена,
+   кассир ищет её глазами среди строк «Kaspi QR» и «Карта» — каждую смену. */
+.summary-row.expected-cash { font-size: 1.05rem; font-weight: 700; margin-top: 18px; }
 .summary-row .sr-muted { color: var(--ink-muted); }
 
 /* discounts (retail tariff) */
@@ -539,6 +543,7 @@ button { cursor: pointer; }
      из телефонной позы, а сверху вниз через прилавок. Это единственное
      число на экране оплаты, которое произносят. */
   .pos-shell .cash-change .summary-row.total { font-size: 1.35rem; }
+  .pos-shell .summary-row.expected-cash { font-size: 1.2rem; }
 
   /* Кнопка, которой заканчивается каждая продажа. На телефоне она и так
      во всю ширину; на терминале ей место соразмерное тому, как часто по ней
