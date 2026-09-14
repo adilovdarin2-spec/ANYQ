@@ -120,7 +120,11 @@ interface FixtureOptions {
 // reconciliation starts green and a test that breaks it is reporting a fault
 // rather than the fixture.
 export async function createFixture(options: FixtureOptions = {}): Promise<Fixture> {
-  const modules = options.modules ?? ['retail', 'warehouse', 'terminal', 'supply'];
+  // `stock` идёт рядом со складом не для полноты списка: приёмка,
+  // инвентаризация и списание живут в нём, а `warehouse` — это ячейки,
+  // перемещения, закупки и производство. Склад без учёта прихода сервер не
+  // примет, см. `moduleListRefusal`.
+  const modules = options.modules ?? ['retail', 'stock', 'warehouse', 'terminal', 'supply'];
   const openingQuantity = options.openingQuantity ?? 100;
 
   const company = await prisma.company.create({

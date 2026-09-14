@@ -32,7 +32,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await resetDatabase();
-  fx = await createFixture({ openingQuantity: 100, modules: ['shop', 'warehouse', 'retail'] });
+  fx = await createFixture({ openingQuantity: 100, modules: ['shop', 'stock', 'warehouse', 'retail'] });
 });
 
 async function sell(body: Record<string, unknown>, key: string) {

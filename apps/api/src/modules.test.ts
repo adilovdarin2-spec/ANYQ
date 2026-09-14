@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { KNOWN_MODULES, moduleListRefusal } from './modules';
+import { KNOWN_MODULES, WAREHOUSE_REQUIRES, moduleListRefusal } from './modules';
 
 /**
  * Модуль, которого не бывает.
@@ -13,7 +13,8 @@ import { KNOWN_MODULES, moduleListRefusal } from './modules';
 
 describe('список модулей', () => {
   it('пропускает то, что действительно существует', () => {
-    expect(moduleListRefusal(['retail', 'warehouse'])).toBeNull();
+    expect(moduleListRefusal(['retail', 'stock'])).toBeNull();
+    expect(moduleListRefusal(['retail', 'stock', 'warehouse'])).toBeNull();
     expect(moduleListRefusal([...KNOWN_MODULES])).toBeNull();
   });
 
@@ -34,6 +35,21 @@ describe('список модулей', () => {
     // было бы, если бы он не принимался.
     expect(moduleListRefusal(['shop', 'retail'])).toBeNull();
     expect(KNOWN_MODULES).not.toContain('shop' as never);
+  });
+
+  it('склад не включается без учёта прихода', () => {
+    // Ячейки, в которые нечего класть: приёмка, инвентаризация и списание
+    // живут в `stock`. Тариф со «складом» и без него обещает то, чего не даёт.
+    const refusal = moduleListRefusal(['warehouse']);
+    expect(refusal).toContain('warehouse');
+    for (const required of WAREHOUSE_REQUIRES) {
+      expect(refusal).toContain(required);
+    }
+  });
+
+  it('а учёт прихода без склада — обычный магазин, и это нормально', () => {
+    // Одна точка, товар приходит и уходит, ячеек нет. Это самый частый клиент.
+    expect(moduleListRefusal(['retail', 'stock'])).toBeNull();
   });
 
   it('не список — тоже отказ', () => {

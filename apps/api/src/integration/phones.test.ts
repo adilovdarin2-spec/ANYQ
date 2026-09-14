@@ -28,7 +28,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await resetDatabase();
-  fx = await createFixture({ openingQuantity: 100, modules: ['retail', 'warehouse', 'supply', 'terminal'] });
+  fx = await createFixture({ openingQuantity: 100, modules: ['retail', 'stock', 'warehouse', 'supply', 'terminal'] });
 });
 
 const ВИТРИНА = '+7 700 123 45 67';

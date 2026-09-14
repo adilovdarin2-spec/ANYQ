@@ -86,13 +86,13 @@ describe('модули компании', () => {
 
   it('настоящие модули сохраняются', async () => {
     const res = await api(adminToken, 'PATCH', `/companies/${fx.companyId}/tariff`, {
-      modules: ['retail', 'warehouse'],
+      modules: ['retail', 'stock', 'warehouse'],
       validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
     const tariff = await prisma.tariff.findUnique({ where: { companyId: fx.companyId } });
-    expect(JSON.parse(tariff!.modules)).toEqual(['retail', 'warehouse']);
+    expect(JSON.parse(tariff!.modules)).toEqual(['retail', 'stock', 'warehouse']);
   });
 
   it('компанию с несуществующим модулем не заводят', async () => {

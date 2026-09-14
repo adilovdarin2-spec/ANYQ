@@ -30,7 +30,7 @@ beforeEach(async () => {
   await resetDatabase();
   // No opening stock: every unit here arrives as a batch, so the only figures in
   // play are the ones under test.
-  fx = await createFixture({ openingQuantity: 0, modules: ['shop', 'warehouse', 'pharmacy', 'retail'] });
+  fx = await createFixture({ openingQuantity: 0, modules: ['shop', 'stock', 'warehouse', 'pharmacy', 'retail'] });
 });
 
 const DAY = 24 * 60 * 60 * 1000;
