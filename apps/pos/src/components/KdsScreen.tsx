@@ -39,7 +39,7 @@ export function KdsScreen({ tickets, loading, error, onBack, onRefresh, onToggle
                 <button
                   key={it.id}
                   type="button"
-                  className="kds-item-row"
+                  className={`kds-item-row${it.kitchenStatus === 'ready' ? ' ready' : ''}`}
                   onClick={() => onToggleItem(it.id, it.kitchenStatus !== 'ready')}
                 >
                   {it.kitchenStatus === 'ready' ? '✓' : '○'} {it.name} × {it.quantity}
