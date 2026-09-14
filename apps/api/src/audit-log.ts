@@ -1,4 +1,5 @@
-import { prisma, Prisma } from '@anyq/db';
+import { prisma } from '@anyq/db';
+import type { Tx } from '@anyq/db';
 import { diffFields, WATCHED_FIELDS } from './audit';
 import type { AuditEntity } from './audit';
 
@@ -29,7 +30,7 @@ interface RecordOptions {
  * change nothing.
  */
 export async function recordChanges(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   actor: AuditActor,
   options: RecordOptions,
 ): Promise<number> {

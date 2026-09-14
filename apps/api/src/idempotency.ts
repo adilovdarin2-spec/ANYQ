@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { prisma, Prisma } from '@anyq/db';
+import type { Tx } from '@anyq/db';
 
 // The cashier's offline queue cannot tell "the server never received this
 // sale" from "the server saved it and the reply was lost on the way back" —
@@ -112,7 +113,7 @@ export async function pruneIdempotencyKeys(now = new Date()): Promise<number> {
 // has to reproduce byte for byte, so it is what gets stored.
 export async function runIdempotent<T>(
   opts: RunIdempotentOptions,
-  work: (tx: Prisma.TransactionClient) => Promise<T>,
+  work: (tx: Tx) => Promise<T>,
 ): Promise<IdempotentOutcome<T>> {
   const timeout = opts.timeoutMs ?? DEFAULT_TRANSACTION_TIMEOUT_MS;
 
