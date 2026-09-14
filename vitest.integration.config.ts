@@ -36,5 +36,8 @@ export default defineConfig({
     poolOptions: { forks: { singleFork: true } },
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // Проверка перед стартом: не идёт ли уже другой прогон по этой же базе.
+    // Почему это важнее, чем кажется, написано в самом файле.
+    globalSetup: ['apps/api/src/integration/one-run-at-a-time.ts'],
   },
 });
