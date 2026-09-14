@@ -3,47 +3,91 @@ import { WHATSAPP_NUMBER } from '../api';
 import { formatMoney } from '../utils';
 import { IconArrowRight, IconCheck, WhatsAppIcon } from './Icons';
 
-const CORE_BASE = 59900;
-const CORE_INCLUDED_LOCATIONS = 1;
-const CORE_INCLUDED_USERS = 3;
-const CORE_EXTRA_LOCATION = 24900;
-const CORE_EXTRA_USER = 4900;
+/**
+ * Единица цены — место, где лежит товар. Никогда — человек.
+ *
+ * До 15.09.2026 здесь считались пользователи: три включены, дальше по 4 900 за
+ * каждого. Магазин с четырьмя кассирами платил за четвёртого — то есть за
+ * операционное место, за которое мы сами себе запретили брать деньги. Строка
+ * «Пользователи» убрана из калькулятора целиком, а не переименована: цену
+ * определяет число мест хранения и набор модулей, и больше ничего.
+ *
+ * Цифры повторяют docs/PRICING.md. Биллинга в коде нет — это витрина расчёта,
+ * поэтому, меняя цены там, меняйте и здесь.
+ */
+const POINT_BASE = 29900;
+const STOCK_BASE = 69900;
+const EXTRA_PLACE = 24900;
+
+const REPORTS = 9900;
+const BATCHES = 14900;
 
 const SUPPLY_FIRST_WAREHOUSE = 99900;
 const SUPPLY_EXTRA_WAREHOUSE = 34900;
 
 const PRIORITY_SUPPORT = 19900;
 
+/** С какого числа мест хранения условия обсуждаются отдельно. */
+const NETWORK_PLACES = 6;
+
 function waLink(message: string): string {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
 interface CalcConfig {
-  locations: number;
-  users: number;
+  /** «Склад» вместо «Точки»: ячейки, перемещения, закупки, производство. */
+  warehouse: boolean;
+  /** Мест, где лежит товар: точки и склады вместе. */
+  places: number;
+  reports: boolean;
+  batches: boolean;
   supplyEnabled: boolean;
   warehouses: number;
   prioritySupport: boolean;
 }
 
-// Warehouses only matter once Supply is on — ignore it otherwise so
-// e.g. leftover warehouse count from a prior toggle doesn't block a match.
+function priceOf(c: CalcConfig): { base: number; supply: number; total: number } {
+  const base = c.warehouse ? STOCK_BASE + Math.max(0, c.places - 1) * EXTRA_PLACE : POINT_BASE;
+  const addons = (c.reports ? REPORTS : 0) + (c.batches ? BATCHES : 0);
+  const supply = c.supplyEnabled ? SUPPLY_FIRST_WAREHOUSE + Math.max(0, c.warehouses - 1) * SUPPLY_EXTRA_WAREHOUSE : 0;
+  const support = c.prioritySupport ? PRIORITY_SUPPORT : 0;
+  return { base, supply, total: base + addons + supply + support };
+}
+
+// Мест больше одного бывает только у «Склада», складов с витриной — только у
+// витрины. Сравнивать то, что в этой конфигурации ничего не значит, — значит
+// не узнать свой же тариф из-за числа, оставшегося от прошлого переключателя.
 function configsMatch(a: CalcConfig, b: CalcConfig): boolean {
   return (
-    a.locations === b.locations &&
-    a.users === b.users &&
+    a.warehouse === b.warehouse &&
+    (!a.warehouse || a.places === b.places) &&
+    a.reports === b.reports &&
+    a.batches === b.batches &&
     a.supplyEnabled === b.supplyEnabled &&
     (!a.supplyEnabled || a.warehouses === b.warehouses) &&
     a.prioritySupport === b.prioritySupport
   );
 }
 
-// Fixed-price cards for the visitor who wants to scan prices in five seconds
-// instead of operating the calculator below — same underlying economics,
-// just pre-computed at the configurations most businesses actually land on.
-// Each card's "Настроить" button pushes this config into the calculator
-// below and scrolls to it, so a tier is a starting point you can then
-// adjust rather than a dead end.
+const POINT: CalcConfig = {
+  warehouse: false,
+  places: 1,
+  reports: false,
+  batches: false,
+  supplyEnabled: false,
+  warehouses: 1,
+  prioritySupport: false,
+};
+
+const STOCK: CalcConfig = { ...POINT, warehouse: true };
+const SUPPLY: CalcConfig = { ...STOCK, supplyEnabled: true };
+const NETWORK: CalcConfig = { ...STOCK, places: NETWORK_PLACES, reports: true, prioritySupport: true };
+
+// Карточки с готовой ценой — для того, кто хочет увидеть цифру за пять секунд,
+// а не крутить калькулятор. Экономика та же: каждая цена посчитана из тех же
+// констант на конфигурации, в которую чаще всего попадают, — выдуманных чисел
+// в карточках нет. Кнопка «Настроить» кладёт конфигурацию в калькулятор ниже,
+// так что тариф — это точка отсчёта, а не тупик.
 const TIERS: {
   key: string;
   name: string;
@@ -57,52 +101,73 @@ const TIERS: {
   config: CalcConfig;
 }[] = [
   {
-    key: 'start',
-    name: 'Старт',
-    tag: '1 точка',
-    price: CORE_BASE,
+    key: 'point',
+    name: 'Точка',
+    tag: 'Один магазин',
+    price: priceOf(POINT).total,
     priceNote: null,
-    desc: 'Всё для одной точки продаж — касса, склад, отчёты и все отраслевые модули без доплат.',
-    features: ['1 точка, до 3 пользователей', 'Товары без лимита', 'Офлайн-режим и живые остатки', 'Рецепты, лояльность, FEFO, весовой товар'],
+    desc: 'Касса, остатки и приёмка для одного магазина. Кассиров сколько угодно — за людей мы не берём.',
+    features: [
+      'Касса, работающая без интернета',
+      'Приёмка, инвентаризация, списание',
+      'Скидки, лояльность, весовой товар',
+      'Кабинет владельца с телефона',
+    ],
     badge: null,
-    message: `Здравствуйте! Хочу подключить тариф «Старт» ANYQ — ${formatMoney(CORE_BASE)}/мес.`,
-    config: { locations: 1, users: 3, supplyEnabled: false, warehouses: 1, prioritySupport: false },
+    message: `Здравствуйте! Хочу подключить тариф «Точка» ANYQ — ${formatMoney(priceOf(POINT).total)}/мес.`,
+    config: POINT,
   },
   {
-    key: 'standard',
-    name: 'Стандарт',
-    tag: '1 точка',
-    price: CORE_BASE + PRIORITY_SUPPORT,
+    key: 'stock',
+    name: 'Склад',
+    tag: 'Магазин с подсобкой или склад',
+    price: priceOf(STOCK).total,
     priceNote: null,
-    desc: 'Всё из «Старт» плюс приоритетная поддержка — быстрее реакция и отдельный чат с командой.',
-    features: ['Всё из тарифа «Старт»', 'Приоритетная поддержка', 'Быстрая реакция на вопросы', 'Помощь с настройкой'],
+    desc: 'Всё из «Точки» плюс адресное хранение, перемещения между местами и закупки у поставщика.',
+    features: [
+      'Всё из тарифа «Точка»',
+      'Ячейки и размещение товара',
+      'Перемещения со сверкой обеих сторон',
+      'Заказы поставщику и контроль долга',
+    ],
     badge: 'Популярный выбор',
-    message: `Здравствуйте! Хочу подключить тариф «Стандарт» ANYQ — ${formatMoney(CORE_BASE + PRIORITY_SUPPORT)}/мес (с приоритетной поддержкой).`,
-    config: { locations: 1, users: 3, supplyEnabled: false, warehouses: 1, prioritySupport: true },
+    message: `Здравствуйте! Хочу подключить тариф «Склад» ANYQ — ${formatMoney(priceOf(STOCK).total)}/мес.`,
+    config: STOCK,
+  },
+  {
+    key: 'supply',
+    name: 'Опт',
+    tag: 'Дистрибьютор',
+    price: priceOf(SUPPLY).total,
+    priceNote: null,
+    desc: 'Всё из «Склада» плюс сайт заказов: клиенты набирают заказ сами, вы видите его в ту же секунду.',
+    features: [
+      'Всё из тарифа «Склад»',
+      'Витрина заказов на своём адресе',
+      'Уведомление о заказе сразу, без опроса',
+      'Списание товара по факту выдачи',
+    ],
+    badge: null,
+    message: `Здравствуйте! Хочу подключить тариф «Опт» ANYQ — ${formatMoney(priceOf(SUPPLY).total)}/мес.`,
+    config: SUPPLY,
   },
   {
     key: 'network',
     name: 'Сеть',
-    tag: '2+ точки',
-    price: CORE_BASE + CORE_EXTRA_LOCATION + CORE_EXTRA_USER * 2 + PRIORITY_SUPPORT,
+    tag: `От ${NETWORK_PLACES} мест`,
+    price: priceOf(NETWORK).total,
     priceNote: 'от',
-    desc: 'Для сети из нескольких точек. Пример ниже — на 2 точки и 5 пользователей, точный расчёт под вашу сеть — в калькуляторе.',
-    features: ['Несколько точек продаж', 'Перемещения между точками', 'Сводные отчёты по сети', 'Приоритетная поддержка'],
+    desc: `Пример — ${NETWORK_PLACES} мест хранения с отчётами и приоритетной поддержкой. Точный расчёт под вашу сеть обсуждаем отдельно.`,
+    features: [
+      'Несколько точек и складов',
+      'Сводка по сети у владельца',
+      'Приоритетная поддержка',
+      'Индивидуальные условия',
+    ],
     badge: null,
-    message: 'Здравствуйте! У меня сеть из нескольких точек, хочу подключить ANYQ — посчитайте точный тариф под мою конфигурацию.',
-    config: { locations: 2, users: 5, supplyEnabled: false, warehouses: 1, prioritySupport: true },
-  },
-  {
-    key: 'enterprise',
-    name: 'Индивидуально',
-    tag: 'Опт и крупный бизнес',
-    price: CORE_BASE + SUPPLY_FIRST_WAREHOUSE,
-    priceNote: 'от',
-    desc: 'Оптовым поставщикам и крупным сетям — модуль Supply (B2B-витрина заказов) и личный менеджер.',
-    features: ['Публичная витрина заказов Supply', 'Push-уведомления о заказах', 'Личный менеджер', 'Индивидуальные условия'],
-    badge: null,
-    message: 'Здравствуйте! Хочу обсудить индивидуальный тариф ANYQ (Supply / крупная сеть) — подскажите точный расчёт.',
-    config: { locations: 1, users: 3, supplyEnabled: true, warehouses: 1, prioritySupport: false },
+    message:
+      'Здравствуйте! У меня сеть из нескольких точек и складов, хочу подключить ANYQ — посчитайте точный тариф под мою конфигурацию.',
+    config: NETWORK,
   },
 ];
 
@@ -136,40 +201,62 @@ function Stepper({ label, hint, value, min, onIncrement, onDecrement }: StepperP
 }
 
 export function PricingScreen() {
-  const [locations, setLocations] = useState(1);
-  const [users, setUsers] = useState(3);
-  const [supplyEnabled, setSupplyEnabled] = useState(false);
-  const [warehouses, setWarehouses] = useState(1);
-  const [prioritySupport, setPrioritySupport] = useState(false);
+  const [warehouse, setWarehouse] = useState(POINT.warehouse);
+  const [places, setPlaces] = useState(POINT.places);
+  const [reports, setReports] = useState(POINT.reports);
+  const [batches, setBatches] = useState(POINT.batches);
+  const [supplyEnabled, setSupplyEnabled] = useState(POINT.supplyEnabled);
+  const [warehouses, setWarehouses] = useState(POINT.warehouses);
+  const [prioritySupport, setPrioritySupport] = useState(POINT.prioritySupport);
 
   function applyTier(t: (typeof TIERS)[number]) {
-    setLocations(t.config.locations);
-    setUsers(t.config.users);
+    setWarehouse(t.config.warehouse);
+    setPlaces(t.config.places);
+    setReports(t.config.reports);
+    setBatches(t.config.batches);
     setSupplyEnabled(t.config.supplyEnabled);
     setWarehouses(t.config.warehouses);
     setPrioritySupport(t.config.prioritySupport);
     document.getElementById('calculator')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  /* Витрина заказов стоит на складе: она показывает остатки по местам и
+     списывает по факту выдачи. Включить её отдельно нельзя — и честнее
+     переключить склад самим, чем показать сумму, которую потом не подтвердим. */
+  function toggleSupply(on: boolean) {
+    setSupplyEnabled(on);
+    if (on) setWarehouse(true);
+  }
+
+  function toggleWarehouse(on: boolean) {
+    setWarehouse(on);
+    if (!on) {
+      setPlaces(1);
+      setSupplyEnabled(false);
+    }
+  }
+
   const activeTier = useMemo(
-    () => TIERS.find((t) => configsMatch(t.config, { locations, users, supplyEnabled, warehouses, prioritySupport })) ?? null,
-    [locations, users, supplyEnabled, warehouses, prioritySupport],
+    () =>
+      TIERS.find((t) =>
+        configsMatch(t.config, { warehouse, places, reports, batches, supplyEnabled, warehouses, prioritySupport }),
+      ) ?? null,
+    [warehouse, places, reports, batches, supplyEnabled, warehouses, prioritySupport],
   );
 
-  const calc = useMemo(() => {
-    const extraLocations = Math.max(0, locations - CORE_INCLUDED_LOCATIONS);
-    const extraUsers = Math.max(0, users - CORE_INCLUDED_USERS);
-    const coreTotal = CORE_BASE + extraLocations * CORE_EXTRA_LOCATION + extraUsers * CORE_EXTRA_USER;
-    const supplyTotal = supplyEnabled ? SUPPLY_FIRST_WAREHOUSE + Math.max(0, warehouses - 1) * SUPPLY_EXTRA_WAREHOUSE : 0;
-    const supportTotal = prioritySupport ? PRIORITY_SUPPORT : 0;
-    const total = coreTotal + supplyTotal + supportTotal;
-    return { coreTotal, supplyTotal, total };
-  }, [locations, users, supplyEnabled, warehouses, prioritySupport]);
+  const calc = useMemo(
+    () => priceOf({ warehouse, places, reports, batches, supplyEnabled, warehouses, prioritySupport }),
+    [warehouse, places, reports, batches, supplyEnabled, warehouses, prioritySupport],
+  );
 
   const calcMessage = [
     'Здравствуйте! Собрал(а) тариф ANYQ на сайте, хочу подключить:',
-    `— Точки: ${locations}, пользователи: ${users} — ${formatMoney(calc.coreTotal)}/мес`,
-    supplyEnabled ? `— Supply: ${warehouses} склад(ов) — ${formatMoney(calc.supplyTotal)}/мес` : null,
+    warehouse
+      ? `— Склад, мест хранения: ${places} — ${formatMoney(calc.base)}/мес`
+      : `— Точка, один магазин — ${formatMoney(calc.base)}/мес`,
+    reports ? `— Отчёты и печать чека — +${formatMoney(REPORTS)}/мес` : null,
+    batches ? `— Партии и сроки годности — +${formatMoney(BATCHES)}/мес` : null,
+    supplyEnabled ? `— Витрина заказов: ${warehouses} склад(ов) — ${formatMoney(calc.supply)}/мес` : null,
     prioritySupport ? `— Приоритетная поддержка — +${formatMoney(PRIORITY_SUPPORT)}/мес` : null,
     `Итого: ${formatMoney(calc.total)}/мес`,
   ]
@@ -182,10 +269,10 @@ export function PricingScreen() {
       <div className="section-inner">
         <div className="section-head">
           <span className="section-eyebrow">Тарифы</span>
-          <h2 className="section-heading">Прозрачные цены — без скрытых доплат</h2>
+          <h2 className="section-heading">Платите за места, а не за людей</h2>
           <p className="section-sub">
-            Четыре готовых варианта ниже покрывают большинство сценариев. Нужна нестандартная
-            конфигурация — соберите точный тариф в калькуляторе под ним.
+            Цена зависит от того, в скольких местах у вас лежит товар. Кассиров, сборщиков и
+            приёмщиков заводите сколько нужно — за них мы не берём.
           </p>
         </div>
 
@@ -235,38 +322,58 @@ export function PricingScreen() {
           <div className="calc-card-title">Калькулятор тарифа</div>
           <p className="calc-card-hint">
             {activeTier
-              ? `Настроено под тариф «${activeTier.name}» — можно менять точки, пользователей и модули ниже.`
-              : 'Меняйте точки, пользователей и модули — сумма и сообщение в WhatsApp пересчитаются сами.'}
+              ? `Настроено под тариф «${activeTier.name}» — можно менять места и модули ниже.`
+              : 'Меняйте места и модули — сумма и сообщение в WhatsApp пересчитаются сами.'}
           </p>
-
-          <Stepper
-            label="Точки продаж"
-            hint="1 точка включена в базовый пакет"
-            value={locations}
-            min={1}
-            onIncrement={() => setLocations((v) => v + 1)}
-            onDecrement={() => setLocations((v) => Math.max(1, v - 1))}
-          />
-          <Stepper
-            label="Пользователи"
-            hint="3 пользователя включены в базовый пакет"
-            value={users}
-            min={3}
-            onIncrement={() => setUsers((v) => v + 1)}
-            onDecrement={() => setUsers((v) => Math.max(3, v - 1))}
-          />
 
           <label className="calc-toggle-row">
             <span>
-              <span className="calc-row-label">Модуль Supply</span>
-              <span className="calc-row-hint">B2B-витрина для оптовых поставщиков и складов</span>
+              <span className="calc-row-label">Склад</span>
+              <span className="calc-row-hint">Ячейки, перемещения между местами, закупки, производство</span>
             </span>
-            <input type="checkbox" checked={supplyEnabled} onChange={(e) => setSupplyEnabled(e.target.checked)} />
+            <input type="checkbox" checked={warehouse} onChange={(e) => toggleWarehouse(e.target.checked)} />
+          </label>
+
+          {warehouse && (
+            <Stepper
+              label="Мест хранения"
+              hint="Точки и склады вместе. Первое включено"
+              value={places}
+              min={1}
+              onIncrement={() => setPlaces((v) => v + 1)}
+              onDecrement={() => setPlaces((v) => Math.max(1, v - 1))}
+            />
+          )}
+
+          <label className="calc-toggle-row">
+            <span>
+              <span className="calc-row-label">Отчёты и печать чека</span>
+              <span className="calc-row-hint">Выручка по дням, история склада, печать на стационарном ПК</span>
+            </span>
+            <input type="checkbox" checked={reports} onChange={(e) => setReports(e.target.checked)} />
+          </label>
+
+          <label className="calc-toggle-row">
+            <span>
+              <span className="calc-row-label">Партии и сроки годности</span>
+              <span className="calc-row-hint">Списание по FEFO — первым уходит то, что раньше испортится</span>
+            </span>
+            <input type="checkbox" checked={batches} onChange={(e) => setBatches(e.target.checked)} />
+          </label>
+
+          <label className="calc-toggle-row">
+            <span>
+              <span className="calc-row-label">Витрина заказов</span>
+              <span className="calc-row-hint">
+                Ваши клиенты заказывают сами, с живыми остатками. Работает на складе — включит его вместе с собой
+              </span>
+            </span>
+            <input type="checkbox" checked={supplyEnabled} onChange={(e) => toggleSupply(e.target.checked)} />
           </label>
 
           {supplyEnabled && (
             <Stepper
-              label="Склады с витриной"
+              label="Складов с витриной"
               value={warehouses}
               min={1}
               onIncrement={() => setWarehouses((v) => v + 1)}
@@ -277,7 +384,10 @@ export function PricingScreen() {
           <label className="calc-toggle-row">
             <span>
               <span className="calc-row-label">Приоритетная поддержка</span>
-              <span className="calc-row-hint">Быстрая реакция и отдельный чат с командой</span>
+              <span className="calc-row-hint">
+                «Не работает касса» — ответ в течение часа, с 8:00 до 22:00, семь дней в неделю.
+                Остальное — в течение рабочего дня. Разбор причины письмом — в течение трёх дней
+              </span>
             </span>
             <input type="checkbox" checked={prioritySupport} onChange={(e) => setPrioritySupport(e.target.checked)} />
           </label>
@@ -295,7 +405,8 @@ export function PricingScreen() {
           </a>
 
           <p className="calc-footnote">
-            Есть личный менеджер и индивидуальные условия для крупных сетей — <IconArrowRight className="icon-14" /> напишите нам, обсудим.
+            Фискальный чек пока пробивает ваша зарегистрированная касса — ANYQ ведёт учёт рядом с
+            ней. <IconArrowRight className="icon-14" /> напишите, расскажем, как это устроено.
           </p>
         </div>
       </div>
