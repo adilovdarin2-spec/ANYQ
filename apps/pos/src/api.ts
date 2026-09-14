@@ -964,7 +964,11 @@ export async function downloadExport(token: string, dataset: string, locationId:
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = filenameFrom(res.headers.get('content-disposition')) ?? `${dataset}.csv`;
+  // Запасное имя — по типу содержимого, а не всегда `.csv`: выгрузки для 1С
+  // отдают XML, и файл с расширением csv она не возьмёт.
+  const xml = (res.headers.get('content-type') ?? '').includes('xml');
+  link.download =
+    filenameFrom(res.headers.get('content-disposition')) ?? `${dataset}.${xml ? 'xml' : 'csv'}`;
   document.body.appendChild(link);
   link.click();
   link.remove();

@@ -344,6 +344,10 @@ export const ru = {
   'export.movementsHint': 'Журнал с причиной и автором — за 90 дней',
   'export.counterparties': 'Контрагенты',
   'export.counterpartiesHint': 'Покупатели и поставщики с условиями долга',
+  'export.oneCatalog': 'Номенклатура для 1С',
+  'export.oneCatalogHint': 'import.xml — товары, группы и штрихкоды в формате, который 1С загружает сама',
+  'export.oneOffers': 'Цены и остатки для 1С',
+  'export.oneOffersHint': 'offers.xml — цена продажи и остаток по этой точке на сейчас',
 
   // --- the documents behind a figure ---------------------------------------
   'documents.count': 'Документов: {count}',
