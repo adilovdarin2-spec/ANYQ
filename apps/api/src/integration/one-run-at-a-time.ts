@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { RECOVERY_WAIT_MS, stillStarting } from '../db-startup';
 
 /**
  * Один прогон по тестовой базе за раз.
@@ -23,26 +24,52 @@ import { PrismaClient } from '@prisma/client';
 export async function setup(): Promise<void> {
   const prisma = new PrismaClient();
   try {
-    let others: { pid: number; app: string | null }[];
-    try {
-      others = await prisma.$queryRaw<{ pid: number; app: string | null }[]>`
-        select pid, application_name as app
-        from pg_stat_activity
-        where datname = current_database() and pid <> pg_backend_pid()
-      `;
-    } catch (error) {
-      // Базы просто нет — она стоит в Docker и её останавливает перезагрузка
-      // машины. Стек Prisma на полэкрана отвечает на вопрос «что сломалось»
-      // правильно и бесполезно: сломалось ничего, контейнер не поднят.
-      if (typeof error === 'object' && error !== null && (error as { errorCode?: string }).errorCode === 'P1001') {
-        throw new Error(
-          'Тестовая база не отвечает. Поднимите её и повторите:\n' +
-            '  docker start anyq-db\n' +
-            'Если контейнера нет вовсе: docker compose -f docker-compose.dev.yml up -d',
-        );
+    let others: { pid: number; app: string | null }[] | null = null;
+    const deadline = Date.now() + RECOVERY_WAIT_MS;
+
+    while (others === null) {
+      try {
+        others = await prisma.$queryRaw<{ pid: number; app: string | null }[]>`
+          select pid, application_name as app
+          from pg_stat_activity
+          where datname = current_database() and pid <> pg_backend_pid()
+        `;
+      } catch (error) {
+        // База поднялась, но ещё восстанавливается после незакрытого
+        // выключения — контейнер с `fsync=off` делает это почти всегда.
+        // Состояние проходит за секунды, и правильный ответ на него — подождать.
+        //
+        // Ждать приходится именно здесь. `pg_isready` в это время уже говорит
+        // «готова», потому что порт открыт и соединение принимается; отказ
+        // приходит на первом же запросе. Прогон, начатый в эту секунду, даёт
+        // не одну ошибку, а несколько сотен — по числу тестов, — и ни одна из
+        // них не про базу. Однажды так и вышло: 382 падения на целом коде.
+        if (stillStarting(error)) {
+          if (Date.now() > deadline) {
+            throw new Error(
+              'Тестовая база всё ещё восстанавливается после незакрытого выключения.\n' +
+                'Обычно это секунды. Если дольше — посмотрите, что она пишет:\n' +
+                '  docker logs anyq-db --tail 20',
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
+        }
+
+        // Базы просто нет — она стоит в Docker и её останавливает перезагрузка
+        // машины. Стек Prisma на полэкрана отвечает на вопрос «что сломалось»
+        // правильно и бесполезно: сломалось ничего, контейнер не поднят.
+        if (typeof error === 'object' && error !== null && (error as { errorCode?: string }).errorCode === 'P1001') {
+          throw new Error(
+            'Тестовая база не отвечает. Поднимите её и повторите:\n' +
+              '  docker start anyq-db\n' +
+              'Если контейнера нет вовсе: docker compose -f docker-compose.dev.yml up -d',
+          );
+        }
+        throw error;
       }
-      throw error;
     }
+
     if (others.length === 0) return;
 
     const who = others.map((o) => `${o.pid}${o.app ? ` (${o.app})` : ''}`).join(', ');
