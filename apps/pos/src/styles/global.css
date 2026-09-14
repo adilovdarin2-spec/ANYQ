@@ -508,6 +508,13 @@ button { cursor: pointer; }
   .pos-shell .operations-row { padding: 18px 16px; }
   .pos-shell .operations-label { font-size: 1.02rem; }
   .pos-shell .profile-action { padding: 18px 2px; font-size: 1.02rem; }
+  /* Каталог: тот же список, по которому ходят, только его листает не кассир,
+     а тот, кто заводит товар. Строка тут плотнее прочих — в ней имя, цена и
+     подпись под ними, — поэтому крупнее становится имя, по которому строку и
+     находят, а не строка целиком. */
+  .pos-shell .product-manage-row { padding: 15px 0; }
+  .pos-shell .product-manage-name { font-size: 1.02rem; }
+  .pos-shell .product-manage-meta { font-size: 0.84rem; }
 
   /* Подсветка под указателем.
      На терминале в кассу тычут не только пальцем: у половины прилавков стоит
