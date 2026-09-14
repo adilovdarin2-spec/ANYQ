@@ -88,7 +88,7 @@ const run = async () => {
     phone: '+7 701 000 00 00',
     location: { name: 'Проверочная точка', type: 'shop', address: '' },
     owner: { name: 'Проверочный владелец', phone: '' },
-    tariff: { modules: ['shop', 'warehouse', 'retail', 'terminal'], supportLevel: 'basic', validUntil: year },
+    tariff: { modules: ['shop', 'stock', 'warehouse', 'retail', 'terminal'], supportLevel: 'basic', validUntil: year },
   });
   if (!step('company created', created.status === 201 || created.status === 200, `${created.status} ${JSON.stringify(created.data).slice(0, 300)}`)) return;
   const companyId = created.data.id ?? created.data.company?.id;

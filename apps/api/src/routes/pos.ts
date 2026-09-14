@@ -2214,7 +2214,7 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
     include: { tariff: true, locations: true },
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Возврат поставщику недоступен на вашем тарифе' });
     return;
   }
@@ -3827,6 +3827,21 @@ posRouter.post('/purchase-orders/:id/:action', requirePosAuth, async (req: PosAu
     return;
   }
 
+  // Модуль проверяется и здесь, а не только на создании заказа. Заказы
+  // создаются на одном тарифе и живут дольше него: компания, у которой склад
+  // отключили, до сегодняшнего дня могла согласовать и отправить заказ,
+  // заведённый раньше, — то есть продолжать пользоваться тем, за что перестала
+  // платить, просто зная его адрес.
+  const tariffCompany = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true },
+  });
+  const orderModules: string[] = tariffCompany?.tariff ? JSON.parse(tariffCompany.tariff.modules) : [];
+  if (!orderModules.includes('warehouse')) {
+    res.status(403).json({ error: 'Заказы поставщикам недоступны на вашем тарифе' });
+    return;
+  }
+
   const order = await prisma.document.findFirst({
     where: { id: req.params.id, companyId: req.posCompanyId, type: 'purchase_order' },
   });
@@ -3944,7 +3959,7 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
     include: { tariff: true, locations: true },
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Списания недоступны на вашем тарифе' });
     return;
   }
@@ -4055,7 +4070,7 @@ posRouter.get('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res) 
     include: { tariff: true, locations: true, users: true },
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Списания недоступны на вашем тарифе' });
     return;
   }
@@ -4108,7 +4123,7 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
     include: { tariff: true, locations: true },
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Карантин недоступен на вашем тарифе' });
     return;
   }
@@ -6630,7 +6645,7 @@ posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =>
   if (!(await allowPurchasingView(req, res))) return;
   const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Приёмка недоступна на вашем тарифе' });
     return;
   }
@@ -6683,7 +6698,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     include: { tariff: true, locations: true },
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Приёмка недоступна на вашем тарифе' });
     return;
   }
@@ -6885,7 +6900,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
 posRouter.get('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
     return;
   }
@@ -6925,7 +6940,7 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     include: { tariff: true, locations: true },
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('warehouse')) {
+  if (!modules.includes('stock')) {
     res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
     return;
   }

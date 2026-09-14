@@ -472,6 +472,7 @@ export default function App() {
   const hasTerminal = session?.modules?.includes('terminal') ?? false;
   const hasPharmacy = session?.modules?.includes('pharmacy') ?? false;
   const hasRestaurant = session?.modules?.includes('restaurant') ?? false;
+  const hasStock = session?.modules?.includes('stock') ?? false;
   const hasWarehouse = session?.modules?.includes('warehouse') ?? false;
   const hasRetail = session?.modules?.includes('retail') ?? false;
   const isDesktop = useIsDesktop();
@@ -588,37 +589,44 @@ export default function App() {
   if (hasPharmacy) {
     operationsItems.push({ key: 'batches', group: 'stock', icon: 'batches', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
   }
-  if (hasWarehouse) {
-    const warehouseItems: (OperationItem & { needs?: string })[] = [
-      { key: 'transfers', group: 'stock', icon: 'transfer', label: t('ops.transfers'), onClick: handleShowTransfers, needs: 'moveStock' },
-      { key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming, needs: 'moveStock' },
-      { key: 'counts', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts, needs: 'count' },
-      { key: 'returns', group: 'money', icon: 'return', label: t('ops.returns'), onClick: handleShowReturns },
-      { key: 'replenishment', group: 'suppliers', icon: 'replenish', label: t('ops.replenishment'), onClick: handleShowReplenishment, needs: 'receive' },
-      { key: 'purchase-orders', group: 'suppliers', icon: 'doc', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders, needs: 'receive' },
-      { key: 'bins', group: 'stock', icon: 'bins', label: t('ops.bins'), onClick: handleShowBins, needs: 'moveStock' },
-      { key: 'bin-count', group: 'stock', icon: 'binCount', label: t('ops.binCount'), onClick: handleShowBinCount, needs: 'count' },
-      { key: 'reconciliation', group: 'money', icon: 'scales', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
-      { key: 'import', group: 'setup', icon: 'import', label: t('ops.import'), onClick: handleShowImport },
-      { key: 'migrate', group: 'setup', icon: 'migrate', label: t('ops.migrate'), onClick: handleShowMigrate },
-      { key: 'delivery', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery, needs: 'receive' },
-      { key: 'price-list', group: 'suppliers', icon: 'priceList', label: t('ops.priceList'), onClick: handleShowPriceList },
-      { key: 'cabinet', group: 'setup', icon: 'key', label: t('ops.cabinet'), onClick: handleShowCabinet },
-      { key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs, needs: 'writeOff' },
-      { key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns, needs: 'writeOff' },
-      { key: 'fiscal', group: 'money', icon: 'receipt', label: t('ops.fiscal'), onClick: handleShowFiscal },
-      { key: 'production', group: 'stock', icon: 'factory', label: t('ops.production'), onClick: handleShowProduction, needs: 'produce' },
-    ];
-    /* Настройки и деньги — владельцу и менеджеру: сервер их и так не отдаст
-       никому другому, а меню, предлагающее запертую дверь, — это обещание,
-       которого продукт не держит. */
-    const ownerOnly = new Set(['reconciliation', 'import', 'migrate', 'price-list', 'cabinet']);
-    for (const item of warehouseItems) {
-      if (item.needs && !may(item.needs)) continue;
-      if (ownerOnly.has(item.key) && !isOwnerOrManager) continue;
-      const { needs: _needs, ...rest } = item;
-      operationsItems.push(rest);
-    }
+  /* Два разных набора, потому что это два разных модуля и два разных тарифа.
+     `stock` — товар приходит и уходит: это нужно любому магазину, и без него
+     магазин не работает вовсе. `warehouse` — товар лежит в разных местах:
+     ячейки, перемещения, закупки, производство. Раньше они были одним
+     модулем, и тарифа для обычного магазина не существовало: включить приёмку
+     значило отдать заодно весь склад. */
+  const moduleItems: (OperationItem & { needs?: string; module: 'stock' | 'warehouse' })[] = [
+    // Товар приходит и уходит.
+    { module: 'stock', key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming, needs: 'moveStock' },
+    { module: 'stock', key: 'counts', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts, needs: 'count' },
+    { module: 'stock', key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs, needs: 'writeOff' },
+    { module: 'stock', key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns, needs: 'writeOff' },
+    { module: 'stock', key: 'returns', group: 'money', icon: 'return', label: t('ops.returns'), onClick: handleShowReturns },
+    { module: 'stock', key: 'reconciliation', group: 'money', icon: 'scales', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
+    { module: 'stock', key: 'import', group: 'setup', icon: 'import', label: t('ops.import'), onClick: handleShowImport },
+    { module: 'stock', key: 'migrate', group: 'setup', icon: 'migrate', label: t('ops.migrate'), onClick: handleShowMigrate },
+    { module: 'stock', key: 'cabinet', group: 'setup', icon: 'key', label: t('ops.cabinet'), onClick: handleShowCabinet },
+    { module: 'stock', key: 'fiscal', group: 'money', icon: 'receipt', label: t('ops.fiscal'), onClick: handleShowFiscal },
+    // Товар лежит в разных местах, и его надо находить и двигать.
+    { module: 'warehouse', key: 'transfers', group: 'stock', icon: 'transfer', label: t('ops.transfers'), onClick: handleShowTransfers, needs: 'moveStock' },
+    { module: 'warehouse', key: 'bins', group: 'stock', icon: 'bins', label: t('ops.bins'), onClick: handleShowBins, needs: 'moveStock' },
+    { module: 'warehouse', key: 'bin-count', group: 'stock', icon: 'binCount', label: t('ops.binCount'), onClick: handleShowBinCount, needs: 'count' },
+    { module: 'warehouse', key: 'production', group: 'stock', icon: 'factory', label: t('ops.production'), onClick: handleShowProduction, needs: 'produce' },
+    { module: 'warehouse', key: 'replenishment', group: 'suppliers', icon: 'replenish', label: t('ops.replenishment'), onClick: handleShowReplenishment, needs: 'receive' },
+    { module: 'warehouse', key: 'purchase-orders', group: 'suppliers', icon: 'doc', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders, needs: 'receive' },
+    { module: 'warehouse', key: 'delivery', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery, needs: 'receive' },
+    { module: 'warehouse', key: 'price-list', group: 'suppliers', icon: 'priceList', label: t('ops.priceList'), onClick: handleShowPriceList },
+  ];
+  /* Настройки и деньги — владельцу и менеджеру: сервер их и так не отдаст
+     никому другому, а меню, предлагающее запертую дверь, — это обещание,
+     которого продукт не держит. */
+  const ownerOnly = new Set(['reconciliation', 'import', 'migrate', 'price-list', 'cabinet']);
+  for (const item of moduleItems) {
+    if (item.module === 'stock' ? !hasStock : !hasWarehouse) continue;
+    if (item.needs && !may(item.needs)) continue;
+    if (ownerOnly.has(item.key) && !isOwnerOrManager) continue;
+    const { needs: _needs, module: _module, ...rest } = item;
+    operationsItems.push(rest);
   }
 
   if (hasRestaurant) {

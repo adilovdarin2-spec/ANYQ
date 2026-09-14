@@ -30,7 +30,7 @@ const companies: SeedCompany[] = [
       { name: 'Дана Серикова', role: 'cashier', phone: '+7 707 555 12 34' },
     ],
     tariff: {
-      modules: ['retail'],
+      modules: ['retail', 'stock'],
       locationLimit: 1,
       userLimit: 3,
       skuLimit: 500,
@@ -49,7 +49,7 @@ const companies: SeedCompany[] = [
       { name: 'Марат Оспанов', role: 'warehouse_staff', phone: '+7 701 222 33 44' },
     ],
     tariff: {
-      modules: ['warehouse'],
+      modules: ['stock', 'warehouse'],
       locationLimit: 1,
       userLimit: 5,
       skuLimit: null,
@@ -71,7 +71,7 @@ const companies: SeedCompany[] = [
       { name: 'Айгерим Нурланова', role: 'pharmacist', phone: '+7 705 111 22 33' },
     ],
     tariff: {
-      modules: ['pharmacy', 'retail'],
+      modules: ['pharmacy', 'retail', 'stock'],
       locationLimit: 2,
       userLimit: 8,
       skuLimit: 2000,
@@ -95,7 +95,7 @@ const companies: SeedCompany[] = [
       { name: 'Нурлан Абдиев', role: 'warehouse_staff', phone: '+7 727 250 60 62' },
     ],
     tariff: {
-      modules: ['retail', 'warehouse'],
+      modules: ['retail', 'stock', 'warehouse'],
       locationLimit: null,
       userLimit: null,
       skuLimit: null,

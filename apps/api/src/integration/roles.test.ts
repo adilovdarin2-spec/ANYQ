@@ -38,7 +38,7 @@ beforeEach(async () => {
   // ничего не сказал бы о роли.
   fx = await createFixture({
     openingQuantity: 100,
-    modules: ['retail', 'warehouse', 'terminal', 'supply', 'pharmacy'],
+    modules: ['retail', 'stock', 'warehouse', 'terminal', 'supply', 'pharmacy'],
   });
 });
 
