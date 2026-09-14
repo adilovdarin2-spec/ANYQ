@@ -9,6 +9,7 @@ import { tariffState, tariffDenialMessage, daysLeft } from '../tariff';
 import { soldAtOrNow } from '../sold-at';
 import { limitRefusal } from '../limits';
 import { phoneKey } from '../phone';
+import { barcodeRefusal } from '../products';
 import { storefrontLocation } from './supply';
 import { can, capabilitiesOf, capabilityRefusal } from '../roles';
 import type { Capability } from '../roles';
@@ -1743,13 +1744,20 @@ posRouter.post('/products', requirePosAuth, async (req: PosAuthedRequest, res) =
     return;
   }
 
+  const barcode = typeof b.barcode === 'string' ? b.barcode.trim() : '';
+  const barcodeBusy = await barcodeRefusal(req.posCompanyId!, barcode);
+  if (barcodeBusy) {
+    res.status(409).json({ error: barcodeBusy });
+    return;
+  }
+
   const product = await prisma.product.create({
     data: {
       companyId: req.posCompanyId!,
       name: b.name,
       category: b.category || null,
       unit: b.unit,
-      barcode: b.barcode || null,
+      barcode: barcode || null,
       // The classifier code and tax mode a fiscal receipt needs. Both existed
       // in the schema and could not be set from anywhere, which made them
       // columns rather than facts.
@@ -1783,6 +1791,13 @@ posRouter.patch('/products/:id', requirePosAuth, async (req: PosAuthedRequest, r
     return;
   }
 
+  const barcode = typeof b.barcode === 'string' ? b.barcode.trim() : '';
+  const barcodeBusy = await barcodeRefusal(req.posCompanyId!, barcode, existing.id);
+  if (barcodeBusy) {
+    res.status(409).json({ error: barcodeBusy });
+    return;
+  }
+
   const actor = await resolveActor(req.posCompanyId!, req.posUserId);
   // The change and the record of it commit together. A log written afterwards
   // is missing exactly the entries that mattered — the ones where something
@@ -1794,7 +1809,7 @@ posRouter.patch('/products/:id', requirePosAuth, async (req: PosAuthedRequest, r
         name: b.name,
         category: b.category || null,
         unit: b.unit,
-        barcode: b.barcode || null,
+        barcode: barcode || null,
         ntinCode: typeof b.ntinCode === 'string' && b.ntinCode.trim() ? b.ntinCode.trim() : null,
         taxMode: typeof b.taxMode === 'string' && b.taxMode.trim() ? b.taxMode.trim() : null,
         purchasePrice,

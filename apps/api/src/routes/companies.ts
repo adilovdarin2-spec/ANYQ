@@ -3,6 +3,7 @@ import { prisma, Prisma } from '@anyq/db';
 import { limitRefusal } from '../limits';
 import { moduleListRefusal } from '../modules';
 import { roleRefusal } from '../roles';
+import { barcodeRefusal } from '../products';
 import { phoneKey } from '../phone';
 import { requireAuth } from '../auth';
 import type { AuthedRequest } from '../auth';
@@ -275,13 +276,20 @@ companiesRouter.post('/:id/products', async (req, res) => {
     return;
   }
 
+  const barcode = typeof b.barcode === 'string' ? b.barcode.trim() : '';
+  const barcodeBusy = await barcodeRefusal(company.id, barcode);
+  if (barcodeBusy) {
+    res.status(409).json({ error: barcodeBusy });
+    return;
+  }
+
   const product = await prisma.product.create({
     data: {
       companyId: company.id,
       name: b.name,
       category: b.category || null,
       unit: b.unit,
-      barcode: b.barcode || null,
+      barcode: barcode || null,
       purchasePrice,
       salePrice,
       sellable: b.sellable !== false,
@@ -305,13 +313,20 @@ companiesRouter.patch('/:id/products/:productId', async (req, res) => {
     return;
   }
 
+  const barcode = typeof b.barcode === 'string' ? b.barcode.trim() : '';
+  const barcodeBusy = await barcodeRefusal(req.params.id, barcode, existing.id);
+  if (barcodeBusy) {
+    res.status(409).json({ error: barcodeBusy });
+    return;
+  }
+
   const product = await prisma.product.update({
     where: { id: existing.id },
     data: {
       name: b.name,
       category: b.category || null,
       unit: b.unit,
-      barcode: b.barcode || null,
+      barcode: barcode || null,
       purchasePrice,
       salePrice,
       sellable: !!b.sellable,
