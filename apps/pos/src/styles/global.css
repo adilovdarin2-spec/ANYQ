@@ -312,9 +312,15 @@ button { cursor: pointer; }
 .share-glyph { display: inline-block; border: 1.5px solid var(--ink-muted); border-radius: 4px; padding: 0 5px; font-size: 0.75em; }
 
 /* shift open/close forms */
+/* Ширина своя, а не по содержимому.
+   `.pos-shell` — это flex-колонка, а у карточки горизонтальные поля `auto`:
+   в такой колонке это заставляет её сжаться до содержимого. На экране входа
+   содержимое — три кнопки цифр, и карточка выходила 200 пикселей шириной
+   вместо 360. Клавиши PIN получались по 45 пикселей — меньше пальца и вдвое
+   меньше задуманного, и это видел каждый кассир на каждом устройстве. */
 .form-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  padding: 24px 20px; max-width: 360px; margin: 10vh auto 0;
+  padding: 24px 20px; width: 100%; max-width: 360px; margin: 10vh auto 0;
 }
 .form-card h1 { font-size: 1.15rem; margin: 0 0 4px; }
 .form-card p.sub { margin: 0 0 20px; color: var(--ink-muted); font-size: 0.86rem; }
@@ -431,6 +437,55 @@ button { cursor: pointer; }
     margin: 0 auto;
     width: 100%;
   }
+}
+
+/* Терминал: то же самое, но крупнее.
+   За прилавком стоит монитор или большой планшет, в который тычут пальцем — и
+   смотрят на него не с двадцати сантиметров, как в телефон, а с вытянутой
+   руки. Размеры, которые на телефоне правильные (кнопка 46, цена 0.92rem),
+   на этом расстоянии читаются хуже и попадают мимо: палец на стекле в метре
+   от глаз промахивается по цели меньше сантиметра.
+   Правило одно — «крупнее то, во что целятся и что читают на ходу»: клавиши
+   PIN, главные кнопки, плитки товара, счётчик количества в корзине и выбор
+   способа оплаты. Всё остальное остаётся как есть: экран, где каждая строка
+   крупная, читается не лучше, а хуже. */
+@media (min-width: 900px) {
+  /* Отступ сверху меньше, чем на телефоне: на мониторе 1366×768 высоты
+     меньше, чем на любом современном телефоне, и десятая часть экрана сверху
+     уводила кнопку «Войти» под нижний край. */
+  .pos-shell .form-card { max-width: 420px; padding: 28px 24px; margin-top: 6vh; }
+  /* Клавиша круглая и по ширине колонки, поэтому на широкой карточке она
+     раздувается до 115 пикселей — и весь блок перестаёт помещаться в 768
+     пикселей высоты, какие и стоят на кассовом мониторе. Потолок оставляет
+     клавишу крупной (сто пикселей — это полтора пальца) и держит «Войти» на
+     экране, не заставляя кассира прокручивать экран входа. */
+  .pos-shell .pin-key { font-size: 1.7rem; max-width: 100px; width: 100%; justify-self: center; }
+  .pos-shell .pin-display { font-size: 2.1rem; }
+
+  .pos-shell .btn { padding: 16px 22px; font-size: 1.05rem; }
+  .pos-shell .btn-block { min-height: 58px; }
+
+  .pos-shell .product-tile { min-height: 104px; padding: 16px 14px; }
+  .pos-shell .product-tile .p-name { font-size: 1rem; }
+  .pos-shell .product-tile .p-price { font-size: 1.08rem; }
+  .pos-shell .product-tile .p-stock { font-size: 0.8rem; }
+
+  .pos-shell .qty-stepper button { width: 48px; height: 48px; font-size: 1.2rem; }
+  .pos-shell .qty-field { min-height: 48px; font-size: 1.1rem; }
+
+  .pos-shell .payment-option { padding: 22px 20px; font-size: 1.1rem; }
+  /* Чипы: выбор категории на экране продажи и подсказки сдачи на экране
+     оплаты. Обе полосы кассир трогает чаще всего после самих плиток, а
+     сорок пикселей высоты при тринадцатом кегле — это самая мелкая цель на
+     всём пути от товара до чека. */
+  .pos-shell .category-chip { min-height: 48px; padding: 0 18px; font-size: 0.95rem; }
+  .pos-shell .cart-bar { padding: 16px 18px; }
+  .pos-shell .cart-bar-total { font-size: 1.15rem; }
+
+  /* Кнопка, которой заканчивается каждая продажа. На телефоне она и так
+     во всю ширину; на терминале ей место соразмерное тому, как часто по ней
+     попадают. */
+  .pos-shell .cart-panel-footer .btn-primary { min-height: 64px; font-size: 1.15rem; }
 }
 
 .cart-panel {
