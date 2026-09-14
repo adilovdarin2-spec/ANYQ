@@ -17,15 +17,13 @@ import { defineConfig } from 'vitest/config';
 // An explicit DATABASE_URL still wins, for CI and for pointing the suite
 // somewhere else on purpose.
 //
-// `connection_limit=5` — не про скорость, а про то, чтобы прогон был честным.
-// Пул по умолчанию — по девять соединений на каждый запущенный сервер, и на
-// Docker Desktop под Windows соединения ходят через проброс порта, который под
-// этой нагрузкой начинает рвать сокеты: тесты падают с «Can't reach database
-// server» вразнобой, каждый раз в разных файлах. Прогон, падающий случайно,
-// хуже отсутствующего — его перестают читать. Пяти соединений последовательному
-// прогону хватает с запасом: он и так делает один запрос за раз.
+// Размер пула здесь не задан намеренно: он приходит из `@anyq/db` — тот же,
+// что в production, и прогон проверяет в том числе его. Почему он такой,
+// написано в `packages/db/src/pool.ts`. Таймауты тоже оставлены штатными:
+// прогон, которому чего-то не хватает, должен падать быстро и по делу, а не
+// ждать полминуты, пока станет непонятно, чего именно он ждал.
 const TEST_DATABASE_URL =
-  'postgresql://anyq:anyq_dev@localhost:5433/anyq_test?schema=public&connection_limit=5&pool_timeout=20';
+  'postgresql://anyq:anyq_dev@localhost:5433/anyq_test?schema=public';
 process.env.DATABASE_URL = process.env.DATABASE_URL || TEST_DATABASE_URL;
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'integration-tests-only';
 
