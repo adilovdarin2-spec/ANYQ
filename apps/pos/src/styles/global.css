@@ -516,6 +516,14 @@ button { cursor: pointer; }
      а тот, кто заводит товар. Строка тут плотнее прочих — в ней имя, цена и
      подпись под ними, — поэтому крупнее становится имя, по которому строку и
      находят, а не строка целиком. */
+  /* Зал и кухня. Столик выбирает хостес на бегу, блюдо отмечает повар от
+     плиты: оба смотрят на экран издалека и оба не всматриваются. */
+  .pos-shell .table-tile { min-height: 96px; padding: 18px 14px; }
+  .pos-shell .table-tile .t-name { font-size: 1.05rem; }
+  .pos-shell .table-tile .t-seats { font-size: 0.8rem; }
+  .pos-shell .table-tile .t-total { font-size: 0.95rem; }
+  .pos-shell .kds-item-row { font-size: 1.15rem; min-height: 56px; padding: 14px 0; }
+
   .pos-shell .product-manage-row { padding: 15px 0; }
   .pos-shell .product-manage-name { font-size: 1.02rem; }
   .pos-shell .product-manage-meta { font-size: 0.84rem; }
@@ -611,10 +619,19 @@ button { cursor: pointer; }
 .table-tile .t-name { font-weight: 700; font-size: 0.95rem; }
 .table-tile .t-seats { font-size: 0.72rem; color: var(--ink-muted); }
 .table-tile .t-total { font-size: 0.85rem; font-weight: 700; color: var(--status-overdue); margin-top: 4px; }
+/* Строка блюда на кухонном экране — единственное, что на нём нажимают.
+   Она была высотой в тридцать пикселей при кегле 13.8: меньше, чем где-либо
+   ещё в кассе, и ровно там, где по ней попадают не глядя, мокрой рукой или в
+   перчатке, а смотрят на экран через всю кухню. Теперь это кнопка в сорок
+   восемь пикселей, как и всё остальное, во что целятся пальцем. */
 .kds-item-row {
-  display: block; width: 100%; text-align: left; background: none; border: none;
-  font-size: 0.86rem; padding: 6px 0; color: var(--ink);
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: none; border: none; font-size: 1rem; padding: 12px 0; min-height: 48px;
+  color: var(--ink);
 }
+/* Готовое блюдо видно строкой, а не значком перед ней: повар считывает тикет
+   целиком и с расстояния, на котором «✓» и «○» — это одно и то же пятно. */
+.kds-item-row.ready { color: var(--ink-muted); text-decoration: line-through; }
 .kds-item-row:active { color: var(--accent); }
 
 /* stock movement history (terminal tariff) */
