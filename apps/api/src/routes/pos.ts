@@ -74,6 +74,7 @@ import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy
 import { recordChanges, resolveActor } from '../audit-log';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
+import { catalogXml, offersXml } from '../commerceml';
 import { movementReasonRu, paymentMethodRu } from '../export-labels';
 import { isSupplierReturnReason, resolveSupplierReturn, supplierReturnErrorMessage } from '../supplier-returns';
 import { resolvePick, resolveShipment, pickErrorMessage, orderStage, orderStageLabel } from '../picking';
@@ -2631,8 +2632,37 @@ posRouter.get('/documents', requirePosAuth, async (req: PosAuthedRequest, res) =
 // CSV rather than XLSX: it needs no parser on this side, opens in Excel and in
 // 1C, and can be read by a person with a text editor when everything else has
 // failed. The encoding decisions that make that true are in csv.ts.
-const EXPORTS = ['products', 'stock', 'sales', 'movements', 'counterparties'] as const;
+/**
+ * Что можно выгрузить.
+ *
+ * Первые пять — таблицей: их открывают в Excel и грузят в 1С через «Загрузку
+ * из табличного документа». Последние две — в формате самой 1С (CommerceML 2),
+ * тем самым, которым она обменивается с сайтами: номенклатура и цены с
+ * остатками. Почему документы остались таблицей, написано в `commerceml.ts`.
+ */
+const EXPORTS = [
+  'products',
+  'stock',
+  'sales',
+  'movements',
+  'counterparties',
+  '1c-catalog',
+  '1c-offers',
+] as const;
 type ExportDataset = (typeof EXPORTS)[number];
+
+/**
+ * Отдать XML файлом, а не страницей.
+ *
+ * Имя — то, которое ждёт 1С (`import.xml`, `offers.xml`), а не выдуманное:
+ * обработка «Обмен с сайтом» ищет файлы по именам, и `anyq-catalog-2026.xml`
+ * пришлось бы переименовывать руками перед каждой загрузкой.
+ */
+function sendXml(res: Response, filename: string, body: string): void {
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(body);
+}
 
 posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await requireOwnerOrManager(req.posUserId))) {
@@ -2764,6 +2794,75 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
     });
     header = ['Название', 'Тип', 'Телефон', 'Разрешён долг', 'Лимит долга', 'Баллы'];
     rows = parties.map((c) => [c.name, c.type, c.phone, c.creditAllowed, c.creditLimit, c.loyaltyPoints]);
+  }
+
+  // Две выгрузки отдают не таблицу, а XML, который читает сама 1С. Ветка стоит
+  // до сборки CSV, а не рядом с остальными: у них другой тип содержимого и
+  // другое имя файла, и притворяться таблицей им не надо.
+  if (dataset === '1c-catalog' || dataset === '1c-offers') {
+    const meta = {
+      companyId: req.posCompanyId!,
+      companyName: company?.name ?? 'ANYQ',
+      at: new Date(),
+    };
+
+    if (dataset === '1c-catalog') {
+      const products = await prisma.product.findMany({
+        where: { companyId: req.posCompanyId },
+        orderBy: { name: 'asc' },
+        take: LIMIT,
+      });
+      sendXml(
+        res,
+        'import.xml',
+        catalogXml(
+          meta,
+          products.map((p) => ({
+            id: p.id,
+            name: p.name,
+            unit: p.unit,
+            barcode: p.barcode,
+            category: p.category,
+          })),
+        ),
+      );
+      return;
+    }
+
+    // Цены и остатки — всегда по конкретной точке: «остаток» без места это не
+    // число, а сумма разных мест, которую в 1С уже не разложить обратно.
+    const stocks = await prisma.stock.findMany({
+      where: { locationId },
+      include: { product: true },
+      take: LIMIT,
+    });
+    // Один товар может лежать в нескольких ячейках. В 1С у него один остаток,
+    // поэтому ячейки складываются здесь, а не там.
+    const byProduct = new Map<string, { name: string; unit: string; price: number; quantity: number }>();
+    for (const row of stocks) {
+      const seen = byProduct.get(row.productId);
+      if (seen) {
+        seen.quantity += row.quantity;
+        continue;
+      }
+      byProduct.set(row.productId, {
+        name: row.product.name,
+        unit: row.product.unit,
+        price: row.product.salePrice,
+        quantity: row.quantity,
+      });
+    }
+    sendXml(
+      res,
+      'offers.xml',
+      offersXml(
+        meta,
+        [...byProduct.entries()]
+          .map(([id, v]) => ({ id, name: v.name, unit: v.unit, price: v.price, quantity: v.quantity }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+      ),
+    );
+    return;
   }
 
   const filename = csvFilename(`${dataset}-${locationNameById.get(locationId) ?? ''}`.replace(/\s+/g, '-'));

@@ -355,6 +355,10 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'export.movementsHint': 'Себебі және авторымен журнал — 90 күнге',
   'export.counterparties': 'Контрагенттер',
   'export.counterpartiesHint': 'Қарыз шарттарымен сатып алушылар мен жеткізушілер',
+  'export.oneCatalog': '1С үшін номенклатура',
+  'export.oneCatalogHint': 'import.xml — тауарлар, топтар және штрихкодтар 1С өзі жүктейтін пішімде',
+  'export.oneOffers': '1С үшін бағалар мен қалдықтар',
+  'export.oneOffersHint': 'offers.xml — осы нүктедегі сату бағасы мен ағымдағы қалдық',
 
   // --- the documents behind a figure ---------------------------------------
   'documents.count': 'Құжаттар: {count}',

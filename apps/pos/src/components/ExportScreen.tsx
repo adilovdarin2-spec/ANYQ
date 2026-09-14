@@ -14,6 +14,10 @@ const DATASETS: { key: string; label: PhraseKey; hint: PhraseKey }[] = [
   { key: 'sales', label: 'export.sales', hint: 'export.salesHint' },
   { key: 'movements', label: 'export.movements', hint: 'export.movementsHint' },
   { key: 'counterparties', label: 'export.counterparties', hint: 'export.counterpartiesHint' },
+  // Эти две — не таблица, а формат самой 1С. Стоят последними намеренно: их
+  // берёт бухгалтер раз в месяц, а первые пять владелец открывает в Excel.
+  { key: '1c-catalog', label: 'export.oneCatalog', hint: 'export.oneCatalogHint' },
+  { key: '1c-offers', label: 'export.oneOffers', hint: 'export.oneOffersHint' },
 ];
 
 /**
