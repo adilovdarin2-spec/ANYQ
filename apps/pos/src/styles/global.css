@@ -462,8 +462,13 @@ button { cursor: pointer; }
   .pos-shell .pin-key { font-size: 1.7rem; max-width: 100px; width: 100%; justify-self: center; }
   .pos-shell .pin-display { font-size: 2.1rem; }
 
-  .pos-shell .btn { padding: 16px 22px; font-size: 1.05rem; }
-  .pos-shell .btn-block { min-height: 58px; }
+  /* Крупнее — главные кнопки, а не все подряд. Кнопка во всю ширину и кнопка
+     в нижней панели экрана — это то, чем действие заканчивают; пара мелких
+     кнопок в строке списка («Выдать» / «Отклонить») живёт в плотном ряду, и
+     если раздуть и её, список превратится в лестницу. */
+  .pos-shell .btn-block,
+  .pos-shell .screen-footer .btn,
+  .pos-shell .form-card .btn { padding: 16px 22px; font-size: 1.05rem; min-height: 58px; }
 
   .pos-shell .product-tile { min-height: 104px; padding: 16px 14px; }
   .pos-shell .product-tile .p-name { font-size: 1rem; }
