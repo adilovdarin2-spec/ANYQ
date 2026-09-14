@@ -23,11 +23,26 @@ import { PrismaClient } from '@prisma/client';
 export async function setup(): Promise<void> {
   const prisma = new PrismaClient();
   try {
-    const others = await prisma.$queryRaw<{ pid: number; app: string | null }[]>`
-      select pid, application_name as app
-      from pg_stat_activity
-      where datname = current_database() and pid <> pg_backend_pid()
-    `;
+    let others: { pid: number; app: string | null }[];
+    try {
+      others = await prisma.$queryRaw<{ pid: number; app: string | null }[]>`
+        select pid, application_name as app
+        from pg_stat_activity
+        where datname = current_database() and pid <> pg_backend_pid()
+      `;
+    } catch (error) {
+      // Базы просто нет — она стоит в Docker и её останавливает перезагрузка
+      // машины. Стек Prisma на полэкрана отвечает на вопрос «что сломалось»
+      // правильно и бесполезно: сломалось ничего, контейнер не поднят.
+      if (typeof error === 'object' && error !== null && (error as { errorCode?: string }).errorCode === 'P1001') {
+        throw new Error(
+          'Тестовая база не отвечает. Поднимите её и повторите:\n' +
+            '  docker start anyq-db\n' +
+            'Если контейнера нет вовсе: docker compose -f docker-compose.dev.yml up -d',
+        );
+      }
+      throw error;
+    }
     if (others.length === 0) return;
 
     const who = others.map((o) => `${o.pid}${o.app ? ` (${o.app})` : ''}`).join(', ');
