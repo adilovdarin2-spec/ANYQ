@@ -109,6 +109,8 @@ import { PinLogin } from './components/PinLogin';
 import { ShiftBar } from './components/ShiftBar';
 import { TabBar } from './components/TabBar';
 import type { MainTab } from './components/TabBar';
+import { mainTabFor } from './views';
+import type { View } from './views';
 import { OpenShiftScreen } from './components/OpenShiftScreen';
 import { CloseShiftScreen } from './components/CloseShiftScreen';
 import { SearchBar } from './components/SearchBar';
@@ -161,49 +163,6 @@ import type { OperationItem } from './components/OperationsScreen';
 import { ProductsManageScreen } from './components/ProductsManageScreen';
 import { ProductEditScreen } from './components/ProductEditScreen';
 
-type View =
-  | 'sale'
-  | 'cart'
-  | 'payment'
-  | 'receipt'
-  | 'close-shift'
-  | 'products'
-  | 'product-edit'
-  | 'operations'
-  | 'profile'
-  | 'orders'
-  | 'reports'
-  | 'batches'
-  | 'transfers'
-  | 'incoming'
-  | 'counts'
-  | 'returns'
-  | 'replenishment'
-  | 'dashboard'
-  | 'audit'
-  | 'devices'
-  | 'export'
-  | 'supplier-returns'
-  | 'pick-order'
-  | 'documents'
-  | 'fiscal'
-  | 'purchase-orders'
-  | 'write-offs'
-  | 'bins'
-  | 'bin-count'
-  | 'reconciliation'
-  | 'import'
-  | 'migrate'
-  | 'cabinet'
-  | 'price-list'
-  | 'delivery'
-  | 'settlements'
-  | 'production'
-  | 'floorplan'
-  | 'table-order'
-  | 'kds'
-  | 'stock-history';
-
 /**
  * Как часто касса перечитывает остатки, пока на неё смотрят.
  *
@@ -213,10 +172,6 @@ type View =
  * одну и ту же минуту. Такую продажу всё равно отклонит сервер.
  */
 const CATALOG_REFRESH_MS = 60_000;
-
-const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'price-list', 'delivery', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
-]);
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
@@ -693,11 +648,7 @@ export default function App() {
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 
 
-  const activeTab: MainTab =
-    view === 'products' || view === 'product-edit' ? 'products' :
-    OPERATIONS_VIEWS.has(view) ? 'operations' :
-    view === 'profile' || view === 'reports' || view === 'dashboard' || view === 'audit' || view === 'export' || view === 'documents' || view === 'devices' ? 'profile' :
-    'sale';
+  const activeTab: MainTab = mainTabFor(view);
 
   function handleLogin(newSession: PosSession) {
     saveSession(newSession);
