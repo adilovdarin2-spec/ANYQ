@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { LocationType, ModuleKey, SupportLevel } from '../types';
-import { OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, SUPPORT_LABELS } from '../types';
+import { OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, LOCATION_TYPE_LABELS, SUPPORT_LABELS, lockedModules, withRequiredModules } from '../types';
 import { newValidUntil, formatDate } from '../utils';
 import type { DurationPreset } from '../utils';
 import { DURATION_LABELS } from '../utils';
@@ -53,8 +53,20 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
   const step1Valid =
     name.trim() !== '' && phone.trim() !== '' && locationName.trim() !== '' && ownerName.trim() !== '' && pinValid;
 
+  /**
+   * Включая модуль, включаем и то, без чего он не работает.
+   *
+   * Склад без учёта прихода — это ячейки, в которые нечего класть: приёмка и
+   * инвентаризация живут в «Товар и остатки». Сервер такой набор не примет, и
+   * выбор, который нельзя сохранить, лучше не давать собрать, чем показать
+   * отказ после кнопки «Сохранить».
+   */
   function toggleModule(m: ModuleKey) {
-    setModules((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+    setModules((prev) => {
+      if (!prev.includes(m)) return withRequiredModules([...prev, m]);
+      if (lockedModules(prev).includes(m)) return prev;
+      return prev.filter((x) => x !== m);
+    });
   }
 
   async function handleSubmit() {
@@ -119,7 +131,7 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
                 <div className="field">
                   <label htmlFor="locType">Тип</label>
                   <select id="locType" value={locationType} onChange={(e) => setLocationType(e.target.value as LocationType)}>
-                    {LOCATION_TYPES.map((m) => <option key={m} value={m}>{MODULE_LABELS[m]}</option>)}
+                    {LOCATION_TYPES.map((m) => <option key={m} value={m}>{LOCATION_TYPE_LABELS[m]}</option>)}
                   </select>
                 </div>
               </div>
@@ -155,11 +167,20 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
               <div className="field">
                 <label>Модули</label>
                 <div className="module-toggles">
-                  {ALL_MODULES.map((m) => (
-                    <button type="button" key={m} className={modules.includes(m) ? 'module-toggle on' : 'module-toggle'} onClick={() => toggleModule(m)}>
-                      {MODULE_LABELS[m]}
-                    </button>
-                  ))}
+                  {ALL_MODULES.map((m) => {
+                    const locked = modules.includes(m) && lockedModules(modules).includes(m);
+                    return (
+                      <button
+                        type="button"
+                        key={m}
+                        className={modules.includes(m) ? 'module-toggle on' : 'module-toggle'}
+                        onClick={() => toggleModule(m)}
+                        title={locked ? 'Нужен для выбранного склада — снимите склад' : undefined}
+                      >
+                        {MODULE_LABELS[m]}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

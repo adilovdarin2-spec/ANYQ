@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { LEGACY_MODULES, MODULE_LABELS, OFFERABLE_MODULES } from './types';
+import {
+  LEGACY_MODULES,
+  LOCATION_TYPE_LABELS,
+  MODULE_LABELS,
+  OFFERABLE_LOCATION_TYPES,
+  OFFERABLE_MODULES,
+  lockedModules,
+  withRequiredModules,
+} from './types';
 import {
   pluralizeRu,
   toLocalISODate,
@@ -158,5 +166,66 @@ describe('модули, которые продаём', () => {
     for (const m of OFFERABLE_MODULES) {
       expect(MODULE_LABELS[m], m).toBeTruthy();
     }
+  });
+
+  it('подпись модуля называет, что он включает', () => {
+    // «Аптека» стояла голой и обещала рецептурный учёт и маркировку, которых
+    // нет: модуль даёт партии со сроками и списание по FEFO. Название, которое
+    // обещает больше, чем модуль делает, — это не название, а будущий спор.
+    expect(MODULE_LABELS.pharmacy).toContain('срок');
+    expect(MODULE_LABELS.pharmacy).not.toBe('Аптека');
+    expect(MODULE_LABELS.stock).toContain('риёмка');
+    expect(MODULE_LABELS.warehouse).toContain('ячейки');
+  });
+});
+
+describe('типы точек и модули — разные словари', () => {
+  // До 15.09.2026 таблица была одна на двоих, и в списке «тип точки» — там,
+  // где выбирают, магазин это или склад, — стояло «Магазин (ничего не
+  // включает — см. «Розница»)». Подпись, верная для модуля, оказывалась
+  // бессмыслицей для помещения.
+  it('у каждого предлагаемого типа точки есть своя подпись', () => {
+    for (const t of OFFERABLE_LOCATION_TYPES) {
+      expect(LOCATION_TYPE_LABELS[t], t).toBeTruthy();
+    }
+  });
+
+  it('точка называется тем, чем она является', () => {
+    expect(LOCATION_TYPE_LABELS.shop).toBe('Магазин');
+    expect(LOCATION_TYPE_LABELS.pharmacy).toBe('Аптека');
+  });
+
+  it('и это не те же строки, что у модулей', () => {
+    const overlapping = OFFERABLE_LOCATION_TYPES.filter((t) => t in MODULE_LABELS);
+    expect(overlapping.length).toBeGreaterThan(0);
+    for (const t of overlapping) {
+      expect(LOCATION_TYPE_LABELS[t], t).not.toBe(MODULE_LABELS[t as keyof typeof MODULE_LABELS]);
+    }
+  });
+});
+
+describe('зависимости модулей', () => {
+  // Склад без учёта прихода — это ячейки, в которые нечего класть: приёмка и
+  // инвентаризация живут в `stock`. Сервер такой набор не примет, поэтому
+  // форма не даёт его собрать.
+  it('склад приводит за собой учёт прихода', () => {
+    expect(withRequiredModules(['warehouse'])).toContain('stock');
+  });
+
+  it('не дублирует уже выбранное', () => {
+    expect(withRequiredModules(['stock', 'warehouse']).filter((m) => m === 'stock')).toHaveLength(1);
+  });
+
+  it('ничего не добавляет тому, у кого зависимостей нет', () => {
+    expect(withRequiredModules(['retail'])).toEqual(['retail']);
+    expect(withRequiredModules([])).toEqual([]);
+  });
+
+  it('учёт прихода нельзя снять, пока выбран склад', () => {
+    expect(lockedModules(['stock', 'warehouse'])).toContain('stock');
+  });
+
+  it('а без склада — можно', () => {
+    expect(lockedModules(['retail', 'stock'])).toEqual([]);
   });
 });

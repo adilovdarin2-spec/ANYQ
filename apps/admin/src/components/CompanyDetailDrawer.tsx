@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Company, CompanyLocation, LocationType, ModuleKey, SupportLevel, Tariff } from '../types';
-import { LEGACY_MODULES, OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, SUPPORT_LABELS, ROLE_LABELS } from '../types';
+import { LEGACY_MODULES, OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, LOCATION_TYPE_LABELS, SUPPORT_LABELS, ROLE_LABELS, lockedModules, withRequiredModules } from '../types';
 import { StatusChip } from './StatusChip';
 import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS, formatPhone } from '../utils';
 import type { DurationPreset } from '../utils';
@@ -109,11 +109,22 @@ export function CompanyDetailDrawer({
     }
   }
 
+  /**
+   * Включая модуль, включаем и то, без чего он не работает.
+   *
+   * Склад без учёта прихода — это ячейки, в которые нечего класть: приёмка и
+   * инвентаризация живут в «Товар и остатки». Сервер такой набор не примет, и
+   * выбор, который нельзя сохранить, лучше не давать собрать, чем показать
+   * отказ после кнопки «Сохранить».
+   */
   function toggleModule(m: ModuleKey) {
-    setTariff((prev) => ({
-      ...prev,
-      modules: prev.modules.includes(m) ? prev.modules.filter((x) => x !== m) : [...prev.modules, m],
-    }));
+    setTariff((prev) => {
+      if (!prev.modules.includes(m)) {
+        return { ...prev, modules: withRequiredModules([...prev.modules, m]) };
+      }
+      if (lockedModules(prev.modules).includes(m)) return prev;
+      return { ...prev, modules: prev.modules.filter((x) => x !== m) };
+    });
   }
 
   function saveTariff() {
@@ -220,7 +231,7 @@ export function CompanyDetailDrawer({
                 <div className="field">
                   <label htmlFor="loc-type">Тип</label>
                   <select id="loc-type" value={locationForm.type} onChange={(e) => setLocationForm({ ...locationForm, type: e.target.value })}>
-                    {LOCATION_TYPES.map((t) => <option key={t} value={t}>{MODULE_LABELS[t]}</option>)}
+                    {LOCATION_TYPES.map((t) => <option key={t} value={t}>{LOCATION_TYPE_LABELS[t]}</option>)}
                   </select>
                 </div>
               </div>
@@ -248,7 +259,7 @@ export function CompanyDetailDrawer({
                   <div className="field">
                     <label htmlFor={`e-loctype-${l.id}`}>Тип</label>
                     <select id={`e-loctype-${l.id}`} value={editLocationForm.type} onChange={(e) => setEditLocationForm({ ...editLocationForm, type: e.target.value })}>
-                      {LOCATION_TYPES.map((t) => <option key={t} value={t}>{MODULE_LABELS[t]}</option>)}
+                      {LOCATION_TYPES.map((t) => <option key={t} value={t}>{LOCATION_TYPE_LABELS[t]}</option>)}
                     </select>
                   </div>
                 </div>
@@ -266,7 +277,7 @@ export function CompanyDetailDrawer({
             ) : (
               <button key={l.id} type="button" className="mini-card" onClick={() => startEditLocation(l)}>
                 <span>{l.name}</span>
-                <span className="module-badge">{MODULE_LABELS[l.type]}</span>
+                <span className="module-badge">{LOCATION_TYPE_LABELS[l.type]}</span>
               </button>
             ),
           )}
@@ -338,11 +349,20 @@ export function CompanyDetailDrawer({
           <div className="field">
             <label>Модули</label>
             <div className="module-toggles">
-              {offeredModules(tariff.modules).map((m) => (
-                <button type="button" key={m} className={tariff.modules.includes(m) ? 'module-toggle on' : 'module-toggle'} onClick={() => toggleModule(m)}>
-                  {MODULE_LABELS[m]}
-                </button>
-              ))}
+              {offeredModules(tariff.modules).map((m) => {
+                const locked = tariff.modules.includes(m) && lockedModules(tariff.modules).includes(m);
+                return (
+                  <button
+                    type="button"
+                    key={m}
+                    className={tariff.modules.includes(m) ? 'module-toggle on' : 'module-toggle'}
+                    onClick={() => toggleModule(m)}
+                    title={locked ? 'Нужен для выбранного склада — снимите склад' : undefined}
+                  >
+                    {MODULE_LABELS[m]}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
