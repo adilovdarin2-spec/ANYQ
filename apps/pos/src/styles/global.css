@@ -482,6 +482,13 @@ button { cursor: pointer; }
   .pos-shell .cart-bar { padding: 16px 18px; }
   .pos-shell .cart-bar-total { font-size: 1.15rem; }
 
+  /* Списки, по которым ходят: операции склада и разделы профиля. Читают их
+     не вплотную к экрану, а с шага назад, и строка в тринадцатом кегле на
+     мониторе за прилавком — это строка, в которую всматриваются. */
+  .pos-shell .operations-row { padding: 18px 16px; }
+  .pos-shell .operations-label { font-size: 1.02rem; }
+  .pos-shell .profile-action { padding: 18px 2px; font-size: 1.02rem; }
+
   /* Кнопка, которой заканчивается каждая продажа. На телефоне она и так
      во всю ширину; на терминале ей место соразмерное тому, как часто по ней
      попадают. */
