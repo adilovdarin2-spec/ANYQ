@@ -494,6 +494,25 @@ button { cursor: pointer; }
   .pos-shell .operations-label { font-size: 1.02rem; }
   .pos-shell .profile-action { padding: 18px 2px; font-size: 1.02rem; }
 
+  /* Подсветка под указателем.
+     На терминале в кассу тычут не только пальцем: у половины прилавков стоит
+     мышь, а у мыши есть курсор, который надо видеть. Без наведения экран
+     отвечает только на нажатие — то есть когда товар уже в корзине. Эффект
+     заметный ровно настолько, чтобы сказать «попадёшь сюда», и только там,
+     где указатель существует: на сенсорном экране `hover` не срабатывает. */
+  @media (hover: hover) {
+    .pos-shell .product-tile:hover:not(:disabled),
+    .pos-shell .operations-row:hover,
+    .pos-shell .payment-option:hover:not(:disabled),
+    .pos-shell .profile-action:hover:not(:disabled) { background: var(--surface-2); }
+    .pos-shell .product-tile:hover:not(:disabled),
+    .pos-shell .payment-option:hover:not(:disabled) { border-color: var(--accent); }
+    .pos-shell .category-chip:hover:not(.on) { border-color: var(--accent); }
+    .pos-shell .btn-primary:hover:not(:disabled) { filter: brightness(1.06); }
+    .pos-shell .btn-secondary:hover:not(:disabled) { background: var(--border); }
+    .pos-shell .pin-key:hover { border-color: var(--accent); }
+  }
+
   /* Кнопка, которой заканчивается каждая продажа. На телефоне она и так
      во всю ширину; на терминале ей место соразмерное тому, как часто по ней
      попадают. */
