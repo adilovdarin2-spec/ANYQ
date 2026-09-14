@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
+import { pluralPhrase } from '../i18n';
 import type { Product, PurchaseOrder, PurchaseOrderStatus, Supplier } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
 
@@ -175,7 +176,7 @@ export function PurchaseOrdersScreen({
                   ))}
                 </div>
 
-                {short.length > 0 && <p className="order-meta">{t('po.short', { count: short.length })}</p>}
+                {short.length > 0 && <p className="order-meta">{t(pluralPhrase(short.length, 'po.shortOne', 'po.shortFew', 'po.shortMany'), { count: short.length })}</p>}
                 {order.note && <p className="order-meta">{order.note}</p>}
 
                 {status === 'draft' && canApprove && (

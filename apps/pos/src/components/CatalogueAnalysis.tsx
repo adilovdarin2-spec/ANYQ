@@ -1,6 +1,7 @@
 import type { CatalogueAnalysis } from '../types';
 import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney } from '../utils';
+import { pluralPhrase } from '../i18n';
 
 /**
  * Разбор каталога — то, что видно про магазин по одному файлу выгрузки.
@@ -130,10 +131,10 @@ export function CatalogueAnalysisPanel({ analysis }: { analysis: CatalogueAnalys
       )}
 
       {analysis.atZero !== null && analysis.atZero > 0 && (
-        <p className="field-hint">{t('analysis.atZero', { count: analysis.atZero })}</p>
+        <p className="field-hint">{t(pluralPhrase(analysis.atZero, 'analysis.atZeroOne', 'analysis.atZeroFew', 'analysis.atZeroMany'), { count: analysis.atZero })}</p>
       )}
       {analysis.noPurchasePrice > 0 && (
-        <p className="field-hint">{t('analysis.noPurchasePrice', { count: analysis.noPurchasePrice })}</p>
+        <p className="field-hint">{t(pluralPhrase(analysis.noPurchasePrice, 'analysis.noPurchasePriceOne', 'analysis.noPurchasePriceFew', 'analysis.noPurchasePriceMany'), { count: analysis.noPurchasePrice })}</p>
       )}
 
       {/* Чего в файле не было. Показывается всегда — это половина честности

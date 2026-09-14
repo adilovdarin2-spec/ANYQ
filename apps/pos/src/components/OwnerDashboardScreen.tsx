@@ -3,6 +3,7 @@ import { needsOwnerAttention } from '../owner-attention';
 import { formatDateTime, formatMoney, hoursSince } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
+import { pluralPhrase } from '../i18n';
 
 interface Props {
   dashboard: OwnerDashboard | null;
@@ -63,7 +64,7 @@ export function OwnerDashboardScreen({
               className={range === days ? 'category-chip on' : 'category-chip'}
               onClick={() => onChangeDays(range)}
             >
-              {range === 1 ? t('range.today') : t('range.days', { count: range })}
+              {range === 1 ? t('range.today') : t(pluralPhrase(range, 'range.daysOne', 'range.daysFew', 'range.daysMany'), { count: range })}
             </button>
           ))}
         </div>
