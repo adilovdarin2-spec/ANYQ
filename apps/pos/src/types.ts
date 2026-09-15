@@ -1073,3 +1073,29 @@ export interface DeliveryMatch {
   lines: DeliveryLine[];
   truncated: boolean;
 }
+
+/**
+ * Сотрудник магазина глазами владельца.
+ *
+ * PIN-а здесь нет и не будет. Экран сотрудников открывают за прилавком, где
+ * стоят люди, а прочитанный PIN — это вход в кассу от чужого имени. `hasPin`
+ * остаётся, потому что разница между «доступа к кассе нет» и «есть, но я его
+ * не вижу» — это разница, по которой владелец принимает решение.
+ */
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  hasPin: boolean;
+}
+
+export interface StaffPayload {
+  name: string;
+  role: string;
+  phone: string;
+  /** Новый PIN. Пусто — не менять: прежний прочитать нельзя. */
+  posPin: string;
+  /** Снять доступ к кассе. Говорится отдельно, потому что молчание больше не значит «снять». */
+  clearPin: boolean;
+}

@@ -11,7 +11,8 @@ import { limitRefusal } from '../limits';
 import { phoneKey } from '../phone';
 import { barcodeRefusal } from '../products';
 import { storefrontLocation } from './supply';
-import { can, capabilitiesOf, capabilityRefusal } from '../roles';
+import { can, capabilitiesOf, capabilityRefusal, roleRefusal } from '../roles';
+import { lastOwnerRefusal, selfRoleRefusal } from '../staff';
 import type { Capability } from '../roles';
 import {
   blockStock,
@@ -1647,6 +1648,26 @@ async function requireOwnerOrManager(userId: string | undefined): Promise<boolea
  * который ведёт смену и товар. Раздавать вход в кабинет с выручкой по всем
  * точкам он не должен, даже если ему доверяют кассу.
  */
+/** Четыре-шесть цифр: столько кассир согласен набирать по сто раз в день. */
+const STAFF_PIN_PATTERN = /^\d{4,6}$/;
+const STAFF_PIN_TAKEN = 'Этот PIN уже используется другим сотрудником';
+
+/**
+ * PIN уникален на всю платформу, а не внутри компании.
+ *
+ * `/pos/login` ищет его без компании — кассиру негде набрать, в каком он
+ * магазине. Значит столкновение возможно и с чужим магазином, и ответить на
+ * него надо словами про PIN, а не «внутренняя ошибка».
+ */
+function isStaffPinConflict(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: string }).code === 'P2002' &&
+    JSON.stringify((err as { meta?: unknown }).meta ?? '').includes('posPin')
+  );
+}
+
 async function requireOwner(userId: string | undefined): Promise<boolean> {
   if (!userId) return false;
   const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -3604,6 +3625,188 @@ posRouter.patch('/company/storefront-location', requirePosAuth, async (req: PosA
   });
 
   res.json({ storefrontLocationId: chosen });
+});
+
+/**
+ * Сотрудники магазина — дело магазина.
+ *
+ * До 15.09.2026 их заводили только из панели ANYQ. Это значило две вещи, обе
+ * плохие. Владелец не мог сам поменять кассиру PIN — звонил нам. А мы держали
+ * у себя имена и телефоны чужих сотрудников, хотя тарифы делятся на их
+ * количество, а не на их имена.
+ *
+ * Теперь список ведёт владелец, а панель платформы видит только число. PIN
+ * при этом остаётся уникальным на всю платформу — `/pos/login` ищет его без
+ * компании, потому что кассиру негде набрать, какой он магазин.
+ */
+function serializeStaff(u: { id: string; name: string; role: string; phone: string | null; posPin: string | null }) {
+  // PIN не отдаётся даже владельцу его собственного магазина. Он задаётся и
+  // забывается: карточка сотрудника открывается на чужом экране чаще, чем
+  // кажется, а прочитать PIN — значит войти кассой этого человека.
+  return { id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', hasPin: u.posPin !== null };
+}
+
+posRouter.get('/users', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwner(req.posUserId))) {
+    res.status(403).json({ error: 'Сотрудников ведёт владелец' });
+    return;
+  }
+  const [users, company] = await Promise.all([
+    prisma.user.findMany({ where: { companyId: req.posCompanyId }, orderBy: { name: 'asc' } }),
+    prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } }),
+  ]);
+  res.json({
+    users: users.map(serializeStaff),
+    limit: company?.tariff?.userLimit ?? null,
+  });
+});
+
+posRouter.post('/users', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwner(req.posUserId))) {
+    res.status(403).json({ error: 'Сотрудников ведёт владелец' });
+    return;
+  }
+  const b = req.body ?? {};
+  const name = typeof b.name === 'string' ? b.name.trim() : '';
+  if (!name || !b.role) {
+    res.status(400).json({ error: 'Заполните имя и роль' });
+    return;
+  }
+  const badRole = roleRefusal(b.role);
+  if (badRole) {
+    res.status(400).json({ error: badRole });
+    return;
+  }
+
+  const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
+  if (posPin && !STAFF_PIN_PATTERN.test(posPin)) {
+    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, _count: { select: { users: true } } },
+  });
+  const refusal = limitRefusal('users', company?.tariff?.userLimit, company?._count.users ?? 0);
+  if (refusal) {
+    res.status(409).json({ error: refusal });
+    return;
+  }
+
+  if (posPin) {
+    const clash = await prisma.user.findFirst({ where: { posPin } });
+    if (clash) {
+      res.status(409).json({ error: STAFF_PIN_TAKEN });
+      return;
+    }
+  }
+
+  const actor = await resolveActor(req.posCompanyId!, req.posUserId);
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: { companyId: req.posCompanyId!, name, role: b.role, phone: phoneKey(b.phone) || null, posPin: posPin || null },
+      });
+      // Заведение нового: сравнивать не с чем, поэтому «до» — пустая карточка.
+      await recordChanges(tx, actor, { entity: 'user', entityId: user.id, entityName: name, before: {}, after: user });
+      return user;
+    });
+    res.status(201).json(serializeStaff(created));
+  } catch (err) {
+    // Второй владелец успел занять этот PIN между проверкой и записью.
+    if (!isStaffPinConflict(err)) throw err;
+    res.status(409).json({ error: STAFF_PIN_TAKEN });
+  }
+});
+
+posRouter.patch('/users/:id', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await requireOwner(req.posUserId))) {
+    res.status(403).json({ error: 'Сотрудников ведёт владелец' });
+    return;
+  }
+  const b = req.body ?? {};
+  const existing = await prisma.user.findFirst({ where: { id: req.params.id, companyId: req.posCompanyId } });
+  if (!existing) {
+    res.status(404).json({ error: 'Сотрудник не найден' });
+    return;
+  }
+
+  const name = typeof b.name === 'string' ? b.name.trim() : '';
+  if (!name || !b.role) {
+    res.status(400).json({ error: 'Заполните имя и роль' });
+    return;
+  }
+  const badRole = roleRefusal(b.role);
+  if (badRole) {
+    res.status(400).json({ error: badRole });
+    return;
+  }
+
+  // Два способа запереть себя из собственной кассы — см. `staff.ts`.
+  const staff = await prisma.user.findMany({ where: { companyId: req.posCompanyId }, select: { id: true, role: true } });
+  const locked =
+    selfRoleRefusal(req.posUserId!, existing.id, existing.role, b.role) ??
+    lastOwnerRefusal(staff, existing.id, b.role);
+  if (locked) {
+    res.status(409).json({ error: locked });
+    return;
+  }
+
+  // Пустое поле значит «не трогать», а не «снять»: прочитать прежний PIN
+  // нельзя, и правка имени не должна молча отбирать у кассира кассу. Снятие
+  // говорится отдельно — та же причина, что и в панели платформы.
+  const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
+  const clearPin = b.clearPin === true;
+  if (posPin && clearPin) {
+    res.status(400).json({ error: 'Либо новый PIN, либо снятие доступа — не одновременно' });
+    return;
+  }
+  if (posPin && !STAFF_PIN_PATTERN.test(posPin)) {
+    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
+    return;
+  }
+  if (posPin && posPin !== existing.posPin) {
+    const clash = await prisma.user.findFirst({ where: { posPin, id: { not: existing.id } } });
+    if (clash) {
+      res.status(409).json({ error: STAFF_PIN_TAKEN });
+      return;
+    }
+  }
+  const nextPin = clearPin ? null : posPin || existing.posPin;
+
+  // Новый PIN или новая роль — это тот момент, когда выданный токен должен
+  // перестать работать. Переименование — нет: оно не выгоняет человека из
+  // смены.
+  const accessChanged = b.role !== existing.role || nextPin !== existing.posPin;
+  const actor = await resolveActor(req.posCompanyId!, req.posUserId);
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          role: b.role,
+          phone: phoneKey(b.phone) || null,
+          posPin: nextPin,
+          ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
+        },
+      });
+      await recordChanges(tx, actor, {
+        entity: 'user',
+        entityId: user.id,
+        entityName: existing.name,
+        before: existing,
+        after: user,
+      });
+      return user;
+    });
+    res.json(serializeStaff(updated));
+  } catch (err) {
+    if (!isStaffPinConflict(err)) throw err;
+    res.status(409).json({ error: STAFF_PIN_TAKEN });
+  }
 });
 
 posRouter.post('/cabinet/reset', requirePosAuth, async (req: PosAuthedRequest, res) => {
