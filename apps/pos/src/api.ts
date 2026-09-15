@@ -206,6 +206,24 @@ export function claimRegister(token: string, registerId: string): Promise<{ toke
   );
 }
 
+export interface LicenceCheck {
+  state: 'active' | 'expired' | 'blocked' | 'missing';
+  tariff: { validUntil: string; daysLeft: number } | null;
+  /** Что сказать человеку, если работать нельзя. Слова сервера. */
+  refusal: string | null;
+}
+
+/**
+ * Спросить сервер, оплачен ли месяц.
+ *
+ * Самый дешёвый запрос кассы: одна строка тарифа, ничего больше. Он повторяется
+ * каждый час с каждой кассы каждого магазина, и всё, что к нему приписать, —
+ * это счёт, который платится столько же раз.
+ */
+export function checkLicence(token: string): Promise<LicenceCheck> {
+  return request('/pos/licence', { method: 'GET' }, token);
+}
+
 export interface PosDevice {
   id: string;
   /** «Касса №2»: номер отдельно от имени, потому что имя владелец меняет. */

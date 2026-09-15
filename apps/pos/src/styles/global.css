@@ -921,6 +921,40 @@ button { cursor: pointer; }
 }
 .tariff-notice.urgent strong { color: var(--status-overdue); }
 
+/* «Подключите интернет» — про лицензию, а не про продажи.
+   Спокойная, как полоска тарифа за неделю: касса при этом торгует, и красный
+   здесь означал бы «всё сломалось», чего не произошло. Отличается жёлтым
+   краем — «что-то надо сделать», а не «что-то отказало». */
+.licence-offline {
+  margin: 12px 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--status-trial);
+  background: var(--status-trial-bg);
+  display: grid;
+  gap: 2px;
+}
+.licence-offline strong { font-size: 0.92rem; color: var(--status-trial); }
+.licence-offline span { font-size: 0.8rem; color: var(--ink-muted); line-height: 1.4; }
+
+/* Напоминание в последние сутки. Останавливает работу до нажатия — намеренно:
+   полоска к этому моменту висит неделю и перестала читаться.
+   Кнопка 56px: её нажимают в перчатках и не глядя. */
+.licence-reminder-backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.licence-reminder {
+  width: 100%; max-width: 380px; padding: 20px;
+  border-radius: 16px; border: 1px solid var(--status-overdue);
+  background: var(--surface);
+}
+.licence-reminder-title { font-size: 1.15rem; font-weight: 700; color: var(--status-overdue); margin-bottom: 8px; }
+.licence-reminder-body { font-size: 0.9rem; color: var(--ink); line-height: 1.45; margin-bottom: 18px; }
+.licence-reminder-ok { width: 100%; min-height: 56px; font-size: 1rem; }
+
+
 /* Поле количества в корзине. Выглядит как часть степпера, а не как чужая форма:
    кассир должен видеть цифру, а не рамку ввода — но нажать на неё и набрать. */
 .qty-field {
