@@ -32,6 +32,7 @@ import {
   reserveStock,
   releaseAcrossBins,
   ConcurrentStockChangeError,
+  removeFromBatches,
 } from '../stock';
 import type { SaleItemInput, StockShortage } from '../stock';
 import {
@@ -2343,31 +2344,11 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
       // приход партии поднимают остаток каждый по-своему, остаток оказался
       // вдвое больше партий, и падать им было куда. Настоящий вопрос виден
       // только когда партии равны остатку.
-      const returnBatches = await tx.productBatch.findMany({
-        where: { locationId, productId: { in: resolution.lines.map((line) => line.productId) }, quantity: { gt: 0 } },
-      });
-      if (returnBatches.length > 0) {
-        const byProduct = new Map<string, typeof returnBatches>();
-        for (const batch of returnBatches) {
-          const list = byProduct.get(batch.productId) ?? [];
-          list.push(batch);
-          byProduct.set(batch.productId, list);
-        }
-        for (const line of resolution.lines) {
-          const productBatches = byProduct.get(line.productId) ?? [];
-          if (productBatches.length === 0) continue;
-          const allocations = allocateForRemoval(
-            line.quantity,
-            productBatches.map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: batch.quantity })),
-          );
-          for (const alloc of allocations) {
-            await tx.productBatch.update({
-              where: { id: alloc.batchId },
-              data: { quantity: { decrement: alloc.quantity } },
-            });
-          }
-        }
-      }
+      await removeFromBatches(
+        tx,
+        locationId,
+        resolution.lines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+      );
 
       return {
         id: created.id,
@@ -6315,6 +6296,11 @@ posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest,
           createdBy: req.posUserId,
         });
       }
+      await removeFromBatches(
+        tx,
+        order.locationId,
+        shipment.lines.map((line) => ({ productId: line.productId, quantity: line.picked })),
+      );
     }, { timeout: 15000 });
 
     res.json({
@@ -6417,6 +6403,11 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
           createdBy: req.posUserId,
         });
       }
+      await removeFromBatches(
+        tx,
+        order.locationId,
+        order.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+      );
 
     }, { timeout: 15000 });
 
@@ -7367,32 +7358,11 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     // а не уничтожение, и разносить её по сериям значило бы утверждать, из
     // какой именно серии пропало. Для списания это утверждение осмысленно и
     // там оно делается; здесь — нет.
-    const shortages = adjustments.filter((adj) => adj.delta < 0);
-    if (shortages.length > 0) {
-      const batchRows = await tx.productBatch.findMany({
-        where: { locationId, productId: { in: shortages.map((adj) => adj.productId) }, quantity: { gt: 0 } },
-      });
-      const batchesByProduct = new Map<string, typeof batchRows>();
-      for (const batch of batchRows) {
-        const list = batchesByProduct.get(batch.productId) ?? [];
-        list.push(batch);
-        batchesByProduct.set(batch.productId, list);
-      }
-      for (const adj of shortages) {
-        const productBatches = batchesByProduct.get(adj.productId) ?? [];
-        if (productBatches.length === 0) continue;
-        const allocations = allocateForRemoval(
-          -adj.delta,
-          productBatches.map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: batch.quantity })),
-        );
-        for (const alloc of allocations) {
-          await tx.productBatch.update({
-            where: { id: alloc.batchId },
-            data: { quantity: { decrement: alloc.quantity } },
-          });
-        }
-      }
-    }
+    await removeFromBatches(
+      tx,
+      locationId,
+      adjustments.filter((adj) => adj.delta < 0).map((adj) => ({ productId: adj.productId, quantity: -adj.delta })),
+    );
 
     const updates: Promise<unknown>[] = [];
     for (const adj of adjustments) {
@@ -7604,6 +7574,13 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
           }),
         );
       }
+      // Сроки годности есть не только у лекарств: мука, молоко и мясо уходят
+      // в техкарту так же, как товар уходит с кассы.
+      await removeFromBatches(
+        tx,
+        locationId,
+        ingredients.map((ing) => ({ productId: ing.ingredientId, quantity: ing.quantity })),
+      );
 
       const finishedStock = finishedStockRows[0];
       if (finishedStock) {
@@ -7871,6 +7848,12 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
           }),
         );
       }
+      // Ресторанный модуль больше не продают, но у кого-то он работает, и
+      // партионный ингредиент там ведёт себя так же, как везде.
+      await removeFromBatches(tx, locationId, [
+        ...plainItems.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        ...ingredientConsumption.map((c) => ({ productId: c.ingredientId, quantity: c.quantity })),
+      ]);
       for (const consumption of ingredientConsumption) {
         updates.push(
           deductAcrossBins(tx, ingredientStockByProduct.get(consumption.ingredientId) ?? [], consumption.quantity, 'table_order', {
