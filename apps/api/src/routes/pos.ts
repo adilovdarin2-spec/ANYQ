@@ -2561,6 +2561,9 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
         tx,
         locationId,
         resolution.lines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+        // Возврат поставщику — самый частый способ избавиться от просрочки,
+        // и забирать её первой здесь правильно.
+        'oldest-first',
       );
 
       return {
@@ -7112,6 +7115,9 @@ posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest,
         tx,
         order.locationId,
         shipment.lines.map((line) => ({ productId: line.productId, quantity: line.picked })),
+        // Отгрузка покупателю — уход годного товара. Витрина и бронь считали
+        // доступным неистёкшее, и отгрузиться должно оно же.
+        'good-first',
       );
     }, { timeout: 15000 });
 
@@ -7219,6 +7225,8 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
         tx,
         order.locationId,
         order.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        // То же самое, что и отгрузка: заказ выдают покупателю.
+        'good-first',
       );
 
     }, { timeout: 15000 });
@@ -8174,6 +8182,9 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
       tx,
       locationId,
       adjustments.filter((adj) => adj.delta < 0).map((adj) => ({ productId: adj.productId, quantity: -adj.delta })),
+      // Недостача по инвентаризации: чего нет на полке, того нет, и спрашивать
+      // о годности нечего. Списывается со старшей партии.
+      'oldest-first',
     );
 
     const updates: Promise<unknown>[] = [];
@@ -8392,6 +8403,9 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
         tx,
         locationId,
         ingredients.map((ing) => ({ productId: ing.ingredientId, quantity: ing.quantity })),
+        // Просроченное сырьё не уходит в готовую продукцию: иначе срок
+        // годности отмывается переработкой.
+        'good-first',
       );
 
       const finishedStock = finishedStockRows[0];
@@ -8662,10 +8676,16 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
       }
       // Ресторанный модуль больше не продают, но у кого-то он работает, и
       // партионный ингредиент там ведёт себя так же, как везде.
-      await removeFromBatches(tx, locationId, [
-        ...plainItems.map((item) => ({ productId: item.productId, quantity: item.quantity })),
-        ...ingredientConsumption.map((c) => ({ productId: c.ingredientId, quantity: c.quantity })),
-      ]);
+      await removeFromBatches(
+        tx,
+        locationId,
+        [
+          ...plainItems.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+          ...ingredientConsumption.map((c) => ({ productId: c.ingredientId, quantity: c.quantity })),
+        ],
+        // Заказ на стол — это продажа, только позже оплаченная.
+        'good-first',
+      );
       for (const consumption of ingredientConsumption) {
         updates.push(
           deductAcrossBins(tx, ingredientStockByProduct.get(consumption.ingredientId) ?? [], consumption.quantity, 'table_order', {
