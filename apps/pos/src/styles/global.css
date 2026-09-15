@@ -928,6 +928,14 @@ button { cursor: pointer; }
 /* Объяснение под заголовком «без срока годности».
    Владелец открывает этот экран за просрочкой, а находит раздел, которого не
    искал: без строки «почему оно не продаётся» это выглядит как поломка. */
+/* Спецификация производства: строка «что и сколько» и карточка в списке.
+   Поля в ряд, потому что их два и они короткие; кнопка удаления — 44px,
+   как всё, во что целятся пальцем. */
+.recipe-card { display: block; width: 100%; text-align: left; }
+.recipe-line { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.recipe-line select { flex: 1 1 auto; min-width: 0; }
+.recipe-line input { width: 90px; flex: 0 0 auto; }
+
 .batch-uncovered-note {
   margin: 0 0 10px; padding: 10px 12px; border-radius: 10px;
   background: var(--surface-2); color: var(--ink-muted);

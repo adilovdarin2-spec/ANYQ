@@ -526,6 +526,30 @@ export function fetchProductionRecipes(token: string): Promise<ProductionRecipe[
   return request('/pos/production/recipes', { method: 'GET' }, token);
 }
 
+export interface RecipePayload {
+  /** Сколько готового выходит с одной партии. */
+  portionYield: number;
+  ingredients: { ingredientId: string; quantity: number }[];
+}
+
+/**
+ * Завести спецификацию или переписать её целиком.
+ *
+ * Целиком, а не по строке: спецификация — один документ, и половина рецепта
+ * между двумя запросами — это расход, которого никто не задавал.
+ */
+export function saveRecipe(token: string, productId: string, payload: RecipePayload): Promise<ProductionRecipe> {
+  return request(
+    `/pos/production/recipes/${encodeURIComponent(productId)}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function deleteRecipe(token: string, productId: string): Promise<{ ok: true }> {
+  return request(`/pos/production/recipes/${encodeURIComponent(productId)}`, { method: 'DELETE' }, token);
+}
+
 export function fetchProductionRuns(token: string): Promise<ProductionRun[]> {
   return request('/pos/production', { method: 'GET' }, token);
 }

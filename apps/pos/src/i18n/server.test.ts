@@ -209,6 +209,9 @@ const NOT_A_MESSAGE = new Set<string>([
   'Сверка журнала: приведено партий 7', 'Сверка журнала: исправлено позиций 7, приведено партий 7',
   // An example inside a doc comment.
   'Сок "Дар" 1л',
+  // Кусок сообщения, а не сообщение: по нему маршрут спецификаций решает,
+  // отвечать 404 или 400. Показывают при этом целую фразу, и она переведена.
+  'не найден',
   // Written to the server's own log, never sent to anybody. The operator
   // reading it is looking at a terminal, not at a till.
   '(пусто)',

@@ -60,6 +60,8 @@ import {
   fetchPackagings,
   fetchPendingFiscal,
   fetchProductionRecipes,
+  saveRecipe,
+  deleteRecipe,
   fetchProductionRuns,
   fetchPurchaseOrders,
   fetchReceipts,
@@ -2401,6 +2403,41 @@ export default function App() {
     }
   }
 
+  async function handleSaveRecipe(
+    productId: string,
+    payload: { portionYield: number; ingredients: { ingredientId: string; quantity: number }[] },
+  ) {
+    if (!session) return false;
+    setProductionSubmitting(true);
+    setProductionError(null);
+    try {
+      await saveRecipe(session.token, productId, payload);
+      await loadProduction();
+      return true;
+    } catch (err) {
+      setProductionError(err instanceof ApiError ? err.message : t('fail.saveRecipe'));
+      return false;
+    } finally {
+      setProductionSubmitting(false);
+    }
+  }
+
+  async function handleDeleteRecipe(productId: string) {
+    if (!session) return false;
+    setProductionSubmitting(true);
+    setProductionError(null);
+    try {
+      await deleteRecipe(session.token, productId);
+      await loadProduction();
+      return true;
+    } catch (err) {
+      setProductionError(err instanceof ApiError ? err.message : t('fail.saveRecipe'));
+      return false;
+    } finally {
+      setProductionSubmitting(false);
+    }
+  }
+
   async function loadStockMovements() {
     if (!session) return;
     setStockMovementsLoading(true);
@@ -3650,10 +3687,13 @@ export default function App() {
           recipes={productionRecipes}
           loading={productionLoading}
           error={productionError}
+          products={session.products}
           submitting={productionSubmitting}
           onBack={() => setView('operations')}
           onRefresh={loadProduction}
           onSubmit={handleCreateProduction}
+          onSaveRecipe={handleSaveRecipe}
+          onDeleteRecipe={handleDeleteRecipe}
         />
       )}
 
