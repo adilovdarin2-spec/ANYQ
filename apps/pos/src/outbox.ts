@@ -1,4 +1,4 @@
-import type { BinCountPayload, CreateReceiptPayload, CreateWriteOffPayload, PutawayPayload } from './api';
+import type { BinCountPayload, CreateReceiptPayload, CreateWriteOffPayload, PutawayPayload, ReceiveBatchPayload } from './api';
 import type { PhraseKey } from './i18n';
 
 /**
@@ -26,7 +26,7 @@ import type { PhraseKey } from './i18n';
  *    frozen queue somebody has to look at than a warehouse quietly wrong.
  */
 
-export type OutboxKind = 'receipt' | 'writeOff' | 'putaway' | 'binCount';
+export type OutboxKind = 'receipt' | 'writeOff' | 'putaway' | 'binCount' | 'batch';
 
 export interface OutboxCommand {
   /**
@@ -76,13 +76,33 @@ export interface BinCountCommand extends OutboxCommand {
   payload: BinCountPayload & { countedAt: string };
 }
 
-export type WarehouseCommand = ReceiptCommand | WriteOffCommand | PutawayCommand | BinCountCommand;
+/**
+ * Приход партии со сроком годности.
+ *
+ * В очереди по той же причине, что и приёмка: аптечный склад — то же самое
+ * помещение с той же связью, и приход, потерянный из-за отсутствия сети, ничем
+ * не лучше потерянной приёмки. До 15.09.2026 он шёл мимо очереди и мимо ключа
+ * операции: без связи просто не проходил, а при обрыве после отправки —
+ * заводил партию дважды.
+ */
+export interface BatchCommand extends OutboxCommand {
+  kind: 'batch';
+  payload: ReceiveBatchPayload;
+}
+
+export type WarehouseCommand =
+  | ReceiptCommand
+  | WriteOffCommand
+  | PutawayCommand
+  | BinCountCommand
+  | BatchCommand;
 
 const KIND_PHRASES: Record<OutboxKind, PhraseKey> = {
   receipt: 'queue.receipt',
   writeOff: 'queue.writeOff',
   putaway: 'queue.putaway',
   binCount: 'queue.binCount',
+  batch: 'queue.batch',
 };
 
 /**

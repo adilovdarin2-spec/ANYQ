@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { refusalIsAboutThisRequest } from '../refusal';
-import { ApiError, createReceipt, createWriteOff, putawayStock, submitBinCount } from '../api';
-import type { BinCountPayload, CreateReceiptPayload, CreateWriteOffPayload, PutawayPayload } from '../api';
+import { ApiError, createReceipt, createWriteOff, putawayStock, receiveBatch, submitBinCount } from '../api';
+import type { BinCountPayload, CreateReceiptPayload, CreateWriteOffPayload, PutawayPayload, ReceiveBatchPayload } from '../api';
 import {
   discardCommand,
   getOutbox,
@@ -27,6 +27,8 @@ async function send(token: string, command: WarehouseCommand): Promise<unknown> 
       return putawayStock(token, command.payload as PutawayPayload, command.id);
     case 'binCount':
       return submitBinCount(token, command.payload as BinCountPayload, command.id);
+    case 'batch':
+      return receiveBatch(token, command.payload as ReceiveBatchPayload, command.id);
   }
 }
 

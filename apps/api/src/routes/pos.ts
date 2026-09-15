@@ -6237,22 +6237,51 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
-  const batch = await prisma.$transaction(async (tx) => {
-    const created = await tx.productBatch.create({
-      data: { productId: product.id, locationId, batchNumber, expiryDate, quantity },
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    // Повтор по плохой связи — не редкость, а норма работы склада: планшет не
+    // отличает запрос, который сервер не получил, от запроса, ответ на который
+    // потерялся. Все приходные маршруты здесь несут ключ операции именно
+    // поэтому — приёмка, списание, инвентаризация, перемещение, производство,
+    // импорт. Приход партии завели вместе с аптечным модулем, и ключ ему не
+    // достался: повтор заводил вторую партию с тем же номером и тем же сроком
+    // и поднимал остаток второй раз. В аптеке это лишние упаковки лекарства,
+    // которых на полке нет, и вторая строка серии, по которой FEFO считает
+    // отдельно.
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/batches',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
+      const created = await tx.productBatch.create({
+        data: { productId: product.id, locationId, batchNumber, expiryDate, quantity },
+      });
+
+      const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId, binLocation: '' } });
+      if (stock) {
+        await applyStockDelta(tx, stock, quantity, 'batch_receipt', { createdBy: req.posUserId });
+      } else {
+        await createStockWithMovement(tx, { productId: product.id, locationId, quantity, reason: 'batch_receipt', createdBy: req.posUserId });
+      }
+
+      return { id: created.id, createdAt: created.createdAt.toISOString() };
     });
 
-    const stock = await tx.stock.findFirst({ where: { productId: product.id, locationId, binLocation: '' } });
-    if (stock) {
-      await applyStockDelta(tx, stock, quantity, 'batch_receipt', { createdBy: req.posUserId });
-    } else {
-      await createStockWithMovement(tx, { productId: product.id, locationId, quantity, reason: 'batch_receipt', createdBy: req.posUserId });
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого прихода' });
+      return;
     }
-
-    return created;
-  });
-
-  res.status(201).json({ id: batch.id, createdAt: batch.createdAt.toISOString() });
+    throw err;
+  }
 });
 
 posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {

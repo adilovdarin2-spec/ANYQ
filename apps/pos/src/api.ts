@@ -326,8 +326,20 @@ export interface ReceiveBatchPayload {
   quantity: number;
 }
 
-export function receiveBatch(token: string, payload: ReceiveBatchPayload): Promise<{ id: string; createdAt: string }> {
-  return request('/pos/batches', { method: 'POST', body: JSON.stringify(payload) }, token);
+/**
+ * Приход партии — с ключом операции, как и всякий другой приход.
+ *
+ * Ключ — это id команды в очереди, неизменный на все попытки. Без него повтор
+ * по оборвавшейся связи заводил вторую партию с тем же номером и тем же сроком
+ * и поднимал остаток второй раз: в аптеке это упаковки лекарства, которых на
+ * полке нет, и вторая строка серии, по которой FEFO считает отдельно.
+ */
+export function receiveBatch(
+  token: string,
+  payload: ReceiveBatchPayload,
+  idempotencyKey?: string,
+): Promise<{ id: string; createdAt: string }> {
+  return request('/pos/batches', { method: 'POST', body: JSON.stringify(payload), headers: idempotencyHeader(idempotencyKey) }, token);
 }
 
 export function setStopListed(token: string, productId: string, stopListed: boolean): Promise<{ id: string; stopListed: boolean }> {
