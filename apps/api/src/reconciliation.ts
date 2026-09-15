@@ -165,3 +165,40 @@ export function reconcileBatches(batches: BatchTotal[], stock: StockTotal[]): Ba
     .map((row) => ({ ...row, excess: row.batched - row.stock }))
     .sort((a, b) => b.excess - a.excess);
 }
+
+export interface HoldRow {
+  productId: string;
+  binLocation: string;
+  quantity: number;
+  reserved: number;
+  blocked: number;
+}
+
+export interface StuckHold extends HoldRow {
+  /** На сколько удержано больше, чем лежит. Всегда положительное. */
+  excess: number;
+}
+
+/**
+ * Полки, на которых удержано больше, чем лежит.
+ *
+ * Доступное к продаже — это `quantity − reserved − blocked`. Бронь ставится под
+ * заказ витрины, блокировка — карантином; обе снимаются отдельными действиями,
+ * и обе однажды снимались не с той строки остатка. У брони это починили, у
+ * карантина нет: изоляция раскладывается по полкам, где товар лежит, а снятие
+ * при списании брало первую строку. Проверено 15.09.2026 — пять штук на одной
+ * полке, десять на другой, изолировали двенадцать, списали двенадцать, и на
+ * второй полке осталось семь заблокированных при нулевом остатке.
+ *
+ * Доступное стало −7. Кассир видит «нет в наличии» у товара, который лежит
+ * перед ним, и само это не проходит: снимать уже нечего.
+ *
+ * Отдельно от сверки журнала, потому что журнал тут ни при чём: остаток верен,
+ * неверно удержание поверх него.
+ */
+export function reconcileHolds(rows: HoldRow[]): StuckHold[] {
+  return rows
+    .map((row) => ({ ...row, excess: row.reserved + row.blocked - row.quantity }))
+    .filter((row) => row.excess > 0)
+    .sort((a, b) => b.excess - a.excess);
+}

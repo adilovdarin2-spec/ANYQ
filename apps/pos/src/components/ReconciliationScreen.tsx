@@ -92,7 +92,31 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
               </>
             )}
 
-            {report.mismatched === 0 && report.batchExcess.length === 0 ? (
+            {report.stuckHolds.length > 0 && (
+              <>
+                <div className="section-title">{t('recon.holdsTitle')}</div>
+                {report.stuckHolds.map((row) => (
+                  <div key={`${row.productId}-${row.binLocation}`} className="report-row low">
+                    <span>
+                      {row.name}
+                      <br />
+                      <span className="order-meta">
+                        {t('recon.holdsLine', {
+                          quantity: formatQuantity(row.quantity),
+                          held: formatQuantity(row.reserved + row.blocked),
+                          unit: row.unit,
+                        })}
+                      </span>
+                      <br />
+                      <span className="order-meta">{row.explanation}</span>
+                    </span>
+                    <span>−{formatQuantity(row.excess)}</span>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {report.mismatched === 0 && report.batchExcess.length === 0 && report.stuckHolds.length === 0 ? (
               <div className="empty-state">{t('recon.allGood')}</div>
             ) : report.mismatched === 0 ? null : (
               <>
@@ -116,7 +140,7 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
         )}
       </div>
 
-      {report && (report.mismatched > 0 || report.batchExcess.length > 0) && (
+      {report && (report.mismatched > 0 || report.batchExcess.length > 0 || report.stuckHolds.length > 0) && (
         <div className="screen-footer">
           {/* The ledger is right by construction, so the repair is to make the
               cached figure equal it — never the other way round. */}
@@ -126,7 +150,9 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
           <button className="btn btn-primary btn-block" disabled={repairing} onClick={onRepair}>
             {repairing
               ? t('recon.repairing')
-              : t('recon.repair', { count: report.mismatched + report.batchExcess.length })}
+              : t('recon.repair', {
+                  count: report.mismatched + report.batchExcess.length + report.stuckHolds.length,
+                })}
           </button>
         </div>
       )}

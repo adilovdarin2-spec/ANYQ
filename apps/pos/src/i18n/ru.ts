@@ -624,6 +624,8 @@ export const ru = {
   'recon.repairing': 'Исправляем…',
   'recon.repair': 'Привести цифры в порядок ({count})',
   'recon.mismatchLine': '{bin} · журнал {ledger}, остаток {cached}',
+  'recon.holdsTitle': 'Занято больше, чем лежит',
+  'recon.holdsLine': 'на полке {quantity} {unit}, занято {held} {unit}',
   'recon.batchTitle': 'Партии не сходятся с остатком',
   'recon.batchLine': 'по сериям {batched} {unit}, на остатке {stock} {unit}',
   'recon.unplaced': 'не размещено',

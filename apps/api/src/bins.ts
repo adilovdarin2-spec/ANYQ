@@ -110,7 +110,7 @@ export interface ReleaseAllocation {
 }
 
 /**
- * Откуда снимать бронь.
+ * Откуда снимать удержание.
  *
  * Бронь кладётся по ячейкам — товар одного наименования лежит на нескольких
  * полках, — и снимать её надо оттуда же. До этого и постановка, и снятие
@@ -124,17 +124,18 @@ export interface ReleaseAllocation {
  * заказа, и отказ означал бы товар, забронированный навечно. Если в сумме
  * забронировано меньше, чем просят снять, снимается сколько есть.
  */
-export function allocateRelease(required: number, rows: { stockId: string; reserved: number }[]): ReleaseAllocation[] {
-  const usable = rows.filter((row) => row.reserved > 0);
-  // Сначала те, где брони больше: так снятие задевает меньше строк, а остаток
-  // брони, если он есть, остаётся размазанным по мелочи, а не по главной ячейке.
-  const ordered = [...usable].sort((a, b) => b.reserved - a.reserved || (a.stockId < b.stockId ? -1 : 1));
+export function allocateRelease(required: number, rows: { stockId: string; held: number }[]): ReleaseAllocation[] {
+  const usable = rows.filter((row) => row.held > 0);
+  // Сначала те, где удержано больше: так снятие задевает меньше строк, а
+  // остаток удержания, если он есть, остаётся размазанным по мелочи, а не по
+  // главной ячейке.
+  const ordered = [...usable].sort((a, b) => b.held - a.held || (a.stockId < b.stockId ? -1 : 1));
 
   const allocations: ReleaseAllocation[] = [];
   let remaining = required;
   for (const row of ordered) {
     if (remaining <= 0) break;
-    const take = Math.min(row.reserved, remaining);
+    const take = Math.min(row.held, remaining);
     allocations.push({ stockId: row.stockId, quantity: take });
     remaining -= take;
   }

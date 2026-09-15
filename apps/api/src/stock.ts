@@ -374,8 +374,33 @@ export async function releaseAcrossBins(
   rows: { id: string; reserved: number }[],
   quantity: number,
 ): Promise<void> {
-  for (const part of allocateRelease(quantity, rows.map((row) => ({ stockId: row.id, reserved: row.reserved })))) {
+  for (const part of allocateRelease(quantity, rows.map((row) => ({ stockId: row.id, held: row.reserved })))) {
     await releaseStock(tx, part.stockId, part.quantity);
+  }
+}
+
+/**
+ * Снятие карантина — со всех полок, на которые он лёг.
+ *
+ * Та же ошибка, что когда-то была у брони, и тот же ответ. Изоляция
+ * раскладывается по строкам остатка — по полкам, где товар действительно
+ * лежит, — а снималась при списании с одной первой строки. Пока изоляция
+ * укладывалась в первую полку, разницы не было. Стоило ей не уложиться, и
+ * часть блокировки оставалась на второй полке, когда товара там уже нет.
+ *
+ * Чем это кончалось, проверено 15.09.2026: пять штук на одной полке, десять на
+ * другой, изолировали двенадцать, списали двенадцать — и на второй полке
+ * осталось семь заблокированных при нулевом остатке. Доступное стало −7.
+ * Кассир видит «нет в наличии» у товара, который лежит перед ним, и само это
+ * не проходит: снимать уже нечего.
+ */
+export async function releaseBlockedAcrossBins(
+  tx: Tx,
+  rows: { id: string; blocked: number }[],
+  quantity: number,
+): Promise<void> {
+  for (const part of allocateRelease(quantity, rows.map((row) => ({ stockId: row.id, held: row.blocked })))) {
+    await releaseBlockedOnWriteOff(tx, part.stockId, part.quantity);
   }
 }
 
