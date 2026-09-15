@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveTransferReceipt, transferReceiptErrorMessage } from './transfers';
+import { resolveTransferReceipt, transferReceiptErrorMessage, collapseTransferItems } from './transfers';
 
 const sent = [
   { productId: 'water', quantity: 5 },
@@ -104,5 +104,48 @@ describe('transferReceiptErrorMessage', () => {
     expect(transferReceiptErrorMessage({ status: 'excess', productId: 'water' })).toBe(
       'Принято больше, чем отправляли — проверьте пересчёт',
     );
+  });
+});
+
+describe('collapseTransferItems', () => {
+  const line = (productId: string, quantity: number, receivedQuantity: number | null = null) => ({
+    productId,
+    quantity,
+    receivedQuantity,
+  });
+
+  it('складывает строки одного товара в одну', () => {
+    // Документ хранит по строке на партию — иначе негде записать, какая серия
+    // едет. Кладовщик на другом конце считает штуки, а не серии.
+    expect(collapseTransferItems([line('pcm', 4), line('pcm', 6)])).toEqual([line('pcm', 10)]);
+  });
+
+  it('не трогает то, что и так по одной строке', () => {
+    expect(collapseTransferItems([line('pcm', 4), line('ibu', 6)])).toEqual([line('pcm', 4), line('ibu', 6)]);
+  });
+
+  it('сохраняет порядок первого появления', () => {
+    const out = collapseTransferItems([line('ibu', 1), line('pcm', 2), line('ibu', 3)]);
+    expect(out.map((it) => it.productId)).toEqual(['ibu', 'pcm']);
+  });
+
+  it('«ещё в пути» остаётся null, а не превращается в ноль', () => {
+    // Это разные вещи: «не приехало ничего» и «никто ещё не принимал».
+    // Карточка перемещения их различает.
+    expect(collapseTransferItems([line('pcm', 4), line('pcm', 6)])[0].receivedQuantity).toBeNull();
+  });
+
+  it('принятое складывается, и строка, по которой не приехало ничего, вносит свой ноль', () => {
+    expect(collapseTransferItems([line('pcm', 4, 4), line('pcm', 6, 0)])[0].receivedQuantity).toBe(4);
+  });
+
+  it('не портит исходные строки', () => {
+    const input = [line('pcm', 4), line('pcm', 6)];
+    collapseTransferItems(input);
+    expect(input[0].quantity).toBe(4);
+  });
+
+  it('пустой список — пустой ответ', () => {
+    expect(collapseTransferItems([])).toEqual([]);
   });
 });

@@ -42,7 +42,7 @@ import {
   IdempotencyConflictError,
 } from '../idempotency';
 import { resolveLocationId, resolveTransferLocations, locationErrorMessage } from '../locations';
-import { resolveTransferReceipt, transferReceiptErrorMessage } from '../transfers';
+import { resolveTransferReceipt, transferReceiptErrorMessage, collapseTransferItems } from '../transfers';
 import { resolveReturn, returnErrorMessage } from '../returns';
 import { resolvePackagedLines, packagingErrorMessage } from '../packaging';
 import { buildDailyClosingBalances, estimateDailyDemand, recommendOrder } from '../replenishment';
@@ -6511,7 +6511,11 @@ posRouter.get('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) =
       fromLocationName: t.location.name,
       toLocationName: t.toLocation?.name ?? '—',
       receivedAt: t.fulfilledAt ? t.fulfilledAt.toISOString() : null,
-      items: t.items.map((it) => ({
+      // Наружу — по товару, хотя внутри строк может быть несколько: по одной
+      // на партию. Принимают коробками, а не сериями, и приёмка ждёт одно
+      // число на товар; делить его в карточке значило бы заставить кладовщика
+      // считать серии, которых он не видит.
+      items: collapseTransferItems(t.items).map((it) => ({
         productId: it.productId,
         name: it.product.name,
         quantity: it.quantity,
@@ -6595,6 +6599,50 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
         throw new StockError(shortages);
       }
 
+      // Партии уезжают вместе с товаром, и уезжают именно здесь.
+      //
+      // Товар в фургоне не принадлежит ни одной точке — в этом весь смысл
+      // «в пути». Партия обязана вести себя так же: оставить её на отправителе
+      // значит, что у него партий больше, чем остатка, а продажа считает
+      // доступное именно по партиям — касса предложила бы то, что уже уехало.
+      // Положить её сразу получателю — та же ошибка с другой стороны.
+      //
+      // Поэтому партия снимается с отправителя сейчас, а на получателе
+      // создаётся при приёмке, со своим номером и сроком годности. Где она всё
+      // это время — записано в позициях документа: по одной на партию. Наружу
+      // документ по-прежнему отдаётся по товару, так что ни касса, ни приёмка
+      // об этом делении не знают.
+      const sourceBatches = await tx.productBatch.findMany({
+        where: { locationId: fromLocationId, productId: { in: moves.map((m) => m.productId) }, quantity: { gt: 0 } },
+      });
+      const sourceBatchesByProduct = new Map<string, typeof sourceBatches>();
+      for (const batch of sourceBatches) {
+        const list = sourceBatchesByProduct.get(batch.productId) ?? [];
+        list.push(batch);
+        sourceBatchesByProduct.set(batch.productId, list);
+      }
+
+      const transferItems: { productId: string; batchId: string | null; quantity: number; price: number }[] = [];
+      const batchDeductions: { batchId: string; quantity: number }[] = [];
+
+      for (const move of moves) {
+        const productBatches = sourceBatchesByProduct.get(move.productId) ?? [];
+        const allocations = allocateForRemoval(
+          move.quantity,
+          productBatches.map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: batch.quantity })),
+        );
+        for (const alloc of allocations) {
+          batchDeductions.push(alloc);
+          transferItems.push({ productId: move.productId, batchId: alloc.batchId, quantity: alloc.quantity, price: 0 });
+        }
+        // Часть остатка может быть заведена без партий — она едет тоже, просто
+        // без серии.
+        const allocated = allocations.reduce((sum, alloc) => sum + alloc.quantity, 0);
+        if (allocated < move.quantity) {
+          transferItems.push({ productId: move.productId, batchId: null, quantity: move.quantity - allocated, price: 0 });
+        }
+      }
+
       const document = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
@@ -6607,10 +6655,10 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
           // They stay here until somebody at the far end receives them.
           status: 'in_transit',
           createdBy: req.posUserId!,
-          // One line per product, matching the one movement each product got.
-          // Two lines of the same product would leave receipt ambiguous —
-          // which of them did the four units that turned up belong to?
-          items: { create: moves.map((m) => ({ productId: m.productId, quantity: m.quantity, price: 0 })) },
+          // По одной строке на партию, а не на товар. Приёмка и отмена
+          // складывают их обратно по товару сами — сколько чего уехало,
+          // считается суммой, а из какой серии, знает только эта строка.
+          items: { create: transferItems },
         },
         include: { items: true },
       });
@@ -6626,6 +6674,13 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
           }),
         ),
       );
+
+      for (const alloc of batchDeductions) {
+        await tx.productBatch.update({
+          where: { id: alloc.batchId },
+          data: { quantity: { decrement: alloc.quantity } },
+        });
+      }
 
       return { id: document.id, createdAt: document.createdAt.toISOString(), status: 'in_transit' };
     });
@@ -6689,8 +6744,16 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
     return;
   }
 
+  // Документ хранит по строке на партию, а принимают товар — коробками, а не
+  // сериями. Поэтому строки складываются по товару, и приёмка снаружи ровно
+  // та же, что была: одно число на товар.
+  const sentByProduct = new Map<string, number>();
+  for (const item of transferDoc.items) {
+    sentByProduct.set(item.productId, (sentByProduct.get(item.productId) ?? 0) + item.quantity);
+  }
+
   const receipt = resolveTransferReceipt(
-    transferDoc.items.map((it) => ({ productId: it.productId, quantity: it.quantity })),
+    [...sentByProduct.entries()].map(([productId, quantity]) => ({ productId, quantity })),
     Array.isArray(b.items) ? b.items : undefined,
   );
   if (receipt.status !== 'ok') {
@@ -6699,7 +6762,12 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
   }
 
   const toLocationId = transferDoc.toLocationId;
-  const itemIdByProduct = new Map(transferDoc.items.map((it) => [it.productId, it.id]));
+  const itemsByProduct = new Map<string, typeof transferDoc.items>();
+  for (const item of transferDoc.items) {
+    const list = itemsByProduct.get(item.productId) ?? [];
+    list.push(item);
+    itemsByProduct.set(item.productId, list);
+  }
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -6721,11 +6789,73 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
       });
       const destStockByProduct = new Map(destStockRows.map((s) => [s.productId, s]));
 
+      // Сведения о партиях, которые ехали: номер и срок берутся у партии
+      // отправителя, потому что именно они и должны доехать. Товар с
+      // потерянным сроком годности — это товар, который в аптеке нельзя ни
+      // продать по правилу, ни списать по сроку.
+      const travellingBatchIds = transferDoc.items
+        .map((item) => item.batchId)
+        .filter((id): id is string => id !== null);
+      const travellingBatches = travellingBatchIds.length > 0
+        ? await tx.productBatch.findMany({ where: { id: { in: travellingBatchIds } } })
+        : [];
+      const batchById = new Map(travellingBatches.map((batch) => [batch.id, batch]));
+
+      // Партии получателя, в которые привезённое может влиться: та же серия
+      // того же товара с тем же сроком — это одна партия, а не вторая такая
+      // же. Иначе каждое перемещение плодило бы новую строку с тем же
+      // номером, и FEFO раскладывал бы одну серию на части.
+      const existingAtDest = travellingBatches.length > 0
+        ? await tx.productBatch.findMany({
+            where: { locationId: toLocationId, productId: { in: [...sentByProduct.keys()] } },
+          })
+        : [];
+      const destBatchKey = (productId: string, batchNumber: string, expiry: Date) =>
+        `${productId}|${batchNumber}|${expiry.getTime()}`;
+      const destBatchByKey = new Map(
+        existingAtDest.map((batch) => [destBatchKey(batch.productId, batch.batchNumber, batch.expiryDate), batch.id]),
+      );
+
       for (const line of receipt.lines) {
-        await tx.documentItem.update({
-          where: { id: itemIdByProduct.get(line.productId)! },
-          data: { receivedQuantity: line.received },
+        // Принятое разносится по тем же строкам, из которых сложилось
+        // отправленное: сначала по самому раннему сроку. Недостача в пути
+        // достаётся той серии, которая и так испортится первой, — это
+        // осторожная сторона: считать пропавшим то, что дольше хранится,
+        // значило бы записать в остаток срок годности длиннее настоящего.
+        const lineItems = [...(itemsByProduct.get(line.productId) ?? [])].sort((a, b2) => {
+          const ea = a.batchId ? batchById.get(a.batchId)?.expiryDate.getTime() ?? Infinity : Infinity;
+          const eb = b2.batchId ? batchById.get(b2.batchId)?.expiryDate.getTime() ?? Infinity : Infinity;
+          return ea - eb;
         });
+
+        let left = line.received;
+        for (const item of lineItems) {
+          const got = Math.min(item.quantity, Math.max(left, 0));
+          left -= got;
+          await tx.documentItem.update({ where: { id: item.id }, data: { receivedQuantity: got } });
+          if (got === 0) continue;
+
+          const source = item.batchId ? batchById.get(item.batchId) : undefined;
+          if (!source) continue;
+
+          const key = destBatchKey(line.productId, source.batchNumber, source.expiryDate);
+          const existingId = destBatchByKey.get(key);
+          if (existingId) {
+            await tx.productBatch.update({ where: { id: existingId }, data: { quantity: { increment: got } } });
+          } else {
+            const created = await tx.productBatch.create({
+              data: {
+                productId: line.productId,
+                locationId: toLocationId,
+                batchNumber: source.batchNumber,
+                expiryDate: source.expiryDate,
+                quantity: got,
+              },
+            });
+            destBatchByKey.set(key, created.id);
+          }
+        }
+
         // A line that arrived with nothing books no movement: nothing reached
         // this location. What left the source is still on the document.
         if (line.received === 0) continue;
@@ -6815,6 +6945,16 @@ posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedReq
             reason: 'transfer_cancelled',
             documentId: transferDoc.id,
             createdBy: req.posUserId,
+          });
+        }
+
+        // Партия возвращается в ту же строку, из которой уехала: при отправке
+        // она уменьшалась, а не удалялась, — именно чтобы товар, не покинувший
+        // двор, вернулся в свою серию, а не в новую с тем же номером.
+        if (item.batchId) {
+          await tx.productBatch.update({
+            where: { id: item.batchId },
+            data: { quantity: { increment: item.quantity } },
           });
         }
       }
