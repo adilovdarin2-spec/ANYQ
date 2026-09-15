@@ -66,7 +66,7 @@ import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
-import { allocateFefo, classifyExpiry, sellableFromBatches } from '../batches';
+import { allocateFefo, allocateForRemoval, classifyExpiry, sellableFromBatches } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity, productBalancesAtTime } from '../counts';
@@ -4102,6 +4102,67 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
       statusCode: 201,
     }, async (tx) => {
       const writtenOffAt = soldAtOrNow(b.occurredAt, null);
+
+      // Из какой партии убираем — решается до создания документа, потому что
+      // ответ на этот вопрос и есть содержимое его позиций.
+      //
+      // Раньше партия уменьшалась строкой `if (line.batchId)`, и это была
+      // мёртвая ветка: касса такого поля никогда не отправляла и не
+      // отправляет — в `CreateWriteOffPayload` его попросту нет. То есть
+      // каждое списание партионного товара с настоящей кассы уменьшало
+      // остаток и оставляло партию нетронутой. Проверено 15.09.2026: 8
+      // просроченных ибупрофена ушли из остатка и остались в партии.
+      //
+      // Названную партию по-прежнему уважаем: тот, кто знает, из какой именно,
+      // знает лучше правила. Когда не назвали — распределяем сами, с самого
+      // раннего срока и включая просроченные, потому что списание и есть
+      // единственный выход для просрочки.
+      const batchRows = await tx.productBatch.findMany({
+        where: { locationId, productId: { in: resolution.lines.map((line) => line.productId) }, quantity: { gt: 0 } },
+      });
+      const batchesByProduct = new Map<string, typeof batchRows>();
+      for (const batch of batchRows) {
+        const list = batchesByProduct.get(batch.productId) ?? [];
+        list.push(batch);
+        batchesByProduct.set(batch.productId, list);
+      }
+      // Убывает по мере распределения: две строки одного партионного товара не
+      // должны обе считать от исходного количества партии.
+      const remainingByBatchId = new Map(batchRows.map((batch) => [batch.id, batch.quantity]));
+
+      const itemsData: { productId: string; batchId: string | null; quantity: number; price: number }[] = [];
+      const batchDeductions: { batchId: string; quantity: number }[] = [];
+
+      for (const line of resolution.lines) {
+        const productBatches = batchesByProduct.get(line.productId) ?? [];
+        const allocations = line.batchId
+          ? [{ batchId: line.batchId, quantity: line.quantity }]
+          : allocateForRemoval(
+              line.quantity,
+              productBatches.map((batch) => ({
+                batchId: batch.id,
+                expiryDate: batch.expiryDate,
+                quantity: remainingByBatchId.get(batch.id) ?? 0,
+              })),
+            );
+
+        for (const alloc of allocations) {
+          remainingByBatchId.set(alloc.batchId, (remainingByBatchId.get(alloc.batchId) ?? 0) - alloc.quantity);
+          batchDeductions.push(alloc);
+          // Позиция на каждую партию отдельно — так документ отвечает на
+          // вопрос, который аптеке задают при отзыве серии: какую именно
+          // уничтожили и сколько. Строка «8 ибупрофена» на него не отвечает.
+          itemsData.push({ productId: line.productId, batchId: alloc.batchId, quantity: alloc.quantity, price: 0 });
+        }
+
+        // Остаток мог быть шире партий: часть товара заведена без них. Она
+        // списывается тоже, просто без указания серии.
+        const allocated = allocations.reduce((sum, alloc) => sum + alloc.quantity, 0);
+        if (allocated < line.quantity) {
+          itemsData.push({ productId: line.productId, batchId: null, quantity: line.quantity - allocated, price: 0 });
+        }
+      }
+
       const created = await tx.document.create({
         data: {
           companyId: req.posCompanyId!,
@@ -4114,14 +4175,7 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
           reasonCode: b.reasonCode,
           reason: note,
           createdBy: req.posUserId!,
-          items: {
-            create: resolution.lines.map((line) => ({
-              productId: line.productId,
-              batchId: line.batchId,
-              quantity: line.quantity,
-              price: 0,
-            })),
-          },
+          items: { create: itemsData },
         },
       });
 
@@ -4136,14 +4190,13 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
         // them — otherwise the block outlives the stock and eats availability
         // that no longer exists.
         if (rows[0]) await releaseBlockedOnWriteOff(tx, rows[0].id, line.quantity);
-        // Off the batch too, so the expiry that went in the bin stops counting
-        // towards what can be sold.
-        if (line.batchId) {
-          await tx.productBatch.update({
-            where: { id: line.batchId },
-            data: { quantity: { decrement: line.quantity } },
-          });
-        }
+      }
+
+      for (const alloc of batchDeductions) {
+        await tx.productBatch.update({
+          where: { id: alloc.batchId },
+          data: { quantity: { decrement: alloc.quantity } },
+        });
       }
 
       return { id: created.id, createdAt: created.createdAt.toISOString() };

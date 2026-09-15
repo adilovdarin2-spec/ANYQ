@@ -47,6 +47,43 @@ export function allocateFefo(requestedQty: number, batches: BatchStock[], now: D
 }
 
 /**
+ * Which batches a write-off takes from, when nobody said which.
+ *
+ * This is FEFO's mirror image, and the difference is the whole point.
+ * `allocateFefo` refuses expired batches because a sale must never reach for
+ * them. A write-off is the only way expired stock ever leaves, so refusing
+ * them here would leave it on the books for good — which is exactly what
+ * happened until 15.09.2026: the route decremented a batch only when the
+ * caller named one, and the till has never had a field for that. Stock went
+ * down, the batch stayed, and the two sets of books drifted apart silently,
+ * one write-off at a time.
+ *
+ * There is deliberately no `now` parameter. A removal does not care whether
+ * something is expired, and taking a date it never used would invite the next
+ * reader to "fix" the function by filtering on it.
+ *
+ * Oldest first, so the batch table stays biased towards what is actually on
+ * the shelf. If the batches hold less than is being removed — part of the
+ * stock was never batch-tracked — it takes what they have and stops:
+ * `Stock` is the authority on how much is there, and it has already agreed.
+ */
+export function allocateForRemoval(requestedQty: number, batches: BatchStock[]): BatchAllocation[] {
+  const sorted = [...batches].sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
+  const allocations: BatchAllocation[] = [];
+  let remaining = requestedQty;
+
+  for (const batch of sorted) {
+    if (remaining <= 0) break;
+    if (batch.quantity <= 0) continue;
+    const take = Math.min(batch.quantity, remaining);
+    allocations.push({ batchId: batch.batchId, quantity: take });
+    remaining -= take;
+  }
+
+  return allocations;
+}
+
+/**
  * How many units of a batch-tracked product can actually be sold.
  *
  * The sale route and the sale grid each need this figure, and until they shared
