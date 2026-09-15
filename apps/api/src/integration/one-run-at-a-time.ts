@@ -72,7 +72,27 @@ export async function setup(): Promise<void> {
 
     if (others.length === 0) return;
 
-    const who = others.map((o) => `${o.pid}${o.app ? ` (${o.app})` : ''}`).join(', ');
+    /* Второй раз, секундой позже, и отказ — только по тем, кто остался.
+     *
+     * К базе подключается не только прогон. Проверка готовности контейнера
+     * бьётся в неё каждые пять секунд, а в CI — ещё и служба, поднимающая
+     * саму базу. Такое соединение живёт мгновение, и отказ по нему — это
+     * прогон, который не начался из-за того, что база жива.
+     *
+     * Настоящий второй прогон держит свои соединения минутами: он для того и
+     * подключился, чтобы работать. Секунды хватает, чтобы отличить одно от
+     * другого, и она дешевле любого из двух видов ошибки. */
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const again = await prisma.$queryRaw<{ pid: number; app: string | null }[]>`
+      select pid, application_name as app
+      from pg_stat_activity
+      where datname = current_database() and pid <> pg_backend_pid()
+    `;
+    const stillHere = new Set(again.map((o) => o.pid));
+    const persistent = others.filter((o) => stillHere.has(o.pid));
+    if (persistent.length === 0) return;
+
+    const who = persistent.map((o) => `${o.pid}${o.app ? ` (${o.app})` : ''}`).join(', ');
     throw new Error(
       `Отказ: к тестовой базе уже подключён кто-то ещё — ${who}.\n` +
         'Скорее всего это прошлый прогон, который не закончился: остановка задачи в\n' +
