@@ -149,3 +149,106 @@ describe('selling batch-tracked goods', () => {
     expect(await findLedgerMismatches()).toEqual([]);
   });
 });
+
+/**
+ * Списание партионного товара — вторая половина того же вопроса.
+ *
+ * Продажа партии уменьшала, списание — нет. Уменьшение стояло за условием
+ * `if (line.batchId)`, а касса такого поля никогда не отправляла: в
+ * `CreateWriteOffPayload` его попросту нет. Ветка была недостижима, и каждое
+ * списание партионного товара с настоящей кассы уменьшало остаток, оставляя
+ * партию нетронутой. Две книги расходились молча, по одному списанию за раз.
+ *
+ * Для аптеки это не мелочь: списание — единственный выход для просрочки.
+ * Модуль, купленный за то, что он не даёт продать просроченное, копил её и
+ * сам же ломал учёт при попытке убрать.
+ *
+ * Поэтому эти проверки идут через HTTP и не называют партию — ровно так, как
+ * это делает касса.
+ */
+async function writeOff(quantity: number, note: string, batchId?: string) {
+  return api(fx.token, 'POST', '/pos/write-offs', {
+    locationId: fx.locationId,
+    reasonCode: 'expiry',
+    note,
+    items: [{ productId: fx.productId, quantity, ...(batchId ? { batchId } : {}) }],
+  });
+}
+
+describe('списание партионного товара', () => {
+  it('уменьшает партию, хотя касса её не назвала', async () => {
+    await receiveBatch('EXPIRED', -10, 8);
+
+    expect((await writeOff(8, 'истёк срок годности')).status).toBe(201);
+    expect(await batchQuantities()).toEqual({ EXPIRED: 0 });
+    expect(await findLedgerMismatches()).toEqual([]);
+  });
+
+  it('берёт просроченную партию — ту самую, которую продажа обходит', async () => {
+    // Правила противоположны, и в этом весь смысл: продажа обязана обойти
+    // просрочку, а списание существует ради неё. Если бы списание тоже её
+    // фильтровало, у просрочки не осталось бы выхода вообще.
+    await receiveBatch('EXPIRED', -10, 5);
+    await receiveBatch('GOOD', 300, 10);
+
+    expect((await writeOff(5, 'истёк срок годности')).status).toBe(201);
+    expect(await batchQuantities()).toEqual({ EXPIRED: 0, GOOD: 10 });
+  });
+
+  it('записывает в документ, какую серию уничтожили', async () => {
+    // Вопрос, который аптеке задают при отзыве серии, — «какую именно и
+    // сколько». Строка «8 штук» на него не отвечает.
+    await receiveBatch('EXPIRED', -10, 8);
+    await writeOff(8, 'истёк срок годности');
+
+    const doc = await prisma.document.findFirst({
+      where: { type: 'write_off' },
+      include: { items: { include: { batch: true } } },
+    });
+    expect(doc!.items).toHaveLength(1);
+    expect(doc!.items[0].batch!.batchNumber).toBe('EXPIRED');
+    expect(doc!.items[0].quantity).toBe(8);
+  });
+
+  it('разносит по партиям, когда одной не хватает', async () => {
+    await receiveBatch('OLD', -5, 3);
+    await receiveBatch('NEWER', 300, 10);
+
+    expect((await writeOff(7, 'бой при разгрузке')).status).toBe(201);
+    expect(await batchQuantities()).toEqual({ OLD: 0, NEWER: 6 });
+    expect(await findLedgerMismatches()).toEqual([]);
+  });
+
+  it('уважает названную партию, а не своё правило', async () => {
+    // Тот, кто знает, из какой именно, знает лучше: разбита конкретная
+    // коробка, а не самая старая.
+    await receiveBatch('OLD', -5, 5);
+    const good = await receiveBatch('GOOD', 300, 10);
+
+    expect((await writeOff(2, 'разбита коробка', good.id)).status).toBe(201);
+    expect(await batchQuantities()).toEqual({ OLD: 5, GOOD: 8 });
+    expect(await findLedgerMismatches()).toEqual([]);
+  });
+
+  it('списывает и то, что заведено без партий', async () => {
+    // Часть остатка может быть старше партионного учёта. Она уходит тоже,
+    // просто без указания серии — иначе списать её было бы нечем.
+    await receiveBatch('SOME', 300, 4);
+    await prisma.stock.updateMany({
+      where: { productId: fx.productId, locationId: fx.locationId },
+      data: { quantity: 10 },
+    });
+
+    expect((await writeOff(10, 'затопило склад')).status).toBe(201);
+    expect(await batchQuantities()).toEqual({ SOME: 0 });
+
+    const doc = await prisma.document.findFirst({
+      where: { type: 'write_off' },
+      include: { items: true },
+    });
+    const withBatch = doc!.items.filter((item) => item.batchId !== null);
+    const without = doc!.items.filter((item) => item.batchId === null);
+    expect(withBatch.reduce((sum, item) => sum + item.quantity, 0)).toBe(4);
+    expect(without.reduce((sum, item) => sum + item.quantity, 0)).toBe(6);
+  });
+});

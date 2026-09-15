@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { allocateFefo, classifyExpiry, sellableFromBatches } from './batches';
+import { allocateFefo, allocateForRemoval, classifyExpiry, sellableFromBatches } from './batches';
 import type { BatchStock } from './batches';
 
 function batch(id: string, expiryDate: string, quantity: number): BatchStock {
@@ -116,5 +116,47 @@ describe('classifyExpiry', () => {
   it('treats exactly the warning boundary as expiring_soon, not ok', () => {
     const exact = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     expect(classifyExpiry(exact, now, 30)).toBe('expiring_soon');
+  });
+});
+
+describe('allocateForRemoval', () => {
+  it('takes the expired batch — which is the entire reason it exists', () => {
+    // A sale must never reach for this batch. A write-off is the only way it
+    // ever leaves. The two rules are opposites, and that is why this is not
+    // allocateFefo with a different name.
+    const batches = [batch('expired', '2026-07-01', 8), batch('good', '2027-07-01', 40)];
+    expect(allocateForRemoval(8, batches)).toEqual([{ batchId: 'expired', quantity: 8 }]);
+  });
+
+  it('oldest first, spilling into the next batch when one is not enough', () => {
+    const batches = [batch('old', '2026-07-01', 5), batch('newer', '2026-09-01', 10)];
+    expect(allocateForRemoval(12, batches)).toEqual([
+      { batchId: 'old', quantity: 5 },
+      { batchId: 'newer', quantity: 7 },
+    ]);
+  });
+
+  it('takes what the batches hold and stops, rather than going negative', () => {
+    // Part of the stock was never batch-tracked. `Stock` is the authority on
+    // how much is there and has already agreed to the removal; the batch table
+    // simply cannot account for all of it, and a negative batch would be a
+    // worse answer than a short one.
+    const batches = [batch('only', '2026-07-01', 3)];
+    expect(allocateForRemoval(10, batches)).toEqual([{ batchId: 'only', quantity: 3 }]);
+  });
+
+  it('skips a drained batch instead of emitting a zero line', () => {
+    const batches = [batch('drained', '2026-06-01', 0), batch('has', '2026-08-01', 4)];
+    expect(allocateForRemoval(2, batches)).toEqual([{ batchId: 'has', quantity: 2 }]);
+  });
+
+  it('asked for nothing, takes nothing', () => {
+    expect(allocateForRemoval(0, [batch('any', '2026-08-01', 5)])).toEqual([]);
+  });
+
+  it('не переставляет массив, который ему дали', () => {
+    const batches = [batch('newer', '2027-01-01', 5), batch('older', '2026-01-01', 5)];
+    allocateForRemoval(3, batches);
+    expect(batches[0].batchId).toBe('newer');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { KNOWN_MODULES, WAREHOUSE_REQUIRES, moduleListRefusal } from './modules';
+import { KNOWN_MODULES, MODULE_REQUIRES, WAREHOUSE_REQUIRES, moduleListRefusal } from './modules';
 
 /**
  * Модуль, которого не бывает.
@@ -50,6 +50,34 @@ describe('список модулей', () => {
   it('а учёт прихода без склада — обычный магазин, и это нормально', () => {
     // Одна точка, товар приходит и уходит, ячеек нет. Это самый частый клиент.
     expect(moduleListRefusal(['retail', 'stock'])).toBeNull();
+  });
+
+  it('аптека не включается без учёта прихода', () => {
+    // Аптечный модуль сам создаёт то, что убрать умеет только `stock`: он не
+    // даёт продать просроченное, а остановленный товар остаётся на полке и в
+    // остатке. Списание, инвентаризация, карантин и возврат поставщику — все
+    // за `stock`. Без него у просрочки нет выхода вообще.
+    const refusal = moduleListRefusal(['retail', 'pharmacy']);
+    expect(refusal).toContain('pharmacy');
+    expect(refusal).toContain('stock');
+  });
+
+  it('аптека с учётом прихода — обычный тариф', () => {
+    expect(moduleListRefusal(['retail', 'stock', 'pharmacy'])).toBeNull();
+  });
+
+  it('отказ называет и модуль, и всё, чего ему не хватает', () => {
+    // Зависимость записана дважды: списком в `MODULE_REQUIRES` и словами в
+    // тексте отказа — иначе фразу нельзя было бы перевести целиком. Это тот
+    // тест, который не даёт им разойтись.
+    for (const [module, requires] of Object.entries(MODULE_REQUIRES)) {
+      const refusal = moduleListRefusal([module]);
+      expect(refusal, `нет отказа для «${module}»`).toBeTruthy();
+      expect(refusal).toContain(module);
+      for (const required of requires) {
+        expect(refusal, `отказ для «${module}» не называет «${required}»`).toContain(required);
+      }
+    }
   });
 
   it('не список — тоже отказ', () => {
