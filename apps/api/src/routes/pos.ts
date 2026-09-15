@@ -17,6 +17,7 @@ import {
   blockStock,
   unblockStock,
   releaseBlockedOnWriteOff,
+  releaseBlockedAcrossBins,
   findStockShortages,
   hasInvalidQuantity,
   aggregateRequestedQuantities,
@@ -57,7 +58,7 @@ import { isWriteOffReason, resolveWriteOff, writeOffErrorMessage, resolveQuarant
 import type { QuarantineAction } from '../writeoffs';
 import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErrorMessage } from '../bins';
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
-import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches } from '../reconciliation';
+import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches, reconcileHolds } from '../reconciliation';
 import { buildImportPlan } from '../import';
 import { ensureCabinet, resetCabinet } from '../cabinet';
 import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
@@ -4207,7 +4208,12 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
         // Quarantined goods that are then written off take their hold with
         // them — otherwise the block outlives the stock and eats availability
         // that no longer exists.
-        if (rows[0]) await releaseBlockedOnWriteOff(tx, rows[0].id, line.quantity);
+        //
+        // По всем полкам, а не по первой. Изоляция раскладывается по строкам
+        // остатка, и снятие обязано идти теми же строками: иначе блокировка
+        // переживает товар, и доступное уходит в минус — проверено, −7 на
+        // полке с нулевым остатком.
+        await releaseBlockedAcrossBins(tx, rows, line.quantity);
       }
 
       for (const alloc of batchDeductions) {
@@ -5455,6 +5461,19 @@ async function findLedgerMismatches(companyId: string, locationId: string) {
  * кэша по журналу. Партии расходятся из-за того, что товар ушёл, а серию
  * никто не тронул, — и правит их уменьшение серии.
  */
+async function findStuckHolds(locationId: string) {
+  const rows = await prisma.stock.findMany({ where: { locationId } });
+  return reconcileHolds(
+    rows.map((row) => ({
+      productId: row.productId,
+      binLocation: row.binLocation,
+      quantity: row.quantity,
+      reserved: row.reserved,
+      blocked: row.blocked,
+    })),
+  );
+}
+
 async function findBatchExcess(locationId: string) {
   const [batchRows, stockRows] = await Promise.all([
     prisma.productBatch.groupBy({ by: ['productId'], where: { locationId }, _sum: { quantity: true } }),
@@ -5486,12 +5505,13 @@ posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, r
   const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
   if (!locationId) return;
 
-  const [{ ledgerTotals, mismatches }, batchExcess] = await Promise.all([
+  const [{ ledgerTotals, mismatches }, batchExcess, stuckHolds] = await Promise.all([
     findLedgerMismatches(req.posCompanyId!, locationId),
     findBatchExcess(locationId),
+    findStuckHolds(locationId),
   ]);
   const products = await prisma.product.findMany({
-    where: { id: { in: [...new Set([...mismatches, ...batchExcess].map((m) => m.productId))] } },
+    where: { id: { in: [...new Set([...mismatches, ...batchExcess, ...stuckHolds].map((m) => m.productId))] } },
     select: { id: true, name: true, unit: true },
   });
   const productById = new Map(products.map((product) => [product.id, product]));
@@ -5510,6 +5530,19 @@ posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, r
       stock: row.stock,
       excess: row.excess,
       explanation: 'Партий больше, чем товара на остатке — касса предложит то, чего на полке нет',
+    })),
+    // Третий список: удержания поверх остатка. Ни журнал, ни партии тут ни при
+    // чём — остаток верен, неверно то, что на нём висит.
+    stuckHolds: stuckHolds.slice(0, 100).map((row) => ({
+      productId: row.productId,
+      name: productById.get(row.productId)?.name ?? '—',
+      unit: productById.get(row.productId)?.unit ?? '',
+      binLocation: row.binLocation,
+      quantity: row.quantity,
+      reserved: row.reserved,
+      blocked: row.blocked,
+      excess: row.excess,
+      explanation: 'Занято под заказ или карантин больше, чем лежит на полке — товар не продаётся',
     })),
     mismatches: mismatches.slice(0, 100).map((mismatch) => ({
       productId: mismatch.productId,
@@ -5573,12 +5606,13 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
-  const [{ mismatches }, batchExcess] = await Promise.all([
+  const [{ mismatches }, batchExcess, stuckHolds] = await Promise.all([
     findLedgerMismatches(req.posCompanyId!, locationId),
     findBatchExcess(locationId),
+    findStuckHolds(locationId),
   ]);
-  if (mismatches.length === 0 && batchExcess.length === 0) {
-    res.json({ repaired: 0, repairedBatches: 0, documentId: null });
+  if (mismatches.length === 0 && batchExcess.length === 0 && stuckHolds.length === 0) {
+    res.json({ repaired: 0, repairedBatches: 0, repairedHolds: 0, documentId: null });
     return;
   }
 
@@ -5671,6 +5705,35 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
       }
     }
 
+    // Удержания — после остатка и по той же причине, что и партии: чинить
+    // надо против верного числа, а верным оно становится строкой выше.
+    //
+    // Блокировка опускается до того, что на полке есть, а не до нуля: карантин
+    // мог быть настоящим, и снять его целиком значило бы вернуть в продажу то,
+    // что кто-то нарочно изолировал. Бронь не трогается вовсе — она держится
+    // заказом, и её расхождение разбирается закрытием заказа, а не здесь.
+    const holdsNow = await (async () => {
+      const rows = await tx.stock.findMany({ where: { locationId } });
+      return reconcileHolds(
+        rows.map((row) => ({
+          productId: row.productId,
+          binLocation: row.binLocation,
+          quantity: row.quantity,
+          reserved: row.reserved,
+          blocked: row.blocked,
+        })),
+      );
+    })();
+
+    for (const hold of holdsNow) {
+      const room = Math.max(hold.quantity - hold.reserved, 0);
+      const next = Math.min(hold.blocked, room);
+      await tx.stock.updateMany({
+        where: { locationId, productId: hold.productId, binLocation: hold.binLocation },
+        data: { blocked: next },
+      });
+    }
+
     // Документ пишется последним, потому что только теперь известно, что в нём
     // написать: до починки остатка число исправленных партий — предположение.
     const created = await tx.document.create({
@@ -5702,12 +5765,13 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
       },
     });
 
-    return { created, repairedBatches: batchesToFix.length };
+    return { created, repairedBatches: batchesToFix.length, repairedHolds: holdsNow.length };
   }, { timeout: 30000 });
 
   res.json({
     repaired: mismatches.length,
     repairedBatches: document.repairedBatches,
+    repairedHolds: document.repairedHolds,
     documentId: document.created.id,
   });
 });

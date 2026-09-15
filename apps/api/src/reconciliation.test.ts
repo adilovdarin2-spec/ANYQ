@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches } from './reconciliation';
-import type { CachedQuantity, LedgerTotal } from './reconciliation';
+import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches, reconcileHolds } from './reconciliation';
+import type { CachedQuantity, LedgerTotal, HoldRow } from './reconciliation';
 
 const ledger: LedgerTotal[] = [
   { productId: 'water', binLocation: 'A-01', total: 10 },
@@ -152,5 +152,44 @@ describe('reconcileBatches', () => {
       [{ productId: 'a', quantity: 10 }, { productId: 'b', quantity: 5 }],
     );
     expect(out.map((row) => row.productId)).toEqual(['b', 'a']);
+  });
+});
+
+describe('reconcileHolds', () => {
+  const row = (over: Partial<HoldRow> = {}): HoldRow => ({
+    productId: 'p',
+    binLocation: '',
+    quantity: 10,
+    reserved: 0,
+    blocked: 0,
+    ...over,
+  });
+
+  it('молчит, когда удержано меньше, чем лежит', () => {
+    expect(reconcileHolds([row({ reserved: 3, blocked: 2 })])).toEqual([]);
+  });
+
+  it('и когда удержано ровно всё — это тоже не расхождение', () => {
+    // Полка, занятая целиком под заказ, — обычное дело, а не поломка.
+    expect(reconcileHolds([row({ reserved: 10 })])).toEqual([]);
+  });
+
+  it('называет превышение', () => {
+    expect(reconcileHolds([row({ quantity: 0, blocked: 7 })])).toEqual([
+      { productId: 'p', binLocation: '', quantity: 0, reserved: 0, blocked: 7, excess: 7 },
+    ]);
+  });
+
+  it('считает бронь и блокировку вместе, а не по отдельности', () => {
+    // По отдельности каждая помещается, вместе — нет, и продать нельзя ничего.
+    expect(reconcileHolds([row({ quantity: 10, reserved: 6, blocked: 6 })])[0].excess).toBe(2);
+  });
+
+  it('крупные расхождения первыми', () => {
+    const out = reconcileHolds([
+      row({ productId: 'a', quantity: 0, blocked: 2 }),
+      row({ productId: 'b', quantity: 0, blocked: 9 }),
+    ]);
+    expect(out.map((r) => r.productId)).toEqual(['b', 'a']);
   });
 });

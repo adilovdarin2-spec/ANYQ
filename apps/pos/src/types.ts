@@ -837,6 +837,28 @@ export interface BatchExcessRow {
   explanation: string;
 }
 
+/**
+ * Полка, на которой занято больше, чем лежит.
+ *
+ * Доступное к продаже — это остаток минус бронь под заказ минус карантин. Если
+ * удержание пережило товар, доступное уходит в минус: кассир видит «нет в
+ * наличии» у того, что лежит перед ним, и само это не проходит.
+ */
+export interface StuckHoldRow {
+  productId: string;
+  name: string;
+  unit: string;
+  binLocation: string;
+  quantity: number;
+  /** Занято под заказ витрины. */
+  reserved: number;
+  /** Изолировано карантином. */
+  blocked: number;
+  /** На сколько удержано больше, чем лежит. */
+  excess: number;
+  explanation: string;
+}
+
 export interface ReconciliationReport {
   locationId: string;
   checkedAt: string;
@@ -847,6 +869,8 @@ export interface ReconciliationReport {
   mismatches: LedgerMismatch[];
   /** Пусто у всех, кто партии не ведёт. */
   batchExcess: BatchExcessRow[];
+  /** Пусто, пока удержания не пережили товар. */
+  stuckHolds: StuckHoldRow[];
 }
 
 export interface ImportProblem {

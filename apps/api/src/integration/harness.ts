@@ -404,6 +404,39 @@ export async function findLoyaltyMismatches(): Promise<LoyaltyMismatchRow[]> {
     .filter((row) => row.balance !== row.documents);
 }
 
+export interface HoldOverStockRow {
+  productId: string;
+  binLocation: string;
+  quantity: number;
+  reserved: number;
+  blocked: number;
+}
+
+/**
+ * Шестая книга: удержания — бронь под заказ и карантин.
+ *
+ * `availableQuantity` — это `quantity − reserved − blocked`. Удержать больше,
+ * чем лежит на полке, нельзя никогда: доступное уходит в минус, и полка
+ * перестаёт торговать тем, что на ней есть. Причём молча — кассир видит «нет в
+ * наличии» у товара, который лежит перед ним, и объяснить это некому.
+ *
+ * Зависшее удержание не исправляется само. Бронь снимается закрытием заказа,
+ * карантин — освобождением или списанием; если снятие прошло не по той строке
+ * остатка, снимать уже нечем, и полка остаётся урезанной навсегда.
+ */
+export async function findHoldsOverStock(locationId?: string): Promise<HoldOverStockRow[]> {
+  const rows = await prisma.stock.findMany({ where: locationId ? { locationId } : {} });
+  return rows
+    .filter((row) => row.reserved + row.blocked > row.quantity)
+    .map((row) => ({
+      productId: row.productId,
+      binLocation: row.binLocation,
+      quantity: row.quantity,
+      reserved: row.reserved,
+      blocked: row.blocked,
+    }));
+}
+
 export interface LedgerMismatchRow {
   productId: string;
   binLocation: string;
