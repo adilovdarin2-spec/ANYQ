@@ -239,6 +239,54 @@ export async function api<T = any>(
   return { status: res.status, body: parsed as T, headers: responseHeaders };
 }
 
+export interface BatchOverStockRow {
+  productId: string;
+  locationId: string;
+  batches: number;
+  stock: number;
+}
+
+/**
+ * Третья книга, которую до 15.09.2026 не проверял никто.
+ *
+ * `findLedgerMismatches` доказывает, что журнал движений равен кэшу остатка, и
+ * доказывает честно. Но у партионного товара есть ещё одна запись о том же
+ * товаре — `ProductBatch`, — и она не участвует ни в том, ни в другом. Именно
+ * поэтому 483 интеграционных теста были зелёными, пока списание партий не
+ * трогало вовсе: остаток и журнал падали согласованно, а партия оставалась, и
+ * сверять её было не с чем.
+ *
+ * Проверяется неравенство, а не равенство, и это осознанно. Часть остатка
+ * может быть заведена без партий — открывающий остаток, перенос из старой
+ * программы, товар, купленный до партионного учёта, — и тогда партий
+ * законно меньше. А вот больше остатка их быть не может никогда: это значит,
+ * что товар ушёл, а партия осталась, то есть ровно тот дефект, из-за которого
+ * эта проверка и появилась.
+ *
+ * Что нарушение значит на деле: `sellableFromBatches` считает по партиям, так
+ * что завышенная партия предлагает к продаже то, чего на полке нет.
+ */
+export async function findBatchesOverStock(locationId?: string): Promise<BatchOverStockRow[]> {
+  const where = locationId ? { locationId } : {};
+  const [batches, stocks] = await Promise.all([
+    prisma.productBatch.groupBy({ by: ['productId', 'locationId'], where, _sum: { quantity: true } }),
+    prisma.stock.groupBy({ by: ['productId', 'locationId'], where, _sum: { quantity: true } }),
+  ]);
+
+  const key = (p: string, l: string) => `${l}|${p}`;
+  const onHand = new Map(stocks.map((row) => [key(row.productId, row.locationId), row._sum.quantity ?? 0]));
+
+  const rows: BatchOverStockRow[] = [];
+  for (const batch of batches) {
+    const batched = batch._sum.quantity ?? 0;
+    const stock = onHand.get(key(batch.productId, batch.locationId)) ?? 0;
+    if (batched > stock) {
+      rows.push({ productId: batch.productId, locationId: batch.locationId, batches: batched, stock });
+    }
+  }
+  return rows;
+}
+
 export interface LedgerMismatchRow {
   productId: string;
   binLocation: string;
