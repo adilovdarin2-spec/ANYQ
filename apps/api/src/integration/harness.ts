@@ -287,6 +287,123 @@ export async function findBatchesOverStock(locationId?: string): Promise<BatchOv
   return rows;
 }
 
+export interface ReservationMismatchRow {
+  productId: string;
+  locationId: string;
+  held: number;
+  owed: number;
+}
+
+/**
+ * Четвёртая книга: бронь.
+ *
+ * `Stock.reserved` — такой же кэш, как `Stock.quantity`, и живёт он по такому
+ * же правилу: держать ровно столько, сколько обещано незакрытым заказам
+ * витрины. Ставится бронь в одном месте — когда покупатель оформил заказ, —
+ * а снимается в четырёх: выдача, частичная отгрузка, отказ, отмена. Любое из
+ * четырёх, снявшее не то число, ошибается молча и в опасную сторону:
+ * `availableQuantity` вычитает бронь, так что зависшая бронь просто уменьшает
+ * полку, и никто не скажет, почему товара «нет».
+ *
+ * Сверять есть с чем: неисполненные заказы лежат в тех же документах. Заказ
+ * `pending` (в том числе собираемый) держит бронь на всё заказанное;
+ * `confirmed` и `cancelled` не держат ничего.
+ */
+export async function findReservationMismatches(locationId?: string): Promise<ReservationMismatchRow[]> {
+  const where = locationId ? { locationId } : {};
+  const [stocks, openOrders] = await Promise.all([
+    prisma.stock.groupBy({ by: ['productId', 'locationId'], where, _sum: { reserved: true } }),
+    prisma.documentItem.findMany({
+      where: { document: { type: 'order', status: 'pending', ...(locationId ? { locationId } : {}) } },
+      select: { productId: true, quantity: true, document: { select: { locationId: true } } },
+    }),
+  ]);
+
+  const key = (p: string, l: string) => `${l}|${p}`;
+  const owedBy = new Map<string, number>();
+  for (const item of openOrders) {
+    const k = key(item.productId, item.document.locationId);
+    owedBy.set(k, (owedBy.get(k) ?? 0) + item.quantity);
+  }
+
+  const rows: ReservationMismatchRow[] = [];
+  const seen = new Set<string>();
+  for (const stock of stocks) {
+    const k = key(stock.productId, stock.locationId);
+    seen.add(k);
+    const held = stock._sum.reserved ?? 0;
+    const owed = owedBy.get(k) ?? 0;
+    if (held !== owed) rows.push({ productId: stock.productId, locationId: stock.locationId, held, owed });
+  }
+  for (const [k, owed] of owedBy) {
+    if (seen.has(k) || owed === 0) continue;
+    const [locId, productId] = k.split('|');
+    rows.push({ productId, locationId: locId, held: 0, owed });
+  }
+
+  return rows;
+}
+
+export interface LoyaltyMismatchRow {
+  counterpartyId: string;
+  balance: number;
+  documents: number;
+}
+
+/**
+ * Пятая книга: баллы покупателя.
+ *
+ * `Counterparty.loyaltyPoints` — такой же кэшированный остаток, как и всё
+ * остальное здесь, и у него есть с чем сверяться: каждая продажа записывает,
+ * сколько начислено и сколько списано, а возврат записывает то же самое
+ * перевёрнутым — восстановленные баллы ложатся в `pointsRedeemed`, отозванные
+ * в `pointsEarned`. Благодаря этому одна и та же сумма считается по всем
+ * документам сразу, без разбора типов.
+ *
+ * Зачем это вообще нужно: баллы — единственное в системе, что покупатель
+ * может оспорить лично. «У меня было три тысячи» — и ответить на это можно
+ * только сложив документы. Остаток, который не сходится с ними, означает, что
+ * ответить нечего.
+ *
+ * Знак у возврата обратный, и это не описка. Документ записывает не то, что
+ * он сделал с остатком, а то, что он отменяет: `pointsEarned` у возврата —
+ * начисление, которое отзывается, `pointsRedeemed` — списание, которое
+ * возвращается. Поэтому на остаток возврат влияет как `+pointsRedeemed −
+ * pointsEarned`. Соглашение записано в схеме, рядом с самими полями; до
+ * 15.09.2026 оно не было записано нигде, и сложить остаток по чекам было
+ * нельзя — по названиям полей прочесть его невозможно.
+ *
+ * Оговорка честная: запись остатка ограничена снизу нулём (`GREATEST(...,0)`),
+ * потому что баллы могли уйти на другой кассе между чтением и записью. Когда
+ * пол сработал, остаток законно больше суммы документов — такое расхождение
+ * возвращается как и всякое другое, и смотреть на него нужно глазами.
+ */
+export async function findLoyaltyMismatches(): Promise<LoyaltyMismatchRow[]> {
+  const [parties, docs] = await Promise.all([
+    prisma.counterparty.findMany({ select: { id: true, loyaltyPoints: true } }),
+    prisma.document.findMany({
+      where: { counterpartyId: { not: null } },
+      select: { counterpartyId: true, type: true, pointsEarned: true, pointsRedeemed: true },
+    }),
+  ]);
+
+  const fromDocs = new Map<string, number>();
+  for (const doc of docs) {
+    const earned = doc.pointsEarned ?? 0;
+    const redeemed = doc.pointsRedeemed ?? 0;
+    const delta = doc.type === 'return' ? redeemed - earned : earned - redeemed;
+    fromDocs.set(doc.counterpartyId!, (fromDocs.get(doc.counterpartyId!) ?? 0) + delta);
+  }
+
+  return parties
+    .map((party) => ({
+      counterpartyId: party.id,
+      balance: party.loyaltyPoints,
+      documents: fromDocs.get(party.id) ?? 0,
+    }))
+    .filter((row) => row.balance !== row.documents);
+}
+
 export interface LedgerMismatchRow {
   productId: string;
   binLocation: string;
