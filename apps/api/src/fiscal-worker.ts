@@ -105,11 +105,24 @@ export async function drainFiscalQueue(
       continue;
     }
 
+    // Возврат считается не так, как продажа, и это не мелочь.
+    //
+    // У продажи деньги — это позиции минус скидка минус списанные баллы. У
+    // возврата деньги уже посчитаны и записаны в `refundAmount`: пересчитать
+    // их по позициям значило бы вернуть не ту сумму, которую отдали из ящика.
+    //
+    // Баллы у возврата тоже значат обратное — `pointsRedeemed` там хранит
+    // восстановленные, а не списанные (соглашение записано в схеме, рядом с
+    // полями). Вычитать их из суммы возврата было бы ошибкой дважды: и по
+    // знаку, и по существу — баллы не деньги, а вернули деньги.
+    const isReturn = receipt.document.type === 'return';
     const subtotal = receipt.document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
-    const discountAmount = computeDiscount(subtotal, saleDiscount(receipt.document)).discountAmount;
-    const pointsRedeemed = receipt.document.pointsRedeemed ?? 0;
+    const discountAmount = isReturn ? 0 : computeDiscount(subtotal, saleDiscount(receipt.document)).discountAmount;
+    const pointsRedeemed = isReturn ? 0 : receipt.document.pointsRedeemed ?? 0;
+    const total = isReturn ? receipt.document.refundAmount ?? 0 : subtotal - discountAmount - pointsRedeemed;
 
     const payload = buildFiscalPayload({
+      operation: isReturn ? 'return' : 'sale',
       documentId: receipt.documentId,
       registrationNumber: device.registrationNumber,
       createdAt: receipt.document.createdAt,
@@ -122,7 +135,7 @@ export async function drainFiscalQueue(
         taxMode: it.product.taxMode,
         ntinCode: it.product.ntinCode,
       })),
-      total: subtotal - discountAmount - pointsRedeemed,
+      total,
       discount: discountAmount,
       pointsRedeemed,
     });

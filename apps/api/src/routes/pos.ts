@@ -1041,6 +1041,23 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
         },
       });
 
+      // Возврат тоже идёт в налоговую.
+      //
+      // До 15.09.2026 не шёл: продажа заводила строку очереди, возврат — нет.
+      // Чем это кончается, видно не сразу и не в кассе: у налоговой остаются
+      // продажи, которых магазин не отменял, и его фискальная выручка навсегда
+      // выше настоящей ровно на сумму всех возвратов. Исправить задним числом
+      // нельзя — чек возврата пробивается в тот день, когда вернули деньги.
+      //
+      // В той же транзакции, что и сам возврат, и по той же причине, что у
+      // продажи: строка, заведённая отдельно, однажды не заведётся.
+      const refundDevice = await tx.fiscalDevice.findUnique({ where: { locationId: sale.locationId } });
+      if (refundDevice?.enabled && refundDevice.provider !== 'none') {
+        await tx.fiscalReceipt.create({
+          data: { documentId: document.id, provider: refundDevice.provider, status: 'pending' },
+        });
+      }
+
       // Возвращённый товар кладётся туда же, куда привезённый, — в строку без
       // адреса. Он физически лежит у кассы, и куда его поставить, решает
       // кладовщик размещением.
@@ -3637,7 +3654,16 @@ posRouter.get('/fiscal/pending', requirePosAuth, async (req: PosAuthedRequest, r
       attempts: receipt.attempts,
       lastError: receipt.lastError,
       createdAt: receipt.createdAt.toISOString(),
-      total: receipt.document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
+      // Приход или возврат: без этого две строки на одну продажу выглядят
+      // одинаково, и непонятно, чего именно не хватает налоговой.
+      type: receipt.document.type,
+      // У возврата деньги уже посчитаны и записаны, у продажи считаются по
+      // позициям. Пересчитать возврат по позициям значило бы показать сумму,
+      // которой из ящика не отдавали.
+      total:
+        receipt.document.type === 'return'
+          ? receipt.document.refundAmount ?? 0
+          : receipt.document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
     })),
   });
 });

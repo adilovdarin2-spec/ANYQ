@@ -14,6 +14,7 @@ describe('buildFiscalPayload', () => {
     // Without it, a retried registration is a second fiscal receipt for one
     // sale — the tax version of selling the same goods twice.
     const payload = buildFiscalPayload({
+      operation: 'sale',
       documentId: 'doc_1',
       registrationNumber: 'РНМ-123',
       createdAt: new Date('2026-09-04T10:00:00Z'),
@@ -32,6 +33,7 @@ describe('buildFiscalPayload', () => {
     // «mixed» не говорит ОФД ничего. Зарегистрированный чек — документ:
     // ошибку в нём исправляют через налоговую, а не следующей выкаткой.
     const payload = buildFiscalPayload({
+      operation: 'sale',
       documentId: 'doc_2',
       registrationNumber: 'РНМ-123',
       createdAt: new Date('2026-09-12T10:00:00Z'),
@@ -56,6 +58,7 @@ describe('buildFiscalPayload', () => {
     // У него нет строк оплаты, и пустая разбивка означала бы чек, за который
     // будто бы не заплатили.
     const payload = buildFiscalPayload({
+      operation: 'sale',
       documentId: 'doc_3',
       registrationNumber: 'РНМ-123',
       createdAt: new Date('2026-09-12T10:00:00Z'),
@@ -70,6 +73,7 @@ describe('buildFiscalPayload', () => {
 
   it('defaults a missing payment method to cash rather than sending nothing', () => {
     const payload = buildFiscalPayload({
+      operation: 'sale',
       documentId: 'doc_1',
       registrationNumber: 'РНМ-123',
       createdAt: new Date(),
@@ -158,6 +162,7 @@ describe('the goods classifier code', () => {
     // and a receipt missing it for such goods is not merely incomplete — it is
     // a violation.
     const payload = buildFiscalPayload({
+      operation: 'sale',
       documentId: 'doc_1',
       registrationNumber: 'РНМ-123',
       createdAt: new Date('2026-09-08T10:00:00Z'),
@@ -174,6 +179,7 @@ describe('the goods classifier code', () => {
     // Null and absent are different claims: one says this product has no code,
     // the other says nobody filled the field in.
     const payload = buildFiscalPayload({
+      operation: 'sale',
       documentId: 'doc_1',
       registrationNumber: 'РНМ-123',
       createdAt: new Date('2026-09-08T10:00:00Z'),

@@ -60,6 +60,7 @@ async function ofd(reply: (seen: Seen) => { status: number; body: string; type?:
 }
 
 const payload = buildFiscalPayload({
+  operation: 'sale',
   documentId: 'doc_1',
   registrationNumber: 'РНМ-123',
   createdAt: new Date('2026-09-08T09:00:00.000Z'),
