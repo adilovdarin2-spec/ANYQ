@@ -652,7 +652,12 @@ model ProductBatch {
   locationId  String
   batchNumber String
   expiryDate  DateTime
-  quantity    Int
+  /// Дробное намеренно: сыр и колбаса продаются долями килограмма и имеют
+  /// срок годности, то есть это ровно тот товар, ради которого партии и
+  /// нужны. Целой эта колонка была до 15.09.2026, и Postgres молча округлял
+  /// всё, что в неё писали: приёмка на 2.5 кг поднимала остаток на 2.5 и
+  /// записывала 2, а продажа полукилограмма не списывала из партии ничего.
+  quantity    Float
   createdAt   DateTime @default(now())
 
   documentItems DocumentItem[]
