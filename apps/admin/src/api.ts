@@ -183,7 +183,10 @@ export interface UserPayload {
   name: string;
   role: string;
   phone: string;
+  /** Новый PIN. Пусто — не менять: прочитать прежний нельзя, и пустое поле не должно его стирать. */
   posPin: string;
+  /** Снять доступ к кассе. Говорится отдельно, потому что молчание больше не значит «снять». */
+  clearPin?: boolean;
 }
 
 export function createUser(token: string, companyId: string, payload: UserPayload): Promise<CompanyUser> {

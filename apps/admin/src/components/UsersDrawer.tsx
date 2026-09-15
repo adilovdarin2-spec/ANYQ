@@ -13,7 +13,7 @@ interface Props {
 }
 
 const ALL_ROLES = Object.keys(ROLE_LABELS) as UserRole[];
-const emptyForm: UserPayload = { name: '', role: 'cashier', phone: '', posPin: '' };
+const emptyForm: UserPayload = { name: '', role: 'cashier', phone: '', posPin: '', clearPin: false };
 
 function formValid(f: UserPayload): boolean {
   return f.name.trim() !== '' && (f.posPin.trim() === '' || /^\d{4,6}$/.test(f.posPin.trim()));
@@ -45,7 +45,9 @@ export function UsersDrawer({ companyId, companyName, users, onClose, onCreate, 
   function startEdit(u: CompanyUser) {
     setError(null);
     setEditingId(u.id);
-    setEditForm({ name: u.name, role: u.role, phone: u.phone, posPin: u.posPin });
+    // PIN не подставляется: его больше нельзя прочитать. Пустое поле значит
+    // «не менять» — иначе правка имени молча отобрала бы у кассира кассу.
+    setEditForm({ name: u.name, role: u.role, phone: u.phone, posPin: '', clearPin: false });
   }
 
   async function handleSaveEdit() {
@@ -53,7 +55,12 @@ export function UsersDrawer({ companyId, companyName, users, onClose, onCreate, 
     setError(null);
     setBusy(true);
     try {
-      await onUpdate(companyId, editingId, { ...editForm, name: editForm.name.trim(), phone: editForm.phone.trim(), posPin: editForm.posPin.trim() });
+      await onUpdate(companyId, editingId, {
+        ...editForm,
+        name: editForm.name.trim(),
+        phone: editForm.phone.trim(),
+        posPin: editForm.posPin.trim(),
+      });
       setEditingId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить сотрудника');
@@ -138,10 +145,28 @@ export function UsersDrawer({ companyId, companyName, users, onClose, onCreate, 
                     <input id={`e-uphone-${u.id}`} type="tel" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
                   </div>
                   <div className="field">
-                    <label htmlFor={`e-upin-${u.id}`}>PIN для кассы</label>
-                    <input id={`e-upin-${u.id}`} type="text" inputMode="numeric" value={editForm.posPin} onChange={(e) => setEditForm({ ...editForm, posPin: e.target.value })} placeholder="Пусто — без доступа к кассе" />
+                    <label htmlFor={`e-upin-${u.id}`}>Новый PIN</label>
+                    <input
+                      id={`e-upin-${u.id}`}
+                      type="text"
+                      inputMode="numeric"
+                      value={editForm.posPin}
+                      disabled={editForm.clearPin === true}
+                      onChange={(e) => setEditForm({ ...editForm, posPin: e.target.value })}
+                      placeholder={u.hasPin ? 'Пусто — оставить прежний' : '4–6 цифр'}
+                    />
                   </div>
                 </div>
+                {u.hasPin && (
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={editForm.clearPin === true}
+                      onChange={(e) => setEditForm({ ...editForm, clearPin: e.target.checked, posPin: '' })}
+                    />
+                    <span>Снять доступ к кассе — этот человек больше не сможет войти</span>
+                  </label>
+                )}
                 <div className="quick-actions">
                   <button className="btn btn-secondary" onClick={() => setEditingId(null)}>Отмена</button>
                   <button className="btn btn-primary" disabled={!formValid(editForm) || busy} onClick={handleSaveEdit}>
@@ -155,7 +180,7 @@ export function UsersDrawer({ companyId, companyName, users, onClose, onCreate, 
                   {u.name}
                   <span className="meta-text"> · {ROLE_LABELS[u.role]}</span>
                 </span>
-                <span className="meta-text">{u.posPin ? `PIN ${u.posPin}` : 'без PIN'}</span>
+                <span className="meta-text">{u.hasPin ? 'PIN задан' : 'без доступа к кассе'}</span>
               </button>
             ),
           )}
