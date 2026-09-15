@@ -9,9 +9,13 @@ interface Props {
   loading: boolean;
   error: string | null;
   busyDocumentId: string | null;
+  /** Настраивать аппарат может владелец или менеджер — так же, как на сервере. */
+  canSetUp: boolean;
+  savingDevice: boolean;
   onBack: () => void;
   onRefresh: () => void;
   onRegister: (documentId: string, fiscalNumber: string) => Promise<boolean>;
+  onSaveDevice: (payload: { provider: 'manual' | 'none'; registrationNumber: string }) => Promise<boolean>;
 }
 
 export function FiscalScreen({
@@ -20,12 +24,22 @@ export function FiscalScreen({
   loading,
   error,
   busyDocumentId,
+  canSetUp,
+  savingDevice,
   onBack,
   onRefresh,
   onRegister,
+  onSaveDevice,
 }: Props) {
   const { t } = useTranslation();
   const [numbers, setNumbers] = useState<Record<string, string>>({});
+  const [setUp, setSetUp] = useState(false);
+  const [registrationNumber, setRegistrationNumber] = useState(device?.registrationNumber ?? '');
+
+  async function saveDevice(provider: 'manual' | 'none') {
+    const saved = await onSaveDevice({ provider, registrationNumber: registrationNumber.trim() });
+    if (saved) setSetUp(false);
+  }
 
   async function register(documentId: string) {
     const entered = (numbers[documentId] ?? '').trim();
@@ -53,6 +67,57 @@ export function FiscalScreen({
           <p className="field-hint">
             {t('fiscal.manualWhy', { number: device.registrationNumber })}
           </p>
+        )}
+
+        {/* Здесь и начинается весь фискальный путь.
+            Маршрут на сервере был с самого начала, а позвать его было неоткуда:
+            ни из кассы, ни из панели. Магазин, которому ANYQ и нужен рядом с
+            зарегистрированной ККМ, читал «не настроена» и ничего сделать не
+            мог. */}
+        {canSetUp && !setUp && (
+          <button className="btn btn-secondary btn-block" onClick={() => {
+            setRegistrationNumber(device?.registrationNumber ?? '');
+            setSetUp(true);
+          }}>
+            {device?.enabled ? t('fiscal.change') : t('fiscal.setUp')}
+          </button>
+        )}
+
+        {canSetUp && setUp && (
+          <div className="order-card">
+            <p className="field-hint">{t('fiscal.setUpWhy')}</p>
+            <div className="form-field">
+              <label htmlFor="fiscal-rnm">{t('fiscal.rnm')}</label>
+              <input
+                id="fiscal-rnm"
+                type="text"
+                inputMode="numeric"
+                value={registrationNumber}
+                placeholder={t('fiscal.rnmPlaceholder')}
+                onChange={(e) => setRegistrationNumber(e.target.value)}
+              />
+            </div>
+            <div className="row-actions">
+              <button className="btn btn-secondary" disabled={savingDevice} onClick={() => setSetUp(false)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={savingDevice || registrationNumber.trim() === ''}
+                onClick={() => saveDevice('manual')}
+              >
+                {savingDevice ? t('common.saving') : t('common.save')}
+              </button>
+            </div>
+            {/* Отключить — отдельным действием и без номера: точка, которая не
+                фискализируется, существует, и заставлять её выдумывать номер
+                ради выключения незачем. */}
+            {device?.enabled && (
+              <button className="btn btn-ghost btn-block" disabled={savingDevice} onClick={() => saveDevice('none')}>
+                {t('fiscal.turnOff')}
+              </button>
+            )}
+          </div>
         )}
 
         {loading && receipts.length === 0 && <div className="empty-state">{t('common.loading')}</div>}

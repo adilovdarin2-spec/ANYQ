@@ -59,6 +59,7 @@ import {
   fetchOwnerDashboard,
   fetchPackagings,
   fetchPendingFiscal,
+  saveFiscalDevice,
   fetchProductionRecipes,
   saveRecipe,
   deleteRecipe,
@@ -327,6 +328,7 @@ export default function App() {
   const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [fiscalDevice, setFiscalDevice] = useState<FiscalDevice | null>(null);
+  const [fiscalDeviceSaving, setFiscalDeviceSaving] = useState(false);
   const [pendingFiscal, setPendingFiscal] = useState<PendingFiscalReceipt[]>([]);
   const [fiscalLoading, setFiscalLoading] = useState(false);
   const [fiscalError, setFiscalError] = useState<string | null>(null);
@@ -1978,6 +1980,22 @@ export default function App() {
     }
   }
 
+  async function handleSaveFiscalDevice(payload: { provider: 'manual' | 'none'; registrationNumber: string }) {
+    if (!session || !currentLocationId) return false;
+    setFiscalDeviceSaving(true);
+    setFiscalError(null);
+    try {
+      const device = await saveFiscalDevice(session.token, { ...payload, locationId: currentLocationId });
+      setFiscalDevice(device);
+      return true;
+    } catch (err) {
+      setFiscalError(err instanceof ApiError ? err.message : t('fail.saveFiscalDevice'));
+      return false;
+    } finally {
+      setFiscalDeviceSaving(false);
+    }
+  }
+
   function handleShowFiscal() {
     setView('fiscal');
     void loadFiscal();
@@ -3564,9 +3582,12 @@ export default function App() {
           loading={fiscalLoading}
           error={fiscalError}
           busyDocumentId={fiscalBusyDocumentId}
+          canSetUp={isOwnerOrManager}
+          savingDevice={fiscalDeviceSaving}
           onBack={() => setView('operations')}
           onRefresh={loadFiscal}
           onRegister={handleRegisterFiscal}
+          onSaveDevice={handleSaveFiscalDevice}
         />
       )}
 
