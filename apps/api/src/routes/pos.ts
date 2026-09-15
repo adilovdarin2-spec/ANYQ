@@ -2332,6 +2332,43 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
         ),
       );
 
+      // Уехавшее обратно уезжает и из партий.
+      //
+      // Возврат поставщику — самый частый способ избавиться от просрочки в
+      // аптеке: её не уничтожают, её отдают обратно. Поэтому партии здесь
+      // разбираются тем же правилом, что и в списании: с самого раннего
+      // срока, просроченные включительно.
+      //
+      // Первый вариант проверки этого места прошёл — и прошёл зря: приёмка и
+      // приход партии поднимают остаток каждый по-своему, остаток оказался
+      // вдвое больше партий, и падать им было куда. Настоящий вопрос виден
+      // только когда партии равны остатку.
+      const returnBatches = await tx.productBatch.findMany({
+        where: { locationId, productId: { in: resolution.lines.map((line) => line.productId) }, quantity: { gt: 0 } },
+      });
+      if (returnBatches.length > 0) {
+        const byProduct = new Map<string, typeof returnBatches>();
+        for (const batch of returnBatches) {
+          const list = byProduct.get(batch.productId) ?? [];
+          list.push(batch);
+          byProduct.set(batch.productId, list);
+        }
+        for (const line of resolution.lines) {
+          const productBatches = byProduct.get(line.productId) ?? [];
+          if (productBatches.length === 0) continue;
+          const allocations = allocateForRemoval(
+            line.quantity,
+            productBatches.map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: batch.quantity })),
+          );
+          for (const alloc of allocations) {
+            await tx.productBatch.update({
+              where: { id: alloc.batchId },
+              data: { quantity: { decrement: alloc.quantity } },
+            });
+          }
+        }
+      }
+
       return {
         id: created.id,
         createdAt: created.createdAt.toISOString(),
@@ -7171,6 +7208,51 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
       },
       include: { items: true },
     });
+
+    // Недостача снимается и с партий тоже.
+    //
+    // До 15.09.2026 не снималась: инвентаризация уменьшала остаток и журнал
+    // согласованно, а `ProductBatch` не трогала вовсе — и сверка этого не
+    // видела, потому что сверяла остаток с журналом, а третью книгу не
+    // сверял никто. У аптеки после недостачи партий оказывалось больше, чем
+    // товара, а `sellableFromBatches` считает по партиям: касса предлагала к
+    // продаже то, чего на полке уже нет.
+    //
+    // Излишек в партии не кладётся, и это не пропуск: пересчёт не говорит, в
+    // какой серии нашлись лишние штуки, а придумать её значило бы придумать и
+    // срок годности. Партий законно меньше остатка — незаведённая часть
+    // остатка существует и без инвентаризации.
+    //
+    // Позиции документа остаются по одной на товар: недостача — это пропажа,
+    // а не уничтожение, и разносить её по сериям значило бы утверждать, из
+    // какой именно серии пропало. Для списания это утверждение осмысленно и
+    // там оно делается; здесь — нет.
+    const shortages = adjustments.filter((adj) => adj.delta < 0);
+    if (shortages.length > 0) {
+      const batchRows = await tx.productBatch.findMany({
+        where: { locationId, productId: { in: shortages.map((adj) => adj.productId) }, quantity: { gt: 0 } },
+      });
+      const batchesByProduct = new Map<string, typeof batchRows>();
+      for (const batch of batchRows) {
+        const list = batchesByProduct.get(batch.productId) ?? [];
+        list.push(batch);
+        batchesByProduct.set(batch.productId, list);
+      }
+      for (const adj of shortages) {
+        const productBatches = batchesByProduct.get(adj.productId) ?? [];
+        if (productBatches.length === 0) continue;
+        const allocations = allocateForRemoval(
+          -adj.delta,
+          productBatches.map((batch) => ({ batchId: batch.id, expiryDate: batch.expiryDate, quantity: batch.quantity })),
+        );
+        for (const alloc of allocations) {
+          await tx.productBatch.update({
+            where: { id: alloc.batchId },
+            data: { quantity: { decrement: alloc.quantity } },
+          });
+        }
+      }
+    }
 
     const updates: Promise<unknown>[] = [];
     for (const adj of adjustments) {
