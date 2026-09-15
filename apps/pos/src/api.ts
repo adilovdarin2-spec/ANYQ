@@ -383,6 +383,26 @@ export function fetchBatches(token: string, locationId: string): Promise<Batch[]
   return request(`/pos/batches?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
 }
 
+export interface UncoveredStockRow {
+  productId: string;
+  productName: string;
+  unit: string;
+  /** Сколько на полке сверх всех партий этого товара. */
+  quantity: number;
+}
+
+/**
+ * Остаток, у которого нет партии, — и потому в аптеке он не продаётся.
+ *
+ * Остаток из старой программы, обычная приёмка без срока, инвентаризация: всё
+ * это поднимает остаток, не создавая партии. В аптеке такой товар продавать
+ * нельзя — никто не может сказать, просрочен он или нет, — но и прятать его
+ * нельзя: полная полка и пустая касса без всякого объяснения хуже отказа.
+ */
+export function fetchUncoveredStock(token: string, locationId: string): Promise<{ rows: UncoveredStockRow[] }> {
+  return request(`/pos/batches/uncovered?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+}
+
 export interface ReceiveBatchPayload {
   locationId: string;
   productId: string;

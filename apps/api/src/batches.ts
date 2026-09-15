@@ -84,6 +84,51 @@ export function allocateForRemoval(requestedQty: number, batches: BatchStock[]):
 }
 
 /**
+ * Остаток, не покрытый ни одной партией.
+ *
+ * Берётся не из воздуха: партии заводятся не на всё и не сразу. Открывающий
+ * остаток из старой программы, обычная приёмка без срока, инвентаризация — всё
+ * это поднимает `Stock.quantity`, не создавая `ProductBatch`. Разница между
+ * ними и есть товар, про который мы знаем, что он на полке, и не знаем, когда
+ * он истекает.
+ *
+ * Отрицательной не бывает: партий больше остатка — это расхождение книг, и
+ * ловит его сверка (`findBatchesOverStock`), а не эта функция.
+ */
+export function uncoveredStock(stockOnHand: number, batches: BatchStock[]): number {
+  const tracked = batches.reduce((sum, batch) => sum + batch.quantity, 0);
+  return Math.max(stockOnHand - tracked, 0);
+}
+
+/**
+ * Что делать с остатком без партии — решение, которое обязан принять вызывающий.
+ *
+ * Пятый аргумент `sellableQuantity` намеренно обязательный и не имеет значения
+ * по умолчанию. Умолчание здесь было бы тихим ответом на вопрос, у которого два
+ * правильных ответа в разных магазинах, и новый вызывающий получил бы один из
+ * них, не заметив, что выбирал.
+ */
+export type UntrackedStockPolicy = 'sellable' | 'quarantined';
+
+/**
+ * Продавать ли остаток без срока годности — по модулям компании.
+ *
+ * Обычный магазин: продавать. Партии там нужны для FEFO и прослеживаемости, а
+ * не как замок; сто пачек, лежащих на полке и не продающихся, — это не
+ * осторожность, это сломанный магазин.
+ *
+ * Аптека: нет. Модуль куплен ровно за то, что он не даёт продать просроченное,
+ * а про остаток без партии никто не может сказать, просрочен он или нет.
+ * Продавать его значило бы продавать вслепую именно там, где это опаснее всего.
+ * Прятать его при этом нельзя — см. `/pos/batches/uncovered`: аптека, перешедшая
+ * со старой программы, иначе стояла бы с полной полкой и пустой кассой, не
+ * понимая почему.
+ */
+export function untrackedPolicy(modules: readonly string[]): UntrackedStockPolicy {
+  return modules.includes('pharmacy') ? 'quarantined' : 'sellable';
+}
+
+/**
  * How many units of a batch-tracked product can actually be sold.
  *
  * The sale route and the sale grid each need this figure, and until they shared
@@ -94,12 +139,25 @@ export function allocateForRemoval(requestedQty: number, batches: BatchStock[]):
  *
  * `heldBack` is what is reserved or blocked — on the shelf, and already somebody
  * else's.
+ *
+ * До 15.09.2026 считались только партии, и это была вторая половина той же
+ * ошибки, только в другую сторону. Одна-единственная партия на товаре делала
+ * весь остальной остаток непродаваемым: сто пачек лежали на полке, числились в
+ * остатке, сходились с журналом — и не продавались. Ничья сверка этого не
+ * видела, потому что проверяется обратное неравенство.
  */
-export function sellableFromBatches(batches: BatchStock[], heldBack: number, now: Date): number {
+export function sellableQuantity(
+  stockOnHand: number,
+  batches: BatchStock[],
+  heldBack: number,
+  now: Date,
+  untracked: UntrackedStockPolicy,
+): number {
   const unexpired = batches
     .filter((batch) => batch.expiryDate > now)
     .reduce((sum, batch) => sum + batch.quantity, 0);
-  return Math.max(unexpired - heldBack, 0);
+  const uncovered = untracked === 'sellable' ? uncoveredStock(stockOnHand, batches) : 0;
+  return Math.max(unexpired + uncovered - heldBack, 0);
 }
 
 export type ExpiryStatus = 'expired' | 'expiring_soon' | 'ok';

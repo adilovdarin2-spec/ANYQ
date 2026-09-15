@@ -70,7 +70,7 @@ import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
 import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
 import type { SaleRecord } from '../reports';
-import { allocateFefo, allocateForRemoval, classifyExpiry, sellableFromBatches } from '../batches';
+import { allocateFefo, allocateForRemoval, classifyExpiry, sellableQuantity, uncoveredStock, untrackedPolicy } from '../batches';
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity, productBalancesAtTime } from '../counts';
@@ -396,8 +396,12 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
     : [];
   if (batchRows.length > 0) {
     const heldBackByProduct = new Map<string, number>();
+    // На полке, а не «доступно»: `sellableQuantity` вычитает придержанное сама,
+    // и передать ей уже уменьшенное число значило бы вычесть его дважды.
+    const onHandByProduct = new Map<string, number>();
     for (const row of stockRows) {
       heldBackByProduct.set(row.productId, (heldBackByProduct.get(row.productId) ?? 0) + totalHeldBack([row]));
+      onHandByProduct.set(row.productId, (onHandByProduct.get(row.productId) ?? 0) + row.quantity);
     }
     const byProduct = new Map<string, { batchId: string; expiryDate: Date; quantity: number }[]>();
     for (const row of batchRows) {
@@ -405,8 +409,20 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
       list.push({ batchId: row.id, expiryDate: row.expiryDate, quantity: row.quantity });
       byProduct.set(row.productId, list);
     }
+    const untracked = untrackedPolicy(modules);
     for (const [productId, batches] of byProduct) {
-      stockByProduct.set(productId, sellableFromBatches(batches, heldBackByProduct.get(productId) ?? 0, now));
+      stockByProduct.set(
+        productId,
+        sellableQuantity(
+          // То самое число, которое плитка показывала бы без партий: остаток
+          // на полке, из которого партии — только часть.
+          onHandByProduct.get(productId) ?? 0,
+          batches,
+          heldBackByProduct.get(productId) ?? 0,
+          now,
+          untracked,
+        ),
+      );
     }
   }
 
@@ -585,6 +601,9 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   }
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
+  // Продаётся ли остаток без срока годности. Решает модуль аптеки — см.
+  // `untrackedPolicy`.
+  const untracked = untrackedPolicy(modules);
 
   // A cart line's price always comes from the cashier's cached catalog, fetched
   // once at login — if a price changed since, or the request was tampered with,
@@ -755,7 +774,10 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
             expiryDate: batch.expiryDate,
             quantity: batch.quantity,
           }));
-          quantityByProduct.set(item.productId, sellableFromBatches(batchStock, totalHeldBack(rows), now));
+          quantityByProduct.set(
+            item.productId,
+            sellableQuantity(totalOnHand(rows), batchStock, totalHeldBack(rows), now, untracked),
+          );
         } else {
           quantityByProduct.set(item.productId, totalAvailable(rows));
         }
@@ -801,12 +823,27 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
             expiryDate: batch.expiryDate,
             quantity: remainingByBatchId.get(batch.id) ?? 0,
           }));
-          const { allocations } = allocateFefo(item.quantity, sellableBatches, now);
+          const { allocations, shortage } = allocateFefo(item.quantity, sellableBatches, now);
           for (const alloc of allocations) {
             const batch = productBatches.find((batchRow) => batchRow.id === alloc.batchId)!;
             remainingByBatchId.set(batch.id, (remainingByBatchId.get(batch.id) ?? 0) - alloc.quantity);
             otherUpdates.push(decrementBatchQuantity(tx, batch, alloc.quantity));
             documentItemsData.push({ productId: item.productId, batchId: alloc.batchId, quantity: alloc.quantity, price: item.price });
+          }
+          // Хвост, которого не хватило в партиях, — это остаток без партии:
+          // открывающий, принятый обычной приёмкой, посчитанный в
+          // инвентаризации. Он уходит строкой без партии, ровно как у товара,
+          // у которого партий нет вовсе.
+          //
+          // Порядок при этом не случайный: сначала партии, потом непокрытое.
+          // Партия истекает, а безсрочный остаток — нет; продай сначала
+          // безсрочное, и партия дождётся своего срока на полке.
+          //
+          // Выйти за остаток этим нельзя: проверка выше считала доступное тем
+          // же `sellableQuantity`, и в аптеке непокрытое в него не входит —
+          // значит и `shortage` там означает нехватку, а не хвост.
+          if (shortage > 0 && untracked === 'sellable') {
+            documentItemsData.push({ productId: item.productId, batchId: null, quantity: shortage, price: item.price });
           }
         } else {
           documentItemsData.push({ productId: item.productId, batchId: null, quantity: item.quantity, price: item.price });
@@ -6687,6 +6724,78 @@ posRouter.get('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => 
       status: classifyExpiry(batch.expiryDate, now),
     })),
   );
+});
+
+/**
+ * Остаток, у которого нет партии, — и потому в аптеке он не продаётся.
+ *
+ * Появился 15.09.2026 вместе с починкой обратной ошибки. Партии заводятся не на
+ * всё и не сразу: остаток из старой программы, обычная приёмка без срока,
+ * инвентаризация — всё это поднимает остаток, не создавая партии. В обычном
+ * магазине такой товар теперь продаётся; в аптеке — нет, потому что про него
+ * никто не может сказать, просрочен он или нет.
+ *
+ * Но не продаваться и быть невидимым — разные вещи, и вторая гораздо хуже.
+ * Аптека, перешедшая со старой программы, стояла бы с полной полкой и пустой
+ * кассой: сверка ловит партии сверх остатка, а здесь остаток сверх партий, и
+ * посмотреть было негде. Этот список — то место, где смотрят.
+ *
+ * Считается по одному товару за раз, из двух таблиц, без хитростей: аптечный
+ * ассортимент — это тысячи позиций, а не миллионы, и понятный запрос здесь
+ * дороже экономии.
+ */
+posRouter.get('/batches/uncovered', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('pharmacy')) {
+    res.status(403).json({ error: 'Партии недоступны на вашем тарифе' });
+    return;
+  }
+
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
+  if (!locationId) return;
+
+  const [stockRows, batchRows] = await Promise.all([
+    prisma.stock.findMany({
+      where: { locationId, quantity: { gt: 0 } },
+      select: { productId: true, quantity: true, product: { select: { name: true, unit: true } } },
+    }),
+    prisma.productBatch.findMany({ where: { locationId }, select: { productId: true, quantity: true } }),
+  ]);
+
+  const tracked = new Map<string, number>();
+  for (const batch of batchRows) {
+    tracked.set(batch.productId, (tracked.get(batch.productId) ?? 0) + batch.quantity);
+  }
+
+  const onHand = new Map<string, { quantity: number; name: string; unit: string }>();
+  for (const row of stockRows) {
+    const seen = onHand.get(row.productId);
+    onHand.set(row.productId, {
+      quantity: (seen?.quantity ?? 0) + row.quantity,
+      name: row.product.name,
+      unit: row.product.unit,
+    });
+  }
+
+  const rows = [...onHand.entries()]
+    .map(([productId, row]) => ({
+      productId,
+      productName: row.name,
+      unit: row.unit,
+      quantity: row.quantity - (tracked.get(productId) ?? 0),
+    }))
+    // Только товары, у которых партии вообще есть: у товара без единой партии
+    // «непокрытый остаток» — это весь его остаток, и называть так обычный
+    // товар значило бы утопить настоящую находку в списке всего ассортимента.
+    .filter((row) => row.quantity > 0 && tracked.has(row.productId))
+    .sort((a, b) => b.quantity - a.quantity);
+
+  res.json({ locationId, rows });
 });
 
 posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

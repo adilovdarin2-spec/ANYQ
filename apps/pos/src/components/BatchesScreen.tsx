@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 import type { Batch, ExpiryStatus, Product } from '../types';
+import type { UncoveredStockRow } from '../api';
 import { formatDate } from '../utils';
 
 const STATUS_PHRASES: Record<ExpiryStatus, PhraseKey> = {
@@ -12,6 +13,15 @@ const STATUS_PHRASES: Record<ExpiryStatus, PhraseKey> = {
 
 interface Props {
   batches: Batch[];
+  /**
+   * Остаток, у которого нет партии.
+   *
+   * В аптеке он не продаётся: про товар без срока никто не может сказать,
+   * просрочен он или нет. Но не продаваться и быть невидимым — разные вещи, и
+   * вторая хуже: до 15.09.2026 эти пачки просто исчезали из продажи, и узнать
+   * об этом было неоткуда.
+   */
+  uncovered: UncoveredStockRow[];
   products: Product[];
   loading: boolean;
   error: string | null;
@@ -21,7 +31,7 @@ interface Props {
   onReceive: (payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number }) => Promise<boolean>;
 }
 
-export function BatchesScreen({ batches, products, loading, error, submitting, onBack, onRefresh, onReceive }: Props) {
+export function BatchesScreen({ batches, uncovered, products, loading, error, submitting, onBack, onRefresh, onReceive }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'receive'>('list');
   const [productId, setProductId] = useState(products[0]?.id ?? '');
@@ -62,6 +72,27 @@ export function BatchesScreen({ batches, products, loading, error, submitting, o
           {error && <div className="login-error">{error}</div>}
           {loading && batches.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
           {!loading && batches.length === 0 && !error && <div className="empty-state">{t('batch.none')}</div>}
+
+          {uncovered.length > 0 && (
+            <>
+              {/* Первым разделом, выше просрочки: просрочку владелец
+                  ищет сам, а про этот остаток он не знает, что его надо
+                  искать. */}
+              <div className="orders-section-title">{t('batch.uncoveredCount', { count: uncovered.length })}</div>
+              <div className="batch-uncovered-note">{t('batch.uncoveredWhat')}</div>
+              {uncovered.map((row) => (
+                <div key={row.productId} className="order-card">
+                  <div className="order-card-head">
+                    <div>
+                      <div className="order-customer">{row.productName}</div>
+                      <div className="order-meta">{t('batch.uncoveredNoDate')}</div>
+                    </div>
+                    <div className="order-total">{row.quantity} {row.unit}</div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
 
           {expired.length > 0 && (
             <>
