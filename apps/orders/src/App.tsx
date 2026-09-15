@@ -233,6 +233,7 @@ export default function App() {
       <div className="storefront-layout">
         <CatalogView
           products={catalog.products}
+          truncated={catalog.truncated === true}
           categories={categories}
           activeCategory={activeCategory}
           onCategoryChange={setActiveCategory}

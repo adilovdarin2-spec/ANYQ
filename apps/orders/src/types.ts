@@ -10,6 +10,14 @@ export interface CatalogProduct {
 export interface Catalog {
   company: { id: string; name: string };
   products: CatalogProduct[];
+  /**
+   * Сервер отдал не весь каталог.
+   *
+   * Витрина говорит об этом строкой под списком. Молчаливое усечение — это
+   * товар, которого покупатель не видит и потому не закажет, а поставщик
+   * узнаёт об этом от него по телефону.
+   */
+  truncated?: boolean;
 }
 
 export interface CartLine {
