@@ -49,6 +49,7 @@ npm run test:db   # 479 интеграционных, нужен Postgres, ок�
 npm run onboard:check   # весь путь заведения магазина против живого сервера
 npm run backup:verify   # копия снимается, разворачивается и сверяется
 npm run uptime:check    # отвечают ли боевые службы прямо сейчас
+npm run uptime:test-alert  # работает ли сам канал уведомлений
 ```
 
 Оба прогона идут сами на каждый толчок в `main` и на каждый pull request
