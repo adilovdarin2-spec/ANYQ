@@ -21,9 +21,20 @@ import { describe, expect, it } from 'vitest';
  * serve the platform admin, who sits outside the tenant boundary by design —
  * looking up any company by id is their whole job. Widening this to them would
  * mean asserting the opposite of what they are for.
+ *
+ * `routes/cabinet.ts` was outside this list until 15.09.2026 for a reason that
+ * stopped being true: it only read, and read one company's own summary. Then it
+ * gained a write — согласие владельца на доступ поддержки, — and a write keyed
+ * on `req.params.id`. That id is supplied by the caller like any other, and the
+ * cabinet is the thinnest credential in the product: a secret link and a
+ * password. It belongs here.
  */
 
-const TENANT_FACING = ['apps/api/src/routes/pos.ts', 'apps/api/src/routes/supply.ts'];
+const TENANT_FACING = [
+  'apps/api/src/routes/pos.ts',
+  'apps/api/src/routes/supply.ts',
+  'apps/api/src/routes/cabinet.ts',
+];
 
 const REPO_ROOT = resolve(__dirname, '../../..');
 
@@ -57,8 +68,14 @@ const CALLER_SUPPLIED = /req\.params|req\.body|req\.query/;
  * Each entry is the exact call and the check that makes it safe. The check is
  * verified to still exist within a few lines — an allowlist that only excuses a
  * line would quietly keep excusing it after somebody deleted the check.
+ *
+ * The check may sit on either side of the call. `followedBy` is the usual
+ * shape: load it, then refuse unless it is ours. `precededBy` is the cabinet's:
+ * the row is found by the secret that *is* the tenant credential, and only then
+ * updated by its own id. Both are real safety; excusing a line without naming
+ * which of the two it relies on is what this list exists to prevent.
  */
-const SCOPED_IN_CODE: { call: string; followedBy: RegExp; why: string }[] = [
+const SCOPED_IN_CODE: { call: string; followedBy?: RegExp; precededBy?: RegExp; why: string }[] = [
   {
     call: 'const bin = await prisma.storageBin.findUnique({ where: { id: req.params.id } });',
     followedBy: /locationIds\.has\(bin\.locationId\)/,
@@ -66,6 +83,16 @@ const SCOPED_IN_CODE: { call: string; followedBy: RegExp; why: string }[] = [
       'The bin/block and bin/unblock routes load the shelf, then 404 unless its ' +
       'location is one of the calling company\'s own. A bin has no companyId of ' +
       'its own — it belongs to a location — so the check cannot live in the where.',
+  },
+  {
+    call: 'const updated = await prisma.ownerCabinet.update({',
+    precededBy: /findBySecret\(req\.params\.secret\)/,
+    why:
+      'The cabinet is found by its secret, and that secret is the tenant ' +
+      'credential: there is no path to a row whose link you do not already ' +
+      'hold. The update then names that row by its own id, which is why no ' +
+      'companyId appears in the where. The check here is the lookup itself, ' +
+      'and it sits before the call rather than after it.',
   },
 ];
 
@@ -76,6 +103,8 @@ interface Call {
   text: string;
   /** The few lines after it, where a code-level check would live. */
   following: string;
+  /** And the few before it, for the checks that guard the lookup instead. */
+  preceding: string;
 }
 
 function callsKeyedOnInput(): Call[] {
@@ -100,6 +129,12 @@ function callsKeyedOnInput(): Call[] {
         model: match[1],
         text,
         following: lines.slice(index, index + 6).join('\n'),
+        // Двадцать строк — это не «чем больше, тем лучше», а расстояние от
+        // поиска по секрету до записи в `/:secret/password`: между ними стоят
+        // два отказа со своими сообщениями. Окно смотрит только внутрь записи
+        // из списка исключений — сама запись находится по точному тексту
+        // вызова, — так что ширина не ослабляет проверку остальных.
+        preceding: lines.slice(Math.max(0, index - 20), index).join('\n'),
       });
     });
   }
@@ -137,7 +172,11 @@ describe('tenant isolation', () => {
       const exemption = SCOPED_IN_CODE.find((entry) => call.text.includes(entry.call));
       if (!exemption) return true;
       // The exemption is only good while the check it points at is still there.
-      return !exemption.followedBy.test(call.following);
+      if (exemption.followedBy) return !exemption.followedBy.test(call.following);
+      if (exemption.precededBy) return !exemption.precededBy.test(call.preceding);
+      // An entry naming neither check excuses nothing. That is the list rotting
+      // into a rubber stamp, and it should fail loudly rather than pass quietly.
+      return true;
     });
 
     expect(
