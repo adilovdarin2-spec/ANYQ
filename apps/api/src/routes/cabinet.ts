@@ -11,6 +11,7 @@ import {
 import { cabinetProbeRateLimit, loginRateLimit } from '../rateLimit';
 import { requireSecret } from '../secrets';
 import { respondWithDashboard } from './pos';
+import { expiryFrom, grantState, isOpen } from '../support-access';
 
 /**
  * Кабинет владельца — только чтение, за своей ссылкой и своим паролем.
@@ -212,4 +213,89 @@ cabinetRouter.get('/session/locations', requireCabinet, async (req: CabinetReque
  */
 cabinetRouter.get('/session/summary', requireCabinet, async (req: CabinetRequest, res) => {
   await respondWithDashboard(req.cabinetCompanyId!, req.query, res);
+});
+
+/**
+ * Кто и зачем просил посмотреть ваши цифры.
+ *
+ * Отдаётся весь список, включая отклонённое и истёкшее: владелец должен видеть
+ * не только то, что он разрешил, но и то, о чём его просили и как часто. Если
+ * запросов вдруг стало по три в неделю — это разговор, который лучше начать
+ * ему, чем нам.
+ */
+cabinetRouter.get('/session/support', requireCabinet, async (req: CabinetRequest, res) => {
+  const rows = await prisma.supportAccess.findMany({
+    where: { companyId: req.cabinetCompanyId },
+    orderBy: { requestedAt: 'desc' },
+    take: 50,
+  });
+  const now = new Date();
+
+  res.json({
+    requests: rows.map((row) => ({
+      id: row.id,
+      state: grantState(row, now),
+      who: row.requestedByName,
+      reason: row.reason,
+      requestedAt: row.requestedAt.toISOString(),
+      expiresAt: row.expiresAt?.toISOString() ?? null,
+      // Разрешение, которым не воспользовались, и разрешение, по которому
+      // смотрели весь день, — разные вещи.
+      firstUsedAt: row.firstUsedAt?.toISOString() ?? null,
+      lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    })),
+  });
+});
+
+/**
+ * Открыть доступ на сутки, отказать или закрыть раньше срока.
+ *
+ * Одно действие на один запрос, и ответить на уже отвеченный нельзя: иначе
+ * «отказал» можно было бы переиграть в «разрешил» второй кнопкой, и запись
+ * перестала бы значить то, что в ней написано.
+ */
+cabinetRouter.post('/session/support/:id/:action', requireCabinet, async (req: CabinetRequest, res) => {
+  const { action } = req.params;
+  if (action !== 'grant' && action !== 'decline' && action !== 'revoke') {
+    res.status(400).json({ error: 'Неизвестное действие' });
+    return;
+  }
+
+  const row = await prisma.supportAccess.findFirst({
+    where: { id: req.params.id, companyId: req.cabinetCompanyId },
+  });
+  if (!row) {
+    res.status(404).json({ error: 'Запрос не найден' });
+    return;
+  }
+
+  const now = new Date();
+  const state = grantState(row, now);
+
+  if (action === 'revoke') {
+    // Закрыть можно только открытое. «Закрыть» истёкшее — это не действие, а
+    // непонимание, и отвечать на него «готово» значило бы его закрепить.
+    if (!isOpen(row, now)) {
+      res.status(409).json({ error: 'Этот доступ и так закрыт' });
+      return;
+    }
+    await prisma.supportAccess.update({ where: { id: row.id }, data: { revokedAt: now } });
+    res.json({ state: 'revoked' });
+    return;
+  }
+
+  if (state !== 'pending') {
+    res.status(409).json({ error: 'На этот запрос уже ответили' });
+    return;
+  }
+
+  if (action === 'decline') {
+    await prisma.supportAccess.update({ where: { id: row.id }, data: { declinedAt: now } });
+    res.json({ state: 'declined' });
+    return;
+  }
+
+  const expiresAt = expiryFrom(now);
+  await prisma.supportAccess.update({ where: { id: row.id }, data: { grantedAt: now, expiresAt } });
+  res.json({ state: 'active', expiresAt: expiresAt.toISOString() });
 });

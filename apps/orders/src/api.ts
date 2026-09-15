@@ -1,4 +1,4 @@
-import type { CabinetLocation, CabinetStatus, CabinetSummary, Catalog } from './types';
+import type { CabinetLocation, CabinetStatus, CabinetSummary, Catalog, SupportRequest } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 // Business owners/managers/cashiers log in with a PIN in the POS app — there is
@@ -108,8 +108,8 @@ export function forgetCabinetToken(secret: string): void {
   }
 }
 
-function authed<T>(path: string, token: string): Promise<T> {
-  return request<T>(path, { headers: { Authorization: `Bearer ${token}` } });
+function authed<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  return request<T>(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
 }
 
 export function fetchCabinetStatus(secret: string): Promise<CabinetStatus> {
@@ -136,4 +136,24 @@ export function fetchCabinetLocations(token: string): Promise<{ company: string;
 
 export function fetchCabinetSummary(token: string, locationId: string, days: number): Promise<CabinetSummary> {
   return authed(`/cabinet/session/summary?locationId=${encodeURIComponent(locationId)}&days=${days}`, token);
+}
+
+export function fetchSupportRequests(token: string): Promise<{ requests: SupportRequest[] }> {
+  return authed('/cabinet/session/support', token);
+}
+
+/**
+ * Единственное, что владелец может в кабинете изменить.
+ *
+ * Всё остальное здесь только показывается — товар, цены и продажи через
+ * кабинет не меняются, и это написано владельцу на экране. Решение о том,
+ * пускать ли нас посмотреть, — про доступ, а не про торговлю, и принимать его
+ * владелец должен там, где он сидит один.
+ */
+export function answerSupportRequest(
+  token: string,
+  id: string,
+  action: 'grant' | 'decline' | 'revoke',
+): Promise<{ state: string; expiresAt?: string }> {
+  return authed(`/cabinet/session/support/${encodeURIComponent(id)}/${action}`, token, { method: 'POST' });
 }

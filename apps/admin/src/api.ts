@@ -1,4 +1,4 @@
-import type { Company, CompanyLocation, CompanyUser, Product } from './types';
+import type { Company, CompanyLocation, CompanyUser, SupportAccessState } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 /**
@@ -157,27 +157,21 @@ export function getShifts(token: string, companyId: string): Promise<ShiftSummar
   return request(`/companies/${companyId}/shifts`, {}, token);
 }
 
-export function getProducts(token: string, companyId: string): Promise<Product[]> {
-  return request(`/companies/${companyId}/products`, {}, token);
+/**
+ * Состояние нашего доступа к цифрам этой компании.
+ *
+ * Тариф, владелец и срок видны всегда: это договор, и он наш. Выручка и
+ * закупочные цены — нет: это магазин, а не договор, и смотреть их без спроса
+ * значит знать, сколько зарабатывает каждый клиент и с какой наценкой работает.
+ */
+export function fetchSupportAccess(token: string, companyId: string): Promise<SupportAccessState> {
+  return request(`/companies/${companyId}/support-access`, {}, token);
 }
 
-export interface ProductPayload {
-  name: string;
-  category: string;
-  unit: string;
-  barcode: string;
-  purchasePrice: number;
-  salePrice: number;
-  sellable: boolean;
+export function requestSupportAccess(token: string, companyId: string, reason: string): Promise<{ id: string }> {
+  return request(`/companies/${companyId}/support-access`, { method: 'POST', body: JSON.stringify({ reason }) }, token);
 }
 
-export function createProduct(token: string, companyId: string, payload: ProductPayload): Promise<Product> {
-  return request(`/companies/${companyId}/products`, { method: 'POST', body: JSON.stringify(payload) }, token);
-}
-
-export function updateProduct(token: string, companyId: string, productId: string, payload: ProductPayload): Promise<Product> {
-  return request(`/companies/${companyId}/products/${productId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
-}
 
 export interface UserPayload {
   name: string;

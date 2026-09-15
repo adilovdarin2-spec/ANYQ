@@ -1,15 +1,16 @@
 import { Router } from 'express';
+import type { Response } from 'express';
 import { prisma, Prisma } from '@anyq/db';
 import { limitRefusal } from '../limits';
 import { moduleListRefusal } from '../modules';
 import { roleRefusal } from '../roles';
-import { barcodeRefusal } from '../products';
 import { phoneKey } from '../phone';
 import { requireAuth } from '../auth';
 import type { AuthedRequest } from '../auth';
 import { recordChanges } from '../audit-log';
 import { computeDiscount } from '../discounts';
 import { paymentsOrLegacy, totalsByMethod } from '../payments';
+import { expiryFrom, grantState, isOpen, reasonRefusal, refusalFor } from '../support-access';
 import type { PaymentLine } from '../payments';
 
 export const companiesRouter = Router();
@@ -153,7 +154,111 @@ companiesRouter.post('/', async (req, res) => {
   res.status(201).json(serializeCompany(company));
 });
 
+/*
+ * Товаров чужого магазина здесь нет, и это не пропуск.
+ *
+ * До 15.09.2026 панель платформы читала и правила чужой каталог: названия,
+ * цены продажи и — главное — закупочные, то есть наценку магазина и его
+ * договорённости с поставщиками. И могла эти цены менять.
+ *
+ * Магазин заводит и правит каталог сам, из кассы: `POST /pos/products`,
+ * `PATCH /pos/products/:id`, импорт прайса, перенос из старой программы. Эти
+ * маршруты существовали только затем, чтобы делать это за него, — а заодно
+ * видеть то, что видеть незачем.
+ *
+ * Закрыть их за разрешением владельца, как сделано со сменами, было бы
+ * полумерой: у смен есть повод — «у меня не сходится выручка», — а у чужого
+ * прайса повода нет. Дверь, которой незачем быть, лучше не запирать, а убрать.
+ */
+
+/**
+ * Последний запрос доступа к этой компании, каким бы он ни был.
+ *
+ * Именно последний, а не последний разрешённый: отклонённый запрос — тоже
+ * ответ, и «владелец отказал» должно звучать как отказ, а не как «доступа
+ * нет». Разница видна на экране того, кто просил.
+ */
+async function latestGrant(companyId: string) {
+  return prisma.supportAccess.findFirst({
+    where: { companyId },
+    orderBy: { requestedAt: 'desc' },
+  });
+}
+
+/**
+ * Пропустить к чужим цифрам — или объяснить, почему нет.
+ *
+ * Отмечает и то, что доступом воспользовались: разрешение, по которому никто
+ * не посмотрел, и разрешение, по которому смотрели весь день, — разные вещи, и
+ * владелец вправе их различать.
+ */
+async function allowSupport(companyId: string, res: Response): Promise<boolean> {
+  const grant = await latestGrant(companyId);
+  const now = new Date();
+  if (!isOpen(grant, now)) {
+    res.status(403).json({ error: refusalFor(grantState(grant, now)), supportState: grantState(grant, now) });
+    return false;
+  }
+  await prisma.supportAccess.update({
+    where: { id: grant!.id },
+    data: { firstUsedAt: grant!.firstUsedAt ?? now, lastUsedAt: now },
+  });
+  return true;
+}
+
+/** Что панель платформы знает про свой доступ к этой компании. */
+companiesRouter.get('/:id/support-access', async (req, res) => {
+  const grant = await latestGrant(req.params.id);
+  const now = new Date();
+  res.json({
+    state: grantState(grant, now),
+    reason: grant?.reason ?? '',
+    requestedAt: grant?.requestedAt.toISOString() ?? null,
+    expiresAt: grant?.expiresAt?.toISOString() ?? null,
+  });
+});
+
+/**
+ * Попросить владельца открыть доступ.
+ *
+ * Причина обязательна и пишется своими словами: владелец решает по ней и
+ * больше ни по чему. Запрос поверх уже открытого доступа — не ошибка, а
+ * продление, и отказывать в нём значило бы заставить ждать истечения.
+ */
+companiesRouter.post('/:id/support-access', async (req: AuthedRequest, res) => {
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  const refusal = reasonRefusal(reason);
+  if (refusal) {
+    res.status(400).json({ error: refusal });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!company) {
+    res.status(404).json({ error: 'Компания не найдена' });
+    return;
+  }
+
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.adminUserId }, select: { name: true } });
+  const created = await prisma.supportAccess.create({
+    data: {
+      companyId: company.id,
+      requestedById: req.adminUserId ?? '',
+      // Имя сохраняется отдельно от ссылки: учётную запись переименуют или
+      // закроют, а в журнале должно остаться имя, которое владелец видел.
+      requestedByName: admin?.name ?? 'Администратор платформы',
+      reason,
+    },
+  });
+
+  res.status(201).json({ id: created.id, state: 'pending', requestedAt: created.requestedAt.toISOString() });
+});
+
 companiesRouter.get('/:id/shifts', async (req, res) => {
+  // Сколько магазин зарабатывает — не наше дело, пока владелец не попросил
+  // помочь и не открыл это сам.
+  if (!(await allowSupport(req.params.id, res))) return;
+
   const shifts = await prisma.shift.findMany({
     where: { companyId: req.params.id },
     orderBy: { openedAt: 'desc' },
@@ -217,123 +322,9 @@ companiesRouter.get('/:id/shifts', async (req, res) => {
   res.json(result);
 });
 
-function serializeProduct(p: {
-  id: string;
-  name: string;
-  category: string | null;
-  unit: string;
-  barcode: string | null;
-  purchasePrice: number;
-  salePrice: number;
-  sellable: boolean;
-  stopListed: boolean;
-}) {
-  return {
-    id: p.id,
-    name: p.name,
-    category: p.category ?? '',
-    unit: p.unit,
-    barcode: p.barcode ?? '',
-    purchasePrice: p.purchasePrice,
-    salePrice: p.salePrice,
-    sellable: p.sellable,
-    stopListed: p.stopListed,
-  };
-}
 
-// Variant children (parentProductId set) are managed alongside their parent
-// product's own catalog entry today, not here — this list is the top-level
-// catalog only.
-companiesRouter.get('/:id/products', async (req, res) => {
-  const products = await prisma.product.findMany({
-    where: { companyId: req.params.id, parentProductId: null },
-    orderBy: { name: 'asc' },
-  });
-  res.json(products.map(serializeProduct));
-});
 
-companiesRouter.post('/:id/products', async (req, res) => {
-  const b = req.body ?? {};
-  const purchasePrice = Number(b.purchasePrice);
-  const salePrice = Number(b.salePrice);
-  if (!b.name || !b.unit || !Number.isFinite(purchasePrice) || !Number.isFinite(salePrice) || purchasePrice < 0 || salePrice < 0) {
-    res.status(400).json({ error: 'Заполните название, единицу измерения и цены' });
-    return;
-  }
 
-  const company = await prisma.company.findUnique({
-    where: { id: req.params.id },
-    include: { tariff: true, _count: { select: { products: true } } },
-  });
-  if (!company) {
-    res.status(404).json({ error: 'Компания не найдена' });
-    return;
-  }
-
-  const refusal = limitRefusal('products', company.tariff?.skuLimit, company._count.products);
-  if (refusal) {
-    res.status(409).json({ error: refusal });
-    return;
-  }
-
-  const barcode = typeof b.barcode === 'string' ? b.barcode.trim() : '';
-  const barcodeBusy = await barcodeRefusal(company.id, barcode);
-  if (barcodeBusy) {
-    res.status(409).json({ error: barcodeBusy });
-    return;
-  }
-
-  const product = await prisma.product.create({
-    data: {
-      companyId: company.id,
-      name: b.name,
-      category: b.category || null,
-      unit: b.unit,
-      barcode: barcode || null,
-      purchasePrice,
-      salePrice,
-      sellable: b.sellable !== false,
-    },
-  });
-  res.status(201).json(serializeProduct(product));
-});
-
-companiesRouter.patch('/:id/products/:productId', async (req, res) => {
-  const b = req.body ?? {};
-  const existing = await prisma.product.findFirst({ where: { id: req.params.productId, companyId: req.params.id } });
-  if (!existing) {
-    res.status(404).json({ error: 'Товар не найден' });
-    return;
-  }
-
-  const purchasePrice = Number(b.purchasePrice);
-  const salePrice = Number(b.salePrice);
-  if (!b.name || !b.unit || !Number.isFinite(purchasePrice) || !Number.isFinite(salePrice) || purchasePrice < 0 || salePrice < 0) {
-    res.status(400).json({ error: 'Заполните название, единицу измерения и цены' });
-    return;
-  }
-
-  const barcode = typeof b.barcode === 'string' ? b.barcode.trim() : '';
-  const barcodeBusy = await barcodeRefusal(req.params.id, barcode, existing.id);
-  if (barcodeBusy) {
-    res.status(409).json({ error: barcodeBusy });
-    return;
-  }
-
-  const product = await prisma.product.update({
-    where: { id: existing.id },
-    data: {
-      name: b.name,
-      category: b.category || null,
-      unit: b.unit,
-      barcode: barcode || null,
-      purchasePrice,
-      salePrice,
-      sellable: !!b.sellable,
-    },
-  });
-  res.json(serializeProduct(product));
-});
 
 /**
  * Сотрудник глазами админки платформы — без PIN-кода.
