@@ -359,6 +359,57 @@ const run = async () => {
     check('order is now partly received', reloaded?.status === 'partially_received', `status=${reloaded?.status}`);
   }
 
+  // Аптечный модуль — единственный, который этот прогон не проходил вовсе, а
+  // продаётся он за 14 900 ₸/мес. До 15.09.2026 из семи способов убрать
+  // партионный товар с полки серию уменьшал один: продажа. Остальные шесть
+  // уносили товар, оставляя партию, — а доступное к продаже у такого товара
+  // считается по сериям, и касса предлагала то, чего на полке нет.
+  //
+  // Шаг пропускается, если тариф компании без `pharmacy`: это не поломка, а
+  // отсутствие модуля, и молчать об этом тоже нельзя.
+  console.log('\n== batches, if this company has them ==');
+  const farOff = new Date(Date.now() + 400 * 24 * 60 * 60 * 1000).toISOString();
+  const batchNumber = `SMOKE-${Date.now()}`;
+  const gotBatch = await call('POST', '/pos/batches', {
+    locationId,
+    productId: sellable.id,
+    batchNumber,
+    expiryDate: farOff,
+    quantity: 6,
+  });
+
+  if (gotBatch.status === 403) {
+    skip('партии', `${gotBatch.data?.error ?? 'модуль недоступен'} — тариф без «Партий и сроков»`);
+  } else {
+    check('batch receipt accepted', gotBatch.status === 201, JSON.stringify(gotBatch.data).slice(0, 200));
+
+    const batchesOf = async () => {
+      const list = await call('GET', `/pos/batches?locationId=${locationId}`);
+      const mine = (Array.isArray(list.data) ? list.data : []).find((b) => b.batchNumber === batchNumber);
+      return mine?.quantity ?? null;
+    };
+    check('the batch is on the shelf with its date', (await batchesOf()) === 6, `quantity=${await batchesOf()}`);
+
+    await call('POST', '/pos/sales', {
+      locationId,
+      paymentMethod: 'cash',
+      items: [{ productId: sellable.id, quantity: 1, price: sellable.price }],
+    }, { 'Idempotency-Key': `smoke_batch_sale_${Date.now()}` });
+    check('a sale takes the unit off the batch too', (await batchesOf()) === 5, `quantity=${await batchesOf()}`);
+
+    // Именно этот путь и был сломан: списание уменьшало остаток и оставляло
+    // серию, потому что уменьшение стояло за условием `if (line.batchId)`, а
+    // касса такого поля никогда не отправляла.
+    const wroteOff = await call('POST', '/pos/write-offs', {
+      locationId,
+      reasonCode: 'damage',
+      note: 'дымовой прогон: проверка партий',
+      items: [{ productId: sellable.id, quantity: 1 }],
+    });
+    check('write-off accepted', wroteOff.status === 201, JSON.stringify(wroteOff.data).slice(0, 200));
+    check('a write-off takes the unit off the batch too', (await batchesOf()) === 4, `quantity=${await batchesOf()}`);
+  }
+
   console.log('\n== closing the shift ==');
   // Конец дня, ради которого всё остальное и считается. Проверяется то, на
   // чём держится сверка кассы: закрытие принимает время, когда смену
@@ -393,6 +444,15 @@ const run = async () => {
   check('stock equals the ledger, everywhere',
     rec.data?.mismatched === 0,
     `checked=${rec.data?.checked} mismatched=${rec.data?.mismatched} drift=${rec.data?.totalDrift} first=${JSON.stringify(rec.data?.mismatches?.[0] ?? null)}`);
+  // Вторая пара книг. `undefined` — не «сошлось», а сборка старше этой
+  // проверки: сказать про неё нужно, но валить прогон не за что.
+  if (rec.data?.batchExcess === undefined) {
+    skip('партий не больше, чем товара', 'на сервере сборка старше этой проверки');
+  } else {
+    check('batches never exceed the stock they describe',
+      rec.data.batchExcess.length === 0,
+      `first=${JSON.stringify(rec.data.batchExcess[0] ?? null)}`);
+  }
 
   console.log('\n== revoking access ==');
   // Bumped straight in the database rather than through an endpoint. A route
