@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import type { NextFunction, Request, Response } from 'express';
 import { prisma } from '@anyq/db';
+import { tariffRefusal } from './tariff-gate';
 import { shouldTouchLastSeen } from './devices';
 import { requireSecret } from './secrets';
 
@@ -100,5 +101,21 @@ export async function requirePosAuth(req: PosAuthedRequest, res: Response, next:
 
   req.posUserId = payload.sub;
   req.posCompanyId = payload.companyId;
+
+  // Тариф — последним, после того как разобрались, кто пришёл.
+  //
+  // Здесь, а не в каждом маршруте: проверяли его сами двадцать три из
+  // пятидесяти пишущих, и граница между закрытым и открытым была не решением,
+  // а тем, что успели дописать. Подробности и единственное исключение —
+  // `tariff-gate.ts`.
+  //
+  // Порядок важен: «доступ отозван» и «устройство отключено» — это про самого
+  // человека, и он должен услышать это раньше, чем про счёт магазина.
+  const refusal = await tariffRefusal(payload.companyId, req.method, req.path);
+  if (refusal) {
+    res.status(403).json(refusal);
+    return;
+  }
+
   next();
 }
