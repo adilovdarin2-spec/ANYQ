@@ -22,6 +22,13 @@ export interface FiscalLine {
 }
 
 export interface FiscalPayload {
+  /**
+   * Приход или возврат прихода.
+   *
+   * Стоит первым, потому что меняет смысл всех остальных: `total` у возврата —
+   * это деньги, отданные обратно, а не полученные.
+   */
+  operation: FiscalOperation;
   /** The sale this receipt is for. Providers use it as their own idempotency key. */
   documentId: string;
   registrationNumber: string;
@@ -53,7 +60,27 @@ export type FiscalStatus = 'pending' | 'registered' | 'failed';
 // than assuming a printed receipt is a fiscal one — is the whole point: a
 // shop needs to be able to answer "which of today's sales never reached the
 // tax authority", and it can only answer that if the two were never conflated.
+/**
+ * Что это за чек с точки зрения налоговой.
+ *
+ * `sale` — приход, `return` — возврат прихода. Различать обязательно: без
+ * этого у налоговой остаются продажи, которых магазин не отменял, и его
+ * фискальная выручка навсегда выше настоящей ровно на сумму всех возвратов.
+ *
+ * Поле появилось 15.09.2026. До него возврат не заводил фискальной строки
+ * вовсе — не то чтобы уходил неправильно, а просто не существовал для
+ * налоговой, и заметить это было неоткуда: ни экран «не дошло», ни сверка про
+ * него не знали.
+ *
+ * Как именно чек возврата называется у конкретного ОФД, решится, когда
+ * появится тестовый контур, — имена полей провайдера живут в
+ * `fiscal-network.ts` и только там. Здесь записан сам факт, и он не зависит от
+ * провайдера.
+ */
+export type FiscalOperation = 'sale' | 'return';
+
 export function buildFiscalPayload(input: {
+  operation: FiscalOperation;
   documentId: string;
   registrationNumber: string;
   createdAt: Date;
@@ -66,6 +93,7 @@ export function buildFiscalPayload(input: {
   pointsRedeemed: number;
 }): FiscalPayload {
   return {
+    operation: input.operation,
     documentId: input.documentId,
     registrationNumber: input.registrationNumber,
     createdAt: input.createdAt.toISOString(),
