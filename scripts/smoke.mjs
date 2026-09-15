@@ -24,6 +24,8 @@
 // a fresh deployment and unacceptable on a live one: point it at a new or
 // development database, never at a shop's.
 
+import { retryUnreachable } from './lib/retry-db.mjs';
+
 const BASE = (process.env.API_URL || process.env.API || 'http://localhost:4010').replace(/[/]+$/, '');
 
 let token = null;
@@ -402,11 +404,20 @@ const run = async () => {
     const { PrismaClient } = await import('@prisma/client');
     const db = new PrismaClient();
     try {
-      await db.user.update({ where: { id: login.data.user.id }, data: { tokenVersion: { increment: 1 } } });
+      // Через повтор: это единственный шаг прогона, который ходит в базу
+      // напрямую, и одна секунда сетевой ряби на нём обрывала весь прогон
+      // строкой «run did not finish» — после четырёх десятков пройденных
+      // проверок. Повторяется только соединение, которое не открылось; см.
+      // scripts/lib/retry-db.mjs.
+      const bump = (by) =>
+        retryUnreachable(() =>
+          db.user.update({ where: { id: login.data.user.id }, data: { tokenVersion: { increment: by } } }),
+        );
+      await bump(1);
       const afterRevoke = await call('GET', `/pos/replenishment?locationId=${locationId}`);
       check('a token minted before revocation stops working', afterRevoke.status === 401, `status=${afterRevoke.status}`);
       // Put it back, so re-running the script does not need a fresh login.
-      await db.user.update({ where: { id: login.data.user.id }, data: { tokenVersion: { decrement: 1 } } });
+      await bump(-1);
     } finally {
       await db.$disconnect();
     }

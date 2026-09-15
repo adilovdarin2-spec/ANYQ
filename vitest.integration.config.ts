@@ -22,8 +22,17 @@ import { defineConfig } from 'vitest/config';
 // написано в `packages/db/src/pool.ts`. Таймауты тоже оставлены штатными:
 // прогон, которому чего-то не хватает, должен падать быстро и по делу, а не
 // ждать полминуты, пока станет непонятно, чего именно он ждал.
+//
+// Адрес — `127.0.0.1`, а не `localhost`, и это не вкусовщина. Docker Desktop
+// под Windows публикует порт дважды: `com.docker.backend` слушает IPv4, а
+// `wslrelay` — IPv6. Имя `localhost` разрешается в оба адреса, и Node выбирает
+// между ними гонкой. Когда она разрешается не в ту сторону, соединение не
+// открывается, прогон краснеет с «Can't reach database server» — вразнобой, в
+// разных файлах, и воспроизводится через раз. Проверено руками: в одну и ту же
+// минуту `localhost` отказывал, а `127.0.0.1` и `[::1]` подключались оба.
+// Литеральный адрес гонку убирает: один адрес — один ретранслятор.
 const TEST_DATABASE_URL =
-  'postgresql://anyq:anyq_dev@localhost:5433/anyq_test?schema=public';
+  'postgresql://anyq:anyq_dev@127.0.0.1:5433/anyq_test?schema=public';
 process.env.DATABASE_URL = process.env.DATABASE_URL || TEST_DATABASE_URL;
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'integration-tests-only';
 

@@ -46,7 +46,10 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://anyq:anyq_ci@localhost:5433/anyq_test?schema=public
+      # 127.0.0.1, а не localhost — по той же причине, что в
+      # vitest.integration.config.ts: имя разрешается в два адреса, и выбор
+      # между ними это гонка.
+      DATABASE_URL: postgresql://anyq:anyq_ci@127.0.0.1:5433/anyq_test?schema=public
       JWT_SECRET: ci-tests-only
 
     steps:

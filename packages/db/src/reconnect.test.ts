@@ -3,13 +3,48 @@ import { ATTEMPTS, retryUnreachable, unreachable } from './reconnect';
 
 const nap = async () => {};
 
-/** Отказ, каким его отдаёт Prisma, когда соединение не открылось. */
-const notReached = Object.assign(new Error("Can't reach database server"), { errorCode: 'P1001' });
+/**
+ * Отказ, каким его отдаёт Prisma, когда соединение не открылось.
+ *
+ * Форма снята с живой ошибки, а не выдумана, и это здесь главное. Первая версия
+ * теста собирала объект с `errorCode: 'P1001'` — так написано в документации, и
+ * так выглядит правдоподобно. У настоящей ошибки Prisma 6.19 это поле пустое:
+ * код есть в тексте, но не в поле. Тест был зелёный, `unreachable` не
+ * срабатывала никогда, и повтор не повторял ничего — то есть проверялась
+ * функция на форме, которой в природе нет.
+ */
+const notReached = Object.assign(
+  new Error(
+    [
+      'Invalid `prisma.user.findFirst()` invocation:',
+      '',
+      "Can't reach database server at `localhost:5433`",
+      '',
+      'Please make sure your database server is running at `localhost:5433`.',
+    ].join('\n'),
+  ),
+  { name: 'PrismaClientInitializationError', clientVersion: '6.19.3', errorCode: undefined },
+);
 
 describe('что считается «не доехало до базы»', () => {
-  it('P1001 — да', () => {
+  it('настоящая ошибка Prisma — да, даже без кода в поле', () => {
+    expect(notReached.errorCode).toBeUndefined();
     expect(unreachable(notReached)).toBe(true);
+  });
+
+  it('и код в поле — тоже да, если другая версия его заполнит', () => {
     expect(unreachable({ code: 'P1001' })).toBe(true);
+    expect(unreachable({ errorCode: 'P1001' })).toBe(true);
+  });
+
+  it('но не всякая неудача подключения', () => {
+    // Тем же классом приходит «неверный пароль». Повторять его бессмысленно:
+    // пароль не станет верным со второй попытки.
+    const badPassword = Object.assign(
+      new Error('Authentication failed against database server, the provided database credentials are not valid'),
+      { name: 'PrismaClientInitializationError' },
+    );
+    expect(unreachable(badPassword)).toBe(false);
   });
 
   it('всё остальное — нет', () => {

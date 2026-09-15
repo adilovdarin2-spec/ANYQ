@@ -21,11 +21,27 @@
 export const ATTEMPTS = 3;
 export const PAUSE_MS = 150;
 
-/** Запрос не дошёл до базы — в отличие от «дошёл и не понравился». */
+/**
+ * Запрос не дошёл до базы — в отличие от «дошёл и не понравился».
+ *
+ * Определяется по двум признакам сразу, и это не перестраховка. Первая версия
+ * этой функции спрашивала только `errorCode === 'P1001'` — так написано в
+ * документации, и так выглядит правдоподобно. У живой ошибки Prisma 6.19
+ * `errorCode` равен `undefined`: код есть в тексте сообщения, но не в поле.
+ * Функция не срабатывала никогда, повтор не повторял ничего, и тесты при этом
+ * были зелёными — потому что проверяли объект, который я придумал сам.
+ *
+ * Поэтому здесь и поле (вдруг другая версия его заполняет), и то, чем ошибка
+ * является на самом деле: неудача подключения с текстом про недоступный
+ * сервер. Класс без текста брать нельзя — тем же классом приходит «неверный
+ * пароль», а его повторять бессмысленно.
+ */
 export function unreachable(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
-  const e = error as { errorCode?: unknown; code?: unknown };
-  return e.errorCode === 'P1001' || e.code === 'P1001';
+  const e = error as { errorCode?: unknown; code?: unknown; name?: unknown; message?: unknown };
+  if (e.errorCode === 'P1001' || e.code === 'P1001') return true;
+  const text = typeof e.message === 'string' ? e.message : '';
+  return e.name === 'PrismaClientInitializationError' && text.includes("Can't reach database server");
 }
 
 export async function retryUnreachable<T>(
