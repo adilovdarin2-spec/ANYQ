@@ -193,6 +193,7 @@ const NOT_A_MESSAGE = new Set<string>([
   // Written into a document's own reason line, which the register shows verbatim
   // because the shop's own wording sits in the same field.
   'Пересчёт ячеек: 7', 'Сверка журнала: исправлено позиций 7',
+  'Сверка журнала: приведено партий 7', 'Сверка журнала: исправлено позиций 7, приведено партий 7',
   // An example inside a doc comment.
   'Сок "Дар" 1л',
   // Written to the server's own log, never sent to anybody. The operator

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileBalances, summarize, mismatchExplanation } from './reconciliation';
+import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches } from './reconciliation';
 import type { CachedQuantity, LedgerTotal } from './reconciliation';
 
 const ledger: LedgerTotal[] = [
@@ -119,5 +119,38 @@ describe('mismatchExplanation', () => {
     expect(mismatchExplanation('drift')).toBe('Остаток не сходится с журналом движений');
     expect(mismatchExplanation('orphan_row')).toBe('Остаток есть, а движений по нему нет');
     expect(mismatchExplanation('missing_row')).toBe('Движения есть, а строки остатка нет');
+  });
+});
+
+describe('reconcileBatches', () => {
+  it('молчит, когда партии сходятся с остатком', () => {
+    expect(reconcileBatches([{ productId: 'pcm', batched: 20 }], [{ productId: 'pcm', quantity: 20 }])).toEqual([]);
+  });
+
+  it('молчит, когда партий меньше остатка', () => {
+    // Часть товара заведена без партий — это законно, а не расхождение.
+    // Требовать серию там, где её не заводили, значило бы сломать обычный
+    // магазин ради аптеки.
+    expect(reconcileBatches([{ productId: 'pcm', batched: 12 }], [{ productId: 'pcm', quantity: 20 }])).toEqual([]);
+  });
+
+  it('называет превышение — товар, который касса предложит, а полка не отдаст', () => {
+    expect(reconcileBatches([{ productId: 'pcm', batched: 20 }], [{ productId: 'pcm', quantity: 14 }])).toEqual([
+      { productId: 'pcm', batched: 20, stock: 14, excess: 6 },
+    ]);
+  });
+
+  it('партия без остатка вообще — расхождение на всю партию', () => {
+    expect(reconcileBatches([{ productId: 'pcm', batched: 8 }], [])).toEqual([
+      { productId: 'pcm', batched: 8, stock: 0, excess: 8 },
+    ]);
+  });
+
+  it('крупные расхождения идут первыми', () => {
+    const out = reconcileBatches(
+      [{ productId: 'a', batched: 12 }, { productId: 'b', batched: 30 }],
+      [{ productId: 'a', quantity: 10 }, { productId: 'b', quantity: 5 }],
+    );
+    expect(out.map((row) => row.productId)).toEqual(['b', 'a']);
   });
 });

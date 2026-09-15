@@ -57,7 +57,7 @@ import { isWriteOffReason, resolveWriteOff, writeOffErrorMessage, resolveQuarant
 import type { QuarantineAction } from '../writeoffs';
 import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErrorMessage } from '../bins';
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
-import { reconcileBalances, summarize, mismatchExplanation } from '../reconciliation';
+import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches } from '../reconciliation';
 import { buildImportPlan } from '../import';
 import { ensureCabinet, resetCabinet } from '../cabinet';
 import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
@@ -5447,6 +5447,26 @@ async function findLedgerMismatches(companyId: string, locationId: string) {
   return { ledgerTotals, mismatches: reconcileBalances(ledgerTotals, cached) };
 }
 
+/**
+ * Партии, которых больше, чем товара, — на одной точке.
+ *
+ * Отдельно от сверки журнала, потому что это другая пара книг и другой
+ * ремонт. Журнал и остаток расходятся из-за сбоя записи, и правит их пересчёт
+ * кэша по журналу. Партии расходятся из-за того, что товар ушёл, а серию
+ * никто не тронул, — и правит их уменьшение серии.
+ */
+async function findBatchExcess(locationId: string) {
+  const [batchRows, stockRows] = await Promise.all([
+    prisma.productBatch.groupBy({ by: ['productId'], where: { locationId }, _sum: { quantity: true } }),
+    prisma.stock.groupBy({ by: ['productId'], where: { locationId }, _sum: { quantity: true } }),
+  ]);
+
+  return reconcileBatches(
+    batchRows.map((row) => ({ productId: row.productId, batched: row._sum.quantity ?? 0 })),
+    stockRows.map((row) => ({ productId: row.productId, quantity: row._sum.quantity ?? 0 })),
+  );
+}
+
 posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await requireOwnerOrManager(req.posUserId))) {
     res.status(403).json({ error: 'Сверка доступна владельцу и менеджеру' });
@@ -5466,9 +5486,12 @@ posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, r
   const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
   if (!locationId) return;
 
-  const { ledgerTotals, mismatches } = await findLedgerMismatches(req.posCompanyId!, locationId);
+  const [{ ledgerTotals, mismatches }, batchExcess] = await Promise.all([
+    findLedgerMismatches(req.posCompanyId!, locationId),
+    findBatchExcess(locationId),
+  ]);
   const products = await prisma.product.findMany({
-    where: { id: { in: [...new Set(mismatches.map((m) => m.productId))] } },
+    where: { id: { in: [...new Set([...mismatches, ...batchExcess].map((m) => m.productId))] } },
     select: { id: true, name: true, unit: true },
   });
   const productById = new Map(products.map((product) => [product.id, product]));
@@ -5477,6 +5500,17 @@ posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, r
     locationId,
     checkedAt: new Date().toISOString(),
     ...summarize(ledgerTotals, mismatches),
+    // Партии — отдельным списком, потому что это другая пара книг. Пустой у
+    // всех, кто партии не ведёт, и это правильный ответ, а не умолчание.
+    batchExcess: batchExcess.slice(0, 100).map((row) => ({
+      productId: row.productId,
+      name: productById.get(row.productId)?.name ?? '—',
+      unit: productById.get(row.productId)?.unit ?? '',
+      batched: row.batched,
+      stock: row.stock,
+      excess: row.excess,
+      explanation: 'Партий больше, чем товара на остатке — касса предложит то, чего на полке нет',
+    })),
     mismatches: mismatches.slice(0, 100).map((mismatch) => ({
       productId: mismatch.productId,
       name: productById.get(mismatch.productId)?.name ?? '—',
@@ -5490,6 +5524,23 @@ posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, r
     })),
   });
 });
+
+/**
+ * Чем подписан документ починки — по тому, что в нём на самом деле исправлено.
+ *
+ * Строка «Сверка журнала: исправлено позиций 3» на документе, где журнала не
+ * трогали вовсе, а поправили три серии, называет не то, что сделано. Читать
+ * этот документ будут через месяц и по одной этой строке.
+ */
+export function repairReason(ledgerLines: number, batchLines: number): string {
+  // Три случая — три целых фразы, а не склейка из кусков. Эти строки
+  // переводятся по своему тексту, и половина фразы отдельно не переводится:
+  // порядок слов в казахском не русский. Сегодня это уже ловилось однажды, на
+  // отказах про модули.
+  if (batchLines === 0) return `Сверка журнала: исправлено позиций ${ledgerLines}`;
+  if (ledgerLines === 0) return `Сверка журнала: приведено партий ${batchLines}`;
+  return `Сверка журнала: исправлено позиций ${ledgerLines}, приведено партий ${batchLines}`;
+}
 
 // Rebuilding the cache from the ledger, which is the only repair that makes
 // sense: the ledger is the source of truth by construction, so where they
@@ -5522,33 +5573,16 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
-  const { mismatches } = await findLedgerMismatches(req.posCompanyId!, locationId);
-  if (mismatches.length === 0) {
-    res.json({ repaired: 0, documentId: null });
+  const [{ mismatches }, batchExcess] = await Promise.all([
+    findLedgerMismatches(req.posCompanyId!, locationId),
+    findBatchExcess(locationId),
+  ]);
+  if (mismatches.length === 0 && batchExcess.length === 0) {
+    res.json({ repaired: 0, repairedBatches: 0, documentId: null });
     return;
   }
 
   const document = await prisma.$transaction(async (tx) => {
-    const created = await tx.document.create({
-      data: {
-        companyId: req.posCompanyId!,
-        locationId,
-        type: 'reconciliation',
-        status: 'confirmed',
-        reason: `Сверка журнала: исправлено позиций ${mismatches.length}`,
-        createdBy: req.posUserId!,
-        items: {
-          // The correction, signed the way every other document's quantity is:
-          // what the number moved by, so the document reads like the others.
-          create: mismatches.map((mismatch) => ({
-            productId: mismatch.productId,
-            quantity: -mismatch.difference,
-            price: 0,
-          })),
-        },
-      },
-    });
-
     for (const mismatch of mismatches) {
       if (mismatch.kind === 'missing_row') {
         await tx.stock.create({
@@ -5589,10 +5623,93 @@ posRouter.post('/reconciliation/repair', requirePosAuth, async (req: PosAuthedRe
           AND "binLocation" = ${mismatch.binLocation}`;
     }
 
-    return created;
+    // Партии считаются заново — здесь, после починки остатка, а не по списку,
+    // прочитанному до транзакции.
+    //
+    // Порядок важен и стоил одного упавшего теста. Починка остатка пересчитала
+    // кэш по журналу, то есть числа, с которыми партии сравниваются, только
+    // что изменились. Расхождение, увиденное до этого, могло быть следствием
+    // неверного остатка — и «починка» уменьшила бы правильную серию, чтобы
+    // сойтись с неправильным числом. Сначала остаток становится верным, потом
+    // с ним сверяются партии.
+    const batchesToFix = await (async () => {
+      const [batchRows, stockRows] = await Promise.all([
+        tx.productBatch.groupBy({ by: ['productId'], where: { locationId }, _sum: { quantity: true } }),
+        tx.stock.groupBy({ by: ['productId'], where: { locationId }, _sum: { quantity: true } }),
+      ]);
+      return reconcileBatches(
+        batchRows.map((row) => ({ productId: row.productId, batched: row._sum.quantity ?? 0 })),
+        stockRows.map((row) => ({ productId: row.productId, quantity: row._sum.quantity ?? 0 })),
+      );
+    })();
+
+    // Приводятся тем же правилом, каким их уменьшает уход товара: с самого
+    // раннего срока. Это не соглашение, а восстановление — расхождение взялось
+    // оттого, что товар ушёл, а серию никто не тронул; уйти он должен был по
+    // `allocateForRemoval`, и ремонт доделывает то, что не сделалось. Точным
+    // он быть не может там, где в истории были ещё и продажи: продажа обходит
+    // просроченное, а списание — нет. Одно правило на всё ближе к истине, чем
+    // любое второе, и оно хотя бы одно.
+    //
+    // Остаток при этом не трогается. Он сверен с журналом выше и после этого
+    // верен; неправа здесь только партия.
+    const batchLines: { productId: string; batchId: string; quantity: number }[] = [];
+    for (const excess of batchesToFix) {
+      const rows = await tx.productBatch.findMany({
+        where: { locationId, productId: excess.productId, quantity: { gt: 0 } },
+      });
+      const allocations = allocateForRemoval(
+        excess.excess,
+        rows.map((row) => ({ batchId: row.id, expiryDate: row.expiryDate, quantity: row.quantity })),
+      );
+      for (const alloc of allocations) {
+        await tx.productBatch.update({
+          where: { id: alloc.batchId },
+          data: { quantity: { decrement: alloc.quantity } },
+        });
+        batchLines.push({ productId: excess.productId, batchId: alloc.batchId, quantity: -alloc.quantity });
+      }
+    }
+
+    // Документ пишется последним, потому что только теперь известно, что в нём
+    // написать: до починки остатка число исправленных партий — предположение.
+    const created = await tx.document.create({
+      data: {
+        companyId: req.posCompanyId!,
+        locationId,
+        type: 'reconciliation',
+        status: 'confirmed',
+        reason: repairReason(mismatches.length, batchesToFix.length),
+        createdBy: req.posUserId!,
+        items: {
+          // The correction, signed the way every other document's quantity is:
+          // what the number moved by, so the document reads like the others.
+          create: [
+            ...mismatches.map((mismatch) => ({
+              productId: mismatch.productId,
+              quantity: -mismatch.difference,
+              price: 0,
+            })),
+            // Поправка партии — та же форма, только названа серия.
+            ...batchLines.map((line) => ({
+              productId: line.productId,
+              batchId: line.batchId,
+              quantity: line.quantity,
+              price: 0,
+            })),
+          ],
+        },
+      },
+    });
+
+    return { created, repairedBatches: batchesToFix.length };
   }, { timeout: 30000 });
 
-  res.json({ repaired: mismatches.length, documentId: document.id });
+  res.json({
+    repaired: mismatches.length,
+    repairedBatches: document.repairedBatches,
+    documentId: document.created.id,
+  });
 });
 
 // A catalogue arrives as a grid of strings — pasted straight out of Excel, or

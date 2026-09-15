@@ -68,9 +68,33 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
               )}
             </div>
 
-            {report.mismatched === 0 ? (
+            {report.batchExcess.length > 0 && (
+              <>
+                <div className="section-title">{t('recon.batchTitle')}</div>
+                {report.batchExcess.map((row) => (
+                  <div key={row.productId} className="report-row low">
+                    <span>
+                      {row.name}
+                      <br />
+                      <span className="order-meta">
+                        {t('recon.batchLine', {
+                          batched: formatQuantity(row.batched),
+                          stock: formatQuantity(row.stock),
+                          unit: row.unit,
+                        })}
+                      </span>
+                      <br />
+                      <span className="order-meta">{row.explanation}</span>
+                    </span>
+                    <span>−{formatQuantity(row.excess)}</span>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {report.mismatched === 0 && report.batchExcess.length === 0 ? (
               <div className="empty-state">{t('recon.allGood')}</div>
-            ) : (
+            ) : report.mismatched === 0 ? null : (
               <>
                 {report.mismatches.map((mismatch, index) => (
                   <div key={`${mismatch.productId}-${mismatch.binLocation}-${index}`} className="report-row low">
@@ -92,7 +116,7 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
         )}
       </div>
 
-      {report && report.mismatched > 0 && (
+      {report && (report.mismatched > 0 || report.batchExcess.length > 0) && (
         <div className="screen-footer">
           {/* The ledger is right by construction, so the repair is to make the
               cached figure equal it — never the other way round. */}
@@ -100,7 +124,9 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
               {t('recon.repairWhat')}
           </p>
           <button className="btn btn-primary btn-block" disabled={repairing} onClick={onRepair}>
-            {repairing ? t('recon.repairing') : t('recon.repair', { count: report.mismatched })}
+            {repairing
+              ? t('recon.repairing')
+              : t('recon.repair', { count: report.mismatched + report.batchExcess.length })}
           </button>
         </div>
       )}
