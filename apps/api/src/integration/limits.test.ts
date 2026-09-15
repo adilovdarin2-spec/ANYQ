@@ -150,14 +150,9 @@ describe('лимит сотрудников', () => {
 });
 
 describe('лимит товаров', () => {
-  it('не даёт завести товар сверх тарифа — ни из админки, ни из кассы', async () => {
+  it('не даёт завести товар сверх тарифа', async () => {
     // В фикстуре один товар.
     await setLimits({ skuLimit: 1 });
-
-    const fromAdmin = await api(adminToken, 'POST', `/companies/${fx.companyId}/products`, {
-      name: 'Хлеб', unit: 'шт', purchasePrice: 100, salePrice: 200,
-    });
-    expect(fromAdmin.status).toBe(409);
 
     const fromPos = await api(fx.token, 'POST', '/pos/products', {
       name: 'Хлеб', unit: 'шт', purchasePrice: 100, salePrice: 200,
@@ -165,6 +160,20 @@ describe('лимит товаров', () => {
     expect(fromPos.status).toBe(409);
     expect(fromPos.body.error).toContain('1 товар');
 
+    expect(await prisma.product.count({ where: { companyId: fx.companyId } })).toBe(1);
+  });
+
+  it('и второго пути завести его больше нет', async () => {
+    // Раньше товар можно было создать ещё и из панели платформы, и лимит
+    // проверялся в обоих местах. С 15.09.2026 такого маршрута нет вовсе:
+    // магазин ведёт каталог сам, а панель платформы его не видит и не правит.
+    // Проверяется здесь, потому что лимит — ровно то место, где «а есть ли
+    // ещё один путь» имеет значение.
+    await setLimits({ skuLimit: 1 });
+    const fromAdmin = await api(adminToken, 'POST', `/companies/${fx.companyId}/products`, {
+      name: 'Хлеб', unit: 'шт', purchasePrice: 100, salePrice: 200,
+    });
+    expect(fromAdmin.status).toBe(404);
     expect(await prisma.product.count({ where: { companyId: fx.companyId } })).toBe(1);
   });
 

@@ -111,3 +111,24 @@ export interface CabinetSummary {
     transfers: { documentId: string; fromLocationName: string; receivedAt: string | null; receivedByName: string | null; lines: { name: string; sent: number; received: number }[] }[];
   };
 }
+
+/**
+ * Просьба сотрудника ANYQ посмотреть цифры этого магазина.
+ *
+ * Панель платформы видит тариф, владельца и срок — то есть договор. Выручку и
+ * закупочные цены она не видит: это магазин, а не договор. Когда для помощи
+ * посмотреть всё-таки нужно, нас просят разрешить, и решает владелец.
+ */
+export interface SupportRequest {
+  id: string;
+  /** 'pending' — ждёт ответа, 'active' — доступ открыт, дальше — уже отвеченные. */
+  state: 'pending' | 'active' | 'declined' | 'revoked' | 'expired' | 'none';
+  /** Имя сотрудника ANYQ на момент запроса. */
+  who: string;
+  reason: string;
+  requestedAt: string;
+  expiresAt: string | null;
+  /** Разрешение, которым не воспользовались, и разрешение, по которому смотрели, — разные вещи. */
+  firstUsedAt: string | null;
+  lastUsedAt: string | null;
+}

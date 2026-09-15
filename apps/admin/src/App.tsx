@@ -3,7 +3,6 @@ import { Sidebar } from './components/Sidebar';
 import { CompaniesTable } from './components/CompaniesTable';
 import { CreateCompanyDrawer } from './components/CreateCompanyDrawer';
 import { CompanyDetailDrawer } from './components/CompanyDetailDrawer';
-import { ProductsDrawer } from './components/ProductsDrawer';
 import { UsersDrawer } from './components/UsersDrawer';
 import { LoginScreen } from './components/LoginScreen';
 import { MfaSettings } from './components/MfaSettings';
@@ -12,16 +11,15 @@ import {
   ApiError,
   createCompany,
   createLocation,
-  createProduct,
   createUser,
   fetchMe,
   getCompanies,
-  getProducts,
   getShifts,
   updateLocation,
-  updateProduct,
   updateTariff,
   updateUser,
+  fetchSupportAccess,
+  requestSupportAccess,
 } from './api';
 import type { CreateCompanyPayload, TariffPayload, UserPayload, LocationPayload } from './api';
 import type { Company } from './types';
@@ -53,7 +51,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [productsCompanyId, setProductsCompanyId] = useState<string | null>(null);
   const [usersCompanyId, setUsersCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -105,20 +102,20 @@ export default function App() {
     return getShifts(token, companyId);
   }
 
-  function handleLoadProducts(companyId: string) {
-    if (!token) return Promise.resolve([]);
-    return getProducts(token, companyId);
+  function handleLoadAccess(companyId: string) {
+    if (!token) {
+      return Promise.resolve({ state: 'none' as const, reason: '', requestedAt: null, expiresAt: null });
+    }
+    return fetchSupportAccess(token, companyId);
   }
 
-  function handleCreateProduct(companyId: string, payload: Parameters<typeof createProduct>[2]) {
-    if (!token) throw new Error('Не авторизован');
-    return createProduct(token, companyId, payload);
+  function handleRequestAccess(companyId: string, reason: string) {
+    if (!token) return Promise.resolve({ id: '' });
+    return requestSupportAccess(token, companyId, reason);
   }
 
-  function handleUpdateProduct(companyId: string, productId: string, payload: Parameters<typeof updateProduct>[3]) {
-    if (!token) throw new Error('Не авторизован');
-    return updateProduct(token, companyId, productId, payload);
-  }
+
+
 
   async function handleCreateUser(companyId: string, payload: UserPayload) {
     if (!token) throw new Error('Не авторизован');
@@ -149,7 +146,6 @@ export default function App() {
   }
 
   const selected = companies.find((c) => c.id === selectedId) ?? null;
-  const productsCompany = companies.find((c) => c.id === productsCompanyId) ?? null;
   const usersCompany = companies.find((c) => c.id === usersCompanyId) ?? null;
 
   if (!token) {
@@ -203,24 +199,14 @@ export default function App() {
           onClose={() => setSelectedId(null)}
           onUpdateTariff={handleUpdateTariff}
           onLoadShifts={handleLoadShifts}
-          onManageProducts={() => setProductsCompanyId(selected.id)}
+          onLoadAccess={handleLoadAccess}
+          onRequestAccess={handleRequestAccess}
           onManageUsers={() => setUsersCompanyId(selected.id)}
           onCreateLocation={handleCreateLocation}
           onUpdateLocation={handleUpdateLocation}
         />
       )}
-      {productsCompany && (
-        <ProductsDrawer
-          key={productsCompany.id}
-          companyId={productsCompany.id}
-          companyName={productsCompany.name}
-          onClose={() => setProductsCompanyId(null)}
-          onLoad={handleLoadProducts}
-          onCreate={handleCreateProduct}
-          onUpdate={handleUpdateProduct}
-        />
-      )}
-      {usersCompany && (
+            {usersCompany && (
         <UsersDrawer
           key={usersCompany.id}
           companyId={usersCompany.id}

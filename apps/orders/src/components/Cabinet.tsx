@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { CabinetLocation, CabinetSummary } from '../types';
+import type { CabinetLocation, CabinetSummary, SupportRequest } from '../types';
 import {
   ApiError,
+  answerSupportRequest,
   cabinetLogin,
   createCabinetPassword,
   fetchCabinetLocations,
   fetchCabinetStatus,
   fetchCabinetSummary,
+  fetchSupportRequests,
   forgetCabinetToken,
   readCabinetToken,
   storeCabinetToken,
@@ -37,6 +39,7 @@ export function Cabinet({ secret }: { secret: string }) {
   const [summary, setSummary] = useState<CabinetSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [supportRequests, setSupportRequests] = useState<SupportRequest[]>([]);
 
   useEffect(() => {
     document.title = 'Кабинет владельца · ANYQ';
@@ -93,6 +96,35 @@ export function Cabinet({ secret }: { secret: string }) {
       cancelled = true;
     };
   }, [token, signOut]);
+
+  /**
+   * Просьбы посмотреть цифры — отдельно от выручки и намеренно.
+   *
+   * Они не зависят ни от выбранной точки, ни от периода, и грузить их заново
+   * каждый раз, когда владелец переключает «день/неделя», значило бы
+   * перерисовывать карточку с вопросом под рукой, которая его нажимает.
+   */
+  const loadSupport = useCallback(() => {
+    if (!token) return;
+    fetchSupportRequests(token)
+      .then((data) => setSupportRequests(data.requests))
+      // Молча: кабинет открывают, чтобы посмотреть выручку, и упавший запрос
+      // про доступ не повод загораживать её ошибкой.
+      .catch(() => undefined);
+  }, [token]);
+
+  useEffect(() => {
+    loadSupport();
+  }, [loadSupport]);
+
+  const answerSupport = useCallback(
+    async (id: string, action: 'grant' | 'decline' | 'revoke') => {
+      if (!token) return;
+      await answerSupportRequest(token, id, action);
+      loadSupport();
+    },
+    [token, loadSupport],
+  );
 
   const load = useCallback(() => {
     if (!token || !locationId) return;
@@ -164,6 +196,8 @@ export function Cabinet({ secret }: { secret: string }) {
       onChangeDays={setDays}
       onRefresh={load}
       onSignOut={signOut}
+      supportRequests={supportRequests}
+      onAnswerSupport={answerSupport}
     />
   );
 }

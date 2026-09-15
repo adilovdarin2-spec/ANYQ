@@ -207,3 +207,12 @@ export interface Product {
   sellable: boolean;
   stopListed: boolean;
 }
+
+/** Что нам сейчас разрешено смотреть у этой компании. */
+export interface SupportAccessState {
+  state: 'none' | 'pending' | 'active' | 'declined' | 'revoked' | 'expired';
+  /** Причина последнего запроса — своими словами, теми же, что видел владелец. */
+  reason: string;
+  requestedAt: string | null;
+  expiresAt: string | null;
+}

@@ -39,6 +39,22 @@ beforeEach(async () => {
     data: { email: EMAIL, name: 'Поддержка', passwordHash: await bcrypt.hash(PASSWORD, 10) },
   });
   adminToken = (await api(null, 'POST', '/auth/login', { email: EMAIL, password: PASSWORD })).body.token;
+
+  // Разрешение владельца — с 15.09.2026 без него этот экран не открывается
+  // вовсе. Проставляется здесь напрямую, потому что эти проверки про
+  // арифметику отчёта, а не про то, как даётся согласие: его разбирает
+  // `support-consent.test.ts`, и дублировать весь круг в каждом тесте значило
+  // бы проверять согласие двадцать раз и отчёт — ни разу внятно.
+  await prisma.supportAccess.create({
+    data: {
+      companyId: fx.companyId,
+      requestedById: 'test',
+      requestedByName: 'Поддержка',
+      reason: 'Владелец звонил про расхождение в кассе',
+      grantedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    },
+  });
 });
 
 async function openShift(openingCash: number) {

@@ -1,4 +1,5 @@
-import type { CabinetLocation, CabinetSummary } from '../types';
+import type { CabinetLocation, CabinetSummary, SupportRequest } from '../types';
+import { SupportRequests } from './SupportRequests';
 
 interface Props {
   company: string;
@@ -12,6 +13,8 @@ interface Props {
   onChangeDays: (days: number) => void;
   onRefresh: () => void;
   onSignOut: () => void;
+  supportRequests: SupportRequest[];
+  onAnswerSupport: (id: string, action: 'grant' | 'decline' | 'revoke') => Promise<void>;
 }
 
 /** Неразрывный пробел: сумма не должна переноситься посередине. */
@@ -59,8 +62,11 @@ function dateLabel(iso: string): string {
  * Это не украшение: так свёрстан любой акт и любая накладная, которые владелец
  * читает каждый день, и глаз находит в них сумму без усилия.
  *
- * Ни одной кнопки, которая что-то меняет: за этим токеном нет ни одного
- * пишущего маршрута.
+ * Ни одной кнопки, которая меняет магазин: товар, цены и продажи через кабинет
+ * не идут. Решается здесь ровно одно — пускать ли ANYQ посмотреть эти цифры,
+ * когда мы просим помочь. Это про доступ, а не про торговлю, и принимать такое
+ * решение владелец должен там, где он сидит один, а не в кассе, которую видят
+ * сотрудники.
  */
 export function CabinetScreen({
   company,
@@ -74,6 +80,8 @@ export function CabinetScreen({
   onChangeDays,
   onRefresh,
   onSignOut,
+  supportRequests,
+  onAnswerSupport,
 }: Props) {
   const shifts = summary?.money.shifts ?? [];
   // Открытая смена ещё не считана — это «пока рано», а не расхождение.
@@ -130,6 +138,10 @@ export function CabinetScreen({
           {loading ? '…' : '↻'}
         </button>
       </div>
+
+      {/* Выше выручки: просьба, которую надо искать, — это просьба, на которую
+          ответят «да» не читая. */}
+      <SupportRequests requests={supportRequests} onAnswer={onAnswerSupport} />
 
       {error && <p className="cab-error cab-standalone">{error}</p>}
       {!summary && loading && <p className="cab-muted cab-standalone">Считаем по вашим документам…</p>}
@@ -285,8 +297,13 @@ export function CabinetScreen({
           </Section>
 
           <footer className="cab-foot">
-            Кабинет только показывает. Изменить здесь нельзя ничего — ни цену, ни остаток, ни
-            продажу.
+            {/* Обещание должно быть правдой до последнего слова. Раньше здесь
+                стояло «изменить нельзя ничего», и это перестало быть верным в
+                тот день, когда согласие на доступ поддержки стало решаться
+                здесь. Перечисление осталось — оно и есть суть: магазин через
+                кабинет не меняется. */}
+            Кабинет только показывает: ни цену, ни остаток, ни продажу изменить здесь нельзя.
+            Решается в нём одно — пускать ли ANYQ посмотреть эти цифры, когда мы просим помочь.
           </footer>
         </>
       )}

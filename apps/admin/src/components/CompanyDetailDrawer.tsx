@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Company, CompanyLocation, LocationType, ModuleKey, SupportLevel, Tariff } from '../types';
+import { useCallback, useEffect, useState } from 'react';
+import type { Company, CompanyLocation, LocationType, ModuleKey, SupportLevel, Tariff, SupportAccessState } from '../types';
 import { LEGACY_MODULES, OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, LOCATION_TYPE_LABELS, SUPPORT_LABELS, ROLE_LABELS, lockedModules, withRequiredModules } from '../types';
 import { StatusChip } from './StatusChip';
 import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS, formatPhone } from '../utils';
@@ -18,7 +18,8 @@ interface Props {
   onClose: () => void;
   onUpdateTariff: (companyId: string, payload: TariffPayload) => Promise<void>;
   onLoadShifts: (companyId: string) => Promise<ShiftSummary[]>;
-  onManageProducts: () => void;
+  onLoadAccess: (companyId: string) => Promise<SupportAccessState>;
+  onRequestAccess: (companyId: string, reason: string) => Promise<unknown>;
   onManageUsers: () => void;
   onCreateLocation: (companyId: string, payload: LocationPayload) => Promise<CompanyLocation>;
   onUpdateLocation: (companyId: string, locationId: string, payload: LocationPayload) => Promise<CompanyLocation>;
@@ -71,7 +72,8 @@ export function CompanyDetailDrawer({
   onClose,
   onUpdateTariff,
   onLoadShifts,
-  onManageProducts,
+  onLoadAccess,
+  onRequestAccess,
   onManageUsers,
   onCreateLocation,
   onUpdateLocation,
@@ -82,6 +84,9 @@ export function CompanyDetailDrawer({
   const [error, setError] = useState<string | null>(null);
   const [shifts, setShifts] = useState<ShiftSummary[] | null>(null);
   const [shiftsError, setShiftsError] = useState<string | null>(null);
+  const [access, setAccess] = useState<SupportAccessState | null>(null);
+  const [reason, setReason] = useState('');
+  const [askingAccess, setAskingAccess] = useState(false);
   const [creatingLocation, setCreatingLocation] = useState(false);
   const [locationForm, setLocationForm] = useState<LocationPayload>(emptyLocationForm);
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
@@ -90,11 +95,39 @@ export function CompanyDetailDrawer({
   const [locationError, setLocationError] = useState<string | null>(null);
   const state = getTariffState(tariff);
 
-  useEffect(() => {
+  const loadShifts = useCallback(() => {
+    setShiftsError(null);
     onLoadShifts(company.id)
       .then(setShifts)
       .catch((err) => setShiftsError(err instanceof Error ? err.message : 'Не удалось загрузить смены'));
   }, [company.id, onLoadShifts]);
+
+  useEffect(() => {
+    // Сначала спрашиваем, можно ли: без разрешения владельца смены отвечают
+    // отказом, и показывать этот отказ красной строкой как поломку значило бы
+    // называть поломкой правильную работу.
+    onLoadAccess(company.id)
+      .then((state) => {
+        setAccess(state);
+        if (state.state === 'active') loadShifts();
+        else setShifts([]);
+      })
+      .catch(() => setAccess({ state: 'none', reason: '', requestedAt: null, expiresAt: null }));
+  }, [company.id, onLoadAccess, loadShifts]);
+
+  async function askForAccess() {
+    setAskingAccess(true);
+    setShiftsError(null);
+    try {
+      await onRequestAccess(company.id, reason.trim());
+      setAccess(await onLoadAccess(company.id));
+      setReason('');
+    } catch (err) {
+      setShiftsError(err instanceof Error ? err.message : 'Не удалось отправить запрос');
+    } finally {
+      setAskingAccess(false);
+    }
+  }
 
   async function persist(updated: Tariff) {
     setError(null);
@@ -197,7 +230,6 @@ export function CompanyDetailDrawer({
             {/* Без эмодзи: это единственные два цветных пиктографа во всей панели, и
               рядом с «Заблокировать» они читаются как игрушки. Слова говорят всё
               сами — та же причина, по которой их убрали с экрана операций в кассе. */}
-            <button className="btn btn-secondary" onClick={onManageProducts}>Товары</button>
             <button className="btn btn-secondary" onClick={onManageUsers}>Сотрудники</button>
           </div>
 
@@ -291,9 +323,59 @@ export function CompanyDetailDrawer({
           ))}
 
           <div className="section-title">Смены</div>
+          {/*
+            Выручка чужого магазина — не наше дело, пока владелец не попросил
+            помочь и не открыл это сам. Тариф, владелец и срок видны всегда:
+            это договор. Сколько они заработали — нет.
+          */}
+          {access && access.state !== 'active' && (
+            <div className="mini-card stack">
+              <div className="drawer-note">
+                {access.state === 'pending'
+                  ? 'Запрос отправлен — ждём ответа владельца.'
+                  : access.state === 'declined'
+                    ? 'Владелец отказал в доступе.'
+                    : access.state === 'revoked'
+                      ? 'Владелец закрыл доступ.'
+                      : access.state === 'expired'
+                        ? 'Доступ истёк. Если разбор не закончен — попросите заново.'
+                        : 'Выручку по сменам видно только с разрешения владельца.'}
+              </div>
+              {access.state !== 'pending' && (
+                <>
+                  <div className="field">
+                    <label htmlFor="support-reason">Зачем нужен доступ</label>
+                    <input
+                      id="support-reason"
+                      type="text"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="Владелец звонил: не сходится выручка за вчера"
+                    />
+                  </div>
+                  {/* Владелец прочитает эту строку и решит по ней. Отговорка
+                      «проверка» отказывается на сервере, и правильно. */}
+                  <button
+                    className="btn btn-secondary"
+                    disabled={askingAccess || reason.trim().length < 10}
+                    onClick={askForAccess}
+                  >
+                    {askingAccess ? 'Отправляем…' : 'Запросить доступ у владельца'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {access?.state === 'active' && access.expiresAt && (
+            <div className="drawer-note">
+              Владелец открыл доступ до {formatDateTime(access.expiresAt)}.
+            </div>
+          )}
           {shiftsError && <div className="login-error">{shiftsError}</div>}
-          {!shiftsError && shifts === null && <div className="drawer-note">Загрузка…</div>}
-          {shifts !== null && shifts.length === 0 && <div className="drawer-note">Смен пока не было</div>}
+          {access?.state === 'active' && !shiftsError && shifts === null && <div className="drawer-note">Загрузка…</div>}
+          {access?.state === 'active' && shifts !== null && shifts.length === 0 && (
+            <div className="drawer-note">Смен пока не было</div>
+          )}
           {shifts?.map((s) => {
             const expectedCash = s.openingCash + (s.totalsByMethod.cash ?? 0);
             const diff = s.closingCashCounted !== null ? s.closingCashCounted - expectedCash : null;
