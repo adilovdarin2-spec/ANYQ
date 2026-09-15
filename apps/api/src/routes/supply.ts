@@ -41,6 +41,18 @@ export function storefrontLocation<T extends { id: string }>(
   return chosen ?? locations[0];
 }
 
+/**
+ * Сколько позиций витрина отдаёт за раз.
+ *
+ * Пять тысяч — с запасом к любому настоящему оптовому каталогу и заведомо
+ * ниже того, что превращает ответ в мегабайты. Число круглое намеренно: точную
+ * границу здесь взять неоткуда, а важно только то, что она есть.
+ */
+const CATALOG_LIMIT = 5000;
+
+/** Остатки читаются по тому же поводу и с тем же запасом: товар может лежать в нескольких ячейках. */
+const STOCK_LIMIT = 50000;
+
 supplyRouter.get('/:companyId/catalog', async (req, res) => {
   const company = await findCompanyBySlugOrId(req.params.companyId);
   if (!company) {
@@ -65,8 +77,25 @@ supplyRouter.get('/:companyId/catalog', async (req, res) => {
   // публичную витрину попадало всё подряд: снятое с продажи владельцем и
   // полуфабрикаты, из которых на этом же складе что-то делают. Касса такие
   // товары не показывает с самого начала — витрина показывала.
-  const products = await prisma.product.findMany({ where: { companyId: company.id, sellable: true } });
-  const stockRows = location ? await prisma.stock.findMany({ where: { locationId: location.id } }) : [];
+  // С потолком, как и всякое чтение здесь. Этот адрес открыт без входа — его
+  // зовёт браузер любого покупателя и кто угодно ещё, — и до сегодняшнего дня
+  // он читал весь каталог целиком, сколько бы в нём ни было. У склада с
+  // десятком тысяч позиций это тяжёлый ответ на каждое открытие страницы и
+  // бесплатный способ нагрузить базу: ограничитель частоты у нас стоит на
+  // запись, потому что чтения дёшевы, а это чтение дёшево не всегда.
+  //
+  // Берётся на одну позицию больше предела: иначе «ровно пять тысяч» и «пять
+  // тысяч из семи» выглядят одинаково, и витрина молча теряет остальное.
+  const products = await prisma.product.findMany({
+    where: { companyId: company.id, sellable: true },
+    take: CATALOG_LIMIT + 1,
+  });
+  const truncated = products.length > CATALOG_LIMIT;
+  if (truncated) products.length = CATALOG_LIMIT;
+
+  const stockRows = location
+    ? await prisma.stock.findMany({ where: { locationId: location.id }, take: STOCK_LIMIT })
+    : [];
   // What a customer can actually order: units already held for someone
   // else's open order are on the shelf but not on offer.
   //
@@ -81,6 +110,10 @@ supplyRouter.get('/:companyId/catalog', async (req, res) => {
 
   res.json({
     company: { id: company.id, name: company.name },
+    // Витрина скажет об этом строкой под списком. Молчаливое усечение — это
+    // товар, которого покупатель не видит и потому не закажет, а поставщик
+    // узнаёт об этом от него по телефону.
+    truncated,
     products: products.map((p) => ({
       id: p.id,
       name: p.name,

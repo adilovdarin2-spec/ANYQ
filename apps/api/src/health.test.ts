@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DB_TIMEOUT_MS, verdict, withTimeout } from './health';
+import { CACHE_MS, DB_TIMEOUT_MS, verdict, withTimeout } from './health';
 import type { Check } from './health';
 
 /**
@@ -43,6 +43,17 @@ describe('итог проверки', () => {
     // проверок соберётся пустым из-за ошибки, отказ должен остаться отказом
     // где-то ещё, а не превратиться здесь в зелёный ответ молча.
     expect(verdict([])).toBe(true);
+  });
+});
+
+describe('потолок нагрузки', () => {
+  it('ответ живёт секунды, а не полминуты', () => {
+    // Проверка открыта без входа и на каждый вызов ходит в базу: без потолка
+    // это бесплатный усилитель нагрузки, потому что ограничитель частоты у нас
+    // стоит только на запись. Но и держать ответ долго нельзя — «всё хорошо»
+    // получасовой давности это ответ про прошлое.
+    expect(CACHE_MS).toBeGreaterThanOrEqual(1000);
+    expect(CACHE_MS).toBeLessThanOrEqual(15000);
   });
 });
 

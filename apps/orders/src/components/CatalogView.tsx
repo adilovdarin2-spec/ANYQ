@@ -3,6 +3,8 @@ import { ProductRow } from './ProductRow';
 
 interface Props {
   products: CatalogProduct[];
+  /** Сервер отдал не весь каталог — об этом надо сказать, а не промолчать. */
+  truncated: boolean;
   categories: string[];
   activeCategory: string;
   onCategoryChange: (c: string) => void;
@@ -16,6 +18,7 @@ interface Props {
 
 export function CatalogView({
   products,
+  truncated,
   categories,
   activeCategory,
   onCategoryChange,
@@ -107,6 +110,15 @@ export function CatalogView({
       {filtered.length > shown.length && (
         <p className="catalog-overflow">
           Показаны первые {shown.length} из {filtered.length}. Уточните поиск или выберите категорию.
+        </p>
+      )}
+
+      {/* Это другое усечение, чем строкой выше. Там список длинный и мы рисуем
+          его частями; здесь сервер отдал не весь каталог, и остального нет на
+          странице вовсе — ни поиском, ни категорией его не достать. */}
+      {truncated && (
+        <p className="catalog-overflow">
+          Каталог большой — показана его часть. Позвоните поставщику, если не нашли нужного.
         </p>
       )}
     </div>

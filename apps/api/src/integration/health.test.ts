@@ -56,6 +56,14 @@ describe('готовность к работе', () => {
     }
   });
 
+  it('повторный вызов не ходит в базу заново', async () => {
+    // Адрес открыт без входа, и каждый вызов — это запрос к базе. Пять секунд
+    // свежести превращают поток запросов в один запрос на пять секунд.
+    const first = await api(null, 'GET', '/health/deep');
+    const second = await api(null, 'GET', '/health/deep');
+    expect(second.body.at).toBe(first.body.at);
+  });
+
   it('пустая очередь фискализации — это «ok», а не молчание', async () => {
     const res = await api(null, 'GET', '/health/deep');
     const fiscal = res.body.checks.find((c: { name: string }) => c.name === 'fiscal');

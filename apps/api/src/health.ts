@@ -113,7 +113,30 @@ async function checkFiscalQueue(now = new Date()): Promise<Check> {
   }
 }
 
-export async function deepHealth(now = new Date()): Promise<DeepHealth> {
+/**
+ * Сколько ответ считается свежим.
+ *
+ * Проверка открыта без входа — иначе внешний монитор стал бы ещё одним местом,
+ * где лежит ключ, — и на каждый вызов ходит в базу. Без потолка это бесплатный
+ * усилитель нагрузки: кто угодно дёргает адрес в цикле и заставляет базу
+ * работать, а ограничитель частоты у нас стоит только на запись, потому что
+ * чтения дёшевы. Это чтение не дёшево.
+ *
+ * Пять секунд ничего не стоят монитору, который приходит раз в пятнадцать
+ * минут, и превращают поток запросов в один запрос к базе на пять секунд.
+ * Больше брать нельзя: ответ «всё хорошо», которому полминуты, — это ответ про
+ * прошлое.
+ */
+export const CACHE_MS = 5000;
+
+let cached: { at: number; value: DeepHealth } | null = null;
+
+/** Забыть посчитанное — для тестов, которым нужен свежий ответ. */
+export function forgetHealth(): void {
+  cached = null;
+}
+
+async function measure(now: Date): Promise<DeepHealth> {
   const database = await checkDatabase();
   // Спрашивать про очередь, когда база не отвечает, — значит ждать второй
   // таймаут ради ответа, который уже известен.
@@ -129,4 +152,11 @@ export async function deepHealth(now = new Date()): Promise<DeepHealth> {
     version: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
     at: now.toISOString(),
   };
+}
+
+export async function deepHealth(now = new Date()): Promise<DeepHealth> {
+  if (cached && now.getTime() - cached.at < CACHE_MS) return cached.value;
+  const value = await measure(now);
+  cached = { at: now.getTime(), value };
+  return value;
 }
