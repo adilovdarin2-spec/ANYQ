@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord, StaffMember, StaffPayload } from './types';
 import { getDeviceKey } from './storage';
 import { translate } from './i18n';
 import { translateServerMessage } from './i18n/server';
@@ -1191,4 +1191,23 @@ export function matchDeliveryNote(
   source: ImportSource,
 ): Promise<DeliveryMatch> {
   return request('/pos/deliveries/match', { method: 'POST', body: JSON.stringify({ locationId, ...source }) }, token);
+}
+
+/**
+ * Сотрудники магазина — их ведёт владелец, из кассы.
+ *
+ * Сервер отдаёт заодно лимит тарифа: экран, предлагающий завести восьмого
+ * сотрудника там, где тариф допускает семь, обещает то, чего не будет, и
+ * человек узнаёт об этом, уже придумав PIN.
+ */
+export function fetchStaff(token: string): Promise<{ users: StaffMember[]; limit: number | null }> {
+  return request('/pos/users', { method: 'GET' }, token);
+}
+
+export function createStaff(token: string, payload: StaffPayload): Promise<StaffMember> {
+  return request('/pos/users', { method: 'POST', body: JSON.stringify(payload) }, token);
+}
+
+export function updateStaff(token: string, id: string, payload: StaffPayload): Promise<StaffMember> {
+  return request(`/pos/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
 }

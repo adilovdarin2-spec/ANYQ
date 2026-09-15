@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord } from './types';
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
 import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
@@ -68,6 +68,9 @@ import {
   fetchReturnableSales,
   fetchReturns,
   fetchCabinet,
+  fetchStaff,
+  createStaff,
+  updateStaff,
   fetchSettlements,
   fetchSourceSystems,
   fetchStockMovements,
@@ -154,6 +157,7 @@ import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { ImportScreen } from './components/ImportScreen';
 import { MigrationScreen } from './components/MigrationScreen';
 import { CabinetLinkScreen } from './components/CabinetLinkScreen';
+import { StaffScreen } from './components/StaffScreen';
 import { PriceListScreen } from './components/PriceListScreen';
 import { DeliveryNoteScreen } from './components/DeliveryNoteScreen';
 import { SettlementsScreen } from './components/SettlementsScreen';
@@ -247,6 +251,11 @@ export default function App() {
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [sourceSystems, setSourceSystems] = useState<SourceSystemInfo[]>([]);
   const [cabinet, setCabinet] = useState<CabinetInfo | null>(null);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [staffLimit, setStaffLimit] = useState<number | null>(null);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffBusy, setStaffBusy] = useState(false);
+  const [staffError, setStaffError] = useState<string | null>(null);
   const [priceList, setPriceList] = useState<PriceListMatch | null>(null);
   const [priceListLoading, setPriceListLoading] = useState(false);
   const [priceListError, setPriceListError] = useState<string | null>(null);
@@ -588,6 +597,12 @@ export default function App() {
   }
   if (hasPharmacy) {
     operationsItems.push({ key: 'batches', group: 'stock', icon: 'batches', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
+  }
+  /* Вне модулей: сотрудники есть у любого магазина, хоть с одним кассиром.
+     И только владельцу — сервер не отдаст список никому другому, а меню,
+     предлагающее запертую дверь, обещает то, чего продукт не держит. */
+  if (session?.user.role === 'owner') {
+    operationsItems.push({ key: 'staff', group: 'setup', icon: 'key', label: t('ops.staff'), onClick: handleShowStaff });
   }
   /* Два разных набора, потому что это два разных модуля и два разных тарифа.
      `stock` — товар приходит и уходит: это нужно любому магазину, и без него
@@ -1280,6 +1295,47 @@ export default function App() {
       setDeliveryError(err instanceof ApiError ? err.message : t('fail.receive'));
     } finally {
       setDeliverySubmitting(false);
+    }
+  }
+
+  /**
+   * Сотрудники магазина — их ведёт владелец.
+   *
+   * До 15.09.2026 их заводили только из панели ANYQ: владелец, у которого
+   * уволился кассир, звонил нам, чтобы сменить PIN. Теперь это его экран, а
+   * панель платформы видит только число.
+   */
+  async function handleShowStaff() {
+    setView('staff');
+    setStaffError(null);
+    if (!session) return;
+    setStaffLoading(true);
+    try {
+      const data = await fetchStaff(session.token);
+      setStaff(data.users);
+      setStaffLimit(data.limit);
+    } catch (err) {
+      setStaffError(err instanceof ApiError ? err.message : t('fail.staff'));
+    } finally {
+      setStaffLoading(false);
+    }
+  }
+
+  async function saveStaff(action: () => Promise<unknown>): Promise<boolean> {
+    if (!session) return false;
+    setStaffBusy(true);
+    setStaffError(null);
+    try {
+      await action();
+      const data = await fetchStaff(session.token);
+      setStaff(data.users);
+      setStaffLimit(data.limit);
+      return true;
+    } catch (err) {
+      setStaffError(err instanceof ApiError ? err.message : t('fail.staff'));
+      return false;
+    } finally {
+      setStaffBusy(false);
     }
   }
 
@@ -3235,6 +3291,19 @@ export default function App() {
           onMatch={handleMatchPriceList}
           onCreateOrder={handleCreateOrderFromPriceList}
           onReset={resetPriceList}
+        />
+      )}
+
+      {view === 'staff' && (
+        <StaffScreen
+          staff={staff}
+          limit={staffLimit}
+          loading={staffLoading}
+          error={staffError}
+          busy={staffBusy}
+          onBack={() => setView('operations')}
+          onCreate={(payload) => saveStaff(() => createStaff(session!.token, payload))}
+          onUpdate={(id, payload) => saveStaff(() => updateStaff(session!.token, id, payload))}
         />
       )}
 

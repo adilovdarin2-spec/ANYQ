@@ -35,6 +35,7 @@ export type View =
   | 'import'
   | 'migrate'
   | 'cabinet'
+  | 'staff'
   | 'price-list'
   | 'delivery'
   | 'settlements'
@@ -46,7 +47,7 @@ export type View =
 
 /** Экраны склада и закупок — всё, что открывается из «Операций». */
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'price-list', 'delivery', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
+  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'staff', 'price-list', 'delivery', 'settlements', 'production', 'floorplan', 'table-order', 'kds', 'stock-history',
 ]);
 
 const PROFILE_VIEWS = new Set<View>([
