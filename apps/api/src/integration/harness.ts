@@ -480,6 +480,156 @@ export async function findLedgerMismatches(locationId?: string): Promise<LedgerM
   return mismatches;
 }
 
+export interface DocumentLedgerMismatchRow {
+  documentId: string;
+  type: string;
+  productId: string;
+  /** Сколько написано в самом документе. */
+  document: number;
+  /** Сколько по этому документу прошло через журнал движений. */
+  ledger: number;
+}
+
+/**
+ * Шестая книга: документ против журнала.
+ *
+ * `findLedgerMismatches` доказывает, что журнал движений равен кэшу остатка, и
+ * доказывает честно. Но обе эти книги — внутренние. Есть третья, и она
+ * единственная выходит наружу: сам документ. Чек, который держит покупатель;
+ * накладная, которую подписал поставщик; акт списания, который читает
+ * бухгалтер.
+ *
+ * Расхождение здесь выглядит хуже всего остального в этом файле, потому что
+ * его не видно ни одной из прежних проверок. Продажа, записавшая в чек три
+ * штуки, а в журнал две, оставляет журнал и остаток согласованными между
+ * собой: сверка зелёная, полка сходится, а у покупателя на руках бумага,
+ * которой магазин не соответствует. Спор с ним не выиграть и не проиграть —
+ * нечем.
+ *
+ * Считается в штуках без знака: знак у движения зависит от типа документа и от
+ * стороны перемещения, а вопрос здесь другой — «столько ли товара тронули,
+ * сколько написано».
+ *
+ * Типы перечислены поимённо, и это важнее, чем кажется. У инвентаризации
+ * позиция документа — это *насчитанное* количество, а движение — *разница*, и
+ * они законно не равны. Правило «у всех документов одинаково» было бы
+ * неправдой, а проверка, которая неправду терпит, — это проверка, которую
+ * однажды отключат.
+ *
+ * Перемещение считается отдельно, ниже: у него два движения на одну позицию и
+ * два разных числа, с которыми они сверяются.
+ */
+const DOCUMENTS_THAT_MOVE_WHAT_THEY_SAY = ['sale', 'return', 'receipt', 'write_off', 'supplier_return'];
+
+export async function findDocumentLedgerMismatches(): Promise<DocumentLedgerMismatchRow[]> {
+  const documents = await prisma.document.findMany({
+    where: { type: { in: DOCUMENTS_THAT_MOVE_WHAT_THEY_SAY } },
+    select: { id: true, type: true, items: { select: { productId: true, quantity: true } } },
+  });
+  // Перемещения считаются своей функцией и обязаны считаться всегда. Ранний
+  // выход стоял здесь, до них, — и в базе, где есть только перемещение,
+  // проверка отвечала «всё сходится», ни на что не посмотрев. Поймала это
+  // самопроверка: испортил движение, а охрана промолчала.
+  if (documents.length === 0) return findTransferMismatches();
+
+  const movements = await prisma.stockMovement.groupBy({
+    by: ['documentId', 'productId'],
+    where: { documentId: { in: documents.map((d) => d.id) } },
+    _sum: { quantity: true },
+  });
+
+  const moved = new Map<string, number>();
+  for (const row of movements) {
+    moved.set(`${row.documentId}|${row.productId}`, Math.abs(row._sum.quantity ?? 0));
+  }
+
+  const mismatches: DocumentLedgerMismatchRow[] = [];
+  for (const doc of documents) {
+    const said = new Map<string, number>();
+    for (const item of doc.items) {
+      said.set(item.productId, (said.get(item.productId) ?? 0) + item.quantity);
+    }
+    for (const [productId, quantity] of said) {
+      const ledger = moved.get(`${doc.id}|${productId}`) ?? 0;
+      // Дробные количества: весовой товар продаётся в килограммах, и сравнивать
+      // их на точное равенство значит ловить ошибку двоичного округления вместо
+      // ошибки учёта.
+      if (Math.abs(quantity - ledger) > 1e-9) {
+        mismatches.push({ documentId: doc.id, type: doc.type, productId, document: quantity, ledger });
+      }
+    }
+  }
+
+  return [...mismatches, ...(await findTransferMismatches())];
+}
+
+/**
+ * Перемещение: две стороны, два числа, и они разные.
+ *
+ * Накладная говорит, сколько отправили (`quantity`), и сколько приняли
+ * (`receivedQuantity`). Это не одно и то же число, и разница между ними —
+ * законная: недостача в пути существует, она показывается владельцу отдельно и
+ * не является расхождением книг.
+ *
+ * Расхождением было бы другое: со склада ушло не столько, сколько написано в
+ * накладной, или на точку пришло не столько, сколько расписались принять. Вот
+ * это и проверяется — каждая сторона против своего числа.
+ *
+ * Непринятое перемещение (`in_transit`) имеет только сторону «ушло»: товар уже
+ * не там и ещё не тут, и это правильное состояние, а не потеря.
+ */
+async function findTransferMismatches(): Promise<DocumentLedgerMismatchRow[]> {
+  const transfers = await prisma.document.findMany({
+    where: { type: 'transfer' },
+    select: {
+      id: true,
+      status: true,
+      items: { select: { productId: true, quantity: true, receivedQuantity: true } },
+    },
+  });
+  if (transfers.length === 0) return [];
+
+  const movements = await prisma.stockMovement.groupBy({
+    by: ['documentId', 'productId', 'reason'],
+    where: { documentId: { in: transfers.map((t) => t.id) }, reason: { in: ['transfer_out', 'transfer_in'] } },
+    _sum: { quantity: true },
+  });
+
+  const moved = new Map<string, number>();
+  for (const row of movements) {
+    moved.set(`${row.documentId}|${row.productId}|${row.reason}`, Math.abs(row._sum.quantity ?? 0));
+  }
+
+  const mismatches: DocumentLedgerMismatchRow[] = [];
+  for (const doc of transfers) {
+    const sent = new Map<string, number>();
+    const received = new Map<string, number>();
+    for (const item of doc.items) {
+      sent.set(item.productId, (sent.get(item.productId) ?? 0) + item.quantity);
+      // `null` — ещё не принимали. Принятое «ноль штук» — это `0`, и это
+      // другое: расписались, что не приехало ничего.
+      if (item.receivedQuantity !== null) {
+        received.set(item.productId, (received.get(item.productId) ?? 0) + item.receivedQuantity);
+      }
+    }
+
+    for (const [productId, quantity] of sent) {
+      const out = moved.get(`${doc.id}|${productId}|transfer_out`) ?? 0;
+      if (Math.abs(quantity - out) > 1e-9) {
+        mismatches.push({ documentId: doc.id, type: 'transfer (ушло)', productId, document: quantity, ledger: out });
+      }
+    }
+    for (const [productId, quantity] of received) {
+      const income = moved.get(`${doc.id}|${productId}|transfer_in`) ?? 0;
+      if (Math.abs(quantity - income) > 1e-9) {
+        mismatches.push({ documentId: doc.id, type: 'transfer (пришло)', productId, document: quantity, ledger: income });
+      }
+    }
+  }
+
+  return mismatches;
+}
+
 export async function stockAt(productId: string, locationId: string): Promise<number> {
   const rows = await prisma.stock.findMany({ where: { productId, locationId } });
   return rows.reduce((sum, row) => sum + row.quantity, 0);
