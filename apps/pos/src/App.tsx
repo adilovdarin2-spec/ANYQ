@@ -3655,6 +3655,7 @@ export default function App() {
       {view === 'replenishment' && (
         <ReplenishmentScreen
           items={replenishment}
+          products={session.products}
           windowDays={replenishmentWindow}
           truncated={replenishmentTruncated}
           loading={replenishmentLoading}

@@ -983,6 +983,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'devices.title': 'Құрылғылар',
   'register.number': '№{number} касса',
   'production.recipes': 'Ерекшеліктер (BOM)',
+  'repl.setForAnother': 'Басқа тауар бойынша қор белгілеу',
+  'repl.whichProduct': 'Қай тауар бойынша',
   'production.newRecipe': 'Жаңа ерекшелік',
   'production.yield': 'Бір партиядан қанша шығады',
   'production.yieldShort': 'шығуы {count}',

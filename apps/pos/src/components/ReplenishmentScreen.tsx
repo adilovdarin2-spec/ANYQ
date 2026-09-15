@@ -4,6 +4,8 @@ import type { Translator } from '../i18n/useLanguage';
 import type { ReplenishmentItem } from '../types';
 
 interface Props {
+  /** Весь ассортимент точки: минимум задают и тому, чего в списке нет. */
+  products: { id: string; name: string }[];
   items: ReplenishmentItem[];
   windowDays: number;
   /** The demand window held more movements than one pass reads. Shown, because
@@ -44,6 +46,7 @@ function explain(item: ReplenishmentItem, t: Translator['t']): string {
 
 export function ReplenishmentScreen({
   items,
+  products,
   windowDays,
   truncated,
   loading,
@@ -57,6 +60,13 @@ export function ReplenishmentScreen({
 }: Props) {
   const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Товар, которого в списке нет.
+  //
+  // Список — это решение: только то, что пора заказывать. Но чтобы товар в
+  // него попал, нужна либо история продаж, либо заданный минимум, — и товар,
+  // который продаётся дважды в год, не попадал в него никогда. То есть
+  // настроить минимум нельзя было ровно тому, ради чего минимум и заводят.
+  const [addingFor, setAddingFor] = useState('');
   const [minQuantity, setMinQuantity] = useState('');
   const [targetQuantity, setTargetQuantity] = useState('');
   const [leadTimeDays, setLeadTimeDays] = useState('');
@@ -66,6 +76,18 @@ export function ReplenishmentScreen({
     setMinQuantity(String(item.minQuantity));
     setTargetQuantity(String(item.targetQuantity));
     setLeadTimeDays(String(item.leadTimeDays));
+  }
+
+  async function saveForProduct(productId: string) {
+    const saved = await onSavePolicy(productId, {
+      minQuantity: Number(minQuantity),
+      targetQuantity: Number(targetQuantity),
+      leadTimeDays: Number(leadTimeDays) || 3,
+    });
+    if (saved) {
+      setAddingFor('');
+      setEditingId(null);
+    }
   }
 
   async function savePolicy(item: ReplenishmentItem) {
@@ -95,6 +117,67 @@ export function ReplenishmentScreen({
         {loading && items.length === 0 && <div className="empty-state">{t('common.counting')}</div>}
         {!loading && items.length === 0 && !error && (
           <div className="empty-state">{t('repl.nothing')}</div>
+        )}
+
+        {/* Настроить запас по товару, которого в списке нет. Отдельным
+            действием, а не превращением списка в отчёт: список отвечает
+            «что заказать», и им пользуются каждый день, а это — раз в
+            полгода, когда заводят новый товар. */}
+        {addingFor === '' ? (
+          <button className="btn btn-secondary btn-block" onClick={() => {
+            setAddingFor(products[0]?.id ?? '');
+            setMinQuantity('');
+            setTargetQuantity('');
+            setLeadTimeDays('3');
+          }}>{t('repl.setForAnother')}</button>
+        ) : (
+          <div className="order-card">
+            <div className="form-field">
+              <label htmlFor="repl-product">{t('repl.whichProduct')}</label>
+              <select id="repl-product" value={addingFor} onChange={(e) => setAddingFor(e.target.value)}>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            {/* Та же строка из трёх полей, что и у товара из списка: одно и то
+                же действие не должно выглядеть двумя разными. */}
+            <div className="transfer-add-row">
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder={t('repl.minimum')}
+                value={minQuantity}
+                onChange={(e) => setMinQuantity(e.target.value)}
+                aria-label={t('repl.minimumStock')}
+              />
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder={t('repl.target')}
+                value={targetQuantity}
+                onChange={(e) => setTargetQuantity(e.target.value)}
+                aria-label={t('repl.targetStock')}
+              />
+              <input
+                type="number"
+                min="0"
+                placeholder={t('repl.leadDays')}
+                value={leadTimeDays}
+                onChange={(e) => setLeadTimeDays(e.target.value)}
+                aria-label={t('repl.leadDaysField')}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={savingProductId === addingFor || Number(minQuantity) <= 0}
+                onClick={() => saveForProduct(addingFor)}
+              >{savingProductId === addingFor ? t('common.saving') : t('common.save')}</button>
+            </div>
+            <button className="btn btn-ghost btn-block" onClick={() => setAddingFor('')}>{t('common.cancel')}</button>
+          </div>
         )}
 
         {items.map((item) => {
