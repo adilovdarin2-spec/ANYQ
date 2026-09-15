@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { allocateFefo, allocateForRemoval, classifyExpiry, sellableFromBatches } from './batches';
+import { allocateFefo, allocateForRemoval, classifyExpiry, sellableQuantity, uncoveredStock, untrackedPolicy } from './batches';
 import type { BatchStock } from './batches';
 
 function batch(id: string, expiryDate: string, quantity: number): BatchStock {
@@ -78,15 +78,35 @@ describe('allocateFefo', () => {
   });
 });
 
-describe('sellableFromBatches', () => {
+describe('остаток без партии', () => {
+  it('это разница между полкой и партиями', () => {
+    const batches = [batch('good', '2026-10-01', 10)];
+    expect(uncoveredStock(110, batches)).toBe(100);
+  });
+
+  it('и его не бывает отрицательным', () => {
+    // Партий больше остатка — это расхождение книг, и ловит его сверка, а не
+    // эта функция. Отрицательное число отсюда означало бы, что просроченная
+    // партия молча съедает годный остаток.
+    expect(uncoveredStock(5, [batch('good', '2026-10-01', 10)])).toBe(0);
+  });
+
+  it('в аптеке не продаётся, в обычном магазине продаётся', () => {
+    expect(untrackedPolicy(['pharmacy', 'retail'])).toBe('quarantined');
+    expect(untrackedPolicy(['retail', 'stock'])).toBe('sellable');
+    expect(untrackedPolicy([])).toBe('sellable');
+  });
+});
+
+describe('sellableQuantity', () => {
   it('counts only what has not expired', () => {
     const batches = [batch('gone', '2026-07-01', 8), batch('good', '2026-10-01', 39)];
-    expect(sellableFromBatches(batches, 0, NOW)).toBe(39);
+    expect(sellableQuantity(47, batches, 0, NOW, 'sellable')).toBe(39);
   });
 
   it('takes off what is already promised to somebody else', () => {
     const batches = [batch('good', '2026-10-01', 39)];
-    expect(sellableFromBatches(batches, 4, NOW)).toBe(35);
+    expect(sellableQuantity(39, batches, 4, NOW, 'sellable')).toBe(35);
   });
 
   it('never goes below zero', () => {
@@ -94,7 +114,27 @@ describe('sellableFromBatches', () => {
     // the goods were still good — and it means nothing is sellable, not that a
     // negative number should reach a screen.
     const batches = [batch('gone', '2026-07-01', 50), batch('good', '2026-10-01', 2)];
-    expect(sellableFromBatches(batches, 5, NOW)).toBe(0);
+    expect(sellableQuantity(52, batches, 5, NOW, 'sellable')).toBe(0);
+  });
+
+  it('добавляет остаток, не покрытый ни одной партией', () => {
+    // Ровно та сотня пачек, которая до 15.09.2026 лежала на полке и не
+    // продавалась: одна партия на товаре делала весь прочий остаток
+    // невидимым.
+    const batches = [batch('good', '2026-10-01', 10)];
+    expect(sellableQuantity(110, batches, 0, NOW, 'sellable')).toBe(110);
+  });
+
+  it('но в аптеке — нет', () => {
+    const batches = [batch('good', '2026-10-01', 10)];
+    expect(sellableQuantity(110, batches, 0, NOW, 'quarantined')).toBe(10);
+  });
+
+  it('и непокрытое не воскрешает просроченную партию', () => {
+    // 100 без партии, 8 просроченных. Продать можно сотню, и ни одной из
+    // восьми: просроченное списывают руками, с причиной.
+    const batches = [batch('gone', '2026-07-01', 8)];
+    expect(sellableQuantity(108, batches, 0, NOW, 'sellable')).toBe(100);
   });
 });
 

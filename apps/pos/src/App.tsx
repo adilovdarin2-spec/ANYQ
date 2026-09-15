@@ -45,6 +45,7 @@ import {
   restoreDevice,
   revokeDevice,
   fetchBatches,
+  fetchUncoveredStock,
   fetchBins,
   fetchCatalog,
   fetchCountSheet,
@@ -108,7 +109,7 @@ import {
 import type { DocumentFilter, ImportSource } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
-import type { PosSession, PosRegister, CustomerLookupResult, PosDevice, OpenShiftInfo } from './api';
+import type { PosSession, PosRegister, CustomerLookupResult, PosDevice, OpenShiftInfo, UncoveredStockRow } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
 import { RegisterChoiceScreen } from './components/RegisterChoiceScreen';
@@ -238,6 +239,9 @@ export default function App() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [batchesLoading, setBatchesLoading] = useState(false);
   const [batchesError, setBatchesError] = useState<string | null>(null);
+  // Остаток без партии: в аптеке он не продаётся, и владелец должен знать,
+  // сколько его и на чём.
+  const [uncovered, setUncovered] = useState<UncoveredStockRow[]>([]);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
@@ -924,8 +928,14 @@ export default function App() {
     setBatchesLoading(true);
     setBatchesError(null);
     try {
-      const data = await fetchBatches(session.token, currentLocationId);
+      const [data, stranded] = await Promise.all([
+        fetchBatches(session.token, currentLocationId),
+        // Отдельным запросом и намеренно нестрогим: список партий важнее, и
+        // ронять его из-за того, что не посчиталось непокрытое, незачем.
+        fetchUncoveredStock(session.token, currentLocationId).catch(() => ({ rows: [] })),
+      ]);
       setBatches(data);
+      setUncovered(stranded.rows);
     } catch (err) {
       setBatchesError(err instanceof ApiError ? err.message : t('fail.loadBatches'));
     } finally {
@@ -3272,6 +3282,7 @@ export default function App() {
       {view === 'batches' && (
         <BatchesScreen
           batches={batches}
+          uncovered={uncovered}
           products={session.products}
           loading={batchesLoading}
           error={batchesError}
