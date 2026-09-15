@@ -23,7 +23,8 @@
     "smoke": "node scripts/smoke.mjs",
     "onboard:check": "node scripts/onboard-check.mjs",
     "build:deploy": "npm run build --workspace=apps/admin && npm run build --workspace=apps/pos && npm run build --workspace=apps/orders && node scripts/check-bundle.mjs",
-    "check:bundle": "node scripts/check-bundle.mjs"
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "uptime:check": "node scripts/uptime-check.mjs"
   },
   "devDependencies": {
     "railway": "^3.6.0",

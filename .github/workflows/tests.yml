@@ -1,0 +1,97 @@
+# Тесты на каждый толчок в main и на каждый pull request.
+#
+# До 15.09.2026 их не запускал никто, кроме человека, который их писал. Полторы
+# тысячи тестов лежали в репозитории и молчали: правка, сделанная вечером и
+# отправленная не глядя, ломала кассу, и узнать об этом можно было только
+# запустив всё руками — то есть вспомнив, что надо запустить.
+#
+# Три шага, и порядок не случаен: от самого быстрого к самому долгому, чтобы
+# опечатка в типах не заставляла ждать четыре минуты базы.
+name: Тесты
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Новый толчок отменяет проверку предыдущего: смысл есть только в последнем.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      # Своя база на каждый прогон — чистая, и её не жаль: интеграционные тесты
+      # начинают каждый файл с `TRUNCATE` всех таблиц.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: anyq
+          POSTGRES_PASSWORD: anyq_ci
+          POSTGRES_DB: anyq_test
+        ports:
+          - 5433:5432
+        # Без проверки готовности шаги начинаются раньше, чем база принимает
+        # запросы, и прогон краснеет сотнями ошибок, ни одна из которых не про
+        # код. Проверено на живом примере — см. apps/api/src/db-startup.ts.
+        options: >-
+          --health-cmd "pg_isready -U anyq -d anyq_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://anyq:anyq_ci@localhost:5433/anyq_test?schema=public
+      JWT_SECRET: ci-tests-only
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Сгенерировать клиент базы
+        run: npm run db:generate
+
+      - name: Проверить типы во всех четырёх приложениях
+        run: |
+          npx tsc --noEmit -p apps/api/tsconfig.json
+          npx tsc --noEmit -p apps/pos/tsconfig.json
+          npx tsc --noEmit -p apps/admin/tsconfig.json
+          npx tsc --noEmit -p apps/orders/tsconfig.json
+
+      - name: Модульные тесты
+        run: npm test
+
+      - name: Накатить схему на тестовую базу
+        run: npm run migrate:deploy --workspace=packages/db
+
+      - name: Интеграционные тесты
+        run: npm run test:db
+
+      # Сборка — последней и отдельным шагом: она ловит не логику, а то, что
+      # приложение перестало собираться, и об этом надо узнать здесь, а не на
+      # деплое, когда касса уже не открывается.
+      #
+      # Собирается каждое приложение по отдельности, а не через `build:deploy`.
+      # Тот в конце зовёт `check-bundle`, который отвечает на другой вопрос —
+      # «правильный ли адрес API запекли в этот артефакт», — и ответ на него
+      # зависит от переменной, которую задаёт Railway на своей сборке. В CI её
+      # нет и быть не должно: подставить сюда выдуманный адрес значит получить
+      # проверку, которая всегда зелёная. Настоящую делает деплой, для каждой
+      # службы отдельно (`scripts/railway-build.js`).
+      - name: Собрать приложения
+        run: |
+          npm run build --workspace=apps/pos
+          npm run build --workspace=apps/admin
+          npm run build --workspace=apps/orders
