@@ -18,6 +18,7 @@
  *
  *   node scripts/uptime-check.mjs
  *   node scripts/uptime-check.mjs --json
+ *   node scripts/uptime-check.mjs --test-alert   # проверить сам канал уведомлений
  *   ANYQ_MONITOR_API=https://api... ANYQ_MONITOR_SITES=https://a,https://b node scripts/uptime-check.mjs
  *
  * Читает:
@@ -108,23 +109,80 @@ async function checkApi() {
   }
 }
 
+/**
+ * Отправить сообщение в телеграм — и сказать, если не вышло.
+ *
+ * Раньше отказ здесь глотался молча. Мотив был верный: канал уведомлений,
+ * роняющий проверку, превращает «магазин лежит» в «проверка сломалась».
+ * Но молчание решало это слишком щедро — неверный токен выглядел точно так же,
+ * как удачная отправка, и человек, настроивший секреты один раз, считал бы
+ * канал работающим, пока однажды ночью не оказалось бы, что писем нет.
+ *
+ * Поэтому отказ не роняет проверку, но печатается. Разница между «упало» и
+ * «сказано вслух» — это разница между неработающим каналом и известным
+ * неработающим каналом.
+ */
 async function notifyTelegram(text) {
   const token = process.env.ANYQ_ALERT_TELEGRAM_TOKEN;
   const chat = process.env.ANYQ_ALERT_TELEGRAM_CHAT;
-  if (!token || !chat) return;
+  if (!token || !chat) return { sent: false, reason: 'не настроен' };
   try {
-    await fetchWithTimeout(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetchWithTimeout(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
     });
-  } catch {
-    // Канал уведомлений, который роняет проверку, превращает «магазин лежит» в
-    // «проверка сломалась». Молча: результат уже напечатан и уже в коде выхода.
+    if (res.ok) return { sent: true };
+    // Телеграм объясняет отказ в теле, и объяснение обычно точное:
+    // «chat not found», «Unauthorized». Печатать его стоит целиком.
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.description) detail = `${detail} — ${body.description}`;
+    } catch {
+      /* тело не разобралось: хватит и кода */
+    }
+    console.error(`Телеграм не принял сообщение: ${detail}`);
+    return { sent: false, reason: detail };
+  } catch (error) {
+    const reason = error?.name === 'AbortError' ? `нет ответа за ${TIMEOUT} мс` : String(error?.message ?? error);
+    console.error(`Телеграм недоступен: ${reason}`);
+    return { sent: false, reason };
   }
 }
 
+/**
+ * Проверить сам канал, а не то, что он сообщает.
+ *
+ * Канал уведомлений, который никто ни разу не пробовал, — это канал, который не
+ * работает: узнают об этом в ту ночь, когда он понадобился. Один запуск с
+ * `--test-alert` посылает сообщение и говорит, дошло ли оно.
+ */
+async function testAlert() {
+  const token = process.env.ANYQ_ALERT_TELEGRAM_TOKEN;
+  const chat = process.env.ANYQ_ALERT_TELEGRAM_CHAT;
+  if (!token || !chat) {
+    console.log(
+      'Телеграм не настроен — уведомления идут письмом от GitHub об упавшем расписании.\n' +
+        'Чтобы включить телеграм, задайте секреты ANYQ_ALERT_TELEGRAM_TOKEN и ANYQ_ALERT_TELEGRAM_CHAT.',
+    );
+    process.exit(0);
+  }
+  const result = await notifyTelegram('ANYQ: проверка канала уведомлений. Если вы это читаете — канал работает.');
+  if (result.sent) {
+    console.log('Сообщение отправлено. Посмотрите в телеграм: оно должно быть там.');
+    process.exit(0);
+  }
+  console.error('Канал не работает, и в настоящую поломку сообщение тоже не придёт.');
+  process.exit(1);
+}
+
 async function main() {
+  if (process.argv.includes('--test-alert')) {
+    await testAlert();
+    return;
+  }
+
   await Promise.all([checkApi(), ...SITES.map(checkSite)]);
 
   const down = results.filter((r) => r.status === 'down');
