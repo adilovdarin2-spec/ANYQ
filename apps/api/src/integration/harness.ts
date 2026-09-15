@@ -4,6 +4,7 @@ import { prisma } from '@anyq/db';
 import { app } from '../app';
 import { resetRateLimits } from '../rateLimit';
 import { signPosToken } from '../pos-auth';
+import { computeDiscount } from '../discounts';
 
 /**
  * Everything these tests need to talk to a real database and a real server.
@@ -625,6 +626,64 @@ async function findTransferMismatches(): Promise<DocumentLedgerMismatchRow[]> {
         mismatches.push({ documentId: doc.id, type: 'transfer (пришло)', productId, document: quantity, ledger: income });
       }
     }
+  }
+
+  return mismatches;
+}
+
+export interface MoneyMismatchRow {
+  documentId: string;
+  /** Сумма по позициям чека, минус скидка, минус баллы. */
+  fromLines: number;
+  /** Сколько по этому чеку записано принятым. */
+  paid: number;
+}
+
+/**
+ * Седьмая книга: деньги.
+ *
+ * Шесть проверок выше — про товар. Эта про то, сходится ли чек сам с собой:
+ * сумма позиций минус скидка минус баллы должна равняться тому, что записано
+ * принятым. Это не пересчёт правильности цены — это вопрос, описывает ли чек
+ * ту же сделку двумя своими половинами.
+ *
+ * Стоит проверять отдельно от `reconcileShiftCash`, которая считает ящик: та
+ * складывает наличную часть принятого и сравнивает с пересчётом кассира, то
+ * есть целиком живёт на одной половине. Разойдись половины — сверка смены
+ * останется зелёной, а возврат посчитается не от той суммы.
+ *
+ * Оплата в ноль — не расхождение: чек, целиком закрытый баллами или скидкой,
+ * записывается без единой строки оплаты, и это правильно (см.
+ * `resolveSalePayments`). Такие и сравниваются с нулём.
+ */
+export async function findMoneyMismatches(): Promise<MoneyMismatchRow[]> {
+  const sales = await prisma.document.findMany({
+    where: { type: 'sale' },
+    select: {
+      id: true,
+      discountType: true,
+      discountValue: true,
+      pointsRedeemed: true,
+      items: { select: { price: true, quantity: true } },
+      payments: { select: { amount: true } },
+    },
+  });
+
+  const mismatches: MoneyMismatchRow[] = [];
+  for (const sale of sales) {
+    const subtotal = sale.items.reduce((sum, item) => sum + Math.round(item.price * item.quantity), 0);
+    const { discountAmount } = computeDiscount(
+      subtotal,
+      // Тот же разбор, что и в маршруте: скидка хранится двумя полями, и тип,
+      // которого мы не знаем, — это не скидка, а мусор, который не должен
+      // молча стать процентом.
+      sale.discountType === 'percent' || sale.discountType === 'fixed'
+        ? { type: sale.discountType, value: sale.discountValue ?? 0 }
+        : null,
+    );
+    const fromLines = subtotal - discountAmount - (sale.pointsRedeemed ?? 0);
+    const paid = sale.payments.reduce((sum, line) => sum + line.amount, 0);
+    if (fromLines !== paid) mismatches.push({ documentId: sale.id, fromLines, paid });
   }
 
   return mismatches;
