@@ -111,7 +111,7 @@ describe('модули компании', () => {
 
 describe('роль сотрудника', () => {
   it('опечатку не принимают', async () => {
-    const res = await api(adminToken, 'POST', `/companies/${fx.companyId}/users`, {
+    const res = await api(fx.token, 'POST', '/pos/users', {
       name: 'Новый',
       role: 'cashir',
     });
@@ -123,7 +123,7 @@ describe('роль сотрудника', () => {
   it('и при правке тоже', async () => {
     // Иначе роль можно сломать у человека, который уже работает.
     const user = await prisma.user.findFirst({ where: { companyId: fx.companyId } });
-    const res = await api(adminToken, 'PATCH', `/companies/${fx.companyId}/users/${user!.id}`, {
+    const res = await api(fx.token, 'PATCH', `/pos/users/${user!.id}`, {
       name: user!.name,
       role: 'warehouse',
     });
@@ -137,7 +137,7 @@ describe('роль сотрудника', () => {
 describe('лимит сотрудников', () => {
   it('не даёт завести сверх тарифа', async () => {
     await setLimits({ userLimit: 1 });
-    const res = await api(adminToken, 'POST', `/companies/${fx.companyId}/users`, { name: 'Второй', role: 'cashier' });
+    const res = await api(fx.token, 'POST', '/pos/users', { name: 'Второй', role: 'cashier' });
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('1 сотрудника');
     expect(await prisma.user.count({ where: { companyId: fx.companyId } })).toBe(1);
@@ -145,7 +145,7 @@ describe('лимит сотрудников', () => {
 
   it('в пределах лимита заводит', async () => {
     await setLimits({ userLimit: 2 });
-    expect((await api(adminToken, 'POST', `/companies/${fx.companyId}/users`, { name: 'Второй', role: 'cashier' })).status).toBe(201);
+    expect((await api(fx.token, 'POST', '/pos/users', { name: 'Второй', role: 'cashier' })).status).toBe(201);
   });
 });
 

@@ -168,21 +168,21 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   pharmacist: 'Фармацевт',
 };
 
-export interface CompanyUser {
-  id: string;
-  name: string;
-  role: UserRole;
-  phone: string;
+/**
+ * Сотрудники магазина — числом, а не поимённо.
+ *
+ * Тарифы делятся на их количество, а не на их имена. Имена и телефоны чужих
+ * сотрудников нам незачем, и отвечать за них не надо: с 15.09.2026 список
+ * ведёт владелец у себя в кассе.
+ */
+export interface StaffSummary {
+  count: number;
+  limit: number | null;
   /**
-   * Есть ли у человека доступ к кассе. Самого PIN-а здесь нет и не будет.
-   *
-   * PIN — это вход в кассу: зная его, можно продавать от имени этого кассира в
-   * чужом магазине. Панель платформы со списком PIN-ов каждого сотрудника
-   * каждой компании — связка ключей от всех дверей, а не справочник.
-   *
-   * Задать можно, прочитать обратно — нет. Забыли — задайте новый.
+   * Когда магазин последний раз выходил на связь — и есть «данные на такое-то
+   * число». `null` значит «ещё ни разу», а не «давно».
    */
-  hasPin: boolean;
+  lastSeenAt: string | null;
 }
 
 export interface Company {
@@ -192,7 +192,7 @@ export interface Company {
   slug: string | null;
   createdAt: string;
   locations: CompanyLocation[];
-  users: CompanyUser[];
+  staff: StaffSummary;
   tariff: Tariff;
 }
 

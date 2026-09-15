@@ -90,7 +90,9 @@ describe('без разрешения', () => {
     expect(res.status).toBe(200);
     const company = res.body.find((c: { id: string }) => c.id === fx.companyId);
     expect(company.tariff.validUntil).toBeTruthy();
-    expect(company.users.length).toBeGreaterThan(0);
+    // Число сотрудников — да, имена — нет: тарифы делятся на количество.
+    expect(company.staff.count).toBeGreaterThan(0);
+    expect(company.users).toBeUndefined();
   });
 });
 

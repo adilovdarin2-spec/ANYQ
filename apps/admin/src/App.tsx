@@ -3,7 +3,6 @@ import { Sidebar } from './components/Sidebar';
 import { CompaniesTable } from './components/CompaniesTable';
 import { CreateCompanyDrawer } from './components/CreateCompanyDrawer';
 import { CompanyDetailDrawer } from './components/CompanyDetailDrawer';
-import { UsersDrawer } from './components/UsersDrawer';
 import { LoginScreen } from './components/LoginScreen';
 import { MfaSettings } from './components/MfaSettings';
 import { pluralizeRu, sortForRenewal, countForRenewal } from './utils';
@@ -11,17 +10,16 @@ import {
   ApiError,
   createCompany,
   createLocation,
-  createUser,
   fetchMe,
   getCompanies,
   getShifts,
   updateLocation,
   updateTariff,
-  updateUser,
   fetchSupportAccess,
   requestSupportAccess,
+  setOwnerPin,
 } from './api';
-import type { CreateCompanyPayload, TariffPayload, UserPayload, LocationPayload } from './api';
+import type { CreateCompanyPayload, TariffPayload, LocationPayload } from './api';
 import type { Company } from './types';
 
 const TOKEN_KEY = 'anyq_admin_token';
@@ -51,7 +49,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [usersCompanyId, setUsersCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -117,25 +114,25 @@ export default function App() {
 
 
 
-  async function handleCreateUser(companyId: string, payload: UserPayload) {
-    if (!token) throw new Error('Не авторизован');
-    const user = await createUser(token, companyId, payload);
-    setCompanies((prev) => prev.map((c) => (c.id === companyId ? { ...c, users: [...c.users, user] } : c)));
-    return user;
-  }
-
-  async function handleUpdateUser(companyId: string, userId: string, payload: UserPayload) {
-    if (!token) throw new Error('Не авторизован');
-    const user = await updateUser(token, companyId, userId, payload);
-    setCompanies((prev) => prev.map((c) => (c.id === companyId ? { ...c, users: c.users.map((u) => (u.id === userId ? user : u)) } : c)));
-    return user;
-  }
-
   async function handleCreateLocation(companyId: string, payload: LocationPayload) {
     if (!token) throw new Error('Не авторизован');
     const location = await createLocation(token, companyId, payload);
     setCompanies((prev) => prev.map((c) => (c.id === companyId ? { ...c, locations: [...c.locations, location] } : c)));
     return location;
+  }
+
+  /**
+   * Перевыдать владельцу PIN.
+   *
+   * Первый он получает при создании компании. Этот путь — для того, кто потерял
+   * планшет или забыл PIN: больше панель с людьми магазина ничего не делает.
+   *
+   * Список компаний не трогаем: PIN в нём и не показывается, а число
+   * сотрудников от перевыдачи не меняется.
+   */
+  async function handleSetOwnerPin(companyId: string, posPin: string) {
+    if (!token) throw new Error('Не авторизован');
+    await setOwnerPin(token, companyId, posPin);
   }
 
   async function handleUpdateLocation(companyId: string, locationId: string, payload: LocationPayload) {
@@ -153,7 +150,6 @@ export default function App() {
   const renewal = useMemo(() => countForRenewal(companies), [companies]);
 
   const selected = companies.find((c) => c.id === selectedId) ?? null;
-  const usersCompany = companies.find((c) => c.id === usersCompanyId) ?? null;
 
   if (!token) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -231,20 +227,9 @@ export default function App() {
           onLoadShifts={handleLoadShifts}
           onLoadAccess={handleLoadAccess}
           onRequestAccess={handleRequestAccess}
-          onManageUsers={() => setUsersCompanyId(selected.id)}
           onCreateLocation={handleCreateLocation}
           onUpdateLocation={handleUpdateLocation}
-        />
-      )}
-            {usersCompany && (
-        <UsersDrawer
-          key={usersCompany.id}
-          companyId={usersCompany.id}
-          companyName={usersCompany.name}
-          users={usersCompany.users}
-          onClose={() => setUsersCompanyId(null)}
-          onCreate={handleCreateUser}
-          onUpdate={handleUpdateUser}
+          onSetOwnerPin={handleSetOwnerPin}
         />
       )}
     </div>

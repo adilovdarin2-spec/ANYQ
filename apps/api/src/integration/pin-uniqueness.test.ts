@@ -47,7 +47,10 @@ describe('POS PINs', () => {
     const mine = await createFixture();
     const theirs = await createFixture();
 
-    const clash = await api(token, 'POST', `/companies/${theirs.companyId}/users`, {
+    // Владелец чужой компании заводит кассира с PIN-ом, который уже занят в
+    // моей: PIN один на всю платформу, и столкновение возможно между
+    // магазинами, которые друг о друге не знают.
+    const clash = await api(theirs.token, 'POST', '/pos/users', {
       name: 'Второй кассир',
       role: 'cashier',
       posPin: mine.pin,
@@ -87,8 +90,8 @@ describe('POS PINs', () => {
     const wanted = '424242';
 
     const [first, second] = await Promise.all([
-      api(token, 'POST', `/companies/${a.companyId}/users`, { name: 'A', role: 'cashier', posPin: wanted }),
-      api(token, 'POST', `/companies/${b.companyId}/users`, { name: 'B', role: 'cashier', posPin: wanted }),
+      api(a.token, 'POST', '/pos/users', { name: 'A', role: 'cashier', posPin: wanted }),
+      api(b.token, 'POST', '/pos/users', { name: 'B', role: 'cashier', posPin: wanted }),
     ]);
 
     expect([first.status, second.status].sort()).toEqual([201, 409]);
@@ -101,7 +104,7 @@ describe('POS PINs', () => {
     const theirs = await createFixture();
     const victim = await prisma.user.findFirstOrThrow({ where: { companyId: theirs.companyId } });
 
-    const clash = await api(token, 'PATCH', `/companies/${theirs.companyId}/users/${victim.id}`, {
+    const clash = await api(theirs.token, 'PATCH', `/pos/users/${victim.id}`, {
       name: victim.name,
       role: victim.role,
       posPin: mine.pin,
@@ -124,7 +127,7 @@ describe('POS PINs', () => {
     const fx = await createFixture();
 
     for (const name of ['Бухгалтер', 'Курьер', 'Кладовщик']) {
-      const created = await api(token, 'POST', `/companies/${fx.companyId}/users`, { name, role: 'cashier' });
+      const created = await api(fx.token, 'POST', '/pos/users', { name, role: 'cashier' });
       expect(created.status).toBe(201);
     }
     expect(await prisma.user.count({ where: { companyId: fx.companyId, posPin: null } })).toBe(3);
@@ -137,7 +140,7 @@ describe('POS PINs', () => {
     const fx = await createFixture();
     const user = await prisma.user.findFirstOrThrow({ where: { companyId: fx.companyId } });
 
-    const renamed = await api(token, 'PATCH', `/companies/${fx.companyId}/users/${user.id}`, {
+    const renamed = await api(fx.token, 'PATCH', `/pos/users/${user.id}`, {
       name: 'Асель Каримова',
       role: user.role,
       posPin: fx.pin,
@@ -182,11 +185,12 @@ describe('владелец при создании компании', () => {
     const token = await adminToken();
     const created = await api(token, 'POST', '/companies', company({ name: 'Без кода', phone: '' }));
     expect(created.status).toBe(201);
-    // Сам PIN сервер не отдаёт с 15.09.2026 — он открывает чужую кассу. Но
-    // разницу между «доступа нет» и «есть» видно, иначе экран стал бы
-    // бесполезным вместо безопасного.
-    expect(created.body.users[0].hasPin).toBe(false);
-    expect(created.body.users[0].posPin).toBeUndefined();
+    // Владелец заведён, но войти ещё не может — PIN ему выдаёт отдельный
+    // маршрут, и до этого касса для него закрыта. Имён панель не отдаёт вовсе:
+    // с 15.09.2026 она видит сотрудников числом.
+    expect(created.body.staff.count).toBe(1);
+    expect(created.body.users).toBeUndefined();
+    expect(await prisma.user.count({ where: { companyId: created.body.id, posPin: null } })).toBe(1);
   });
 
   it('чужой PIN не отдаётся', async () => {

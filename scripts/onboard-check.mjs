@@ -114,24 +114,51 @@ const run = async () => {
   step('and a tariff that is active', !!tariff, JSON.stringify(detail?.tariff ?? null).slice(0, 200));
 
   console.log('\n== the people ==');
-  // Random, because a PIN is unique across the whole platform: a fixed one
-  // would collide the second time this is ever run anywhere.
+  // Порядок здесь — настоящий порядок подключения, и с 15.09.2026 он другой.
   //
-  // Держится здесь, а не читается из ответа: с 15.09.2026 сервер PIN обратно
-  // не отдаёт — он открывает чужую кассу, и панели платформы знать его после
-  // записи незачем. Тот, кто его задал, и так его знает.
-  const pin = String(900000 + Math.floor(Math.random() * 99999));
-  const cashier = await call('POST', `/companies/${companyId}/users`, {
-    name: 'Проверочный менеджер', role: 'manager', posPin: pin,
-  });
-  if (!step('manager created with a PIN', cashier.status === 201, `${cashier.status} ${JSON.stringify(cashier.data).slice(0, 200)}`)) return;
+  // Раньше панель платформы заводила кого угодно, и проверка начинала с
+  // менеджера. Теперь панель делает с людьми магазина ровно одно: выдаёт
+  // владельцу первый PIN. Без него он не войдёт в кассу, а завести себе PIN,
+  // не войдя, нельзя — это и есть «даю им данные для входа». Всех остальных
+  // заводит он сам, у себя.
+  step('the company has an owner', (detail?.staff?.count ?? 0) >= 1, JSON.stringify(detail?.staff ?? null).slice(0, 200));
+
+  const ownerPin = String(800000 + Math.floor(Math.random() * 99999));
+  const gavePin = await call('POST', `/companies/${companyId}/owner-pin`, { posPin: ownerPin });
+  if (!step('the owner is given a PIN', gavePin.status === 200, `${gavePin.status} ${JSON.stringify(gavePin.data).slice(0, 200)}`)) return;
   step(
     'и сервер не отдаёт PIN обратно',
-    cashier.data?.posPin === undefined && cashier.data?.hasPin === true,
-    JSON.stringify(cashier.data).slice(0, 150),
+    gavePin.data?.posPin === undefined && gavePin.data?.hasPin === true,
+    JSON.stringify(gavePin.data).slice(0, 150),
   );
-  const clash = await call('POST', `/companies/${companyId}/users`, { name: 'Второй', role: 'cashier', posPin: pin });
+
+  const ownerLogin = await call('POST', '/pos/login', { pin: ownerPin, deviceKey: 'bbbb2222-cccc-4ddd-8eee-ffff33334444' }, false);
+  if (!step('and can sign in at the till', ownerLogin.status === 200, `${ownerLogin.status} ${JSON.stringify(ownerLogin.data).slice(0, 200)}`)) return;
+  const ownerToken = ownerLogin.data.token;
+
+  // А сотрудников заводит владелец — из кассы, своим токеном. Панель
+  // платформы этого маршрута больше не имеет: имена и телефоны чужих людей ей
+  // незачем, ей нужно только их количество.
+  const pin = String(900000 + Math.floor(Math.random() * 99999));
+  const cashier = await fetch(`${BASE}/pos/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ownerToken}` },
+    body: JSON.stringify({ name: 'Проверочный менеджер', role: 'manager', phone: '', posPin: pin }),
+  }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
+  if (!step('the owner creates a manager', cashier.status === 201, `${cashier.status} ${JSON.stringify(cashier.data).slice(0, 200)}`)) return;
+
+  const clash = await fetch(`${BASE}/pos/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ownerToken}` },
+    body: JSON.stringify({ name: 'Второй', role: 'cashier', phone: '', posPin: pin }),
+  }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
   step('a duplicate PIN is refused', clash.status === 409, `${clash.status} ${JSON.stringify(clash.data).slice(0, 120)}`);
+
+  // И панель видит это числом, а не списком.
+  const afterHiring = await call('GET', '/companies');
+  const seen = (Array.isArray(afterHiring.data) ? afterHiring.data : afterHiring.data?.companies ?? []).find((c) => c.id === companyId);
+  step('the panel sees a headcount and no names', seen?.staff?.count === 2 && seen?.users === undefined,
+    JSON.stringify(seen?.staff ?? null).slice(0, 200));
 
   console.log('\n== the till ==');
   const pos = await call('POST', '/pos/login', { pin, deviceKey: 'aaaa1111-bbbb-4ccc-8ddd-eeee22223333' }, false);
@@ -212,21 +239,9 @@ const run = async () => {
     `${numbered.length} of ${(docs.data?.documents ?? []).length}: ${numbered.map((d) => d.number).join(', ')}`);
 
   console.log('\n== the owner gets in ==');
-  // The company was created with an owner, and that owner has no PIN — so
-  // until this happens they cannot sign in anywhere. Every real connection
-  // does this; the check did not, which is why it never noticed.
-  const owner = (detail?.users ?? []).find((u) => u.role === 'owner');
-  step('the company has an owner', !!owner, JSON.stringify(detail?.users ?? []).slice(0, 200));
-  if (!owner) return;
-
-  const ownerPin = String(800000 + Math.floor(Math.random() * 99999));
-  const gavePin = await call('PATCH', `/companies/${companyId}/users/${owner.id}`, {
-    name: owner.name, role: 'owner', posPin: ownerPin,
-  });
-  step('the owner is given a PIN', gavePin.status === 200, `${gavePin.status} ${JSON.stringify(gavePin.data).slice(0, 200)}`);
-
-  const ownerLogin = await call('POST', '/pos/login', { pin: ownerPin, deviceKey: 'bbbb2222-cccc-4ddd-8eee-ffff33334444' }, false);
-  if (!step('and can sign in at the till', ownerLogin.status === 200, `${ownerLogin.status} ${JSON.stringify(ownerLogin.data).slice(0, 200)}`)) return;
+  // Вход уже проверен выше: с 15.09.2026 он первым делом и происходит —
+  // владелец получает PIN, входит и заводит остальных. Здесь остаётся то, что
+  // он получает после входа.
 
   const cabinet = await fetch(`${BASE}/pos/cabinet`, {
     headers: { Authorization: `Bearer ${ownerLogin.data.token}` },
