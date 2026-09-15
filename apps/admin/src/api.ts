@@ -116,6 +116,7 @@ export interface CreateCompanyPayload {
     locationLimit: number | null;
     userLimit: number | null;
     skuLimit: number | null;
+  registerLimit: number | null;
     supportLevel: string;
     validUntil: string;
     notes: string;
@@ -131,6 +132,7 @@ export interface TariffPayload {
   locationLimit: number | null;
   userLimit: number | null;
   skuLimit: number | null;
+  registerLimit: number | null;
   supportLevel: string;
   validUntil: string;
   blocked: boolean;

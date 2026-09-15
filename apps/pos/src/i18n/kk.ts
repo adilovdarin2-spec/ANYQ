@@ -981,6 +981,13 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   // --- which registers are signed in ---------------------------------------
   'profile.devices': 'Құрылғылар',
   'devices.title': 'Құрылғылар',
+  'register.number': '№{number} касса',
+  'register.which': 'Бұл қай касса?',
+  'register.why': 'Бұл құрылғыны танымадық. Тұрған кассаңызды таңдаңыз — немесе жаңасын ашыңыз.',
+  'register.lastSeen': 'соңғы кіру',
+  'register.new': 'Бұл жаңа касса',
+  'register.later': 'Кейінірек сұраңыз',
+  'register.failed': 'Таңдауды сақтау мүмкін болмады',
   'devices.why': 'Осы компанияға кірген кассалар мен планшеттер. Планшет жоғалса — осында өшіріңіз: тек сол істемей қалады, қалған кассалар ауысымын жалғастырады.',
   'devices.none': 'Әзірге бірде-бір құрылғы кірген жоқ',
   'devices.thisOne': 'осы құрылғы',

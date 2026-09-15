@@ -125,6 +125,8 @@ export interface Tariff {
   locationLimit: number | null;
   userLimit: number | null;
   skuLimit: number | null;
+  /** Сколько рабочих мест: две кассы на входе стоят дороже одной. */
+  registerLimit: number | null;
   supportLevel: SupportLevel;
   validUntil: string;
   blocked: boolean;

@@ -48,6 +48,7 @@ function toPayload(t: Tariff): TariffPayload {
     locationLimit: t.locationLimit,
     userLimit: t.userLimit,
     skuLimit: t.skuLimit,
+    registerLimit: t.registerLimit,
     supportLevel: t.supportLevel,
     validUntil: t.validUntil,
     blocked: t.blocked,
@@ -537,6 +538,15 @@ export function CompanyDetailDrawer({
             <div className="field">
               <label htmlFor="d-skuLimit">Лимит SKU</label>
               <input id="d-skuLimit" type="number" min="0" value={tariff.skuLimit ?? ''} onChange={(e) => setTariff({ ...tariff, skuLimit: parseLimit(e.target.value) })} placeholder="Без ограничений" />
+            </div>
+            <div className="field">
+              {/*
+                Кассы, а не пользователи: за одной кассой посменно стоят трое,
+                а у магазина с двумя кассами на входе — две точки продажи и два
+                денежных ящика. Считаются рабочие места.
+              */}
+              <label htmlFor="d-registerLimit">Лимит касс</label>
+              <input id="d-registerLimit" type="number" min="0" value={tariff.registerLimit ?? ''} onChange={(e) => setTariff({ ...tariff, registerLimit: parseLimit(e.target.value) })} placeholder="Без ограничений" />
             </div>
           </div>
 

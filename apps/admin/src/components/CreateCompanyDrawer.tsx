@@ -45,6 +45,7 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
   const [locationLimit, setLocationLimit] = useState('');
   const [userLimit, setUserLimit] = useState('');
   const [skuLimit, setSkuLimit] = useState('');
+  const [registerLimit, setRegisterLimit] = useState('');
   const [supportLevel, setSupportLevel] = useState<SupportLevel>('basic');
   const [duration, setDuration] = useState<DurationPreset>('1m');
   const [notes, setNotes] = useState('');
@@ -83,6 +84,7 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
           locationLimit: parseLimit(locationLimit),
           userLimit: parseLimit(userLimit),
           skuLimit: parseLimit(skuLimit),
+          registerLimit: parseLimit(registerLimit),
           supportLevel,
           validUntil: newValidUntil(duration),
           notes: notes.trim(),
@@ -196,6 +198,10 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
                 <div className="field">
                   <label htmlFor="skuLimit">Лимит SKU</label>
                   <input id="skuLimit" type="number" min="0" value={skuLimit} onChange={(e) => setSkuLimit(e.target.value)} placeholder="Без ограничений" />
+                </div>
+                <div className="field">
+                  <label htmlFor="registerLimit">Лимит касс</label>
+                  <input id="registerLimit" type="number" min="0" value={registerLimit} onChange={(e) => setRegisterLimit(e.target.value)} placeholder="Без ограничений" />
                 </div>
               </div>
 

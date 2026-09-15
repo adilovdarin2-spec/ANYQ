@@ -13,6 +13,7 @@ import { barcodeRefusal } from '../products';
 import { storefrontLocation } from './supply';
 import { can, capabilitiesOf, capabilityRefusal, roleRefusal } from '../roles';
 import { lastOwnerRefusal, selfRoleRefusal } from '../staff';
+import { claimRefusal, initialRegisterLabel, nextRegisterNumber } from '../registers';
 import type { Capability } from '../roles';
 import {
   blockStock,
@@ -114,6 +115,58 @@ function resolveLocationOrRespond(locations: { id: string }[], requested: unknow
   return resolution.locationId;
 }
 
+/**
+ * Завести новую кассу под этим ключом устройства.
+ *
+ * Номер берётся из уже занятых, а не из их количества: касса №2, выключенная
+ * и удалённая, не возвращает номер 2 в оборот — см. `nextRegisterNumber`.
+ *
+ * Гонку ловит база, а не эта функция. Два планшета, включённые в одну секунду,
+ * прочитают один и тот же список занятых номеров и запишут один и тот же
+ * номер; уникальный индекс `(companyId, number)` не даст, и второй просто
+ * пробует ещё раз с новым списком. Это дешевле блокировки таблицы ради
+ * события, которое случается при открытии магазина.
+ */
+async function createRegister(
+  companyId: string,
+  deviceKey: string,
+  userId: string,
+  taken: number[],
+  userAgent: string | undefined,
+): Promise<{ id: string; number: number; label: string }> {
+  let numbers = taken;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const number = nextRegisterNumber(numbers);
+    try {
+      return await prisma.posDevice.create({
+        data: {
+          companyId,
+          deviceKey,
+          number,
+          // Номером вперёд: «Касса №2 · Android». До 15.09.2026 имя целиком
+          // угадывалось по браузеру, и два одинаковых планшета давали две
+          // неразличимые строки — а магазин называет кассы по номерам.
+          label: initialRegisterLabel(number, deviceLabel(userAgent)),
+          lastUserId: userId,
+        },
+        select: { id: true, number: true, label: true },
+      });
+    } catch (err) {
+      if (!isRegisterNumberClash(err)) throw err;
+      numbers = (await prisma.posDevice.findMany({ where: { companyId }, select: { number: true } }))
+        .map((d) => d.number);
+    }
+  }
+  throw new Error('Не удалось выдать номер кассе');
+}
+
+/** Уникальный индекс `(companyId, number)` сказал «занято». */
+function isRegisterNumberClash(err: unknown): boolean {
+  const meta = (err as { code?: string; meta?: { target?: unknown } } | null)?.meta;
+  const target = Array.isArray(meta?.target) ? (meta?.target as string[]).join(',') : String(meta?.target ?? '');
+  return (err as { code?: string } | null)?.code === 'P2002' && target.includes('number');
+}
+
 posRouter.post('/login', loginRateLimit, async (req, res) => {
   const { pin } = req.body ?? {};
   if (!pin) {
@@ -145,7 +198,10 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   // The device, before anything else is loaded: a register the owner has
   // switched off is refused here as well as on every request it makes. Blocking
   // only the token would leave a thief one shoulder-surfed PIN from being back.
-  let device: { id: string } | null = null;
+  let device: { id: string; number: number; label: string } | null = null;
+  // Если касса не узнала себя — из чего ей выбирать и можно ли завести новую.
+  let registerChoices: { id: string; number: number; name: string; lastSeenAt: string }[] | null = null;
+  let newRegisterRefusal: string | null = null;
   if (deviceKey) {
     const existing = await prisma.posDevice.findUnique({
       where: { companyId_deviceKey: { companyId: user.companyId, deviceKey } },
@@ -154,36 +210,63 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
       res.status(403).json({ error: 'Это устройство отключено — обратитесь к владельцу' });
       return;
     }
-    if (!existing) {
-      const known = await prisma.posDevice.count({ where: { companyId: user.companyId } });
-      // An owner or manager is let in over the cap. They are the only people who
-      // can clear the list, and a limit that locks out the person who can lift
-      // it turns a nuisance into a shop that cannot be helped. Going a few rows
-      // over is bounded by how many managers a company has, and it does not
-      // reopen the hole: a cashier is still refused, which is who the cap is
-      // there to stop.
-      const privileged = user.role === 'owner' || user.role === 'manager';
-      if (known >= MAX_POS_DEVICES && !privileged) {
-        res.status(409).json({ error: 'Слишком много устройств — владелец должен удалить лишние' });
-        return;
+    // An owner or manager is let in over the cap. They are the only people who
+    // can clear the list, and a limit that locks out the person who can lift
+    // it turns a nuisance into a shop that cannot be helped. Going a few rows
+    // over is bounded by how many managers a company has, and it does not
+    // reopen the hole: a cashier is still refused, which is who the cap is
+    // there to stop.
+    const privileged = user.role === 'owner' || user.role === 'manager';
+
+    if (existing) {
+      device = await prisma.posDevice.update({
+        where: { id: existing.id },
+        data: { lastSeenAt: new Date(), lastUserId: user.id },
+        select: { id: true, number: true, label: true },
+      });
+    } else {
+      // Незнакомое устройство — и здесь проходит граница, которой до
+      // 15.09.2026 не было.
+      //
+      // Раньше любой незнакомый ключ молча заводил новую строку. Ключ живёт в
+      // памяти браузера, а её чистят: переустановили кассовую программу,
+      // почистили кэш, поменяли планшет — и та же самая касса у входа
+      // появлялась в списке второй, третьей, четвёртой. Тариф, считающий
+      // рабочие места, на таком списке считал бы не то.
+      //
+      // Поэтому первая касса заводится молча — вопроса «какая это касса» у
+      // магазина без касс нет, — а дальше кассу называют: «я касса №2» или «я
+      // новая». Оба ответа приходят отдельными запросами, и оба выдают новый
+      // токен, потому что номер кассы зашит в токен.
+      const registers = await prisma.posDevice.findMany({
+        where: { companyId: user.companyId },
+        select: { id: true, number: true, label: true, lastSeenAt: true, revokedAt: true },
+        orderBy: { number: 'asc' },
+      });
+
+      if (registers.length === 0) {
+        device = await createRegister(user.companyId, deviceKey, user.id, [], req.headers['user-agent']);
+      } else {
+        registerChoices = registers
+          .filter((r) => !r.revokedAt)
+          .map((r) => ({
+            id: r.id,
+            number: r.number,
+            // `name`, как и у `register` выше, а не `label`: одно и то же поле
+            // под двумя именами в одном ответе — это ошибка, которую заметят
+            // пустой кнопкой на экране, а не тестом.
+            name: r.label,
+            lastSeenAt: r.lastSeenAt.toISOString(),
+          }));
+        // Можно ли вообще завести ещё одну — решает тариф, и касса должна
+        // знать это до того, как покажет кнопку «новая касса»: предложить
+        // выбор и отказать по нажатию хуже, чем не предлагать.
+        newRegisterRefusal = privileged
+          ? null
+          : limitRefusal('registers', user.company.tariff?.registerLimit, registers.length)
+            ?? (registers.length >= MAX_POS_DEVICES ? 'Слишком много устройств — владелец должен удалить лишние' : null);
       }
     }
-
-    device = existing
-      ? await prisma.posDevice.update({
-          where: { id: existing.id },
-          data: { lastSeenAt: new Date(), lastUserId: user.id },
-          select: { id: true },
-        })
-      : await prisma.posDevice.create({
-          data: {
-            companyId: user.companyId,
-            deviceKey,
-            label: deviceLabel(req.headers['user-agent']),
-            lastUserId: user.id,
-          },
-          select: { id: true },
-        });
   }
 
   const modules: string[] = user.company.tariff ? JSON.parse(user.company.tariff.modules) : [];
@@ -200,6 +283,17 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     // копию таблицы прав, и они разойдутся в сторону «на экране есть, а
     // делать нельзя».
     capabilities: capabilitiesOf(user.role),
+    // Какая это касса. Стоит в шапке весь день: кассир говорит «пробей на
+    // второй», владелец сверяет ящик по номеру, и человек за экраном должен
+    // видеть тот же номер, что стоит в сменном отчёте.
+    register: device ? { id: device.id, number: device.number, name: device.label } : null,
+    // А это — вопрос, который задают один раз, когда касса себя не узнала:
+    // «я касса №2» или «я новая». Пусто — значит спрашивать нечего.
+    registerChoices,
+    // Почему «новой» быть нельзя, если нельзя. Причина приходит вместе с
+    // выбором, а не по нажатию: предложить кнопку и отказать — хуже, чем
+    // сразу объяснить.
+    newRegisterRefusal,
     company: { id: user.company.id, name: user.company.name, slug: user.company.slug },
     modules,
     locations: user.company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
@@ -2958,13 +3052,137 @@ const MAX_POS_DEVICES = 60;
 // device. A POS token lasts thirty days on purpose — the till has to sell
 // through a week with no connection — so the answer cannot be a shorter token.
 
+/**
+ * «Я касса №2» и «я новая касса» — два ответа на один вопрос.
+ *
+ * Вопрос задаётся при входе с незнакомого устройства, если кассы у магазина
+ * уже есть (см. `/login`). Оба ответа выдают новый токен: номер кассы зашит в
+ * токен, и старый, выданный минуту назад без номера, знает только «кто-то из
+ * этой компании».
+ *
+ * Спрашивает кассир, а не владелец. Того, кто стоит за переустановленной
+ * кассой в восемь утра, нельзя заставить ждать владельца — иначе магазин не
+ * откроется. Опасного в ответе нет: PIN уже проверен, а переезд кассы на
+ * другое устройство виден владельцу в списке и записан в журнал.
+ */
+async function reissueWithRegister(
+  req: PosAuthedRequest,
+  res: Response,
+  register: { id: string; number: number; label: string },
+): Promise<void> {
+  const companyId = req.posCompanyId;
+  const user = await prisma.user.findFirst({
+    where: { id: req.posUserId, companyId },
+    select: { id: true, tokenVersion: true },
+  });
+  if (!user || !companyId) {
+    res.status(401).json({ error: 'Сессия устарела — войдите заново' });
+    return;
+  }
+  res.json({
+    token: signPosToken(user.id, companyId, user.tokenVersion, register.id),
+    register: { id: register.id, number: register.number, name: register.label },
+  });
+}
+
+posRouter.post('/registers', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const companyId = req.posCompanyId!;
+  const deviceKey = readDeviceKey((req.body ?? {}).deviceKey);
+  if (!deviceKey) {
+    res.status(400).json({ error: 'Касса не назвала себя' });
+    return;
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { tariff: { select: { registerLimit: true } } },
+  });
+  const existing = await prisma.posDevice.findMany({
+    where: { companyId },
+    select: { number: true },
+  });
+
+  const privileged = await requireOwnerOrManager(req.posUserId);
+  const refusal = privileged
+    ? null
+    : limitRefusal('registers', company?.tariff?.registerLimit, existing.length)
+      ?? (existing.length >= MAX_POS_DEVICES ? 'Слишком много устройств — владелец должен удалить лишние' : null);
+  if (refusal) {
+    res.status(409).json({ error: refusal });
+    return;
+  }
+
+  // Тот же ключ, уже заведённый, — это не вторая касса, а второе нажатие.
+  // Отвечаем тем же, чем ответили бы в первый раз.
+  const already = await prisma.posDevice.findUnique({
+    where: { companyId_deviceKey: { companyId, deviceKey } },
+    select: { id: true, number: true, label: true, revokedAt: true },
+  });
+  if (already) {
+    if (already.revokedAt) {
+      res.status(403).json({ error: 'Это устройство отключено — обратитесь к владельцу' });
+      return;
+    }
+    await reissueWithRegister(req, res, already);
+    return;
+  }
+
+  const register = await createRegister(companyId, deviceKey, req.posUserId!, existing.map((d) => d.number), req.headers['user-agent']);
+  await reissueWithRegister(req, res, register);
+});
+
+posRouter.post('/registers/:id/claim', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const companyId = req.posCompanyId!;
+  const deviceKey = readDeviceKey((req.body ?? {}).deviceKey);
+  if (!deviceKey) {
+    res.status(400).json({ error: 'Касса не назвала себя' });
+    return;
+  }
+
+  const register = await prisma.posDevice.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, companyId: true, number: true, label: true, deviceKey: true, revokedAt: true },
+  });
+  const refusal = claimRefusal(register, companyId);
+  if (refusal) {
+    res.status(refusal === 'Касса не найдена' ? 404 : 403).json({ error: refusal });
+    return;
+  }
+
+  // Переезд, а не копия: у кассы один ключ, и старое устройство после этого
+  // себя не узнает — спросит то же самое и назовётся чем-то другим. Иначе
+  // «касса №2» была бы у двоих сразу, и сменный отчёт перестал бы сходиться.
+  const moved = await prisma.posDevice.update({
+    where: { id: register!.id },
+    data: { deviceKey, lastSeenAt: new Date(), lastUserId: req.posUserId },
+    select: { id: true, number: true, label: true },
+  });
+
+  const actor = await resolveActor(companyId, req.posUserId);
+  await recordChanges(prisma, actor, {
+    entity: 'device',
+    entityId: moved.id,
+    entityName: moved.label,
+    before: { deviceKey: register!.deviceKey },
+    after: { deviceKey },
+  });
+
+  await reissueWithRegister(req, res, moved);
+});
+
 posRouter.get('/devices', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await requireOwnerOrManager(req.posUserId))) {
     res.status(403).json({ error: 'Устройства смотрит владелец или менеджер' });
     return;
   }
 
-  // Live first, most recently seen at the top; switched-off ones last.
+  // Live first, by number; switched-off ones last.
+  //
+  // Сортировалось по дате последнего входа — до 15.09.2026, когда номеров у
+  // касс не было и «Android · Chrome» ничем не отличался от соседнего
+  // «Android · Chrome». Теперь у строк есть номера, и список, который держит
+  // их в одном и том же порядке от захода к заходу, читается, а список,
+  // перетасовывающийся после каждой смены, — нет.
   //
   // `nulls: 'first'` is load-bearing and not decoration: Postgres sorts NULLs
   // last on ASC, so plain `asc` on a nullable column put every revoked device
@@ -2973,7 +3191,7 @@ posRouter.get('/devices', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const total = await prisma.posDevice.count({ where: { companyId: req.posCompanyId } });
   const devices = await prisma.posDevice.findMany({
     where: { companyId: req.posCompanyId },
-    orderBy: [{ revokedAt: { sort: 'asc', nulls: 'first' } }, { lastSeenAt: 'desc' }],
+    orderBy: [{ revokedAt: { sort: 'asc', nulls: 'first' } }, { number: 'asc' }],
     take: MAX_POS_DEVICES,
   });
 
@@ -2993,6 +3211,9 @@ posRouter.get('/devices', requirePosAuth, async (req: PosAuthedRequest, res) => 
     truncated: total > devices.length,
     devices: devices.map((device) => ({
       id: device.id,
+      // Номер отдельным полем, а не только внутри имени: имя владелец
+      // переименует в «касса у входа», а по номеру сходится сменный отчёт.
+      number: device.number,
       label: device.label,
       firstSeenAt: device.firstSeenAt.toISOString(),
       lastSeenAt: device.lastSeenAt.toISOString(),

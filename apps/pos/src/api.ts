@@ -143,6 +143,32 @@ export interface PosSession {
    * поля не знает, и это не причина выкидывать кассира на экран входа.
    */
   tariff?: { validUntil: string; daysLeft: number } | null;
+  /**
+   * Какая это касса. `null` — касса себя ещё не назвала.
+   *
+   * Необязательное: сессия, сохранённая прошлой сборкой, этого поля не знает,
+   * и выкидывать кассира на экран входа из-за номера в шапке нельзя.
+   */
+  register?: PosRegister | null;
+  /**
+   * Из чего выбрать, если касса себя не узнала. Пусто или `null` — спрашивать
+   * нечего: либо это первая касса магазина, либо ключ узнан.
+   */
+  registerChoices?: PosRegisterChoice[] | null;
+  /** Почему «новой кассой» быть нельзя. `null` — можно. */
+  newRegisterRefusal?: string | null;
+}
+
+export interface PosRegister {
+  id: string;
+  /** «Касса №2» — то, чем её зовут в зале и чем подписан сменный отчёт. */
+  number: number;
+  name: string;
+}
+
+export interface PosRegisterChoice extends PosRegister {
+  /** Когда эта касса последний раз работала — по чему её и узнают в списке. */
+  lastSeenAt: string;
 }
 
 // Reloads the sale grid after the user switches location. Stock only means
@@ -161,8 +187,29 @@ export function posLogin(pin: string): Promise<PosSession> {
   });
 }
 
+/**
+ * «Я новая касса» и «я касса №2» — два ответа на вопрос, который сервер задаёт
+ * незнакомому устройству.
+ *
+ * Оба возвращают новый токен: номер кассы зашит в токен, и тот, что выдан
+ * минуту назад на входе, номера ещё не знает.
+ */
+export function createRegister(token: string): Promise<{ token: string; register: PosRegister }> {
+  return request('/pos/registers', { method: 'POST', body: JSON.stringify({ deviceKey: getDeviceKey() }) }, token);
+}
+
+export function claimRegister(token: string, registerId: string): Promise<{ token: string; register: PosRegister }> {
+  return request(
+    `/pos/registers/${encodeURIComponent(registerId)}/claim`,
+    { method: 'POST', body: JSON.stringify({ deviceKey: getDeviceKey() }) },
+    token,
+  );
+}
+
 export interface PosDevice {
   id: string;
+  /** «Касса №2»: номер отдельно от имени, потому что имя владелец меняет. */
+  number: number;
   label: string;
   firstSeenAt: string;
   lastSeenAt: string;

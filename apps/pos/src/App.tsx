@@ -102,13 +102,16 @@ import {
   unblockBin,
   updateKitchenItemStatus,
   updateManagedProduct,
+  claimRegister,
+  createRegister,
 } from './api';
 import type { DocumentFilter, ImportSource } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
-import type { PosSession, CustomerLookupResult, PosDevice, OpenShiftInfo } from './api';
+import type { PosSession, PosRegister, CustomerLookupResult, PosDevice, OpenShiftInfo } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
+import { RegisterChoiceScreen } from './components/RegisterChoiceScreen';
 import { ShiftBar } from './components/ShiftBar';
 import { TabBar } from './components/TabBar';
 import type { MainTab } from './components/TabBar';
@@ -179,6 +182,10 @@ const CATALOG_REFRESH_MS = 60_000;
 
 export default function App() {
   const [session, setSession] = useState<PosSession | null>(() => getSession());
+  // «Спрошу позже». Живёт в памяти, а не в хранилище: касса без номера не
+  // подписана в списке владельца, и напомнить об этом при следующем входе —
+  // правильно.
+  const [registerAsked, setRegisterAsked] = useState(false);
   const [rememberedLocationId, setRememberedLocationId] = useState<string | null>(() => getCurrentLocationId());
   const [locationSwitchError, setLocationSwitchError] = useState<string | null>(null);
   const [locationSwitching, setLocationSwitching] = useState(false);
@@ -677,6 +684,31 @@ export default function App() {
     saveSession(newSession);
     setSession(newSession);
     setSessionNotice(null);
+    // Вопрос «какая это касса» задаётся заново на каждый вход, пока на него не
+    // ответили: отложить — значит отложить, а не отказаться навсегда.
+    setRegisterAsked(false);
+  }
+
+  /**
+   * Касса назвалась — своим номером или новым.
+   *
+   * Токен меняется: номер кассы зашит в него, и тот, что выдан на входе, ещё
+   * ничего о ней не знает. Сессия переписывается целиком, вместе с хранилищем,
+   * — иначе после перезагрузки страницы касса снова не знала бы, кто она.
+   */
+  async function adoptRegister(next: { token: string; register: PosRegister }) {
+    setSession((prev) => {
+      if (!prev) return prev;
+      const updated: PosSession = {
+        ...prev,
+        token: next.token,
+        register: next.register,
+        registerChoices: null,
+        newRegisterRefusal: null,
+      };
+      saveSession(updated);
+      return updated;
+    });
   }
 
   /**
@@ -3000,6 +3032,21 @@ export default function App() {
     return <PinLogin onLogin={handleLogin} notice={sessionNotice} />;
   }
 
+  // Касса себя не узнала, а кассы у магазина уже есть. Вопрос на один тап, и
+  // задаётся он до смены: номер попадает в сменный отчёт, и спросить после
+  // закрытия смены было бы поздно.
+  if (!registerAsked && !session.register && (session.registerChoices?.length ?? 0) > 0) {
+    return (
+      <RegisterChoiceScreen
+        choices={session.registerChoices ?? []}
+        newRefusal={session.newRegisterRefusal ?? null}
+        onClaim={async (registerId) => adoptRegister(await claimRegister(session.token, registerId))}
+        onCreate={async () => adoptRegister(await createRegister(session.token))}
+        onSkip={() => setRegisterAsked(true)}
+      />
+    );
+  }
+
 
   // A typed search always searches the full catalog, ignoring the category
   // filter — otherwise a cashier could type the exact product name, see
@@ -3039,6 +3086,7 @@ export default function App() {
         shift={shift}
         cashierName={session.user.name}
         locationName={session.locations.length > 1 ? currentLocation?.name ?? null : null}
+        registerNumber={session.register?.number ?? null}
         online={online}
         pendingCount={pendingCount}
         // Продажи, которые не приняли, и смены, которые не дали закрыть, — в

@@ -44,6 +44,9 @@ describe('лимиты тарифа', () => {
     expect(limitRefusal('products', 2, 2)).toContain('2 товара');
     expect(limitRefusal('products', 11, 11)).toContain('11 товаров');
     expect(limitRefusal('products', 21, 21)).toContain('21 товар');
+    expect(limitRefusal('registers', 1, 1)).toContain('1 кассу');
+    expect(limitRefusal('registers', 2, 2)).toContain('2 кассы');
+    expect(limitRefusal('registers', 5, 5)).toContain('5 касс');
   });
 
   it('говорит, что делать дальше, а не только «нельзя»', () => {

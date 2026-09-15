@@ -141,8 +141,13 @@ const NOT_A_MESSAGE = new Set<string>([
   'Удалённый сотрудник', 'Неизвестно', 'неизвестно',
   // A device's first name before anybody renames it. Stored on the row and
   // edited by the shop from then on, so translating it would rename their
-  // tablets under them.
-  'Устройство',
+  // tablets under them. «Касса №7» — то же самое: имя новой кассы, которое
+  // владелец правит у себя в списке, а не сообщение.
+  'Устройство', 'Касса №7',
+  // Провал выдачи номера кассе. Это не ответ кассиру, а `throw` внутри
+  // сервера после пяти столкновений на уникальном индексе: наружу уходит
+  // пятисотка, и текст читает тот, кто смотрит в лог сервера.
+  'Не удалось выдать номер кассе',
   // Куски фразы про лимит тарифа, которая собирается из частей в
   // apps/api/src/limits.ts. По отдельности это не сообщения: «точки» и «сейчас
   // 7» никто не показывает. Собранная фраза переведена образцом ниже, и
@@ -153,6 +158,7 @@ const NOT_A_MESSAGE = new Set<string>([
   'точку', 'точки', 'точек',
   'сотрудника', 'сотрудников',
   'товар', 'товара', 'товаров',
+  'кассу', 'кассы', 'касс',
   // Cells of the export, again: the reason a movement happened and how a sale
   // was paid for. These used to go out as `write_off` and `cash` — English
   // values in Russian columns, in a file that opens in the owner's Excel. The
@@ -171,8 +177,8 @@ const NOT_A_MESSAGE = new Set<string>([
   'Блокировка ячейки', 'Брак', 'Недостача', 'Повреждение', 'Просрочка', 'Другое',
   'Ждёт сборки', 'Собирается', 'Собран', 'Отгружен', 'Отменён',
   // Audit field names, said by the register from the `field` code beside them.
-  'PIN-код', 'Контрагент', 'Сотрудник', 'в продаже', 'закупочная цена', 'код НКТ',
-  'лимит долга', 'разрешён долг', 'режим НДС', 'роль', 'стоп-лист', 'цена продажи',
+  'PIN-код', 'Контрагент', 'Сотрудник', 'Касса', 'в продаже', 'закупочная цена', 'код НКТ',
+  'лимит долга', 'разрешён долг', 'режим НДС', 'роль', 'стоп-лист', 'устройство', 'цена продажи',
   // Composed by the register from the parts, not shown as the server wrote it.
   '7: 7 изменён', '7: 7 — задано «7»', '7: 7 — снято (было «7»)',
   // Never rendered: a corrupt secret is a server fault, not something a cashier
