@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
-import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveSession, saveShift } from './storage';
+import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveLicenceConfirmedAt, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
@@ -156,6 +156,9 @@ import { BinsScreen } from './components/BinsScreen';
 import { BinCountScreen } from './components/BinCountScreen';
 import { OutboxBanner } from './components/OutboxBanner';
 import { TariffNotice } from './components/TariffNotice';
+import { LicenceReminder } from './components/LicenceReminder';
+import { OfflineLicenceNotice } from './components/OfflineLicenceNotice';
+import { useLicence } from './hooks/useLicence';
 import { ReconciliationScreen } from './components/ReconciliationScreen';
 import { ImportScreen } from './components/ImportScreen';
 import { MigrationScreen } from './components/MigrationScreen';
@@ -472,6 +475,13 @@ export default function App() {
   // Whether the till can be opened without a network at all, as opposed to
   // whether it has one right now. See offline.ts.
   const offlineReadiness = useOfflineReadiness();
+
+  // Раз в час: оплачен ли месяц. Касса живёт с последним ответом и без сети
+  // торгует — см. hooks/useLicence.ts.
+  const licence = useLicence(session?.token ?? null, {
+    fallback: session?.tariff,
+    onRefused: handleUnauthorized,
+  });
   const { online, pendingCount, stuckSales, stuckCount, retryStuck, retryAllStuck, refreshPendingCount, sync } = useSalesSync(
     session?.token ?? null,
     ensureShiftSyncedStable,
@@ -681,6 +691,10 @@ export default function App() {
   const activeTab: MainTab = mainTabFor(view);
 
   function handleLogin(newSession: PosSession) {
+    // Вход — это доказанная связь с сервером, и считать её надо отсюда.
+    // Иначе касса, только что вошедшая, секунду показывает «подключите
+    // интернет» — а если проверка лицензии почему-то не дойдёт, то и дольше.
+    saveLicenceConfirmedAt(Date.now());
     saveSession(newSession);
     setSession(newSession);
     setSessionNotice(null);
@@ -3065,7 +3079,8 @@ export default function App() {
       <>
         {/* До открытия смены — то есть в ту самую минуту утром, когда ещё можно
             успеть что-то сделать. */}
-        <TariffNotice tariff={session.tariff} />
+        <TariffNotice tariff={licence.tariff} />
+        {licence.outOfTouch && <OfflineLicenceNotice />}
         <InstallPrompt {...install} />
         <OpenShiftScreen
           locations={session.locations}
@@ -3096,7 +3111,22 @@ export default function App() {
       />
 
       {/* Весь день висит только в последние сутки — см. urgentOnly. */}
-      <TariffNotice tariff={session.tariff} urgentOnly />
+      <TariffNotice tariff={licence.tariff} urgentOnly />
+
+      {/* «Подключите интернет». Не «офлайн»: касса без сети продаёт, и плашка
+          про это стоит в шапке. Здесь про другое — про то, что ANYQ уже час не
+          может узнать, оплачен ли месяц, и продление до кассы не дойдёт. */}
+      {licence.outOfTouch && <OfflineLicenceNotice />}
+
+      {/* Последние сутки, раз в четыре часа, с кнопкой. Полоска выше к этому
+          моменту висит неделю и перестала читаться. */}
+      {licence.remind && licence.tariff && (
+        <LicenceReminder
+          daysLeft={licence.tariff.daysLeft}
+          validUntil={licence.tariff.validUntil}
+          onDismiss={licence.dismissReminder}
+        />
+      )}
 
       {/* Наверху и в потоке, а не поверх сетки товаров: на телефоне 360×640
           закреплённый снизу баннер накрывал два товара, и кассир бил пальцем в

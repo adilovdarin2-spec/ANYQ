@@ -317,6 +317,48 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   });
 });
 
+/**
+ * Сколько магазину осталось работать — спрошенное заново.
+ *
+ * ANYQ работает локально и выходит в сеть иногда. Сервер здесь не место, где
+ * лежит товар, а место, где написано, оплачен ли месяц, — и касса спрашивает
+ * его раз в час (`apps/pos/src/licence.ts`).
+ *
+ * До 15.09.2026 спросить было негде. Тариф читался один раз, на входе, а токен
+ * кассы живёт тридцать дней: магазин, у которого тариф кончился в понедельник,
+ * узнавал об этом при следующем входе — то есть мог узнать через неделю. И
+ * наоборот: владелец заплатил в обед, а касса до утра считала, что нет.
+ *
+ * Чтение, и намеренно самое дешёвое из возможных: этот запрос повторяется
+ * каждый час с каждой кассы каждого магазина. Одна строка тарифа, ничего
+ * больше — ни каталога, ни остатков.
+ *
+ * Отвечает и на кончившемся тарифе. Это и есть ответ: «срок вышел» — то, ради
+ * чего спрашивали, и заменять его отказом значило бы, что касса узнаёт о конце
+ * тарифа только по молчанию.
+ */
+posRouter.get('/licence', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const tariff = await prisma.tariff.findUnique({
+    where: { companyId: req.posCompanyId! },
+    select: { validUntil: true, blocked: true },
+  });
+
+  const state = tariffState(tariff);
+  res.json({
+    state,
+    // Ровно те же поля и в том же виде, что и при входе: касса кладёт их на то
+    // же место в сессии, и расхождение формата означало бы полоску, которая
+    // после первой же проверки говорит не то.
+    tariff: tariff
+      ? { validUntil: tariff.validUntil.toISOString().slice(0, 10), daysLeft: daysLeft(tariff) }
+      : null,
+    // Что сказать человеку, если работать больше нельзя. Слова сервера, а не
+    // кассы: причина у отказа одна, и склеивать её на двух языках в двух местах
+    // значит рано или поздно сказать разное.
+    refusal: state === 'active' ? null : tariffDenialMessage(state),
+  });
+});
+
 // The sale grid for one location. Shared by /pos/login (which opens on the
 // company's first location) and /pos/catalog (which reloads it when the user
 // switches), so a register can never end up showing one location's stock while

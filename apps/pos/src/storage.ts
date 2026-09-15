@@ -10,6 +10,7 @@ const LOCATION_KEY = 'anyq_pos_location';
 const COUNT_SHEET_KEY = 'anyq_pos_count_sheets';
 const DEVICE_KEY = 'anyq_pos_device';
 const DRAWER_KEY = 'anyq_pos_drawer';
+const LICENCE_KEY = 'anyq_pos_licence_seen';
 /** Ключ, под которым лежали одни только возвраты. Читается на переходе. */
 const REFUNDS_KEY = 'anyq_pos_refunds';
 
@@ -211,6 +212,25 @@ export function getCurrentLocationId(): string | null {
 
 export function saveCurrentLocationId(locationId: string | null): void {
   write(LOCATION_KEY, locationId);
+}
+
+/**
+ * Когда касса в последний раз дозвонилась до сервера.
+ *
+ * Переживает перезагрузку намеренно. Касса, поднявшаяся из хранилища без сети,
+ * иначе считала бы связь свежей — а она может быть трёхдневной, и всё, что
+ * касса знает про тариф, столько же и пролежало.
+ *
+ * Хранится время, а не «был ли на связи»: вопрос всегда «как давно», и ответ
+ * на него меняется сам по себе, пока никто не пишет.
+ */
+export function getLicenceConfirmedAt(): number | null {
+  const stored = read<unknown>(LICENCE_KEY, null);
+  return typeof stored === 'number' && Number.isFinite(stored) ? stored : null;
+}
+
+export function saveLicenceConfirmedAt(at: number | null): void {
+  write(LICENCE_KEY, at);
 }
 
 /**
