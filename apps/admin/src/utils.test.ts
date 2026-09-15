@@ -356,6 +356,20 @@ describe('счёт работы на сегодня', () => {
     expect(countForRenewal([company('2026-09-15')], NOW)).toEqual({ expired: 0, soon: 1, blocked: 0 });
   });
 
+  it('и считает по переданному дню, а не по системным часам', () => {
+    // Проверка, которой не было, и из-за этого предыдущая держалась на
+    // настоящей дате запуска: `getTariffState` читала часы сама, а
+    // `countForRenewal` уже принимала `now` и пользовалась им во второй
+    // половине счёта. Совпадали они ровно один день — 15.09.2026, — и 16-го
+    // тест покраснел.
+    //
+    // Даты здесь заведомо не сегодняшние в обе стороны: пройти случайно
+    // нельзя ни в какой день.
+    const tariff = [company('2026-09-15')];
+    expect(countForRenewal(tariff, new Date('2030-01-01T10:00:00'))).toEqual({ expired: 1, soon: 0, blocked: 0 });
+    expect(countForRenewal(tariff, new Date('2020-01-01T10:00:00'))).toEqual({ expired: 0, soon: 0, blocked: 0 });
+  });
+
   it('ровно на границе недели — ещё «скоро»', () => {
     expect(countForRenewal([company('2026-09-22')], NOW).soon).toBe(1);
     expect(countForRenewal([company('2026-09-23')], NOW).soon).toBe(0);

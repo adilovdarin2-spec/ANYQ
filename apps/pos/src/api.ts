@@ -767,6 +767,24 @@ export function registerFiscalManually(
   return request(`/pos/fiscal/${documentId}/manual`, { method: 'POST', body: JSON.stringify({ fiscalNumber }) }, token);
 }
 
+/**
+ * Записать, какой кассовый аппарат стоит рядом с этой точкой.
+ *
+ * Без этого весь фискальный путь не начинается: экран говорит «фискализация не
+ * настроена», продажи не попадают в очередь, и вводить номер с чека аппарата
+ * некуда. Маршрут на сервере был с самого начала — звать его было неоткуда, ни
+ * из кассы, ни из панели, — и настраивалось это руками в базе.
+ *
+ * `provider: 'manual'` — зарегистрированная ККМ рядом с кассой; `'none'` —
+ * точка не фискализируется вовсе (см. docs/DECISIONS.md, «Фискализация»).
+ */
+export function saveFiscalDevice(
+  token: string,
+  payload: { locationId: string; provider: 'manual' | 'none'; registrationNumber: string },
+): Promise<FiscalDevice> {
+  return request('/pos/fiscal/device', { method: 'PUT', body: JSON.stringify(payload) }, token);
+}
+
 export function fetchSuppliers(token: string): Promise<Supplier[]> {
   return request('/pos/suppliers', { method: 'GET' }, token);
 }

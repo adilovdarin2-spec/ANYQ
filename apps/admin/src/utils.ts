@@ -54,9 +54,23 @@ export function daysUntil(validUntil: string, now: Date = new Date()): number {
   return Math.round((end - today) / 86_400_000);
 }
 
-export function getTariffState(tariff: Tariff): TariffState {
+/**
+ * Жив ли тариф — на какой-то определённый день.
+ *
+ * `now` принимается, и это не украшение. Часы читались здесь свои, а
+ * `countForRenewal` и `sortForRenewal` уже принимали `now` и пользовались им
+ * во второй половине счёта. То есть у одного и того же подсчёта было два
+ * «сегодня»: один переданный, другой системный.
+ *
+ * Пока они совпадали, ничего не было видно. Не совпали они в тесте, где «сейчас»
+ * задано 15.09.2026, — и сломался он ровно 16-го, то есть проверка держалась на
+ * настоящей дате запуска, а не на переданной. В работе это тоньше: список,
+ * открытый до полуночи и пересчитанный после, раскладывал бы компании по двум
+ * разным дням.
+ */
+export function getTariffState(tariff: Tariff, now: Date = new Date()): TariffState {
   if (tariff.blocked) return 'blocked';
-  const today = toLocalISODate(new Date());
+  const today = toLocalISODate(now);
   if (tariff.validUntil < today) return 'expired';
   return 'active';
 }
@@ -131,7 +145,7 @@ export function formatPhone(raw: string | null | undefined): string {
  */
 export function sortForRenewal<T extends { name: string; tariff: Tariff }>(companies: T[], now: Date = new Date()): T[] {
   const rank = (c: T): number => {
-    const state = getTariffState(c.tariff);
+    const state = getTariffState(c.tariff, now);
     if (state === 'blocked') return 2;
     return state === 'expired' ? 0 : 1;
   };
@@ -160,7 +174,7 @@ export interface RenewalCounts {
 export function countForRenewal(companies: { tariff: Tariff }[], now: Date = new Date()): RenewalCounts {
   const counts: RenewalCounts = { expired: 0, soon: 0, blocked: 0 };
   for (const c of companies) {
-    const state = getTariffState(c.tariff);
+    const state = getTariffState(c.tariff, now);
     if (state === 'blocked') counts.blocked += 1;
     else if (state === 'expired') counts.expired += 1;
     else if (daysUntil(c.tariff.validUntil, now) <= EXPIRING_SOON_DAYS) counts.soon += 1;
