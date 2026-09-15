@@ -13,6 +13,8 @@ import { barcodeRefusal } from '../products';
 import { storefrontLocation } from './supply';
 import { can, capabilitiesOf, capabilityRefusal, roleRefusal } from '../roles';
 import { lastOwnerRefusal, selfRoleRefusal } from '../staff';
+import { recipeRefusal } from '../recipes-edit';
+import type { RecipeLineInput } from '../recipes-edit';
 import { claimRefusal, initialRegisterLabel, nextRegisterNumber } from '../registers';
 import type { Capability } from '../roles';
 import {
@@ -8331,6 +8333,96 @@ posRouter.get('/production/recipes', requirePosAuth, async (req: PosAuthedReques
       ingredients: r.ingredients.map((i) => ({ ingredientId: i.ingredientId, name: i.ingredient.name, quantity: i.quantity })),
     })),
   );
+});
+
+/**
+ * Завести спецификацию или переписать её целиком.
+ *
+ * Появился 15.09.2026, и до него производство было тупиком: экран в кассе был,
+ * запуск был, тариф со складом это продавал — а список спецификаций приходил
+ * пустым и остаться пустым был обязан. Ни одного маршрута, который их создаёт,
+ * в продукте не существовало; таблица наполнялась руками в базе.
+ *
+ * Переписывается целиком, а не по строчке. Спецификация — это один документ:
+ * «на партию из десяти пачек уходит столько-то того и столько-то этого».
+ * Правка по одной строке означала бы, что между двумя запросами существует
+ * половина рецепта, по которой кто-то может запустить производство.
+ *
+ * Право — то же, что у самого производства: кто варит, тот и знает, из чего.
+ */
+posRouter.put('/production/recipes/:productId', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'produce'))) return;
+
+  const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
+  const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
+  if (!modules.includes('warehouse')) {
+    res.status(403).json({ error: 'Производство недоступно на вашем тарифе' });
+    return;
+  }
+
+  const b = req.body ?? {};
+  const portionYield = Number(b.portionYield);
+  const lines: RecipeLineInput[] = (Array.isArray(b.ingredients) ? b.ingredients : []).map((raw: unknown) => ({
+    ingredientId: String((raw as { ingredientId?: unknown })?.ingredientId ?? ''),
+    quantity: Number((raw as { quantity?: unknown })?.quantity),
+  }));
+
+  // Набор известных товаров — по своей компании. Без него в спецификацию можно
+  // вписать товар соседнего магазина, зная один его id.
+  const ownProducts = await prisma.product.findMany({
+    where: { companyId: req.posCompanyId, id: { in: [req.params.productId, ...lines.map((l) => l.ingredientId)] } },
+    select: { id: true },
+  });
+  const known = new Set(ownProducts.map((p) => p.id));
+
+  const refusal = recipeRefusal(req.params.productId, portionYield, lines, known);
+  if (refusal) {
+    res.status(refusal.includes('не найден') ? 404 : 400).json({ error: refusal });
+    return;
+  }
+
+  const saved = await prisma.$transaction(async (tx) => {
+    const recipe = await tx.recipe.upsert({
+      where: { productId: req.params.productId },
+      update: { portionYield },
+      create: { productId: req.params.productId, portionYield },
+    });
+    // Старые строки удаляются вместе, а не сверяются: спецификация — документ,
+    // и «какие строки остались с прошлого раза» не тот вопрос, на который
+    // кто-нибудь захочет отвечать.
+    await tx.recipeIngredient.deleteMany({ where: { recipeId: recipe.id } });
+    await tx.recipeIngredient.createMany({
+      data: lines.map((line) => ({ recipeId: recipe.id, ingredientId: line.ingredientId, quantity: line.quantity })),
+    });
+    return recipe;
+  });
+
+  res.json({ productId: saved.productId, portionYield: saved.portionYield, ingredients: lines });
+});
+
+/**
+ * Убрать спецификацию.
+ *
+ * Уже выпущенное производство при этом остаётся: это документы, и они говорят,
+ * из чего сделали, а не из чего делают сейчас.
+ */
+posRouter.delete('/production/recipes/:productId', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'produce'))) return;
+
+  const recipe = await prisma.recipe.findFirst({
+    where: { productId: req.params.productId, product: { companyId: req.posCompanyId } },
+  });
+  if (!recipe) {
+    res.status(404).json({ error: 'Спецификация не найдена' });
+    return;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.recipeIngredient.deleteMany({ where: { recipeId: recipe.id } });
+    await tx.recipe.delete({ where: { id: recipe.id } });
+  });
+
+  res.json({ ok: true });
 });
 
 posRouter.get('/production', requirePosAuth, async (req: PosAuthedRequest, res) => {

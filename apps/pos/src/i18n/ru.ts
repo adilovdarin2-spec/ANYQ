@@ -629,6 +629,14 @@ export const ru = {
   'production.consumes': 'Расход сырья:',
   'production.running': 'Производим…',
   'production.run': 'Запустить производство',
+  'production.recipes': 'Спецификации (BOM)',
+  'production.newRecipe': 'Новая спецификация',
+  'production.yield': 'Сколько выходит с одной партии',
+  'production.yieldShort': 'выход {count}',
+  'production.pickProduct': 'Выберите товар',
+  'production.ingredient': 'Составляющая',
+  'production.pickIngredient': 'Выберите составляющую',
+  'production.addLine': '+ Добавить составляющую',
 
   // --- the ledger check ----------------------------------------------------
   'recon.title': 'Сверка журнала',
@@ -879,6 +887,7 @@ export const ru = {
   'fail.saveStockPolicy': 'Не удалось сохранить запас',
   'fail.loadProduction': 'Не удалось загрузить производство',
   'fail.runProduction': 'Не удалось запустить производство',
+  'fail.saveRecipe': 'Не удалось сохранить спецификацию',
   'fail.loadHistory': 'Не удалось загрузить историю склада',
   'fail.loadProducts': 'Не удалось загрузить товары',
   'fail.saveProduct': 'Не удалось сохранить товар',

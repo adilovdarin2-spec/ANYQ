@@ -587,7 +587,9 @@ model RecipeIngredient {
   recipeId     String
   ingredient   Product @relation("IngredientUsage", fields: [ingredientId], references: [id])
   ingredientId String
-  quantity     Int
+  /// Сколько уходит на одну партию. Дробное: фасовка — это четверть
+  /// килограмма ореха на пачку, и целое число здесь округлило бы её в ноль.
+  quantity     Float
 
   @@map("recipe_ingredients")
 }
