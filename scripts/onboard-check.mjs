@@ -88,7 +88,15 @@ const run = async () => {
     phone: '+7 701 000 00 00',
     location: { name: 'Проверочная точка', type: 'shop', address: '' },
     owner: { name: 'Проверочный владелец', phone: '' },
-    tariff: { modules: ['shop', 'stock', 'warehouse', 'retail', 'terminal'], supportLevel: 'basic', validUntil: year },
+    // `pharmacy` здесь для того, чтобы дымовой прогон мог пройти партии: без
+    // него шаг с партиями пропускается, и оплачиваемый модуль на новой боевой
+    // базе не проверяется вовсе. Это проверочная компания, а не клиентская —
+    // ей полагается уметь всё, что мы продаём.
+    tariff: {
+      modules: ['shop', 'stock', 'warehouse', 'retail', 'terminal', 'pharmacy'],
+      supportLevel: 'basic',
+      validUntil: year,
+    },
   });
   if (!step('company created', created.status === 201 || created.status === 200, `${created.status} ${JSON.stringify(created.data).slice(0, 300)}`)) return;
   const companyId = created.data.id ?? created.data.company?.id;
