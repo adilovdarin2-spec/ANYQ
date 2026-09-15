@@ -633,7 +633,12 @@ export default function App() {
      значило отдать заодно весь склад. */
   const moduleItems: (OperationItem & { needs?: string; module: 'stock' | 'warehouse' })[] = [
     // Товар приходит и уходит.
-    { module: 'stock', key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming, needs: 'moveStock' },
+    /* `receive`, а не `moveStock`: экран приёмки шлёт `POST /pos/receipts`, и
+       сервер спрашивает про него именно приёмку. Расхождения не было видно,
+       пока у всех, кто умеет принимать, заодно было и перемещение, —
+       у фармацевта (15.09.2026) их впервые развели, и пункт меню пропал бы у
+       человека, которому право как раз выдали. */
+    { module: 'stock', key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming, needs: 'receive' },
     { module: 'stock', key: 'counts', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts, needs: 'count' },
     { module: 'stock', key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs, needs: 'writeOff' },
     { module: 'stock', key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns, needs: 'writeOff' },
@@ -3283,6 +3288,7 @@ export default function App() {
         <BatchesScreen
           batches={batches}
           uncovered={uncovered}
+          canReceive={may('receive')}
           products={session.products}
           loading={batchesLoading}
           error={batchesError}

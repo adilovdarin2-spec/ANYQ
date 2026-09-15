@@ -1793,8 +1793,9 @@ async function allow(req: PosAuthedRequest, res: Response, capability: Capabilit
  * он это сделать», а здесь — «вправе ли он на это смотреть». Закупочные цены,
  * заказы поставщикам и приёмки показывают, почём магазин берёт товар, и это
  * не то, что владелец собирался показывать кассиру. Право то же, что у самой
- * приёмки: её проводят владелец, менеджер и кладовщик — они же и видят цены,
- * без которых заказ не подпишешь.
+ * приёмки: её проводят владелец, менеджер, кладовщик и — с 15.09.2026 —
+ * фармацевт; они же и видят цены, без которых нельзя сверить поставку с
+ * накладной.
  *
  * Проверки этой не было вовсе: меню кассы прячет такие экраны, а сервер отдал
  * бы их любому, кто знает адрес. Меню — это вежливость, а не запрет.
@@ -1802,7 +1803,7 @@ async function allow(req: PosAuthedRequest, res: Response, capability: Capabilit
 async function allowPurchasingView(req: PosAuthedRequest, res: Response): Promise<boolean> {
   const user = req.posUserId ? await prisma.user.findUnique({ where: { id: req.posUserId } }) : null;
   if (!can(user?.role, 'receive')) {
-    res.status(403).json({ error: 'Закупочные цены видят владелец, менеджер и кладовщик' });
+    res.status(403).json({ error: 'Закупочные цены видят владелец, менеджер, кладовщик и фармацевт' });
     return false;
   }
   return true;

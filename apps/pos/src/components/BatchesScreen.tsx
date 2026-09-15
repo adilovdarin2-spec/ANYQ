@@ -22,6 +22,15 @@ interface Props {
    * об этом было неоткуда.
    */
   uncovered: UncoveredStockRow[];
+  /**
+   * Можно ли этому человеку принимать.
+   *
+   * Список партий видят все, кто за прилавком: срок годности — это то, что
+   * кассир должен знать до того, как пробьёт. А кнопка «принять» — это
+   * приёмка, и сервер спросит про право. Кнопка, ведущая в отказ, учит не
+   * доверять кнопкам.
+   */
+  canReceive: boolean;
   products: Product[];
   loading: boolean;
   error: string | null;
@@ -31,7 +40,7 @@ interface Props {
   onReceive: (payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number }) => Promise<boolean>;
 }
 
-export function BatchesScreen({ batches, uncovered, products, loading, error, submitting, onBack, onRefresh, onReceive }: Props) {
+export function BatchesScreen({ batches, uncovered, canReceive, products, loading, error, submitting, onBack, onRefresh, onReceive }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'receive'>('list');
   const [productId, setProductId] = useState(products[0]?.id ?? '');
@@ -60,7 +69,7 @@ export function BatchesScreen({ batches, uncovered, products, loading, error, su
       <div className="screen-header">
         <button className="icon-btn" onClick={view === 'receive' ? () => setView('list') : onBack} aria-label={t('common.back')}>←</button>
         <span className="screen-title">{t('batch.title')}</span>
-        {view === 'list' ? (
+        {view === 'list' && canReceive ? (
           <button className="icon-btn" onClick={() => setView('receive')} aria-label={t('batch.receive')} style={{ marginLeft: 'auto' }}>+</button>
         ) : (
           <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>

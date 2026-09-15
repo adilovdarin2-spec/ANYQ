@@ -252,3 +252,83 @@ describe('списание партионного товара', () => {
     expect(without.reduce((sum, item) => sum + item.quantity, 0)).toBe(6);
   });
 });
+
+describe('фармацевт принимает сам', () => {
+  /** Человек за прилавком аптеки, со своим PIN и своим токеном. */
+  async function asPharmacist(): Promise<string> {
+    const pin = String(700000 + Math.floor(Math.random() * 99999));
+    await prisma.user.create({
+      data: { companyId: fx.companyId, name: 'Фармацевт', role: 'pharmacist', posPin: pin },
+    });
+    const login = await api(null, 'POST', '/pos/login', { pin });
+    expect(login.status, JSON.stringify(login.body)).toBe(200);
+    return login.body.token;
+  }
+
+  it('заводит партию со сроком годности', async () => {
+    // Решение владельца от 15.09.2026. До него приёмки у фармацевта не было, и
+    // это значило вот что: приход партии — единственный способ завести срок
+    // годности в систему, весь аптечный модуль держится на сроках, а человек,
+    // который один стоит в аптеке, за каждой коробкой шёл к владельцу.
+    const token = await asPharmacist();
+    const res = await api(token, 'POST', '/pos/batches', {
+      locationId: fx.locationId,
+      productId: fx.productId,
+      batchNumber: 'PH-1',
+      expiryDate: new Date(Date.now() + 200 * DAY).toISOString(),
+      quantity: 6,
+      purchasePrice: 100,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(await batchQuantities()).toEqual({ 'PH-1': 6 });
+    expect(await findLedgerMismatches()).toEqual([]);
+  });
+
+  it('и обычную приёмку тоже', async () => {
+    const token = await asPharmacist();
+    const res = await api(
+      token,
+      'POST',
+      '/pos/receipts',
+      { locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 3, purchasePrice: 100 }] },
+      { 'Idempotency-Key': 'pharmacist-receipt' },
+    );
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+  });
+
+  it('а списать и пересчитать по-прежнему не может', async () => {
+    // Списание и пересчёт — две операции, которыми недостача превращается в
+    // норму задним числом. Их подписывает старший, и это не изменилось.
+    const token = await asPharmacist();
+    await receiveBatch('PH-2', 200, 5);
+
+    const written = await api(
+      token,
+      'POST',
+      '/pos/write-offs',
+      { locationId: fx.locationId, reason: 'damage', items: [{ productId: fx.productId, quantity: 1 }] },
+      { 'Idempotency-Key': 'pharmacist-writeoff' },
+    );
+    expect(written.status).toBe(403);
+    expect(written.body.error).toContain('владелец или менеджер');
+  });
+
+  it('и отказ кассиру называет его в числе тех, к кому идти', async () => {
+    // Список тех, к кому идти, — это список тех, кто действительно может.
+    // Разойдись они, и кассира отправят к тому, кто откажет так же.
+    const pin = String(600000 + Math.floor(Math.random() * 99999));
+    await prisma.user.create({
+      data: { companyId: fx.companyId, name: 'Кассир', role: 'cashier', posPin: pin },
+    });
+    const login = await api(null, 'POST', '/pos/login', { pin });
+    const res = await api(
+      login.body.token,
+      'POST',
+      '/pos/receipts',
+      { locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 3, purchasePrice: 100 }] },
+      { 'Idempotency-Key': 'cashier-receipt' },
+    );
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain('фармацевт');
+  });
+});
