@@ -105,3 +105,65 @@ export function formatPhone(raw: string | null | undefined): string {
   if (digits.length !== 11 || !digits.startsWith('7')) return raw;
   return `+${digits[0]} ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 9)} ${digits.slice(9)}`;
 }
+
+/**
+ * Порядок списка под ту работу, которая делается каждый месяц.
+ *
+ * Список приходит с сервера по дате создания — то есть в порядке, который был
+ * важен ровно один раз, когда компанию заводили. А делается с этим списком
+ * другое: раз в месяц по нему решают, кому продлить, а кого заморозить. При
+ * шести компаниях это незаметно; при шестидесяти это и есть вся работа, и
+ * делается она глазами по значкам.
+ *
+ * Асимметрия, которую это чинит: магазин о конце тарифа предупреждают за
+ * неделю, полоской поверх кассы, — а того, кто продлевает, не предупреждает
+ * никто.
+ *
+ * Порядок:
+ *   1. Истёкшие — магазин не работает прямо сейчас, и это единственное, что
+ *      действительно срочно. Чем дольше лежит, тем выше.
+ *   2. Действующие — ближайший конец первым.
+ *   3. Заблокированные — последними. Это не «забыли», а решение, которое уже
+ *      приняли; они ждут звонка, а не действия.
+ *
+ * Внутри группы — по дате, при равных датах по названию, чтобы порядок не
+ * прыгал между обновлениями страницы.
+ */
+export function sortForRenewal<T extends { name: string; tariff: Tariff }>(companies: T[], now: Date = new Date()): T[] {
+  const rank = (c: T): number => {
+    const state = getTariffState(c.tariff);
+    if (state === 'blocked') return 2;
+    return state === 'expired' ? 0 : 1;
+  };
+
+  return [...companies].sort((a, b) => {
+    const byRank = rank(a) - rank(b);
+    if (byRank !== 0) return byRank;
+    const byDate = daysUntil(a.tariff.validUntil, now) - daysUntil(b.tariff.validUntil, now);
+    if (byDate !== 0) return byDate;
+    return a.name.localeCompare(b.name, 'ru');
+  });
+}
+
+/**
+ * Одна строка, по которой видно, есть ли сегодня работа.
+ *
+ * Считается по тому же правилу, что и порядок: чтобы число сверху и первые
+ * строки списка не спорили друг с другом.
+ */
+export interface RenewalCounts {
+  expired: number;
+  soon: number;
+  blocked: number;
+}
+
+export function countForRenewal(companies: { tariff: Tariff }[], now: Date = new Date()): RenewalCounts {
+  const counts: RenewalCounts = { expired: 0, soon: 0, blocked: 0 };
+  for (const c of companies) {
+    const state = getTariffState(c.tariff);
+    if (state === 'blocked') counts.blocked += 1;
+    else if (state === 'expired') counts.expired += 1;
+    else if (daysUntil(c.tariff.validUntil, now) <= EXPIRING_SOON_DAYS) counts.soon += 1;
+  }
+  return counts;
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo, useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { CompaniesTable } from './components/CompaniesTable';
 import { CreateCompanyDrawer } from './components/CreateCompanyDrawer';
@@ -6,7 +6,7 @@ import { CompanyDetailDrawer } from './components/CompanyDetailDrawer';
 import { UsersDrawer } from './components/UsersDrawer';
 import { LoginScreen } from './components/LoginScreen';
 import { MfaSettings } from './components/MfaSettings';
-import { pluralizeRu } from './utils';
+import { pluralizeRu, sortForRenewal, countForRenewal } from './utils';
 import {
   ApiError,
   createCompany,
@@ -145,6 +145,13 @@ export default function App() {
     return location;
   }
 
+  // Порядок под ту работу, которая делается каждый месяц: сначала то, что
+  // уже не работает, потом то, что кончается. Считается на клиенте, потому
+  // что это правило про работу человека, а не про данные, и его надо было
+  // уметь проверить целиком, не поднимая сервер.
+  const forRenewal = useMemo(() => sortForRenewal(companies), [companies]);
+  const renewal = useMemo(() => countForRenewal(companies), [companies]);
+
   const selected = companies.find((c) => c.id === selectedId) ?? null;
   const usersCompany = companies.find((c) => c.id === usersCompanyId) ?? null;
 
@@ -181,13 +188,36 @@ export default function App() {
             <div className="content-sub">
               {companies.length} {pluralizeRu(companies.length, 'компания', 'компании', 'компаний')} · аккаунты создаются и настраиваются вручную
             </div>
+            {/*
+              Строка, по которой видно, есть ли сегодня работа.
+              Магазин о конце тарифа предупреждают за неделю полоской поверх
+              кассы; того, кто продлевает, до сих пор не предупреждал никто —
+              он искал значки глазами по списку, отсортированному по дате
+              создания. Молчит, когда сказать нечего: счётчик, висящий всегда,
+              перестаёт быть счётчиком.
+            */}
+            {!loading && !error && (renewal.expired > 0 || renewal.soon > 0) && (
+              <div className="content-sub renewal-line">
+                {renewal.expired > 0 && (
+                  <span className="renewal-expired">
+                    {renewal.expired} {pluralizeRu(renewal.expired, 'не работает', 'не работают', 'не работают')} — срок вышел
+                  </span>
+                )}
+                {renewal.expired > 0 && renewal.soon > 0 && ' · '}
+                {renewal.soon > 0 && (
+                  <span>
+                    {renewal.soon} {pluralizeRu(renewal.soon, 'заканчивается', 'заканчиваются', 'заканчиваются')} на этой неделе
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>+ Новая компания</button>
         </div>
 
         {loading && <div className="loading-note">Загрузка…</div>}
         {error && !loading && <div className="error-note">{error}</div>}
-        {!loading && !error && <CompaniesTable companies={companies} onSelect={setSelectedId} />}
+        {!loading && !error && <CompaniesTable companies={forRenewal} onSelect={setSelectedId} />}
         </>
         )}
       </main>

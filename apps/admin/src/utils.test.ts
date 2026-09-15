@@ -19,8 +19,10 @@ import {
   daysUntil,
   newValidUntil,
   extendValidUntil,
+  sortForRenewal,
+  countForRenewal
 } from './utils';
-import type { Tariff } from './types';
+import type { Tariff, ModuleKey } from './types';
 
 function makeTariff(overrides: Partial<Tariff> = {}): Tariff {
   return {
@@ -239,5 +241,123 @@ describe('зависимости модулей', () => {
 
   it('учёт прихода нельзя снять, пока выбрана аптека', () => {
     expect(lockedModules(['retail', 'stock', 'pharmacy'])).toContain('stock');
+  });
+});
+
+describe('порядок списка под продление', () => {
+  const NOW = new Date('2026-09-15T10:00:00');
+
+  const company = (name: string, validUntil: string, blocked = false) => ({
+    name,
+    tariff: {
+      modules: [] as ModuleKey[],
+      locationLimit: 1,
+      userLimit: 1,
+      skuLimit: 1,
+      supportLevel: 'basic' as const,
+      validUntil,
+      blocked,
+      notes: '',
+    },
+  });
+
+  it('истёкшие идут первыми — магазин не работает прямо сейчас', () => {
+    const out = sortForRenewal(
+      [company('Работает', '2026-12-01'), company('Лежит', '2026-09-01')],
+      NOW,
+    );
+    expect(out.map((c) => c.name)).toEqual(['Лежит', 'Работает']);
+  });
+
+  it('и чем дольше лежит, тем выше', () => {
+    const out = sortForRenewal(
+      [company('Вчера', '2026-09-14'), company('Месяц назад', '2026-08-15')],
+      NOW,
+    );
+    expect(out.map((c) => c.name)).toEqual(['Месяц назад', 'Вчера']);
+  });
+
+  it('среди действующих первым тот, у кого срок ближе', () => {
+    const out = sortForRenewal(
+      [company('Через год', '2027-09-15'), company('Послезавтра', '2026-09-17'), company('Через месяц', '2026-10-15')],
+      NOW,
+    );
+    expect(out.map((c) => c.name)).toEqual(['Послезавтра', 'Через месяц', 'Через год']);
+  });
+
+  it('заблокированные — последними, даже если срок у них давно вышел', () => {
+    // Это не «забыли», а решение, которое уже приняли: они ждут звонка, а не
+    // действия. Держать их сверху значит каждый месяц пролистывать мимо.
+    const out = sortForRenewal(
+      [company('Заморожен', '2026-01-01', true), company('Просто истёк', '2026-09-14')],
+      NOW,
+    );
+    expect(out.map((c) => c.name)).toEqual(['Просто истёк', 'Заморожен']);
+  });
+
+  it('при равных датах — по названию, чтобы порядок не прыгал', () => {
+    // Иначе список меняется между обновлениями страницы, и глаз теряет место.
+    const out = sortForRenewal(
+      [company('Ящик', '2026-10-01'), company('Абрикос', '2026-10-01')],
+      NOW,
+    );
+    expect(out.map((c) => c.name)).toEqual(['Абрикос', 'Ящик']);
+  });
+
+  it('не переставляет исходный массив', () => {
+    const input = [company('Второй', '2026-09-01'), company('Первый', '2026-12-01')];
+    sortForRenewal(input, NOW);
+    expect(input[0].name).toBe('Второй');
+  });
+
+  it('пустой список — пустой ответ', () => {
+    expect(sortForRenewal([], NOW)).toEqual([]);
+  });
+});
+
+describe('счёт работы на сегодня', () => {
+  const NOW = new Date('2026-09-15T10:00:00');
+
+  const company = (validUntil: string, blocked = false) => ({
+    tariff: {
+      modules: [] as ModuleKey[],
+      locationLimit: 1,
+      userLimit: 1,
+      skuLimit: 1,
+      supportLevel: 'basic' as const,
+      validUntil,
+      blocked,
+      notes: '',
+    },
+  });
+
+  it('считает истёкших, скорых и замороженных по отдельности', () => {
+    const counts = countForRenewal(
+      [
+        company('2026-09-01'),
+        company('2026-09-14'),
+        company('2026-09-17'),
+        company('2027-01-01'),
+        company('2026-01-01', true),
+      ],
+      NOW,
+    );
+    expect(counts).toEqual({ expired: 2, soon: 1, blocked: 1 });
+  });
+
+  it('замороженный не попадает ни в истёкших, ни в скорых', () => {
+    // Иначе одна компания считалась бы дважды, и число сверху спорило бы с
+    // порядком списка.
+    expect(countForRenewal([company('2026-01-01', true)], NOW)).toEqual({ expired: 0, soon: 0, blocked: 1 });
+  });
+
+  it('сегодняшний последний день — это «скоро», а не «истёк»', () => {
+    // Тариф работает весь день, за который заплачено.
+    expect(countForRenewal([company('2026-09-15')], NOW)).toEqual({ expired: 0, soon: 1, blocked: 0 });
+  });
+
+  it('ровно на границе недели — ещё «скоро»', () => {
+    expect(countForRenewal([company('2026-09-22')], NOW).soon).toBe(1);
+    expect(countForRenewal([company('2026-09-23')], NOW).soon).toBe(0);
   });
 });
