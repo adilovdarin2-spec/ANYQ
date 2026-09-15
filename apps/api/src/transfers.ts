@@ -70,3 +70,42 @@ export function transferReceiptErrorMessage(receipt: Exclude<TransferReceipt, { 
   if (receipt.status === 'unknown') return 'В перемещении нет такого товара';
   return 'Укажите принятое количество по каждой позиции';
 }
+
+/**
+ * Строки перемещения, сложенные обратно по товару.
+ *
+ * Документ хранит по одной строке на партию — иначе не было бы места записать,
+ * какая серия едет в фургоне, а без этого партия остаётся у отправителя, и он
+ * начинает предлагать к продаже то, что уже уехало.
+ *
+ * Но принимают товар коробками, а не сериями. Кладовщик на другом конце
+ * считает штуки парацетамола, а не «сколько из серии PCM-2601 и сколько из
+ * PCM-2612» — этого он и не видит. Поэтому наружу документ отдаётся ровно
+ * таким, каким был: одна строка на товар, одно число.
+ *
+ * `receivedQuantity` остаётся `null`, пока не принято ничего: «ещё в пути» —
+ * это не то же самое, что «приехало ноль», и карточка перемещения различает
+ * их. Как только по любой строке проставлено число, считается сумма — строка,
+ * по которой не приехало ничего, вносит свой честный ноль.
+ */
+export function collapseTransferItems<T extends { productId: string; quantity: number; receivedQuantity: number | null }>(
+  items: T[],
+): T[] {
+  const byProduct = new Map<string, T>();
+  const order: string[] = [];
+
+  for (const item of items) {
+    const seen = byProduct.get(item.productId);
+    if (!seen) {
+      order.push(item.productId);
+      byProduct.set(item.productId, { ...item });
+      continue;
+    }
+    seen.quantity += item.quantity;
+    if (item.receivedQuantity !== null) {
+      seen.receivedQuantity = (seen.receivedQuantity ?? 0) + item.receivedQuantity;
+    }
+  }
+
+  return order.map((productId) => byProduct.get(productId)!);
+}

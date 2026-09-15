@@ -108,6 +108,19 @@ describe('партии не переживают уход товара', () => {
     expect(await findBatchesOverStock(fx.locationId)).toEqual([]);
   });
 
+  it('перемещение на другую точку', async () => {
+    await receiveBatch('B1', 300, 20);
+    const res = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 5 }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    // Товар в фургоне не принадлежит ни одной точке — и партия тоже.
+    expect(await batched()).toBe(15);
+    expect(await findBatchesOverStock()).toEqual([]);
+  });
+
   it('недостача по инвентаризации', async () => {
     await receiveBatch('B1', 300, 20);
     const res = await api(fx.token, 'POST', '/pos/counts', {
@@ -130,5 +143,129 @@ describe('партии не переживают уход товара', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(await batched()).toBe(20);
     expect(await findBatchesOverStock(fx.locationId)).toEqual([]);
+  });
+});
+
+/**
+ * Срок годности обязан доехать.
+ *
+ * Это половина, из-за которой починка перемещения не могла быть половинчатой.
+ * Списать партию у отправителя и не создать у получателя — значит потерять
+ * срок годности по дороге: в принимающей аптеке лежало бы лекарство, которое
+ * ни продать по правилу FEFO, ни списать по сроку. Выглядело бы это исправно,
+ * а было бы хуже расхождения, которое чинили.
+ */
+describe('перемещение партионного товара', () => {
+  async function sendAndReceive(quantity: number, received?: number) {
+    const transfer = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity }],
+    });
+    expect(transfer.status, JSON.stringify(transfer.body)).toBe(201);
+    const res = await api(fx.token, 'POST', `/pos/transfers/${transfer.body.id}/receive`, {
+      locationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, receivedQuantity: received ?? quantity }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return transfer.body.id as string;
+  }
+
+  async function batchesAt(locationId: string) {
+    const rows = await prisma.productBatch.findMany({
+      where: { productId: fx.productId, locationId },
+      orderBy: { expiryDate: 'asc' },
+    });
+    return rows.map((row) => ({ batchNumber: row.batchNumber, quantity: row.quantity }));
+  }
+
+  it('привозит серию и срок вместе с товаром', async () => {
+    const sent = await receiveBatch('PCM-2601', 40, 20);
+    await sendAndReceive(8);
+
+    expect(await batchesAt(fx.locationId)).toEqual([{ batchNumber: 'PCM-2601', quantity: 12 }]);
+    expect(await batchesAt(fx.otherLocationId)).toEqual([{ batchNumber: 'PCM-2601', quantity: 8 }]);
+
+    // Тот же срок, а не «примерно тот же»: по нему считают FEFO и просрочку.
+    const [origin] = await prisma.productBatch.findMany({ where: { id: sent.id } });
+    const arrived = await prisma.productBatch.findFirst({
+      where: { productId: fx.productId, locationId: fx.otherLocationId },
+    });
+    expect(arrived!.expiryDate.toISOString()).toBe(origin.expiryDate.toISOString());
+    expect(await findBatchesOverStock()).toEqual([]);
+  });
+
+  it('вливается в ту же серию, а не заводит вторую такую же', async () => {
+    // Иначе каждое перемещение плодило бы строку с тем же номером, и FEFO
+    // раскладывал бы одну серию на части.
+    await receiveBatch('PCM-2601', 40, 20);
+    await sendAndReceive(5);
+    await sendAndReceive(4);
+
+    expect(await batchesAt(fx.otherLocationId)).toEqual([{ batchNumber: 'PCM-2601', quantity: 9 }]);
+    expect(await findBatchesOverStock()).toEqual([]);
+  });
+
+  it('везёт из той серии, что испортится раньше', async () => {
+    await receiveBatch('SOON', 20, 6);
+    await receiveBatch('LATE', 300, 10);
+    await sendAndReceive(6);
+
+    expect(await batchesAt(fx.locationId)).toEqual([
+      { batchNumber: 'SOON', quantity: 0 },
+      { batchNumber: 'LATE', quantity: 10 },
+    ]);
+    expect(await batchesAt(fx.otherLocationId)).toEqual([{ batchNumber: 'SOON', quantity: 6 }]);
+  });
+
+  it('недостача в пути достаётся той серии, что и так испортится первой', async () => {
+    // Осторожная сторона: записать пропавшим то, что хранится дольше, значило
+    // бы оставить в остатке срок годности длиннее настоящего.
+    await receiveBatch('SOON', 20, 4);
+    await receiveBatch('LATE', 300, 6);
+    await sendAndReceive(10, 7);
+
+    expect(await batchesAt(fx.otherLocationId)).toEqual([
+      { batchNumber: 'SOON', quantity: 4 },
+      { batchNumber: 'LATE', quantity: 3 },
+    ]);
+    expect(await findBatchesOverStock()).toEqual([]);
+  });
+
+  it('отменённое перемещение возвращает серию отправителю', async () => {
+    await receiveBatch('PCM-2601', 40, 20);
+    const transfer = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 8 }],
+    });
+    expect(transfer.status).toBe(201);
+    expect(await batchesAt(fx.locationId)).toEqual([{ batchNumber: 'PCM-2601', quantity: 12 }]);
+
+    const cancelled = await api(fx.token, 'POST', `/pos/transfers/${transfer.body.id}/cancel`, {});
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+
+    // В ту же строку, а не в новую с тем же номером.
+    expect(await batchesAt(fx.locationId)).toEqual([{ batchNumber: 'PCM-2601', quantity: 20 }]);
+    expect(await batchesAt(fx.otherLocationId)).toEqual([]);
+    expect(await findBatchesOverStock()).toEqual([]);
+  });
+
+  it('карточка перемещения остаётся по товару, а не по сериям', async () => {
+    // Кладовщик считает штуки, а не серии: он их не видит. Приёмка ждёт одно
+    // число на товар, и деление на партии наружу не выходит.
+    await receiveBatch('SOON', 20, 4);
+    await receiveBatch('LATE', 300, 6);
+    await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 9 }],
+    });
+
+    const list = await api(fx.token, 'GET', '/pos/transfers');
+    expect(list.status).toBe(200);
+    expect(list.body[0].items).toHaveLength(1);
+    expect(list.body[0].items[0].quantity).toBe(9);
+    expect(list.body[0].items[0].receivedQuantity).toBeNull();
   });
 });
