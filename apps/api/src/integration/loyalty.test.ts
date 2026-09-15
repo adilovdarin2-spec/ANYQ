@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { api, createFixture, prisma, resetDatabase, startTestServer, stopTestServer } from './harness';
+import { api, createFixture, findLoyaltyMismatches, prisma, resetDatabase, startTestServer, stopTestServer } from './harness';
 import type { Fixture } from './harness';
 
 /**
@@ -188,5 +188,81 @@ describe('loyalty points', () => {
     expect(reconciled.expected).toBe(3000);
     expect(reconciled.counted).toBe(3000);
     expect(reconciled.difference).toBe(0);
+  });
+});
+
+/**
+ * Остаток баллов сходится с документами, которые его составили.
+ *
+ * Баллы — единственное в системе, что покупатель может оспорить лично: «у меня
+ * было три тысячи». Ответить на это можно только сложив его чеки. Если остаток
+ * с ними не сходится, ответить нечего — и правой стороной окажется та, что
+ * громче.
+ *
+ * Каждая продажа записывает начисленное и списанное, а возврат записывает то
+ * же самое перевёрнутым: восстановленные баллы в `pointsRedeemed`, отозванные
+ * в `pointsEarned`. Поэтому остаток — это одна сумма по всем документам
+ * покупателя, без разбора типов, и её можно просто сложить.
+ */
+describe('остаток баллов против чеков', () => {
+  async function customerId(): Promise<string> {
+    const customer = await prisma.counterparty.findFirst({ where: { companyId: fx.companyId, phone: PHONE } });
+    return customer!.id;
+  }
+
+  it('сходится после начисления', async () => {
+    await sell({ customerPhone: PHONE }, 'recon-1');
+    expect(await findLoyaltyMismatches()).toEqual([]);
+  });
+
+  it('сходится после списания', async () => {
+    await sell({ customerPhone: PHONE }, 'recon-2');
+    const spent = await sell({ customerPhone: PHONE, pointsToRedeem: 50 }, 'recon-3');
+    expect(spent.status, JSON.stringify(spent.body)).toBe(201);
+    expect(spent.body.pointsRedeemed).toBe(50);
+    expect(await findLoyaltyMismatches()).toEqual([]);
+  });
+
+  it('сходится после возврата', async () => {
+    // Возврат отзывает начисленное за возвращённое и возвращает потраченное.
+    // Обе стороны должны лечь в документ, иначе остаток разойдётся с чеками
+    // ровно на ту разницу, о которой покупатель и спросит.
+    const sold = await sell({ customerPhone: PHONE }, 'recon-4');
+    const sales = await api(fx.token, 'GET', `/pos/sales?locationId=${fx.locationId}`);
+    const line = sales.body.find((sale: { id: string }) => sale.id === sold.body.id).items[0];
+
+    const refund = await api(fx.token, 'POST', '/pos/returns', {
+      saleId: sold.body.id,
+      reason: 'не подошёл',
+      items: [{ documentItemId: line.id, quantity: 2 }],
+    });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+    expect(await findLoyaltyMismatches()).toEqual([]);
+  });
+
+  it('сходится после начисления, списания и возврата подряд', async () => {
+    await sell({ customerPhone: PHONE }, 'recon-5');
+    await sell({ customerPhone: PHONE, pointsToRedeem: 30 }, 'recon-6');
+    const sold = await sell({ customerPhone: PHONE }, 'recon-7');
+    const sales = await api(fx.token, 'GET', `/pos/sales?locationId=${fx.locationId}`);
+    const line = sales.body.find((sale: { id: string }) => sale.id === sold.body.id).items[0];
+    await api(fx.token, 'POST', '/pos/returns', {
+      saleId: sold.body.id,
+      reason: 'передумал',
+      items: [{ documentItemId: line.id, quantity: 5 }],
+    });
+
+    expect(await findLoyaltyMismatches()).toEqual([]);
+  });
+
+  it('а сама проверка умеет падать', async () => {
+    // Зелёный, который не может стать красным, не проверяет ничего.
+    await sell({ customerPhone: PHONE }, 'recon-8');
+    const id = await customerId();
+    await prisma.counterparty.update({ where: { id }, data: { loyaltyPoints: 999 } });
+
+    const found = await findLoyaltyMismatches();
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ counterpartyId: id, balance: 999 });
   });
 });

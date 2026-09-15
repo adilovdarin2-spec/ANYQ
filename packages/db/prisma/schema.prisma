@@ -670,6 +670,19 @@ model Document {
   payments      SalePayment[]
   discountType  String?
   discountValue Int?
+  /// Что документ сделал с баллами покупателя — от лица продажи, а не от лица
+  /// остатка. У продажи это прямо: начислено и списано. У возврата (`return`)
+  /// — то, что он отменяет: `pointsEarned` здесь значит «начисление, которое
+  /// отзывается», а `pointsRedeemed` — «списание, которое возвращается».
+  ///
+  /// То есть на остаток возврат влияет ровно наоборот: `+pointsRedeemed −
+  /// pointsEarned`. Соглашение записано здесь, потому что раньше оно не было
+  /// записано нигде, а по одним названиям полей прочесть его нельзя — строка
+  /// `pointsEarned: refund.pointsRevoked` одинаково похожа на замысел и на
+  /// опечатку. Сложить остаток покупателя по его чекам, не зная этого,
+  /// невозможно, а баллы — единственное, что покупатель оспаривает лично.
+  ///
+  /// Проверяется: `findLoyaltyMismatches` в `apps/api/src/integration/harness.ts`.
   pointsEarned  Int?
   pointsRedeemed Int?
   counterparty  Counterparty? @relation(fields: [counterpartyId], references: [id])
