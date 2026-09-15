@@ -16,7 +16,15 @@ import type { PaymentLine } from '../payments';
 export const companiesRouter = Router();
 companiesRouter.use(requireAuth);
 
-const include = { locations: true, users: true, tariff: true } satisfies Prisma.CompanyInclude;
+// `users` берётся ради счёта, а не ради имён: наружу уходит только их
+// количество. `posDevices` — ради даты последней связи, по которой видно,
+// насколько это число свежее.
+const include = {
+  locations: true,
+  users: { select: { id: true } },
+  posDevices: { select: { lastSeenAt: true } },
+  tariff: true,
+} satisfies Prisma.CompanyInclude;
 type CompanyWithRelations = Prisma.CompanyGetPayload<{ include: typeof include }>;
 
 // Cyrillic (Russian + Kazakh) transliteration — company names on this
@@ -50,6 +58,20 @@ async function generateUniqueSlug(name: string): Promise<string> {
   return candidate;
 }
 
+/**
+ * Когда магазин последний раз выходил на связь.
+ *
+ * По самому свежему из его терминалов: у магазина их может быть несколько, и
+ * молчащая запасная касса ничего не говорит о работающей основной. `null` —
+ * это «ещё ни разу», а не «давно»: компания, заведённая утром и ещё не
+ * включённая, и компания, замолчавшая месяц назад, — разные вещи.
+ */
+function lastSeen(devices: { lastSeenAt: Date }[]): string | null {
+  if (devices.length === 0) return null;
+  const latest = devices.reduce((a, b) => (a.lastSeenAt > b.lastSeenAt ? a : b));
+  return latest.lastSeenAt.toISOString();
+}
+
 function serializeCompany(company: CompanyWithRelations) {
   return {
     id: company.id,
@@ -58,7 +80,24 @@ function serializeCompany(company: CompanyWithRelations) {
     slug: company.slug,
     createdAt: company.createdAt.toISOString().slice(0, 10),
     locations: company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
-    users: company.users.map(serializeUser),
+    /**
+     * Сотрудники — числом, а не поимённо.
+     *
+     * Тарифы делятся на их количество, а не на их имена, и это ровно та
+     * граница, по которой проходит всё остальное здесь: нам нужно знать, за
+     * сколько человек заплачено и укладывается ли магазин в тариф. Имена и
+     * телефоны чужих сотрудников — их дело; с 15.09.2026 список ведёт
+     * владелец у себя в кассе.
+     *
+     * `lastSeenAt` — когда магазин последний раз выходил на связь. Это и есть
+     * «данные на такое-то число»: терминал, месяц не подключавшийся к сети, не
+     * должен выглядеть как свежий.
+     */
+    staff: {
+      count: company.users.length,
+      limit: company.tariff?.userLimit ?? null,
+      lastSeenAt: lastSeen(company.posDevices),
+    },
     tariff: company.tariff && {
       modules: JSON.parse(company.tariff.modules) as string[],
       locationLimit: company.tariff.locationLimit,
@@ -380,159 +419,7 @@ function isPinConflict(err: unknown): boolean {
     JSON.stringify((err as { meta?: unknown }).meta ?? '').includes('posPin')
   );
 }
-companiesRouter.post('/:id/users', async (req, res) => {
-  const b = req.body ?? {};
-  if (!b.name || !b.role) {
-    res.status(400).json({ error: 'Заполните имя и роль' });
-    return;
-  }
 
-  // Роль решает, что человек сможет делать. Опечатка в ней не даёт ничего и
-  // выглядит настоящей ролью — в карточке написано «cashir», сотрудник
-  // упирается в отказы, и найти причину можно только чтением базы.
-  const badRole = roleRefusal(b.role);
-  if (badRole) {
-    res.status(400).json({ error: badRole });
-    return;
-  }
-
-  const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
-  if (posPin && !PIN_PATTERN.test(posPin)) {
-    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
-    return;
-  }
-
-  const company = await prisma.company.findUnique({
-    where: { id: req.params.id },
-    include: { tariff: true, _count: { select: { users: true } } },
-  });
-  if (!company) {
-    res.status(404).json({ error: 'Компания не найдена' });
-    return;
-  }
-
-  const refusal = limitRefusal('users', company.tariff?.userLimit, company._count.users);
-  if (refusal) {
-    res.status(409).json({ error: refusal });
-    return;
-  }
-
-  if (posPin) {
-    const conflict = await prisma.user.findFirst({ where: { posPin } });
-    if (conflict) {
-      res.status(409).json({ error: PIN_TAKEN });
-      return;
-    }
-  }
-
-  try {
-    const user = await prisma.user.create({
-      data: { companyId: company.id, name: b.name, role: b.role, phone: phoneKey(b.phone) || null, posPin: posPin || null },
-    });
-    res.status(201).json(serializeUser(user));
-  } catch (err) {
-    if (!isPinConflict(err)) throw err;
-    // The other admin got there between the check and the insert.
-    res.status(409).json({ error: PIN_TAKEN });
-  }
-});
-
-companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
-  const b = req.body ?? {};
-  const existing = await prisma.user.findFirst({ where: { id: req.params.userId, companyId: req.params.id } });
-  if (!existing) {
-    res.status(404).json({ error: 'Сотрудник не найден' });
-    return;
-  }
-  if (!b.name || !b.role) {
-    res.status(400).json({ error: 'Заполните имя и роль' });
-    return;
-  }
-  const badRole = roleRefusal(b.role);
-  if (badRole) {
-    res.status(400).json({ error: badRole });
-    return;
-  }
-
-  // Пустое поле значит «не трогать», а не «снять».
-  //
-  // Раньше значило «снять», и это было правильно ровно до тех пор, пока PIN
-  // показывался: форма открывалась с ним внутри, и пустой она становилась
-  // только если его стёрли нарочно. Теперь форма открывается пустой всегда —
-  // прочитать PIN больше нельзя, — и старое правило означало бы, что
-  // исправление опечатки в имени молча отбирает у кассира кассу. Посреди
-  // смены, без единого слова.
-  //
-  // Снять доступ по-прежнему можно, но теперь это надо сказать: `clearPin`.
-  const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
-  const clearPin = b.clearPin === true;
-  if (posPin && clearPin) {
-    res.status(400).json({ error: 'Либо новый PIN, либо снятие доступа — не одновременно' });
-    return;
-  }
-  if (posPin && !PIN_PATTERN.test(posPin)) {
-    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
-    return;
-  }
-  if (posPin && posPin !== existing.posPin) {
-    const conflict = await prisma.user.findFirst({ where: { posPin, id: { not: existing.id } } });
-    if (conflict) {
-      res.status(409).json({ error: PIN_TAKEN });
-      return;
-    }
-  }
-  /** Каким PIN станет: новый, снятый или прежний. */
-  const nextPin = clearPin ? null : posPin || existing.posPin;
-
-  // A new PIN or a new role is exactly the moment an old token should stop
-  // working: an owner who takes a cashier's PIN away means them to be out, not
-  // to keep selling from the token already on their phone for another month.
-  // Renaming somebody or fixing their phone number is not that, so it doesn't
-  // sign them out mid-shift.
-  const accessChanged = b.role !== existing.role || nextPin !== existing.posPin;
-
-  // Named as what it is rather than by a name the owner would not recognise.
-  // A role changed from outside the company is a different fact from one their
-  // own manager changed, and that distinction is the point of the entry.
-  const admin = await prisma.adminUser.findUnique({ where: { id: req.adminUserId }, select: { name: true } });
-  const actor = {
-    companyId: req.params.id,
-    // Deliberately null: this person is not in the company's own user list, and
-    // pointing the column at them would make the log look like an inside change.
-    actorId: null,
-    actorName: `Администратор платформы${admin?.name ? ` (${admin.name})` : ''}`,
-  };
-
-  try {
-    const user = await prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({
-        where: { id: existing.id },
-        data: {
-          name: b.name,
-          role: b.role,
-          phone: phoneKey(b.phone) || null,
-          posPin: nextPin,
-          ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
-        },
-      });
-      await recordChanges(tx, actor, {
-        entity: 'user',
-        entityId: updated.id,
-        entityName: existing.name,
-        before: existing,
-        after: updated,
-      });
-      return updated;
-    });
-    res.json(serializeUser(user));
-  } catch (err) {
-    if (!isPinConflict(err)) throw err;
-    // Somebody else took the PIN between the check above and this write. The
-    // transaction rolled back, so no audit entry was left for a change that
-    // did not happen.
-    res.status(409).json({ error: PIN_TAKEN });
-  }
-});
 
 function serializeLocation(l: { id: string; name: string; type: string; address: string | null }) {
   return { id: l.id, name: l.name, type: l.type, address: l.address ?? '' };
@@ -541,6 +428,76 @@ function serializeLocation(l: { id: string; name: string; type: string; address:
 // No delete route — Location is referenced by Stock/Document/Shift/ProductBatch
 // FKs with no cascade, so Postgres would reject it anyway once any activity
 // has happened at that location. Matches the no-delete precedent for products/users.
+/**
+ * Выдать владельцу PIN — первый или взамен потерянного.
+ *
+ * Единственное, что панель платформы делает с людьми магазина, и единственное,
+ * чего она не может не делать: без PIN-а владелец не войдёт в кассу, а завести
+ * себе PIN, не войдя, нельзя. Это и есть «даю им данные для входа».
+ *
+ * Всё остальное про сотрудников отсюда убрано 15.09.2026. Раньше здесь заводили
+ * и правили кого угодно: мы держали имена и телефоны чужих сотрудников, а
+ * владелец, у которого уволился кассир, звонил нам менять PIN. Теперь список
+ * ведёт он сам (`POST /pos/users`), а мы видим только их количество.
+ *
+ * Только владельцу и только PIN. Ни имени, ни роли, ни чужих людей: узкий
+ * маршрут, который нельзя случайно расширить, лучше общего с проверками внутри.
+ */
+companiesRouter.post('/:id/owner-pin', async (req: AuthedRequest, res) => {
+  const posPin = typeof req.body?.posPin === 'string' ? req.body.posPin.trim() : '';
+  if (!PIN_PATTERN.test(posPin)) {
+    res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
+    return;
+  }
+
+  const owner = await prisma.user.findFirst({
+    where: { companyId: req.params.id, role: 'owner' },
+    orderBy: { id: 'asc' },
+  });
+  if (!owner) {
+    res.status(404).json({ error: 'У компании нет владельца' });
+    return;
+  }
+
+  const clash = await prisma.user.findFirst({ where: { posPin, id: { not: owner.id } } });
+  if (clash) {
+    res.status(409).json({ error: PIN_TAKEN });
+    return;
+  }
+
+  // Смена PIN-а — это смена доступа, и выданный раньше токен обязан перестать
+  // работать: владелец, потерявший планшет, за тем сюда и пришёл.
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.adminUserId }, select: { name: true } });
+  const actor = {
+    companyId: req.params.id,
+    // Намеренно null: этот человек не в списке сотрудников компании, и ссылка
+    // на него сделала бы запись похожей на правку изнутри.
+    actorId: null,
+    actorName: `Администратор платформы${admin?.name ? ` (${admin.name})` : ''}`,
+  };
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: owner.id },
+        data: { posPin, tokenVersion: { increment: 1 } },
+      });
+      await recordChanges(tx, actor, {
+        entity: 'user',
+        entityId: user.id,
+        entityName: owner.name,
+        before: owner,
+        after: user,
+      });
+      return user;
+    });
+    res.json(serializeUser(updated));
+  } catch (err) {
+    if (!isPinConflict(err)) throw err;
+    res.status(409).json({ error: PIN_TAKEN });
+  }
+});
+
 companiesRouter.post('/:id/locations', async (req, res) => {
   const b = req.body ?? {};
   if (!b.name || !b.type) {

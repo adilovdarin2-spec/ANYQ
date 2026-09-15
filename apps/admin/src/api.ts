@@ -1,4 +1,4 @@
-import type { Company, CompanyLocation, CompanyUser, SupportAccessState } from './types';
+import type { Company, CompanyLocation, SupportAccessState } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 /**
@@ -173,23 +173,17 @@ export function requestSupportAccess(token: string, companyId: string, reason: s
 }
 
 
-export interface UserPayload {
-  name: string;
-  role: string;
-  phone: string;
-  /** Новый PIN. Пусто — не менять: прочитать прежний нельзя, и пустое поле не должно его стирать. */
-  posPin: string;
-  /** Снять доступ к кассе. Говорится отдельно, потому что молчание больше не значит «снять». */
-  clearPin?: boolean;
+/**
+ * Выдать владельцу PIN — первый или взамен потерянного.
+ *
+ * Единственное, что панель делает с людьми магазина: без PIN-а владелец не
+ * войдёт в кассу, а завести себе PIN, не войдя, нельзя.
+ */
+export function setOwnerPin(token: string, companyId: string, posPin: string): Promise<{ id: string }> {
+  return request(`/companies/${companyId}/owner-pin`, { method: 'POST', body: JSON.stringify({ posPin }) }, token);
 }
 
-export function createUser(token: string, companyId: string, payload: UserPayload): Promise<CompanyUser> {
-  return request(`/companies/${companyId}/users`, { method: 'POST', body: JSON.stringify(payload) }, token);
-}
 
-export function updateUser(token: string, companyId: string, userId: string, payload: UserPayload): Promise<CompanyUser> {
-  return request(`/companies/${companyId}/users/${userId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token);
-}
 
 export interface LocationPayload {
   name: string;

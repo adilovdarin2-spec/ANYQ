@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Company, CompanyLocation, LocationType, ModuleKey, SupportLevel, Tariff, SupportAccessState } from '../types';
-import { LEGACY_MODULES, OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, LOCATION_TYPE_LABELS, SUPPORT_LABELS, ROLE_LABELS, lockedModules, withRequiredModules } from '../types';
+import { LEGACY_MODULES, OFFERABLE_LOCATION_TYPES, OFFERABLE_MODULES, MODULE_LABELS, LOCATION_TYPE_LABELS, SUPPORT_LABELS, lockedModules, withRequiredModules } from '../types';
 import { StatusChip } from './StatusChip';
 import { formatDate, formatDateTime, formatMoney, getTariffState, extendValidUntil, DURATION_LABELS, formatPhone } from '../utils';
 import type { DurationPreset } from '../utils';
@@ -20,9 +20,9 @@ interface Props {
   onLoadShifts: (companyId: string) => Promise<ShiftSummary[]>;
   onLoadAccess: (companyId: string) => Promise<SupportAccessState>;
   onRequestAccess: (companyId: string, reason: string) => Promise<unknown>;
-  onManageUsers: () => void;
   onCreateLocation: (companyId: string, payload: LocationPayload) => Promise<CompanyLocation>;
   onUpdateLocation: (companyId: string, locationId: string, payload: LocationPayload) => Promise<CompanyLocation>;
+  onSetOwnerPin: (companyId: string, posPin: string) => Promise<void>;
 }
 
 // A legacy module appears here only for a company that already has it — so it
@@ -74,9 +74,9 @@ export function CompanyDetailDrawer({
   onLoadShifts,
   onLoadAccess,
   onRequestAccess,
-  onManageUsers,
   onCreateLocation,
   onUpdateLocation,
+  onSetOwnerPin,
 }: Props) {
   const [tariff, setTariff] = useState<Tariff>(company.tariff);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -93,6 +93,11 @@ export function CompanyDetailDrawer({
   const [editLocationForm, setEditLocationForm] = useState<LocationPayload>(emptyLocationForm);
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinDone, setPinDone] = useState(false);
   const state = getTariffState(tariff);
 
   const loadShifts = useCallback(() => {
@@ -114,6 +119,21 @@ export function CompanyDetailDrawer({
       })
       .catch(() => setAccess({ state: 'none', reason: '', requestedAt: null, expiresAt: null }));
   }, [company.id, onLoadAccess, loadShifts]);
+
+  async function giveOwnerPin() {
+    setPinBusy(true);
+    setPinError(null);
+    try {
+      await onSetOwnerPin(company.id, pin.trim());
+      setPinDone(true);
+      setPinOpen(false);
+      setPin('');
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : 'Не удалось выдать PIN');
+    } finally {
+      setPinBusy(false);
+    }
+  }
 
   async function askForAccess() {
     setAskingAccess(true);
@@ -230,7 +250,6 @@ export function CompanyDetailDrawer({
             {/* Без эмодзи: это единственные два цветных пиктографа во всей панели, и
               рядом с «Заблокировать» они читаются как игрушки. Слова говорят всё
               сами — та же причина, по которой их убрали с экрана операций в кассе. */}
-            <button className="btn btn-secondary" onClick={onManageUsers}>Сотрудники</button>
           </div>
 
           <div className="section-title">Продлить</div>
@@ -314,13 +333,71 @@ export function CompanyDetailDrawer({
             ),
           )}
 
-          <div className="section-title">Пользователи ({withLimit(company.users.length, tariff.userLimit)})</div>
-          {company.users.map((u) => (
-            <div key={u.id} className="mini-card">
-              <span>{u.name}</span>
-              <span className="meta-text">{ROLE_LABELS[u.role]}</span>
+          {/*
+            Числом, а не поимённо. Тарифы делятся на количество сотрудников, а
+            не на их имена; список ведёт владелец у себя в кассе, и имена его
+            людей нам незачем.
+            Дата последней связи здесь не украшение: число приходит из магазина,
+            и терминал, месяц не подключавшийся к сети, не должен выглядеть
+            свежим.
+          */}
+          <div className="section-title">Сотрудники</div>
+          <div className="mini-card">
+            <span>{withLimit(company.staff.count, company.staff.limit)}</span>
+            <span className="meta-text">
+              {company.staff.lastSeenAt
+                ? `данные на ${formatDateTime(company.staff.lastSeenAt)}`
+                : 'магазин ещё не выходил на связь'}
+            </span>
+          </div>
+
+          {/*
+            Единственное, что мы делаем с людьми магазина.
+            Первый PIN владелец получает при создании компании. Сюда приходят с
+            потерянным планшетом или забытым PIN-ом — и это не мелочь, которую
+            можно оставить на потом: без PIN-а владелец не войдёт в кассу, а
+            завести себе новый, не войдя, нельзя. Раньше тем же экраном меняли
+            PIN-ы всем сотрудникам; теперь их ведёт владелец у себя.
+            Спрятано за кнопкой намеренно: смена PIN-а выбрасывает владельца со
+            всех устройств, и открытое поле слишком легко задеть.
+          */}
+          {pinOpen ? (
+            <div className="mini-card stack">
+              <div className="field">
+                <label htmlFor="owner-pin">Новый PIN владельца</label>
+                <input
+                  id="owner-pin"
+                  type="text"
+                  inputMode="numeric"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="4–6 цифр"
+                />
+              </div>
+              <div className="drawer-note">
+                Старый PIN перестанет работать, и владельца выбросит из кассы на всех устройствах.
+              </div>
+              {pinError && <div className="error-note">{pinError}</div>}
+              <div className="quick-actions">
+                <button className="btn btn-secondary" onClick={() => { setPinOpen(false); setPin(''); setPinError(null); }}>
+                  Отмена
+                </button>
+                <button
+                  className="btn btn-primary"
+                  disabled={!/^\d{4,6}$/.test(pin.trim()) || pinBusy}
+                  onClick={giveOwnerPin}
+                >
+                  {pinBusy ? 'Выдаём…' : 'Выдать PIN'}
+                </button>
+              </div>
             </div>
-          ))}
+          ) : (
+            <div className="quick-actions">
+              <button className="btn btn-secondary" onClick={() => { setPinDone(false); setPinOpen(true); }}>
+                {pinDone ? 'PIN выдан — выдать ещё раз' : 'Выдать владельцу новый PIN'}
+              </button>
+            </div>
+          )}
 
           <div className="section-title">Смены</div>
           {/*
