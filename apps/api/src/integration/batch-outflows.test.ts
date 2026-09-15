@@ -317,3 +317,149 @@ describe('перемещение партионного товара', () => {
     expect(list.body[0].items[0].receivedQuantity).toBeNull();
   });
 });
+
+/**
+ * Сверка видит завышенную партию и умеет её починить.
+ *
+ * Это не запас на будущее. Каждое списание, недостача, возврат поставщику,
+ * перемещение, выдача заказа и производство партионного товара до 15.09.2026
+ * оставляли серию нетронутой, и остановка этого сегодня не исправила ни одной
+ * уже разошедшейся книги. У того, кто вёл партии, они разошлись, и узнать об
+ * этом он мог только продав покупателю воздух.
+ *
+ * Поэтому расхождение делается тем же способом, каким оно возникало на самом
+ * деле: остаток уменьшается мимо партий.
+ */
+describe('сверка партий', () => {
+  async function batchesHere() {
+    const rows = await prisma.productBatch.findMany({
+      where: { productId: fx.productId, locationId: fx.locationId },
+      orderBy: { expiryDate: 'asc' },
+    });
+    return rows.map((row) => ({ batchNumber: row.batchNumber, quantity: row.quantity }));
+  }
+
+  /**
+   * Товар ушёл, серию никто не тронул — ровно как это делали пять маршрутов.
+   *
+   * Движение пишется обязательно. Первая попытка обошлась без него, и тест
+   * упал правильно: без движения расходится не партия с остатком, а остаток с
+   * журналом, и починка журнала честно возвращала остаток назад. Настоящее
+   * расхождение выглядит иначе — товар действительно ушёл, журнал это знает,
+   * не знает только серия.
+   */
+  async function driftAway(quantity: number) {
+    await prisma.stock.updateMany({
+      where: { productId: fx.productId, locationId: fx.locationId },
+      data: { quantity: { decrement: quantity } },
+    });
+    await prisma.stockMovement.create({
+      data: {
+        productId: fx.productId,
+        locationId: fx.locationId,
+        binLocation: '',
+        quantity: -quantity,
+        reason: 'sale',
+      },
+    });
+  }
+
+  it('молчит, когда всё сходится', async () => {
+    await receiveBatch('B1', 300, 20);
+    const res = await api(fx.token, 'GET', `/pos/reconciliation?locationId=${fx.locationId}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.batchExcess).toEqual([]);
+  });
+
+  it('молчит, когда партий меньше остатка', async () => {
+    // Часть товара заведена без партий — это законно.
+    await receiveBatch('B1', 300, 20);
+    await prisma.stock.updateMany({
+      where: { productId: fx.productId, locationId: fx.locationId },
+      data: { quantity: { increment: 5 } },
+    });
+    const res = await api(fx.token, 'GET', `/pos/reconciliation?locationId=${fx.locationId}`);
+    expect(res.body.batchExcess).toEqual([]);
+  });
+
+  it('называет превышение и объясняет, чем оно опасно', async () => {
+    await receiveBatch('B1', 300, 20);
+    await driftAway(6);
+
+    const res = await api(fx.token, 'GET', `/pos/reconciliation?locationId=${fx.locationId}`);
+    expect(res.body.batchExcess).toHaveLength(1);
+    expect(res.body.batchExcess[0]).toMatchObject({ productId: fx.productId, batched: 20, stock: 14, excess: 6 });
+    expect(res.body.batchExcess[0].explanation).toContain('касса');
+  });
+
+  it('починка приводит партии к остатку, начиная с раннего срока', async () => {
+    await receiveBatch('SOON', 20, 8);
+    await receiveBatch('LATE', 300, 12);
+    await driftAway(10);
+
+    const res = await api(fx.token, 'POST', '/pos/reconciliation/repair', { locationId: fx.locationId });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.repairedBatches).toBe(1);
+
+    // 10 лишних: вся ранняя серия и два из поздней.
+    expect(await batchesHere()).toEqual([
+      { batchNumber: 'SOON', quantity: 0 },
+      { batchNumber: 'LATE', quantity: 10 },
+    ]);
+    expect(await findBatchesOverStock(fx.locationId)).toEqual([]);
+  });
+
+  it('починка записывает, какую серию поправила', async () => {
+    await receiveBatch('B1', 300, 20);
+    await driftAway(6);
+    const res = await api(fx.token, 'POST', '/pos/reconciliation/repair', { locationId: fx.locationId });
+
+    const doc = await prisma.document.findUnique({
+      where: { id: res.body.documentId },
+      include: { items: { include: { batch: true } } },
+    });
+    const batchLines = doc!.items.filter((item) => item.batchId !== null);
+    expect(batchLines).toHaveLength(1);
+    expect(batchLines[0].batch!.batchNumber).toBe('B1');
+    // Со знаком, как и поправка остатка: на сколько изменилось число.
+    expect(batchLines[0].quantity).toBe(-6);
+    expect(doc!.reason).toBe('Сверка журнала: приведено партий 1');
+  });
+
+  it('остаток починка не трогает — неправа здесь партия', async () => {
+    await receiveBatch('B1', 300, 20);
+    await driftAway(6);
+    await api(fx.token, 'POST', '/pos/reconciliation/repair', { locationId: fx.locationId });
+
+    const rows = await prisma.stock.findMany({ where: { productId: fx.productId, locationId: fx.locationId } });
+    expect(rows.reduce((sum, row) => sum + row.quantity, 0)).toBe(14);
+  });
+
+  it('не трогает партию, когда неправ был остаток, а не она', async () => {
+    // Кэш остатка занижен, а движений по нему столько же, сколько и было:
+    // сломан остаток, партия в порядке. Если считать превышение до починки
+    // журнала, партий окажется «больше», и починка уменьшит правильную серию,
+    // чтобы сойтись с неправильным числом. Порядок в маршруте написан ровно
+    // против этого.
+    await receiveBatch('B1', 300, 20);
+    await prisma.stock.updateMany({
+      where: { productId: fx.productId, locationId: fx.locationId },
+      data: { quantity: 14 },
+    });
+
+    const res = await api(fx.token, 'POST', '/pos/reconciliation/repair', { locationId: fx.locationId });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.repaired).toBe(1);
+    expect(res.body.repairedBatches).toBe(0);
+
+    // Остаток вернулся к журналу, партия не тронута.
+    expect(await batchesHere()).toEqual([{ batchNumber: 'B1', quantity: 20 }]);
+    expect(await findBatchesOverStock(fx.locationId)).toEqual([]);
+  });
+
+  it('чинить нечего — и говорит об этом, а не делает вид, что починила', async () => {
+    await receiveBatch('B1', 300, 20);
+    const res = await api(fx.token, 'POST', '/pos/reconciliation/repair', { locationId: fx.locationId });
+    expect(res.body).toMatchObject({ repaired: 0, repairedBatches: 0, documentId: null });
+  });
+});

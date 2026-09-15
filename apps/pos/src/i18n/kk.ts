@@ -635,6 +635,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'recon.repairing': 'Түзетіп жатырмыз…',
   'recon.repair': 'Қалдықтарды журналға келтіру ({count})',
   'recon.mismatchLine': '{bin} · журнал {ledger}, қалдық {cached}',
+  'recon.batchTitle': 'Партиялар қалдықпен сәйкес келмейді',
+  'recon.batchLine': 'сериялар бойынша {batched} {unit}, қалдықта {stock} {unit}',
   'recon.unplaced': 'орналастырылмаған',
 
   // --- fiscalisation -------------------------------------------------------

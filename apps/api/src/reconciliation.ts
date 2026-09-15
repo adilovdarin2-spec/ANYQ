@@ -112,3 +112,56 @@ export function summarize(ledgerTotals: LedgerTotal[], mismatches: Mismatch[]): 
     totalDrift: mismatches.reduce((sum, mismatch) => sum + Math.abs(mismatch.difference), 0),
   };
 }
+
+export interface BatchTotal {
+  productId: string;
+  /** Сумма количеств по всем партиям товара на этой точке. */
+  batched: number;
+}
+
+export interface StockTotal {
+  productId: string;
+  /** Остаток товара на этой точке, сложенный по всем ячейкам. */
+  quantity: number;
+}
+
+export interface BatchExcess {
+  productId: string;
+  batched: number;
+  stock: number;
+  /** Насколько партий больше, чем товара. Всегда положительное. */
+  excess: number;
+}
+
+/**
+ * Где партий больше, чем товара.
+ *
+ * Третья книга склада. Остаток сверяется с журналом движений, и эта пара
+ * держалась годами, потому что её проверяли. Партии не сверялись ни с чем — и
+ * до 15.09.2026 из семи способов убрать товар с полки партию уменьшали два.
+ * Остальные пять уносили товар, оставляя серию: списание, недостача по
+ * инвентаризации, возврат поставщику, перемещение, выдача заказа, расход на
+ * производство.
+ *
+ * Чем это плохо на деле: доступное к продаже у партионного товара считается по
+ * партиям, а не по остатку (`sellableFromBatches`). Завышенная партия — это
+ * товар, который касса предлагает, а полка не отдаёт.
+ *
+ * Проверяется неравенство, а не равенство. Партий законно меньше остатка:
+ * часть товара заведена до партионного учёта или без него, и требовать серию
+ * там, где её не заводили, значило бы сломать обычный магазин ради аптеки.
+ * Больше остатка — не бывает никогда.
+ */
+export function reconcileBatches(batches: BatchTotal[], stock: StockTotal[]): BatchExcess[] {
+  const onHand = new Map(stock.map((row) => [row.productId, row.quantity]));
+
+  return batches
+    .map((row) => ({
+      productId: row.productId,
+      batched: row.batched,
+      stock: onHand.get(row.productId) ?? 0,
+    }))
+    .filter((row) => row.batched > row.stock)
+    .map((row) => ({ ...row, excess: row.batched - row.stock }))
+    .sort((a, b) => b.excess - a.excess);
+}

@@ -817,6 +817,26 @@ export interface LedgerMismatch {
   explanation: string;
 }
 
+/**
+ * Партий больше, чем товара на остатке.
+ *
+ * Отдельно от расхождения журнала, потому что это другая пара книг и другая
+ * починка. У товара с партиями доступное к продаже считается по ним, а не по
+ * остатку, — завышенная серия предлагает то, чего на полке нет.
+ */
+export interface BatchExcessRow {
+  productId: string;
+  name: string;
+  unit: string;
+  /** Сколько числится по всем сериям. */
+  batched: number;
+  /** Сколько товара на самом деле. */
+  stock: number;
+  /** batched − stock, всегда положительное. */
+  excess: number;
+  explanation: string;
+}
+
 export interface ReconciliationReport {
   locationId: string;
   checkedAt: string;
@@ -825,6 +845,8 @@ export interface ReconciliationReport {
   /** Absolute units of disagreement, both directions added rather than cancelled. */
   totalDrift: number;
   mismatches: LedgerMismatch[];
+  /** Пусто у всех, кто партии не ведёт. */
+  batchExcess: BatchExcessRow[];
 }
 
 export interface ImportProblem {
