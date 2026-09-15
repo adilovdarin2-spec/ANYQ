@@ -166,6 +166,12 @@ model Tariff {
   userLimit         Int?
   skuLimit          Int?
   docsPerMonthLimit Int?
+  /// Сколько касс может работать в компании одновременно.
+  ///
+  /// Не то же самое, что `userLimit`: за одной кассой посменно стоят трое,
+  /// а у магазина с двумя кассами на входе — две точки продажи и два
+  /// денежных ящика. Считаем рабочие места, а не людей.
+  registerLimit     Int?
   supportLevel      String   @default("basic")
   validUntil        DateTime
   blocked           Boolean  @default(false)
@@ -265,8 +271,15 @@ model PosDevice {
   /// Generated on the device, kept in its local storage. Identifies, never
   /// authorises: a PIN still has to be right.
   deviceKey String
-  /// What the owner reads in the list. Guessed from the user agent, renameable.
+  /// What the owner reads in the list. «Касса №2» by default, renameable to
+  /// what the shop actually calls it.
   label     String
+  /// Номер кассы в компании: «Касса №1», «Касса №2».
+  ///
+  /// Выдаётся один раз и не переиспользуется. Кассир говорит «пробей на
+  /// второй», сменный отчёт подписан номером, и номер, доставшийся потом
+  /// другому рабочему месту, сделал бы вчерашний отчёт непроверяемым.
+  number    Int      @default(1)
 
   firstSeenAt DateTime @default(now())
   lastSeenAt  DateTime @default(now())
@@ -280,6 +293,7 @@ model PosDevice {
   revokedById String?
 
   @@unique([companyId, deviceKey])
+  @@unique([companyId, number])
   @@index([companyId, lastSeenAt])
   @@map("pos_devices")
 }

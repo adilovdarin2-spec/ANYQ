@@ -8,12 +8,20 @@ interface Props {
   cashierName: string;
   /** null while the company has only one location — there is nothing to tell apart. */
   locationName: string | null;
+  /**
+   * Номер кассы, или null, пока касса себя не назвала.
+   *
+   * Номер, а не имя, которое владелец ей дал. Имя — это «касса у входа», и оно
+   * для списка устройств; в шапке нужно то же, что стоит в сменном отчёте и
+   * что кассир произносит вслух: «пробей на второй».
+   */
+  registerNumber: number | null;
   online: boolean;
   pendingCount: number;
   stuckCount: number;
 }
 
-export function ShiftBar({ shift, cashierName, locationName, online, pendingCount, stuckCount }: Props) {
+export function ShiftBar({ shift, cashierName, locationName, registerNumber, online, pendingCount, stuckCount }: Props) {
   const { t } = useTranslation();
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
@@ -26,7 +34,7 @@ export function ShiftBar({ shift, cashierName, locationName, online, pendingCoun
           <div className="shift-info">
             <span className="name">{cashierName}</span>
             <span className="meta">
-              {locationName ? `${locationName} · ` : ''}{t('shift.bar.since', { time: formatTime(shift.openedAt) })}
+              {locationName ? `${locationName} · ` : ''}{registerNumber !== null ? `${t('register.number', { number: registerNumber })} · ` : ''}{t('shift.bar.since', { time: formatTime(shift.openedAt) })}
             </span>
           </div>
         </div>

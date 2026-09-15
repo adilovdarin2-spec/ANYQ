@@ -42,6 +42,20 @@ async function devices(token: string) {
   return res;
 }
 
+/**
+ * Войти новым устройством и назваться новой кассой.
+ *
+ * С 15.09.2026 одного входа для этого мало. Незнакомый ключ больше не заводит
+ * строку молча — он спрашивает, какая это касса, потому что ключ живёт в
+ * памяти браузера, а её чистят, и та же касса у входа появлялась в списке
+ * второй, третьей, четвёртой. См. `registers.test.ts`.
+ */
+async function newRegister(deviceKey: string) {
+  const session = await login(deviceKey);
+  const created = await api(session.body.token, 'POST', '/pos/registers', { deviceKey });
+  return { ...session, body: { ...session.body, token: created.body.token ?? session.body.token } };
+}
+
 describe('registers', () => {
   it('appears in the list the first time it logs in', async () => {
     const first = await login(TILL);
@@ -68,7 +82,7 @@ describe('registers', () => {
 
   it('keeps two registers apart', async () => {
     await login(TILL);
-    const office = await login(OFFICE);
+    const office = await newRegister(OFFICE);
 
     const listed = await devices(office.body.token);
     expect(listed.body.devices).toHaveLength(2);
@@ -81,7 +95,7 @@ describe('registers', () => {
     // The whole point. The stolen tablet holds a token good for thirty days,
     // and nobody is going to change it.
     const stolen = await login(TILL);
-    const manager = await login(OFFICE);
+    const manager = await newRegister(OFFICE);
 
     const listed = await devices(manager.body.token);
     const target = listed.body.devices.find((d: { current: boolean }) => !d.current);
@@ -100,7 +114,7 @@ describe('registers', () => {
     // Blocking only the token would leave a thief one shoulder-surfed PIN away
     // from being back on the same tablet.
     await login(TILL);
-    const manager = await login(OFFICE);
+    const manager = await newRegister(OFFICE);
     const listed = await devices(manager.body.token);
     const target = listed.body.devices.find((d: { current: boolean }) => !d.current);
     await api(manager.body.token, 'POST', `/pos/devices/${target.id}/revoke`);
@@ -113,7 +127,7 @@ describe('registers', () => {
   it('lets the same person carry on from a register that was not revoked', async () => {
     // tokenVersion would have signed them out everywhere. This must not.
     const till = await login(TILL);
-    const office = await login(OFFICE);
+    const office = await newRegister(OFFICE);
     const listed = await devices(office.body.token);
     const target = listed.body.devices.find((d: { current: boolean }) => !d.current);
     await api(office.body.token, 'POST', `/pos/devices/${target.id}/revoke`);
@@ -137,7 +151,7 @@ describe('registers', () => {
 
   it('will not revoke the same register twice', async () => {
     await login(TILL);
-    const manager = await login(OFFICE);
+    const manager = await newRegister(OFFICE);
     const listed = await devices(manager.body.token);
     const target = listed.body.devices.find((d: { current: boolean }) => !d.current);
 
@@ -152,7 +166,7 @@ describe('registers', () => {
 
   it('lets a register back after it turns up', async () => {
     await login(TILL);
-    const manager = await login(OFFICE);
+    const manager = await newRegister(OFFICE);
     const listed = await devices(manager.body.token);
     const target = listed.body.devices.find((d: { current: boolean }) => !d.current);
     await api(manager.body.token, 'POST', `/pos/devices/${target.id}/revoke`);
@@ -174,7 +188,7 @@ describe('registers', () => {
 
   it('shows one company nothing of another', async () => {
     await login(TILL);
-    const mine = await login(OFFICE);
+    const mine = await newRegister(OFFICE);
     const other = await createFixture();
     const theirs = await api(null, 'POST', '/pos/login', { pin: other.pin, deviceKey: TILL });
 
@@ -228,8 +242,8 @@ describe('registers', () => {
     // read past everything they had already dealt with to reach the rows that
     // matter, and with the list capped, live devices fell off the end.
     const manager = await login(OFFICE);
-    await login(TILL);
-    await login('33333333-4444-4555-8666-777777777777');
+    await newRegister(TILL);
+    await newRegister('33333333-4444-4555-8666-777777777777');
 
     const listed = await devices(manager.body.token);
     const target = listed.body.devices.find((d: { current: boolean }) => !d.current);
@@ -255,6 +269,10 @@ describe('registers', () => {
       data: Array.from({ length: 70 }, (_, i) => ({
         companyId: fx.companyId,
         deviceKey: `filler-${String(i).padStart(4, '0')}-key`,
+        // Номера свои: `(companyId, number)` уникален, и строки, вписанные в
+        // обход маршрута, обязаны это соблюдать — иначе тест падал бы на базе,
+        // а не на том, что проверяет.
+        number: i + 2,
         label: `Заполнитель ${i}`,
       })),
     });
@@ -282,21 +300,35 @@ describe('registers', () => {
       data: Array.from({ length: 60 }, (_, i) => ({
         companyId: fx.companyId,
         deviceKey: `bulk-${String(i).padStart(4, '0')}-key`,
+        number: i + 2,
         label: `Много ${i}`,
       })),
     });
 
     // A cashier on a brand-new device: refused. This is the person the cap is
     // aimed at.
+    //
+    // С 15.09.2026 отказ приходит не на входе, а на «я новая касса», и это
+    // сильнее прежнего: незнакомый ключ больше не пишет строку вообще, то есть
+    // закапывать украденную строку стало нечем. Сам вход остаётся открытым —
+    // кассир с верным PIN-ом должен войти и увидеть, в чём дело.
     const cashier = await prisma.user.create({
       data: { companyId: fx.companyId, name: 'Кассир', role: 'cashier', posPin: '778899' },
     });
+    const before = await prisma.posDevice.count({ where: { companyId: fx.companyId } });
     const fresh = await api(null, 'POST', '/pos/login', {
       pin: cashier.posPin!,
       deviceKey: 'cccccccc-dddd-4eee-8fff-000000000000',
     });
-    expect(fresh.status).toBe(409);
-    expect(fresh.body.error).toContain('устройств');
+    expect(fresh.status).toBe(200);
+    expect(fresh.body.newRegisterRefusal).toContain('устройств');
+
+    const refused = await api(fresh.body.token, 'POST', '/pos/registers', {
+      deviceKey: 'cccccccc-dddd-4eee-8fff-000000000000',
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain('устройств');
+    expect(await prisma.posDevice.count({ where: { companyId: fx.companyId } })).toBe(before);
 
     // A register already on the books still gets in — the cap bounds new rows,
     // it does not stop the shop trading.
@@ -313,11 +345,12 @@ describe('registers', () => {
       data: Array.from({ length: 61 }, (_, i) => ({
         companyId: fx.companyId,
         deviceKey: `full-${String(i).padStart(4, '0')}-key`,
+        number: i + 1,
         label: `Полно ${i}`,
       })),
     });
 
-    const owner = await login('eeeeeeee-ffff-4aaa-8bbb-cccccccccccc');
+    const owner = await newRegister('eeeeeeee-ffff-4aaa-8bbb-cccccccccccc');
     expect(owner.status).toBe(200);
     // And they land somewhere they can act: the list, with the truncation said.
     const listed = await devices(owner.body.token);

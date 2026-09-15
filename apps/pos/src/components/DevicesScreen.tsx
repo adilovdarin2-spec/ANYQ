@@ -98,6 +98,14 @@ export function DevicesScreen({
                 </span>
               ) : (
                 <>
+                  {/*
+                    Номер отдельно от имени. У новых касс он и так стоит в
+                    начале имени, но имя владелец меняет на «касса у входа», а
+                    у касс, заведённых до нумерации, имя угадано по браузеру.
+                    Номер — то, чем подписан сменный отчёт, и он должен быть
+                    виден всегда.
+                  */}
+                  <span className="device-number">№{device.number}</span>
                   <strong>{device.label}</strong>
                   {device.current && <span className="chip-status confirmed" style={{ marginLeft: 8 }}>{t('devices.thisOne')}</span>}
                   <br />

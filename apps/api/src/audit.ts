@@ -27,7 +27,7 @@ export interface FieldChange {
 }
 
 /** A field whose value is never written down, only the fact that it moved. */
-const SECRET_FIELDS = new Set(['posPin']);
+const SECRET_FIELDS = new Set(['posPin', 'deviceKey']);
 
 function normalise(value: unknown): string | null {
   if (value === null || value === undefined || value === '') return null;
@@ -67,6 +67,11 @@ export const WATCHED_FIELDS = {
   product: ['name', 'salePrice', 'purchasePrice', 'barcode', 'ntinCode', 'taxMode', 'sellable', 'stopListed'],
   user: ['role', 'posPin', 'name'],
   counterparty: ['creditAllowed', 'creditLimit'],
+  // Ключ устройства — секрет: в журнал попадает только факт, что касса
+  // переехала на другое устройство, и никогда сам ключ. Факт нужен: если
+  // «Касса №2» переезжает по три раза в неделю, это либо сломанный планшет,
+  // либо кто-то, забирающий её себе.
+  device: ['deviceKey', 'label'],
 } as const;
 
 export type AuditEntity = keyof typeof WATCHED_FIELDS;
@@ -84,12 +89,14 @@ const FIELD_LABELS: Record<string, string> = {
   posPin: 'PIN-код',
   creditAllowed: 'разрешён долг',
   creditLimit: 'лимит долга',
+  deviceKey: 'устройство',
 };
 
 const ENTITY_LABELS: Record<AuditEntity, string> = {
   product: 'Товар',
   user: 'Сотрудник',
   counterparty: 'Контрагент',
+  device: 'Касса',
 };
 
 export function fieldLabel(field: string): string {

@@ -33,12 +33,13 @@ function plural(count: number, one: string, few: string, many: string): string {
   return many;
 }
 
-export type LimitKind = 'locations' | 'users' | 'products';
+export type LimitKind = 'locations' | 'users' | 'products' | 'registers';
 
 const NOUN: Record<LimitKind, (n: number) => string> = {
   locations: (n) => plural(n, 'точку', 'точки', 'точек'),
   users: (n) => plural(n, 'сотрудника', 'сотрудников', 'сотрудников'),
   products: (n) => plural(n, 'товар', 'товара', 'товаров'),
+  registers: (n) => plural(n, 'кассу', 'кассы', 'касс'),
 };
 
 /**
