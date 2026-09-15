@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  commandPhrase,
   discardCommand,
   outcomeOf,
   enqueue,
@@ -128,5 +129,38 @@ describe('what the screen tells the storeman afterwards', () => {
     // standing at the dock: one will happen on its own, the other never will.
     const queue = markRefused(morning, 'receive', 'Такого товара нет');
     expect(outcomeOf(queue, 'receive').status).not.toBe('queued');
+  });
+});
+
+/**
+ * Приход партии стоит в той же очереди, что и всё остальное складское.
+ *
+ * До 15.09.2026 он шёл мимо неё: без связи просто не проходил, а при обрыве
+ * после отправки заводил партию дважды — ключа операции у него тоже не было.
+ * Аптечный склад — то же помещение с той же связью, и приход, потерянный из-за
+ * сети, ничем не лучше потерянной приёмки.
+ */
+describe('приход партии в очереди', () => {
+  it('становится в общий ряд и ждёт своей очереди', () => {
+    const queue = enqueue(morning, command('batch-1', 'batch'));
+    expect(queue).toHaveLength(4);
+    // Старшие идут первыми: приход, отправленный последним, и уйдёт последним.
+    expect(nextPending(queue)?.id).toBe('receive');
+  });
+
+  it('и у него есть имя для баннера, как у остальных', () => {
+    // Команда, застрявшая в очереди без названия, — это «что-то не ушло».
+    for (const kind of ['receipt', 'writeOff', 'putaway', 'binCount', 'batch'] as const) {
+      expect(commandPhrase(kind), kind).toBeTruthy();
+    }
+  });
+
+  it('отказ по нему тормозит очередь так же, как по любому другому', () => {
+    // То, что стоит за ним, посчитано против мира, который он должен был
+    // создать: пропустить его вперёд значило бы применять команды к не тому
+    // остатку.
+    const queue = markRefused([command('batch-1', 'batch'), command('later')], 'batch-1', 'нет такого товара');
+    expect(isBlocked(queue)).toBe(true);
+    expect(nextPending(queue)).toBeNull();
   });
 });

@@ -882,8 +882,20 @@ export default function App() {
     setBatchSubmitting(true);
     setBatchesError(null);
     try {
-      await receiveBatch(session.token, { ...payload, locationId: currentLocationId });
+      // Через очередь, как приёмка и списание: аптечный склад — то же
+      // помещение с той же связью, и приход, потерянный из-за отсутствия сети,
+      // ничем не лучше потерянной приёмки.
+      const command = queueCommand('batch', { ...payload, locationId: currentLocationId });
+      await outbox.drain();
+      const outcome = outcomeOf(getOutbox(), command.id);
+      if (outcome.status === 'refused') {
+        setBatchesError(outcome.error);
+        return false;
+      }
+      if (outcome.status === 'queued') return true;
+
       await loadBatches();
+      await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
       setBatchesError(err instanceof ApiError ? err.message : t('fail.receiveBatch'));

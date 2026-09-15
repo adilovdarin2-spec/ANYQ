@@ -904,6 +904,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'queue.writeOff': 'Есептен шығару',
   'queue.putaway': 'Орналастыру',
   'queue.binCount': 'Санау',
+  'queue.batch': 'Партия қабылдау',
 
   // --- the network layer ----------------------------------------------------
   'net.offline': 'Сервермен байланыс жоқ — интернет пайда болғанда қайталаңыз',

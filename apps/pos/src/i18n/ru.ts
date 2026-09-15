@@ -903,6 +903,7 @@ export const ru = {
   'queue.writeOff': 'Списание',
   'queue.putaway': 'Размещение',
   'queue.binCount': 'Пересчёт',
+  'queue.batch': 'Приход партии',
 
   // --- the network layer ----------------------------------------------------
   'net.offline': 'Нет связи с сервером — попробуйте, когда появится интернет',
