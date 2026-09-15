@@ -132,6 +132,54 @@ describe('партии не переживают уход товара', () => {
     expect(await findBatchesOverStock(fx.locationId)).toEqual([]);
   });
 
+  it('выдача заказа витрины', async () => {
+    await receiveBatch('B1', 300, 20);
+    const order = await prisma.document.create({
+      data: {
+        companyId: fx.companyId,
+        locationId: fx.locationId,
+        type: 'order',
+        status: 'pending',
+        createdBy: fx.userId,
+        items: { create: [{ productId: fx.productId, quantity: 6, price: 200 }] },
+      },
+    });
+    const row = await prisma.stock.findFirst({ where: { productId: fx.productId, locationId: fx.locationId } });
+    await prisma.stock.update({ where: { id: row!.id }, data: { reserved: 6 } });
+
+    const res = await api(fx.token, 'POST', `/pos/orders/${order.id}/fulfill`, {});
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(await batched()).toBe(14);
+    expect(await findBatchesOverStock(fx.locationId)).toEqual([]);
+  });
+
+  it('расход ингредиента на производство', async () => {
+    // Мука с партией — не выдумка: сроки годности есть не только у лекарств,
+    // и техкарта съедает её так же, как продажа.
+    const bread = await prisma.product.create({
+      data: { companyId: fx.companyId, name: 'Хлеб', unit: 'шт', purchasePrice: 0, salePrice: 300 },
+    });
+    await prisma.recipe.create({
+      data: {
+        productId: bread.id,
+        portionYield: 10,
+        ingredients: { create: [{ ingredientId: fx.productId, quantity: 5 }] },
+      },
+    });
+    await receiveBatch('FLOUR-1', 300, 20);
+
+    const res = await api(
+      fx.token,
+      'POST',
+      '/pos/production',
+      { locationId: fx.locationId, productId: bread.id, quantity: 20 },
+      { 'Idempotency-Key': 'prod-batch' },
+    );
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(await batched()).toBe(10);
+    expect(await findBatchesOverStock(fx.locationId)).toEqual([]);
+  });
+
   it('излишек по инвентаризации партию не создаёт — и это не нарушение', async () => {
     // Пересчёт не говорит, в какой серии нашлись лишние штуки, а придумать её
     // значило бы придумать и срок годности. Партий законно меньше остатка.

@@ -1,5 +1,6 @@
 import type { Tx } from '@anyq/db';
 import { allocateFromBins, allocateRelease } from './bins';
+import { allocateForRemoval } from './batches';
 import type { BinStock } from './bins';
 
 export interface SaleItemInput {
@@ -390,6 +391,77 @@ export async function releaseStock(
   await tx.$executeRaw`
     UPDATE "stocks" SET "reserved" = GREATEST("reserved" - ${quantity}, 0)
     WHERE "id" = ${stockId}`;
+}
+
+/**
+ * Снять ушедший товар с партий — там, где партии есть.
+ *
+ * Товар уходит с полки семью разными путями: продажа, списание, недостача по
+ * инвентаризации, возврат поставщику, перемещение, выдача заказа, расход на
+ * производство. Остаток и журнал движений каждый из них уменьшает — этого
+ * требовала сверка, и она держалась. `ProductBatch` не уменьшал почти никто,
+ * и не требовал никто: третью книгу не сверяли ни с чем.
+ *
+ * Дальше получалось вот что. `sellableFromBatches` считает доступное к
+ * продаже по партиям, а не по остатку. Партия, пережившая уход товара,
+ * предлагает кассе то, чего на полке уже нет, — и касса верит, потому что это
+ * её собственный источник правды о партионном товаре.
+ *
+ * Функция вынесена, когда таких мест набралось пять. Переписанные по одному,
+ * они разошлись бы: где-то брали бы самую свежую партию, где-то обходили
+ * просроченную, а где-то забыли бы снова. Здесь правило одно и написано один
+ * раз — с самого раннего срока, просроченные включительно, потому что уход
+ * товара не спрашивает, годен ли он.
+ *
+ * Товар без партий пропускается молча: часть остатка законно заведена без них,
+ * и требовать партию там, где её не заводили, значило бы ломать обычный
+ * магазин ради аптеки.
+ */
+export async function removeFromBatches(
+  tx: Tx,
+  locationId: string,
+  lines: { productId: string; quantity: number }[],
+): Promise<void> {
+  const productIds = [...new Set(lines.filter((line) => line.quantity > 0).map((line) => line.productId))];
+  if (productIds.length === 0) return;
+
+  const batches = await tx.productBatch.findMany({
+    where: { locationId, productId: { in: productIds }, quantity: { gt: 0 } },
+  });
+  if (batches.length === 0) return;
+
+  const byProduct = new Map<string, typeof batches>();
+  for (const batch of batches) {
+    const list = byProduct.get(batch.productId) ?? [];
+    list.push(batch);
+    byProduct.set(batch.productId, list);
+  }
+
+  // Убывает по мере распределения: две строки одного товара не должны обе
+  // считать от исходного количества партии.
+  const remaining = new Map(batches.map((batch) => [batch.id, batch.quantity]));
+
+  for (const line of lines) {
+    if (line.quantity <= 0) continue;
+    const productBatches = byProduct.get(line.productId);
+    if (!productBatches) continue;
+
+    const allocations = allocateForRemoval(
+      line.quantity,
+      productBatches.map((batch) => ({
+        batchId: batch.id,
+        expiryDate: batch.expiryDate,
+        quantity: remaining.get(batch.id) ?? 0,
+      })),
+    );
+    for (const alloc of allocations) {
+      remaining.set(alloc.batchId, (remaining.get(alloc.batchId) ?? 0) - alloc.quantity);
+      await tx.productBatch.update({
+        where: { id: alloc.batchId },
+        data: { quantity: { decrement: alloc.quantity } },
+      });
+    }
+  }
 }
 
 // Same conditional-decrement reasoning as applyStockDelta, for the batch rows
