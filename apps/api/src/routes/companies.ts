@@ -57,7 +57,7 @@ function serializeCompany(company: CompanyWithRelations) {
     slug: company.slug,
     createdAt: company.createdAt.toISOString().slice(0, 10),
     locations: company.locations.map((l) => ({ id: l.id, name: l.name, type: l.type, address: l.address ?? '' })),
-    users: company.users.map((u) => ({ id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', posPin: u.posPin ?? '' })),
+    users: company.users.map(serializeUser),
     tariff: company.tariff && {
       modules: JSON.parse(company.tariff.modules) as string[],
       locationLimit: company.tariff.locationLimit,
@@ -335,8 +335,24 @@ companiesRouter.patch('/:id/products/:productId', async (req, res) => {
   res.json(serializeProduct(product));
 });
 
+/**
+ * Сотрудник глазами админки платформы — без PIN-кода.
+ *
+ * PIN отсюда больше не выходит, и это не про «лишние данные на экране». PIN —
+ * это вход в кассу: зная его, можно войти в чужой магазин и продавать от имени
+ * этого кассира. Панель платформы, показывающая PIN каждого кассира каждой
+ * компании, — это не список сотрудников, это связка ключей от всех дверей.
+ *
+ * Задать PIN по-прежнему можно: его вводит человек, который заводит
+ * сотрудника, и в эту секунду он его знает. Прочитать обратно — нельзя.
+ * Забыли — задайте новый; это дешевле, чем хранить связку.
+ *
+ * `hasPin` остаётся, потому что разница между «доступа к кассе нет» и «есть,
+ * но я его не вижу» — это разница, которую видно на экране и по которой
+ * принимают решения.
+ */
 function serializeUser(u: { id: string; name: string; role: string; phone: string | null; posPin: string | null }) {
-  return { id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', posPin: u.posPin ?? '' };
+  return { id: u.id, name: u.name, role: u.role, phone: u.phone ?? '', hasPin: u.posPin !== null };
 }
 
 
@@ -447,7 +463,22 @@ companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
     return;
   }
 
+  // Пустое поле значит «не трогать», а не «снять».
+  //
+  // Раньше значило «снять», и это было правильно ровно до тех пор, пока PIN
+  // показывался: форма открывалась с ним внутри, и пустой она становилась
+  // только если его стёрли нарочно. Теперь форма открывается пустой всегда —
+  // прочитать PIN больше нельзя, — и старое правило означало бы, что
+  // исправление опечатки в имени молча отбирает у кассира кассу. Посреди
+  // смены, без единого слова.
+  //
+  // Снять доступ по-прежнему можно, но теперь это надо сказать: `clearPin`.
   const posPin = typeof b.posPin === 'string' ? b.posPin.trim() : '';
+  const clearPin = b.clearPin === true;
+  if (posPin && clearPin) {
+    res.status(400).json({ error: 'Либо новый PIN, либо снятие доступа — не одновременно' });
+    return;
+  }
   if (posPin && !PIN_PATTERN.test(posPin)) {
     res.status(400).json({ error: 'PIN должен быть числом из 4–6 цифр' });
     return;
@@ -459,13 +490,15 @@ companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
       return;
     }
   }
+  /** Каким PIN станет: новый, снятый или прежний. */
+  const nextPin = clearPin ? null : posPin || existing.posPin;
 
   // A new PIN or a new role is exactly the moment an old token should stop
   // working: an owner who takes a cashier's PIN away means them to be out, not
   // to keep selling from the token already on their phone for another month.
   // Renaming somebody or fixing their phone number is not that, so it doesn't
   // sign them out mid-shift.
-  const accessChanged = b.role !== existing.role || (posPin || null) !== existing.posPin;
+  const accessChanged = b.role !== existing.role || nextPin !== existing.posPin;
 
   // Named as what it is rather than by a name the owner would not recognise.
   // A role changed from outside the company is a different fact from one their
@@ -487,7 +520,7 @@ companiesRouter.patch('/:id/users/:userId', async (req: AuthedRequest, res) => {
           name: b.name,
           role: b.role,
           phone: phoneKey(b.phone) || null,
-          posPin: posPin || null,
+          posPin: nextPin,
           ...(accessChanged ? { tokenVersion: { increment: 1 } } : {}),
         },
       });

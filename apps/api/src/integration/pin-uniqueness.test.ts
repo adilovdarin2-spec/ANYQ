@@ -182,7 +182,11 @@ describe('владелец при создании компании', () => {
     const token = await adminToken();
     const created = await api(token, 'POST', '/companies', company({ name: 'Без кода', phone: '' }));
     expect(created.status).toBe(201);
-    expect(created.body.users[0].posPin).toBe('');
+    // Сам PIN сервер не отдаёт с 15.09.2026 — он открывает чужую кассу. Но
+    // разницу между «доступа нет» и «есть» видно, иначе экран стал бы
+    // бесполезным вместо безопасного.
+    expect(created.body.users[0].hasPin).toBe(false);
+    expect(created.body.users[0].posPin).toBeUndefined();
   });
 
   it('чужой PIN не отдаётся', async () => {

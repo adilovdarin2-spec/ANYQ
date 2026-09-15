@@ -114,14 +114,22 @@ const run = async () => {
   step('and a tariff that is active', !!tariff, JSON.stringify(detail?.tariff ?? null).slice(0, 200));
 
   console.log('\n== the people ==');
+  // Random, because a PIN is unique across the whole platform: a fixed one
+  // would collide the second time this is ever run anywhere.
+  //
+  // Держится здесь, а не читается из ответа: с 15.09.2026 сервер PIN обратно
+  // не отдаёт — он открывает чужую кассу, и панели платформы знать его после
+  // записи незачем. Тот, кто его задал, и так его знает.
+  const pin = String(900000 + Math.floor(Math.random() * 99999));
   const cashier = await call('POST', `/companies/${companyId}/users`, {
-    // Random, because a PIN is unique across the whole platform: a fixed one
-    // would collide the second time this is ever run anywhere.
-    name: 'Проверочный менеджер', role: 'manager', posPin: String(900000 + Math.floor(Math.random() * 99999)),
+    name: 'Проверочный менеджер', role: 'manager', posPin: pin,
   });
   if (!step('manager created with a PIN', cashier.status === 201, `${cashier.status} ${JSON.stringify(cashier.data).slice(0, 200)}`)) return;
-
-  const pin = cashier.data.posPin;
+  step(
+    'и сервер не отдаёт PIN обратно',
+    cashier.data?.posPin === undefined && cashier.data?.hasPin === true,
+    JSON.stringify(cashier.data).slice(0, 150),
+  );
   const clash = await call('POST', `/companies/${companyId}/users`, { name: 'Второй', role: 'cashier', posPin: pin });
   step('a duplicate PIN is refused', clash.status === 409, `${clash.status} ${JSON.stringify(clash.data).slice(0, 120)}`);
 
