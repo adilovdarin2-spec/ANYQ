@@ -54,7 +54,7 @@ describe('уход товара с полки', () => {
     expect(
       forgotten,
       'Этот маршрут уменьшает остаток, но не трогает партии. Партия, пережившая уход ' +
-        'товара, предлагает кассе то, чего на полке уже нет: `sellableFromBatches` ' +
+        'товара, предлагает кассе то, чего на полке уже нет: `sellableQuantity` ' +
         'считает доступное по партиям. Вызовите `removeFromBatches` — или, если ' +
         'партии здесь разбираются иначе, допишите признак в HANDLES_BATCHES.',
     ).toEqual([]);
@@ -66,5 +66,65 @@ describe('уход товара с полки', () => {
     // упасть, хуже отсутствующего.
     const outflows = handlers().filter((h) => h.body.includes('deductAcrossBins('));
     expect(outflows.length).toBeGreaterThanOrEqual(6);
+  });
+});
+
+/**
+ * И второй вопрос — какое именно правило.
+ *
+ * До 15.09.2026 правило было одно: «с самого раннего срока, просроченные
+ * включительно». Для списания, возврата поставщику и недостачи оно верное, а
+ * для отгрузки оптовику оказалось ровно наоборот — заказ на двенадцать годных
+ * упаковок ушёл восемью просроченными и четырьмя годными, а восемь годных
+ * остались ждать своего срока на полке.
+ *
+ * Тип теперь заставляет назвать правило, но не заставляет назвать правильное:
+ * `'oldest-first'` компилируется везде. Поэтому правило каждого маршрута
+ * записано здесь поимённо — новый маршрут и переставленное значение упираются
+ * в этот список, и это ровно тот момент, когда стоит подумать.
+ */
+const RULE_BY_ROUTE: Record<string, 'good-first' | 'oldest-first'> = {
+  // Уходит к покупателю — значит уходит годное.
+  'POST /orders/:id/ship': 'good-first',
+  'POST /orders/:id/fulfill': 'good-first',
+  'POST /tables/:id/order': 'good-first',
+  // Просроченное сырьё не отмывается переработкой.
+  'POST /production': 'good-first',
+  // Возврат поставщику — самый частый способ избавиться от просрочки.
+  'POST /supplier-returns': 'oldest-first',
+  // Чего нет на полке, того нет; о годности спрашивать нечего.
+  'POST /counts': 'oldest-first',
+};
+
+describe('какое правило у ухода', () => {
+  function rulesInSource(): Record<string, string[]> {
+    const found: Record<string, string[]> = {};
+    for (const handler of handlers()) {
+      const calls = [...handler.body.matchAll(/removeFromBatches\(([\s\S]*?)\);/g)];
+      const rules = calls
+        .map((call) => /'(good-first|oldest-first)'/.exec(call[1])?.[1])
+        .filter((rule): rule is string => !!rule);
+      if (rules.length > 0) found[handler.route] = rules;
+    }
+    return found;
+  }
+
+  it('назван у каждого маршрута, который снимает с партий', () => {
+    const found = rulesInSource();
+    expect(Object.keys(found).sort()).toEqual(Object.keys(RULE_BY_ROUTE).sort());
+  });
+
+  it('и совпадает с тем, что здесь записано', () => {
+    for (const [route, rules] of Object.entries(rulesInSource())) {
+      for (const rule of rules) {
+        expect(rule, route).toBe(RULE_BY_ROUTE[route]);
+      }
+    }
+  });
+
+  it('а сам разбор что-то находит — иначе всё выше зелено и пусто', () => {
+    // Тот же случай, что и с проверкой выше: сломайся регулярное выражение —
+    // список станет пустым, и пустой список совпадёт сам с собой.
+    expect(Object.keys(rulesInSource()).length).toBeGreaterThanOrEqual(6);
   });
 });

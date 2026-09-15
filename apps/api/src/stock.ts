@@ -1,6 +1,6 @@
 import type { Tx } from '@anyq/db';
 import { allocateFromBins, allocateRelease } from './bins';
-import { allocateForRemoval } from './batches';
+import { allocateFefo, allocateForRemoval } from './batches';
 import type { BinStock } from './bins';
 
 export interface SaleItemInput {
@@ -434,21 +434,45 @@ export async function releaseStock(
  *
  * Функция вынесена, когда таких мест набралось пять. Переписанные по одному,
  * они разошлись бы: где-то брали бы самую свежую партию, где-то обходили
- * просроченную, а где-то забыли бы снова. Здесь правило одно и написано один
- * раз — с самого раннего срока, просроченные включительно, потому что уход
- * товара не спрашивает, годен ли он.
+ * просроченную, а где-то забыли бы снова.
+ *
+ * Правил при этом два, и вызывающий обязан назвать своё. Сначала было одно —
+ * «с самого раннего срока, просроченные включительно, потому что уход товара
+ * не спрашивает, годен ли он», — и для списания, возврата поставщику и
+ * недостачи оно верное. Для отгрузки оптовику оно оказалось ровно наоборот:
+ * 15.09.2026 заказ на двенадцать годных упаковок отгрузился восемью
+ * просроченными и четырьмя годными, а восемь годных остались ждать своего
+ * срока на полке. Покупатель при этом бронировал годное — витрина считает
+ * доступное без просрочки, как и касса.
+ *
+ * Поэтому параметр обязательный и без значения по умолчанию: умолчание здесь
+ * было бы тихим ответом на вопрос, у которого два правильных ответа, и новый
+ * вызывающий получил бы один из них, не заметив, что выбирал.
  *
  * Товар без партий пропускается молча: часть остатка законно заведена без них,
  * и требовать партию там, где её не заводили, значило бы ломать обычный
- * магазин ради аптеки.
+ * магазин ради аптеки. По той же причине молча пропускается нехватка в
+ * партиях при правиле `good-first`: остальное законно уходит с непокрытого
+ * остатка, ровно как в продаже.
  */
+export type BatchRemovalRule =
+  /** Уходит годное: продажа, отгрузка заказа, расход на производство. */
+  | 'good-first'
+  /** Уходит что угодно, начиная с самого старого: списание, возврат поставщику, недостача. */
+  | 'oldest-first';
+
 export async function removeFromBatches(
   tx: Tx,
   locationId: string,
   lines: { productId: string; quantity: number }[],
+  rule: BatchRemovalRule,
 ): Promise<void> {
   const productIds = [...new Set(lines.filter((line) => line.quantity > 0).map((line) => line.productId))];
   if (productIds.length === 0) return;
+
+  // Один момент времени на весь вызов: две строки одного заказа не должны
+  // разойтись в том, что считать просроченным, из-за миллисекунды между ними.
+  const now = new Date();
 
   const batches = await tx.productBatch.findMany({
     where: { locationId, productId: { in: productIds }, quantity: { gt: 0 } },
@@ -471,14 +495,15 @@ export async function removeFromBatches(
     const productBatches = byProduct.get(line.productId);
     if (!productBatches) continue;
 
-    const allocations = allocateForRemoval(
-      line.quantity,
-      productBatches.map((batch) => ({
-        batchId: batch.id,
-        expiryDate: batch.expiryDate,
-        quantity: remaining.get(batch.id) ?? 0,
-      })),
-    );
+    const available = productBatches.map((batch) => ({
+      batchId: batch.id,
+      expiryDate: batch.expiryDate,
+      quantity: remaining.get(batch.id) ?? 0,
+    }));
+    const allocations =
+      rule === 'good-first'
+        ? allocateFefo(line.quantity, available, now).allocations
+        : allocateForRemoval(line.quantity, available);
     for (const alloc of allocations) {
       remaining.set(alloc.batchId, (remaining.get(alloc.batchId) ?? 0) - alloc.quantity);
       await tx.productBatch.update({

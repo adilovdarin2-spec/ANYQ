@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { prisma } from '@anyq/db';
 import { tariffState, tariffDenialMessage } from '../tariff';
 import { availableQuantity, findStockShortages, aggregateRequestedQuantities, groupStockByProduct, reserveAcrossBins, ConcurrentStockChangeError } from '../stock';
+import { sellableQuantity, untrackedPolicy } from '../batches';
+import type { BatchStock } from '../batches';
 import { loginRateLimit } from '../rateLimit';
 import { phoneKey } from '../phone';
 import { sendPushToCompany } from '../push';
@@ -52,6 +54,50 @@ const CATALOG_LIMIT = 5000;
 
 /** Остатки читаются по тому же поводу и с тем же запасом: товар может лежать в нескольких ячейках. */
 const STOCK_LIMIT = 50000;
+
+/**
+ * Пересчитать доступное по партиям — там, где партии есть.
+ *
+ * Одно место на обе стороны витрины: и на то, что показано, и на то, что
+ * разрешено заказать. Пока это были два куска кода, они и разошлись бы — как
+ * когда-то разошлись плитка кассы и проверка при продаже, и кассир узнавал о
+ * разнице от покупателя, стоящего перед ним.
+ *
+ * Товар, у которого партий нет, не трогается вовсе: партионный учёт есть не у
+ * всех и не на всё, и требовать партию там, где её не заводили, значило бы
+ * обнулить витрину обычного склада.
+ */
+async function applyBatchRule(
+  locationId: string | null,
+  modules: readonly string[],
+  productIds: string[],
+  target: Map<string, number>,
+  onHand: Map<string, number>,
+  heldBack: Map<string, number>,
+): Promise<void> {
+  if (!locationId || productIds.length === 0) return;
+  const batchRows = await prisma.productBatch.findMany({
+    where: { locationId, productId: { in: productIds } },
+    select: { id: true, productId: true, expiryDate: true, quantity: true },
+  });
+  if (batchRows.length === 0) return;
+
+  const byProduct = new Map<string, BatchStock[]>();
+  for (const row of batchRows) {
+    const list = byProduct.get(row.productId) ?? [];
+    list.push({ batchId: row.id, expiryDate: row.expiryDate, quantity: row.quantity });
+    byProduct.set(row.productId, list);
+  }
+
+  const now = new Date();
+  const untracked = untrackedPolicy(modules);
+  for (const [productId, batches] of byProduct) {
+    target.set(
+      productId,
+      sellableQuantity(onHand.get(productId) ?? 0, batches, heldBack.get(productId) ?? 0, now, untracked),
+    );
+  }
+}
 
 supplyRouter.get('/:companyId/catalog', async (req, res) => {
   const company = await findCompanyBySlugOrId(req.params.companyId);
@@ -104,9 +150,22 @@ supplyRouter.get('/:companyId/catalog', async (req, res) => {
   // по трём полкам, показывался в размере одной из них — и заказ на настоящий
   // остаток витрина отклоняла как нехватку.
   const stockByProduct = new Map<string, number>();
+  const heldBackByProduct = new Map<string, number>();
+  const onHandByProduct = new Map<string, number>();
   for (const row of stockRows) {
     stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + availableQuantity(row));
+    heldBackByProduct.set(row.productId, (heldBackByProduct.get(row.productId) ?? 0) + (row.quantity - availableQuantity(row)));
+    onHandByProduct.set(row.productId, (onHandByProduct.get(row.productId) ?? 0) + row.quantity);
   }
+
+  // Партионный товар считается по тому же правилу, что и в кассе.
+  //
+  // Правило «просроченное не продаётся» — общее, а не аптечное: и плитка
+  // кассы, и проверка при продаже считают годным только неистёкшее. Витрина
+  // эту дверь обходила: она показывала обычный остаток, в котором партии не
+  // участвуют вовсе, — и предлагала оптовику ровно те упаковки, которые
+  // стоящий рядом кассир продать не может.
+  await applyBatchRule(location?.id ?? null, modules, [...stockByProduct.keys()], stockByProduct, onHandByProduct, heldBackByProduct);
 
   res.json({
     company: { id: company.id, name: company.name },
@@ -212,6 +271,29 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
           productId,
           rows.reduce((sum, row) => sum + availableQuantity(row), 0),
         ]),
+      );
+      // Тем же правилом, что и каталог. Разойдись эти два места — и витрина
+      // предлагала бы одно число, а заказ отказывал по другому: покупатель
+      // видит двенадцать, заказывает двенадцать и получает «нехватка».
+      const onHandByProduct = new Map(
+        [...stockByProduct.entries()].map(([productId, rows]) => [
+          productId,
+          rows.reduce((sum, row) => sum + row.quantity, 0),
+        ]),
+      );
+      const heldBackByProduct = new Map(
+        [...stockByProduct.entries()].map(([productId, rows]) => [
+          productId,
+          rows.reduce((sum, row) => sum + (row.quantity - availableQuantity(row)), 0),
+        ]),
+      );
+      await applyBatchRule(
+        location.id,
+        modules,
+        ordered.map((it) => it.productId),
+        availableByProduct,
+        onHandByProduct,
+        heldBackByProduct,
       );
 
       const shortages = findStockShortages(ordered, availableByProduct);
