@@ -1620,10 +1620,49 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
   const stockRows = await prisma.stock.findMany({ where: { locationId }, include: { product: true } });
   // "About to run out" is a question about what is still sellable, so goods
   // already promised to an open order count as gone, not as cover.
-  const stockForLowCheck = stockRows.map((s) => ({
-    productId: s.productId,
-    name: s.product.name,
-    quantity: availableQuantity(s),
+  //
+  // По товару, а не по строке остатка. У склада с ячейками один товар лежит на
+  // скольких угодно полках: сто упаковок на трёх — это три строки по тридцать с
+  // небольшим, и каждая ниже порога. Владелец видел один и тот же товар трижды,
+  // с припиской «заканчивается», при полной полке.
+  const lowStockTotals = new Map<string, { name: string; onHand: number; available: number; heldBack: number }>();
+  for (const row of stockRows) {
+    const seen = lowStockTotals.get(row.productId);
+    lowStockTotals.set(row.productId, {
+      name: row.product.name,
+      onHand: (seen?.onHand ?? 0) + row.quantity,
+      available: (seen?.available ?? 0) + availableQuantity(row),
+      heldBack: (seen?.heldBack ?? 0) + totalHeldBack([row]),
+    });
+  }
+
+  // И то же правило про партии, что в кассе, на витрине и в заказе поставщику:
+  // просроченное — не запас. Аптека с двенадцатью упаковками, из которых восемь
+  // просрочены, в отчёте не заканчивалась.
+  const lowStockBatches = await prisma.productBatch.findMany({
+    where: { locationId, productId: { in: [...lowStockTotals.keys()] } },
+    select: { id: true, productId: true, expiryDate: true, quantity: true },
+  });
+  if (lowStockBatches.length > 0) {
+    const byProduct = new Map<string, BatchStock[]>();
+    for (const row of lowStockBatches) {
+      const list = byProduct.get(row.productId) ?? [];
+      list.push({ batchId: row.id, expiryDate: row.expiryDate, quantity: row.quantity });
+      byProduct.set(row.productId, list);
+    }
+    const untracked = untrackedPolicy(modules);
+    const asOf = new Date();
+    for (const [productId, batches] of byProduct) {
+      const totals = lowStockTotals.get(productId);
+      if (!totals) continue;
+      totals.available = sellableQuantity(totals.onHand, batches, totals.heldBack, asOf, untracked);
+    }
+  }
+
+  const stockForLowCheck = [...lowStockTotals.entries()].map(([productId, totals]) => ({
+    productId,
+    name: totals.name,
+    quantity: totals.available,
   }));
 
   const dishCostByProductId = new Map<string, number>();
@@ -2194,9 +2233,43 @@ export async function replenishmentFor(companyId: string, locationId: string) {
   // Summed across bins: the question is what this point has, not what one
   // shelf in it has.
   const availableByProduct = new Map<string, number>();
+  const onHandByProduct = new Map<string, number>();
+  const heldBackByProduct = new Map<string, number>();
   for (const row of stockRows) {
     availableByProduct.set(row.productId, (availableByProduct.get(row.productId) ?? 0) + availableQuantity(row));
+    onHandByProduct.set(row.productId, (onHandByProduct.get(row.productId) ?? 0) + row.quantity);
+    heldBackByProduct.set(row.productId, (heldBackByProduct.get(row.productId) ?? 0) + totalHeldBack([row]));
   }
+
+  // «Сколько у нас есть» считается тем же правилом, что и в кассе.
+  //
+  // Сырой остаток здесь врёт в сторону «заказывать не надо»: аптека с
+  // двенадцатью упаковками на полке, из которых восемь просрочены, продать
+  // может четыре — а совет говорил «запаса хватает». Правду магазин узнавал в
+  // день списания просрочки, когда везти неделю.
+  const [batchRows, tariff] = await Promise.all([
+    prisma.productBatch.findMany({
+      where: { locationId, productId: { in: products.map((p) => p.id) } },
+      select: { id: true, productId: true, expiryDate: true, quantity: true },
+    }),
+    prisma.tariff.findUnique({ where: { companyId }, select: { modules: true } }),
+  ]);
+  if (batchRows.length > 0) {
+    const batchesByProduct = new Map<string, BatchStock[]>();
+    for (const row of batchRows) {
+      const list = batchesByProduct.get(row.productId) ?? [];
+      list.push({ batchId: row.id, expiryDate: row.expiryDate, quantity: row.quantity });
+      batchesByProduct.set(row.productId, list);
+    }
+    const untracked = untrackedPolicy(tariff ? (JSON.parse(tariff.modules) as string[]) : []);
+    for (const [productId, batches] of batchesByProduct) {
+      availableByProduct.set(
+        productId,
+        sellableQuantity(onHandByProduct.get(productId) ?? 0, batches, heldBackByProduct.get(productId) ?? 0, now, untracked),
+      );
+    }
+  }
+
   const inTransitByProduct = new Map<string, number>();
   for (const item of incomingTransfers) {
     inTransitByProduct.set(item.productId, (inTransitByProduct.get(item.productId) ?? 0) + item.quantity);
