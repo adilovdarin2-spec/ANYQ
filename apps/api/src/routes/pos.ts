@@ -1316,6 +1316,15 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
         createdAt: document.createdAt.toISOString(),
         saleId: sale.id,
         refundAmount: refund.amount,
+        // Чем деньги вернули на самом деле, а не чем просили.
+        //
+        // Касса ведёт свой счёт ящика — он нужен ей на закрытии смены без
+        // сети, — и складывает туда возвраты, выданные наличными. Просьбу она
+        // знает, решение принимает сервер: у чека в долг денег не выдают
+        // вовсе, что бы касса ни прислала (`refundMethod`). Не сказав ей
+        // ответа, мы оставляли её считать по своему предположению, и её
+        // ожидаемая сумма расходилась с серверной ровно на такой возврат.
+        paymentMethod: document.paymentMethod,
         pointsRestored: refund.pointsRestored,
         pointsRevoked: refund.pointsRevoked,
       };

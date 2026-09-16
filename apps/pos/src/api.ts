@@ -687,6 +687,15 @@ export interface CreateReturnResult {
   createdAt: string;
   saleId: string;
   refundAmount: number;
+  /**
+   * Чем деньги вернули на самом деле.
+   *
+   * Не то же, что касса просила: у чека в долг денег не выдают вовсе, и сервер
+   * запишет `credit`, что бы ни прислали. Счёт ящика надо вести по этому
+   * полю — иначе касса вычтет из ожидаемой суммы возврат, которого из ящика
+   * не было.
+   */
+  paymentMethod: string;
   pointsRestored: number;
   pointsRevoked: number;
 }

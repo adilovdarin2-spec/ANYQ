@@ -190,6 +190,41 @@ describe('возврат не наличными', () => {
   });
 });
 
+describe('касса узнаёт, чем вернули', () => {
+  it('ответ называет способ, который записал сервер', async () => {
+    // Касса ведёт свой счёт ящика — он нужен ей на закрытии смены без сети —
+    // и складывает туда возвраты, выданные наличными. Просьбу она знает,
+    // решение принимает сервер. Не сказав ей ответа, мы оставляли её считать
+    // по своему предположению: её ожидаемая сумма расходилась с серверной
+    // ровно на возврат по долговому чеку.
+    await prisma.counterparty.create({
+      data: {
+        companyId: fx.companyId,
+        name: 'Должник',
+        phone: PHONE,
+        type: 'customer',
+        creditAllowed: true,
+        creditLimit: 100000,
+      },
+    });
+    await openShift();
+    const sale = await sell(
+      { paymentMethod: 'credit', customerPhone: PHONE, customerName: 'Должник' },
+      'drawer-answer-sale',
+    );
+    const back = await refund(sale.body.id, 1, 'drawer-answer-refund', 'cash');
+    expect(back.status, JSON.stringify(back.body)).toBe(201);
+    expect(back.body.paymentMethod).toBe('credit');
+  });
+
+  it('и по обычному чеку — тот, о котором просили', async () => {
+    await openShift();
+    const sale = await sell({ paymentMethod: 'cash' }, 'drawer-answer-plain-sale');
+    const back = await refund(sale.body.id, 1, 'drawer-answer-plain-refund', 'kaspi');
+    expect(back.body.paymentMethod).toBe('kaspi');
+  });
+});
+
 describe('разбитый чек', () => {
   it('возвращается по своей наличной части, а не целиком', async () => {
     // Чек на 600: 250 наличными, 350 картой. Возврат трети — это 200, и из

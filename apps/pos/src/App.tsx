@@ -2343,7 +2343,10 @@ export default function App() {
           kind: 'refund',
           direction: 'out',
           amount: made.refundAmount,
-          method: payload.paymentMethod,
+          // То, что записал сервер, а не то, что мы просили: по чеку в долг
+          // денег из ящика не выдают, и считать такой возврат наличным значит
+          // показать кассиру недостачу, которой нет.
+          method: made.paymentMethod as PaymentMethod,
           createdAt: made.createdAt,
         });
       }
