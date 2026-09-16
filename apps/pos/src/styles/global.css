@@ -464,13 +464,31 @@ button { cursor: pointer; }
     padding: 0 0 calc(var(--tab-bar-h) + 24px);
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   }
-  /* Товары / Операции / Профиль render as plain page content (not a .screen
-     overlay), so without this they'd stretch to the full 1200px shell width
-     while every other screen in the app stays capped at 520px. */
+  /* Товары / Операции / Профиль рисуются как обычная страница, а не как
+     наложенный `.screen`, и без ограничения растянулись бы на все 1200
+     пикселей оболочки.
+
+     Ограничение было 520 — телефонная ширина. На терминале 1024, а это
+     основное устройство продукта, две трети экрана оставались пустыми, и
+     выглядело это ровно так, как выглядит телефонное приложение, открытое на
+     мониторе. Поэтому ширина здесь своя: достаточная, чтобы экран не был
+     наполовину мёртвым, и не такая, чтобы строка растянулась в ниточку с
+     подписью слева и стрелкой на другом конце стола. */
   .pos-shell.desktop .tab-content {
-    max-width: 520px;
+    max-width: 900px;
     margin: 0 auto;
     width: 100%;
+  }
+
+  /* И сами строки — в две колонки. Ширину надо занимать делом, а не воздухом:
+     растянутая на всю ширину строка с двумя словами читается хуже короткой. */
+  .pos-shell.desktop .operations-group .operations-row {
+    display: inline-flex;
+    width: calc(50% - 5px);
+    vertical-align: top;
+  }
+  .pos-shell.desktop .operations-group .operations-row:nth-of-type(even) {
+    margin-left: 10px;
   }
 }
 
@@ -897,6 +915,46 @@ button { cursor: pointer; }
   color: var(--ink-muted); padding: 0 16px 8px;
 }
 .operations-group + .operations-group { border-top: 1px solid var(--border); padding-top: 16px; }
+
+/* --- то, что делают каждый день ------------------------------------------- */
+/* Разделов по темам не хватило. Тема отвечает на «про что это», а человек,
+   открывший меню, спрашивает другое: «где то, что мне сейчас нажать».
+   «Приёмка», которую делают ежедневно, стояла таким же серым рядком, как
+   «Перенести товары», которое делают один раз в жизни.
+
+   Поэтому ежедневное — плитками, и их мало: три-пять штук, в которые попадают
+   пальцем не глядя. Плитка высотой в 96 пикселей — это не про красоту: палец
+   на терминале промахивается по строке в 44, и промах здесь стоит открытого
+   не того экрана посреди очереди. */
+.ops-daily {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px; padding: 0 16px 18px;
+}
+.ops-tile {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start;
+  justify-content: space-between; gap: 10px; min-height: 96px; padding: 14px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  text-align: left; cursor: pointer;
+}
+.ops-tile:active { background: var(--surface-active, var(--bg)); }
+.ops-tile-icon { display: inline-flex; color: var(--accent); }
+.ops-tile-label { font-size: 1rem; font-weight: 700; line-height: 1.25; }
+/* Число в углу плитки: сколько ждёт. Ноль не рисуется вовсе — значок, который
+   висит всегда, перестают замечать вместе с тем днём, когда он что-то значит. */
+.ops-tile-badge {
+  position: absolute; top: 10px; right: 10px;
+  background: var(--status-overdue); color: #fff; font-size: 0.78rem; font-weight: 800;
+  min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Разовое — под свёрнутой строкой: открывать его будут дважды за всё время, а
+   место оно занимало наравне с работой. */
+.ops-rare-toggle {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 14px 12px; border: none; background: none; text-align: left;
+  color: var(--ink-muted); cursor: pointer;
+}
 
 /* «Тариф заканчивается» — полоска над всем остальным.
    Спокойная за неделю, красная в последние два дня: предупреждение, которое

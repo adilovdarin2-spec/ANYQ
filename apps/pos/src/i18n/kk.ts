@@ -158,6 +158,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'opsGroup.suppliers': 'Жеткізушілер және тапсырыстар',
   'opsGroup.money': 'Ақша және құжаттар',
   'opsGroup.restaurant': 'Зал және асхана',
+  'opsWeight.rare': 'Баптау және бір реттік',
   'opsGroup.setup': 'Баптау',
 
   // --- тариф --------------------------------------------------------------

@@ -644,16 +644,16 @@ export default function App() {
   // Заказы с витрины — там же, где их выдают: выдача снимает товар со склада,
   // и кассиру этот экран показывать незачем, раз нажать в нём будет нечего.
   if (hasSupply && may('moveStock')) {
-    operationsItems.push({ key: 'orders', group: 'suppliers', icon: 'orders', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
+    operationsItems.push({ key: 'orders', weight: 'daily', group: 'suppliers', icon: 'orders', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
   }
   if (hasPharmacy) {
-    operationsItems.push({ key: 'batches', group: 'stock', icon: 'batches', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
+    operationsItems.push({ key: 'batches', weight: 'daily', group: 'stock', icon: 'batches', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
   }
   /* Вне модулей: сотрудники есть у любого магазина, хоть с одним кассиром.
      И только владельцу — сервер не отдаст список никому другому, а меню,
      предлагающее запертую дверь, обещает то, чего продукт не держит. */
   if (session?.user.role === 'owner') {
-    operationsItems.push({ key: 'staff', group: 'setup', icon: 'key', label: t('ops.staff'), onClick: handleShowStaff });
+    operationsItems.push({ key: 'staff', weight: 'rare', group: 'setup', icon: 'key', label: t('ops.staff'), onClick: handleShowStaff });
   }
   /* Два разных набора, потому что это два разных модуля и два разных тарифа.
      `stock` — товар приходит и уходит: это нужно любому магазину, и без него
@@ -668,25 +668,25 @@ export default function App() {
        пока у всех, кто умеет принимать, заодно было и перемещение, —
        у фармацевта (15.09.2026) их впервые развели, и пункт меню пропал бы у
        человека, которому право как раз выдали. */
-    { module: 'stock', key: 'incoming', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming, needs: 'receive' },
-    { module: 'stock', key: 'counts', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts, needs: 'count' },
-    { module: 'stock', key: 'write-offs', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs, needs: 'writeOff' },
-    { module: 'stock', key: 'supplier-returns', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns, needs: 'writeOff' },
-    { module: 'stock', key: 'returns', group: 'money', icon: 'return', label: t('ops.returns'), onClick: handleShowReturns },
-    { module: 'stock', key: 'reconciliation', group: 'money', icon: 'scales', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
-    { module: 'stock', key: 'import', group: 'setup', icon: 'import', label: t('ops.import'), onClick: handleShowImport },
-    { module: 'stock', key: 'migrate', group: 'setup', icon: 'migrate', label: t('ops.migrate'), onClick: handleShowMigrate },
-    { module: 'stock', key: 'cabinet', group: 'setup', icon: 'key', label: t('ops.cabinet'), onClick: handleShowCabinet },
-    { module: 'stock', key: 'fiscal', group: 'money', icon: 'receipt', label: t('ops.fiscal'), onClick: handleShowFiscal },
+    { module: 'stock', key: 'incoming', weight: 'daily', group: 'stock', icon: 'inbox', label: t('ops.incoming'), onClick: handleShowIncoming, needs: 'receive' },
+    { module: 'stock', key: 'counts', weight: 'sometimes', group: 'stock', icon: 'clipboard', label: t('ops.counts'), onClick: handleShowCounts, needs: 'count' },
+    { module: 'stock', key: 'write-offs', weight: 'sometimes', group: 'stock', icon: 'trash', label: t('ops.writeOffs'), onClick: handleShowWriteOffs, needs: 'writeOff' },
+    { module: 'stock', key: 'supplier-returns', weight: 'sometimes', group: 'suppliers', icon: 'returnUp', label: t('ops.supplierReturns'), onClick: handleShowSupplierReturns, needs: 'writeOff' },
+    { module: 'stock', key: 'returns', weight: 'daily', group: 'money', icon: 'return', label: t('ops.returns'), onClick: handleShowReturns },
+    { module: 'stock', key: 'reconciliation', weight: 'rare', group: 'money', icon: 'scales', label: t('ops.reconciliation'), onClick: handleShowReconciliation },
+    { module: 'stock', key: 'import', weight: 'rare', group: 'setup', icon: 'import', label: t('ops.import'), onClick: handleShowImport },
+    { module: 'stock', key: 'migrate', weight: 'rare', group: 'setup', icon: 'migrate', label: t('ops.migrate'), onClick: handleShowMigrate },
+    { module: 'stock', key: 'cabinet', weight: 'rare', group: 'setup', icon: 'key', label: t('ops.cabinet'), onClick: handleShowCabinet },
+    { module: 'stock', key: 'fiscal', weight: 'daily', group: 'money', icon: 'receipt', label: t('ops.fiscal'), onClick: handleShowFiscal },
     // Товар лежит в разных местах, и его надо находить и двигать.
-    { module: 'warehouse', key: 'transfers', group: 'stock', icon: 'transfer', label: t('ops.transfers'), onClick: handleShowTransfers, needs: 'moveStock' },
-    { module: 'warehouse', key: 'bins', group: 'stock', icon: 'bins', label: t('ops.bins'), onClick: handleShowBins, needs: 'moveStock' },
-    { module: 'warehouse', key: 'bin-count', group: 'stock', icon: 'binCount', label: t('ops.binCount'), onClick: handleShowBinCount, needs: 'count' },
-    { module: 'warehouse', key: 'production', group: 'stock', icon: 'factory', label: t('ops.production'), onClick: handleShowProduction, needs: 'produce' },
-    { module: 'warehouse', key: 'replenishment', group: 'suppliers', icon: 'replenish', label: t('ops.replenishment'), onClick: handleShowReplenishment, needs: 'receive' },
-    { module: 'warehouse', key: 'purchase-orders', group: 'suppliers', icon: 'doc', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders, needs: 'receive' },
-    { module: 'warehouse', key: 'delivery', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery, needs: 'receive' },
-    { module: 'warehouse', key: 'price-list', group: 'suppliers', icon: 'priceList', label: t('ops.priceList'), onClick: handleShowPriceList },
+    { module: 'warehouse', key: 'transfers', weight: 'sometimes', group: 'stock', icon: 'transfer', label: t('ops.transfers'), onClick: handleShowTransfers, needs: 'moveStock' },
+    { module: 'warehouse', key: 'bins', weight: 'rare', group: 'stock', icon: 'bins', label: t('ops.bins'), onClick: handleShowBins, needs: 'moveStock' },
+    { module: 'warehouse', key: 'bin-count', weight: 'sometimes', group: 'stock', icon: 'binCount', label: t('ops.binCount'), onClick: handleShowBinCount, needs: 'count' },
+    { module: 'warehouse', key: 'production', weight: 'sometimes', group: 'stock', icon: 'factory', label: t('ops.production'), onClick: handleShowProduction, needs: 'produce' },
+    { module: 'warehouse', key: 'replenishment', weight: 'sometimes', group: 'suppliers', icon: 'replenish', label: t('ops.replenishment'), onClick: handleShowReplenishment, needs: 'receive' },
+    { module: 'warehouse', key: 'purchase-orders', weight: 'sometimes', group: 'suppliers', icon: 'doc', label: t('ops.purchaseOrders'), onClick: handleShowPurchaseOrders, needs: 'receive' },
+    { module: 'warehouse', key: 'delivery', weight: 'sometimes', group: 'suppliers', icon: 'delivery', label: t('ops.delivery'), onClick: handleShowDelivery, needs: 'receive' },
+    { module: 'warehouse', key: 'price-list', weight: 'sometimes', group: 'suppliers', icon: 'priceList', label: t('ops.priceList'), onClick: handleShowPriceList },
   ];
   /* Настройки и деньги — владельцу и менеджеру: сервер их и так не отдаст
      никому другому, а меню, предлагающее запертую дверь, — это обещание,
@@ -702,12 +702,12 @@ export default function App() {
 
   if (hasRestaurant) {
     operationsItems.push(
-      { key: 'floorplan', group: 'restaurant', icon: 'table', label: t('floor.title'), onClick: handleShowFloorPlan },
-      { key: 'kds', group: 'restaurant', icon: 'flame', label: t('kds.title'), onClick: handleShowKds },
+      { key: 'floorplan', weight: 'daily', group: 'restaurant', icon: 'table', label: t('floor.title'), onClick: handleShowFloorPlan },
+      { key: 'kds', weight: 'daily', group: 'restaurant', icon: 'flame', label: t('kds.title'), onClick: handleShowKds },
     );
   }
   if (hasTerminal) {
-    operationsItems.push({ key: 'stock-history', group: 'money', icon: 'history', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
+    operationsItems.push({ key: 'stock-history', weight: 'rare', group: 'money', icon: 'history', label: t('ops.stockHistory'), onClick: handleShowStockHistory });
   }
   // Расчёты с контрагентами — не складская история, а денежная, и стояли они
   // внутри складского блока по недоразумению. Продать в долг может любая
@@ -718,6 +718,7 @@ export default function App() {
   if (isOwnerOrManager) {
     operationsItems.push({
       key: 'settlements',
+      weight: 'sometimes',
       group: 'money',
       icon: 'wallet',
       label: t('ops.settlements'),

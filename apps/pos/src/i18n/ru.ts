@@ -1173,6 +1173,7 @@ export const ru = {
   'opsGroup.suppliers': 'Поставщики и заказы',
   'opsGroup.money': 'Деньги и документы',
   'opsGroup.restaurant': 'Зал и кухня',
+  'opsWeight.rare': 'Настройка и разовое',
   'opsGroup.setup': 'Настройка',
 
   // --- the language itself ------------------------------------------------
