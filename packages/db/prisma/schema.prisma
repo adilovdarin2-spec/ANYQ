@@ -922,10 +922,16 @@ model Settlement {
   document       Document?    @relation(fields: [documentId], references: [id])
   documentId     String?
   note           String?
+  /// В какую смену приняли деньги. Наличные ложатся в тот же ящик, что и
+  /// выручка, и сверка смены должна их ждать. Пустое — либо строка старше
+  /// самой колонки, либо на точке открыто несколько смен и угадывать ящик
+  /// не по чему; тогда считается по времени и автору, как раньше.
+  shiftId        String?
   createdBy      String?
   createdAt      DateTime     @default(now())
 
   @@index([companyId, counterpartyId, createdAt])
+  @@index([shiftId])
   @@index([documentId])
   @@map("settlements")
 }

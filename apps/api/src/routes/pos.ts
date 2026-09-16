@@ -3669,7 +3669,7 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
       // расхождение в конце каждой смены.
       prisma.settlement.findMany({
         where: { companyId, locationId, paymentMethod: 'cash', createdAt: { gte: from } },
-        select: { direction: true, amount: true, createdAt: true, createdBy: true },
+        select: { direction: true, amount: true, createdAt: true, createdBy: true, shiftId: true },
       })
     ]);
 
@@ -3740,14 +3740,24 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
     // Refunds leave the same drawer, so they belong in the same figure.
     const paidOut = returnDocs.filter(matches).reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
 
-    // Расчёты наличными — туда же. У них нет ссылки на смену, поэтому только
-    // по времени и по тому, кто провёл: это тот же способ, каким сюда
-    // попадают чеки, написанные до появления такой ссылки.
+    // Расчёты наличными — туда же: они ложатся в тот же ящик.
+    //
+    // По ссылке на смену, записанной в момент приёма. Ссылки не было до
+    // 16.09.2026, и относили их по времени и по тому, кто провёл, — а это одно
+    // и то же только пока за кассой один человек. Владелец, принявший долг во
+    // время смены кассира, клал деньги в общий ящик, и в сверке кассира их не
+    // было: излишек на закрытии, которого никто не делал.
+    //
+    // Старым строкам ссылку задним числом не приписывали — кто в каком ящике
+    // был полгода назад, уже не установить, — поэтому для них остаётся прежнее
+    // правило. Оно же работает и для записи, которую не к чему было привязать:
+    // когда на точке открыто несколько смен, ящик не угадывается.
     const settled = cashSettlements.reduce((sum, row) => {
-      const mine =
-        row.createdAt >= shift.openedAt &&
-        row.createdAt <= until &&
-        (!shift.userId || row.createdBy === shift.userId);
+      const mine = row.shiftId
+        ? row.shiftId === shift.id
+        : row.createdAt >= shift.openedAt &&
+          row.createdAt <= until &&
+          (!shift.userId || row.createdBy === shift.userId);
       if (!mine) return sum;
       return sum + (row.direction === 'in' ? row.amount : -row.amount);
     }, 0);
@@ -5749,6 +5759,27 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
     return;
   }
 
+  // В какую смену легли эти деньги.
+  //
+  // Наличные ложатся в тот же ящик, что и выручка, и сверка смены обязана их
+  // ждать. До 16.09.2026 ссылки на смену у расчёта не было вовсе: его относили
+  // к смене по времени и по тому, кто провёл. Пока за кассой один человек, это
+  // одно и то же; как только их двое — а две кассы в одной точке ANYQ умеет, —
+  // деньги проваливались мимо всех смен, и у кассира на закрытии выходил
+  // излишек, которого он не делал.
+  //
+  // Сначала своя смена, потом единственная открытая на точке. Если открытых
+  // несколько, ссылка остаётся пустой: у каждой кассы свой ящик, и угадывать,
+  // в какой из них положили деньги, не по чему. Такая запись считается
+  // по-старому — по времени и автору.
+  const openShifts = await prisma.shift.findMany({
+    where: { companyId: req.posCompanyId, locationId, closedAt: null },
+    select: { id: true, userId: true },
+  });
+  const settlementShiftId =
+    openShifts.find((shift) => shift.userId === req.posUserId)?.id ??
+    (openShifts.length === 1 ? openShifts[0].id : null);
+
   const ledger = await loadLedger(req.posCompanyId!, counterparty.id, counterparty.type);
   const charges = ledger.charges;
   const { allocations, unapplied } = allocatePayment(amount, charges);
@@ -5785,6 +5816,7 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
             paymentMethod: typeof b.paymentMethod === 'string' ? b.paymentMethod : 'cash',
             documentId: allocation.documentId,
             note: typeof b.note === 'string' ? b.note.trim() || null : null,
+            shiftId: settlementShiftId,
             createdBy: req.posUserId,
           },
         }),
@@ -5801,6 +5833,7 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
             amount: unapplied,
             paymentMethod: typeof b.paymentMethod === 'string' ? b.paymentMethod : 'cash',
             note: typeof b.note === 'string' ? b.note.trim() || null : null,
+            shiftId: settlementShiftId,
             createdBy: req.posUserId,
           },
         }),
