@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Response } from 'express';
 import { prisma, Prisma } from '@anyq/db';
+import { receiptTotal } from '../receipt-total';
 import { limitRefusal } from '../limits';
 import { moduleListRefusal } from '../modules';
 import { roleRefusal } from '../roles';
@@ -331,7 +332,7 @@ companiesRouter.get('/:id/shifts', async (req, res) => {
         const discount = computeDiscount(subtotal, sale.discountType
           ? { type: sale.discountType as 'percent' | 'fixed', value: sale.discountValue ?? 0 }
           : null).discountAmount;
-        return { sale, total: subtotal - discount - (sale.pointsRedeemed ?? 0) };
+        return { sale, total: receiptTotal(subtotal, discount, sale.pointsRedeemed) };
       });
 
       const total = totals.reduce((sum, row) => sum + row.total, 0);

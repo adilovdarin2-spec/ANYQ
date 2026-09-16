@@ -89,6 +89,7 @@ import { readPhoto, photoErrorMessage } from '../photos';
 import type { PaymentLine } from '../payments';
 import type { BinCountLine, BinSystemQuantity, MovementSince } from '../counts';
 import { computeDiscount } from '../discounts';
+import { receiptTotal } from '../receipt-total';
 import { findPriceMismatches } from '../pricing';
 import type { DiscountType } from '../discounts';
 import { computeLoyalty } from '../loyalty';
@@ -1073,7 +1074,7 @@ posRouter.get('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         id: sale.id,
         createdAt: sale.createdAt.toISOString(),
         paymentMethod: sale.paymentMethod,
-        total: subtotal - discountAmount - (sale.pointsRedeemed ?? 0),
+        total: receiptTotal(subtotal, discountAmount, sale.pointsRedeemed),
         refundedTotal: sale.returns.reduce((sum, ret) => sum + (ret.refundAmount ?? 0), 0),
         items: sale.items.map((it) => ({
           id: it.id,
@@ -2947,7 +2948,7 @@ posRouter.get('/documents', requirePosAuth, async (req: PosAuthedRequest, res) =
         // this is built from.
         total: doc.type === 'return' || doc.type === 'supplier_return'
           ? doc.refundAmount ?? 0
-          : subtotal - discountAmount - (doc.pointsRedeemed ?? 0),
+          : receiptTotal(subtotal, discountAmount, doc.pointsRedeemed),
         payments: doc.payments.map((line) => ({ method: line.method, amount: line.amount })),
         paymentMethod: doc.paymentMethod,
         items: doc.items.map((it) => ({
@@ -3733,7 +3734,7 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
     // will believe it.
     const takings = salesDocs.filter(belongsToShift).reduce((sum, doc) => {
       const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
-      const total = subtotal - computeDiscount(subtotal, saleDiscount(doc)).discountAmount - (doc.pointsRedeemed ?? 0);
+      const total = receiptTotal(subtotal, computeDiscount(subtotal, saleDiscount(doc)).discountAmount, doc.pointsRedeemed);
       return sum + cashPortion(paymentsOrLegacy(doc.payments as PaymentLine[], doc.paymentMethod, total));
     }, 0);
     // Refunds leave the same drawer, so they belong in the same figure.
@@ -3786,7 +3787,7 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
     const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
     const discount = computeDiscount(subtotal, saleDiscount(doc)).discountAmount;
     const entry = ensure(doc.createdBy);
-    entry.revenue += subtotal - discount - (doc.pointsRedeemed ?? 0);
+    entry.revenue += receiptTotal(subtotal, discount, doc.pointsRedeemed);
     entry.discounts += discount;
   }
   for (const doc of returnDocs) {
@@ -5598,7 +5599,7 @@ async function loadLedgers(
 
     ledger.charges.push({
       documentId: doc.id,
-      amount: lines - discountAmount - (doc.pointsRedeemed ?? 0),
+      amount: receiptTotal(lines, discountAmount, doc.pointsRedeemed),
       settled: settledByDocument.get(doc.id) ?? 0,
       at: doc.createdAt,
     });

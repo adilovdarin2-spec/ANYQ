@@ -10,6 +10,7 @@ import type { FiscalProvider } from './fiscal';
 import type { PaymentLine } from './payments';
 import { computeDiscount } from './discounts';
 import type { DiscountInput } from './discounts';
+import { receiptTotal } from './receipt-total';
 
 /**
  * Drains the fiscal queue.
@@ -119,7 +120,7 @@ export async function drainFiscalQueue(
     const subtotal = receipt.document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
     const discountAmount = isReturn ? 0 : computeDiscount(subtotal, saleDiscount(receipt.document)).discountAmount;
     const pointsRedeemed = isReturn ? 0 : receipt.document.pointsRedeemed ?? 0;
-    const total = isReturn ? receipt.document.refundAmount ?? 0 : subtotal - discountAmount - pointsRedeemed;
+    const total = isReturn ? receipt.document.refundAmount ?? 0 : receiptTotal(subtotal, discountAmount, pointsRedeemed);
 
     const payload = buildFiscalPayload({
       operation: isReturn ? 'return' : 'sale',

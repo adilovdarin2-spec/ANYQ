@@ -1,3 +1,5 @@
+import { receiptTotal } from './receipt-total';
+
 export interface SoldLine {
   documentItemId: string;
   productId: string;
@@ -110,7 +112,7 @@ export function resolveReturn(
 }
 
 function buildRefund(returnedGross: number, totals: SaleTotals, isFullReturn: boolean): RefundBreakdown {
-  const cashCollected = totals.subtotal - totals.discountAmount - totals.pointsRedeemed;
+  const cashCollected = receiptTotal(totals.subtotal, totals.discountAmount, totals.pointsRedeemed);
 
   // Settling the last of a sale hands back exactly what it took, rather than
   // the sum of per-line roundings — otherwise a customer returning everything

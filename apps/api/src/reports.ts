@@ -1,5 +1,6 @@
 import { paymentsOrLegacy } from './payments';
 import type { PaymentLine } from './payments';
+import { receiptTotal } from './receipt-total';
 
 export interface SaleItem {
   productId: string;
@@ -38,7 +39,7 @@ function saleTotal(sale: SaleRecord): number {
   // Rounded per line — a no-op for piece-based items (already whole tenge),
   // necessary for weight-based ones (price-per-kg × a decimal kg quantity).
   const gross = sale.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
-  return gross - (sale.discountAmount ?? 0) - (sale.pointsRedeemed ?? 0);
+  return receiptTotal(gross, sale.discountAmount ?? 0, sale.pointsRedeemed);
 }
 
 export function buildSummary(sales: SaleRecord[]): ReportSummary {
