@@ -144,6 +144,37 @@ describe('долг равен сумме чека', () => {
     expect(await debt(party.id)).toBe(600);
   });
 
+  it('и лимит долга считает то же число, что сам долг', async () => {
+    // Покупателю разрешено 550. Чек на 600, из них 100 он закрывает баллами —
+    // значит в долг уходит 500, и это в лимит укладывается.
+    //
+    // Проверка лимита при этом считала по-своему: позиции минус скидка, без
+    // баллов, то есть 600 против разрешённых 550, — и отказывала за долг,
+    // которого не будет. Числа подобраны так, чтобы половины разошлись: на
+    // границе (лимит 600) обе дают «можно», и разницы не видно.
+    const party = await allowCredit(550);
+    await prisma.counterparty.update({ where: { id: party.id }, data: { loyaltyPoints: 100 } });
+
+    const sale = await sellOnCredit(
+      { items: [{ productId: fx.productId, quantity: 3, price: 200 }], pointsToRedeem: 100 },
+      'credit-limit-points',
+    );
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+    expect(await debt(party.id)).toBe(500);
+  });
+
+  it('а за настоящий перебор лимита — отказывает', async () => {
+    // Самопроверка: иначе первая половина была бы зелёной и на правиле
+    // «пускать всегда».
+    const party = await allowCredit(400);
+    const sale = await sellOnCredit(
+      { items: [{ productId: fx.productId, quantity: 3, price: 200 }] },
+      'credit-limit-over',
+    );
+    expect(sale.status).toBe(403);
+    expect(await debt(party.id)).toBe(0);
+  });
+
   it('и оплата ровно по чеку закрывает долг в ноль', async () => {
     // То, ради чего всё это считается. Пока долг был больше чека, покупатель,
     // заплативший по чеку, оставался должен — и объяснить это было нечем.

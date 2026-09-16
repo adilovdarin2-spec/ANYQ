@@ -683,14 +683,32 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     const ledger = account ? await loadLedger(req.posCompanyId!, account.id, 'customer') : null;
     const owed = ledger ? computeBalance(ledger.charges, ledger.unapplied).balance : 0;
 
+    // Баллы — не деньги, и в долг они не уходят: покупатель уже заработал их
+    // раньше. Поэтому лимит проверяется против того, что действительно будет
+    // записано долгом, — и считается это ровно так же, как считает сам долг.
+    //
+    // Считалось иначе: позиции минус скидка, без баллов. Пока долг считался
+    // так же, половины совпадали; когда долг научился вычитать баллы
+    // (16.09.2026), проверка осталась строже реальности и начала отказывать за
+    // долг, которого не будет. Видно это не на границе, а рядом с ней: при
+    // лимите 550 чек на 600 со ста баллами — это долг 500, то есть «можно», а
+    // проверка отвечала «нельзя».
+    //
+    // Тем же выражением, что и `computeLoyalty` ниже: она берёт меньшее из
+    // трёх — сколько просят, сколько есть, сколько осталось к оплате.
+    const netAfterDiscount = subtotal - discountAmount;
+    const willRedeem = Math.min(
+      Math.max(pointsToRedeem, 0),
+      Math.max(account?.loyaltyPoints ?? 0, 0),
+      Math.max(netAfterDiscount, 0),
+    );
+
     const credit = resolveCreditSale({
       customerExisted: !!account,
       creditAllowed: account?.creditAllowed ?? false,
       creditLimit: account?.creditLimit ?? 0,
       currentBalance: owed,
-      // Points are not money, and a credit sale settles in money — so the
-      // limit is checked against what will actually be owed.
-      saleTotal: subtotal - discountAmount,
+      saleTotal: netAfterDiscount - willRedeem,
     });
     if (credit.status !== 'ok') {
       res.status(403).json({ error: creditSaleErrorMessage(credit) });
