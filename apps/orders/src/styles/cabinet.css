@@ -246,3 +246,38 @@
   padding: 10px 0; border-top: 1px solid var(--border);
   font-size: 0.86rem; line-height: 1.45;
 }
+
+/* Настройка второго фактора и карточка сотрудника.
+   Одна рамка на весь шаг: владелец на телефоне должен видеть, где кончается
+   «то, что я сейчас заполняю», и начинается остальной кабинет. */
+.cab-setup {
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px; margin: 14px 0 18px; background: var(--surface);
+}
+.cab-setup .cab-button { margin-top: 4px; }
+
+/* Ключ для тех, у кого не открылась камера. Моноширинным и с переносом: его
+   переписывают глазами, и разбитая на группы строка переписывается вернее. */
+.cab-key {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.95rem; letter-spacing: 0.08em; word-break: break-all;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin: 10px 0 14px;
+}
+
+/* Коды восстановления. Показываются один раз в жизни — поэтому рамка заметная:
+   экран, который человек пролистнёт, здесь стоит потерянного кабинета. */
+.cab-codes {
+  border: 2px solid var(--accent); border-radius: 12px;
+  padding: 16px; margin: 14px 0 18px; background: var(--surface);
+}
+.cab-codes-list {
+  list-style: none; margin: 12px 0 14px; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.92rem; letter-spacing: 0.05em;
+}
+.cab-codes-list li {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; text-align: center;
+}

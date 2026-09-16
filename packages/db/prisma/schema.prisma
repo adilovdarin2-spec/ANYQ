@@ -124,10 +124,44 @@ model OwnerCabinet {
   /// password change.
   tokenVersion Int @default(0)
 
+  /// Подтверждённый второй фактор. Пусто, пока никто не доказал рабочим кодом,
+  /// что ключ правда доехал до телефона.
+  ///
+  /// Кабинет был дверью только на чтение, и второй фактор ему был не нужен:
+  /// худшее, что делала украденная ссылка с паролем, — показывала цифры.
+  /// Управление PIN-ами сотрудников это меняет: тот же украденный адрес стал бы
+  /// входом в кассу — поменял PIN кассиру, вошёл этим PIN-ом, торгуешь.
+  /// Поэтому PIN-ы в кабинете доступны только при включённом втором факторе, и
+  /// это не настройка, а условие.
+  totpSecret        String?
+  /// Начатая и неподтверждённая настройка — отдельно, чтобы владелец,
+  /// отсканировавший QR и закрывший вкладку, не заперся снаружи.
+  pendingTotpSecret String?
+  totpEnabledAt     DateTime?
+
+  recoveryCodes CabinetRecoveryCode[]
+
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
 
   @@map("owner_cabinets")
+}
+
+/// Одноразовый код на случай потерянного телефона. Хранится хешем: показать
+/// его второй раз нельзя, и это единственная причина, по которой он чего-то
+/// стоит.
+model CabinetRecoveryCode {
+  id        String       @id @default(cuid())
+  cabinet   OwnerCabinet @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  cabinetId String
+  codeHash  String
+  /// Ставится в тот же миг, когда код потрачен: код, срабатывающий дважды, —
+  /// это пароль, переживший запись на бумаге.
+  usedAt    DateTime?
+  createdAt DateTime     @default(now())
+
+  @@index([cabinetId])
+  @@map("cabinet_recovery_codes")
 }
 
 // Makes every mutating POS request safely retryable. A cashier's offline queue

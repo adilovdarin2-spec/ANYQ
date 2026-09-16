@@ -9,6 +9,15 @@ import {
   secretsMatch,
 } from '../cabinet';
 import { cabinetProbeRateLimit, loginRateLimit } from '../rateLimit';
+import type { AuditActor } from '../audit-log';
+import { createStaff, listStaff, updateStaff } from '../staff-operations';
+import {
+  generateRecoveryCodes,
+  generateSecret,
+  normaliseRecoveryCode,
+  otpauthUri,
+  verifyCode,
+} from '../totp';
 import { requireSecret } from '../secrets';
 import { respondWithDashboard } from './pos';
 import { expiryFrom, grantState, isOpen } from '../support-access';
@@ -100,6 +109,30 @@ async function requireCabinet(req: CabinetRequest, res: Response, next: NextFunc
  * подставить что-нибудь вместо строки, не занимая соединение к базе на каждый
  * перебор.
  */
+/**
+ * Потратить код восстановления — ровно один раз.
+ *
+ * Отметка ставится защищённым обновлением, а не «прочитали и записали»: две
+ * одновременные попытки одним кодом не должны обе пройти. Одноразовость и есть
+ * весь смысл — код, срабатывающий дважды, это пароль, переживший запись на
+ * бумаге.
+ */
+async function spendCabinetRecoveryCode(cabinetId: string, typed: string): Promise<boolean> {
+  const normalised = normaliseRecoveryCode(typed);
+  if (normalised.length < 8) return false;
+
+  const codes = await prisma.cabinetRecoveryCode.findMany({ where: { cabinetId, usedAt: null } });
+  for (const code of codes) {
+    if (!(await bcrypt.compare(normalised, code.codeHash))) continue;
+    const { count } = await prisma.cabinetRecoveryCode.updateMany({
+      where: { id: code.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    return count === 1;
+  }
+  return false;
+}
+
 async function findBySecret(raw: unknown) {
   if (!looksLikeCabinetSecret(raw)) return null;
   const cabinet = await prisma.ownerCabinet.findUnique({
@@ -189,6 +222,27 @@ cabinetRouter.post('/:secret/login', loginRateLimit, async (req, res) => {
   if (!ok) {
     res.status(401).json({ error: 'Неверный пароль' });
     return;
+  }
+
+  // Код спрашивается только после того, как пароль оказался верен.
+  //
+  // Ответить «нужен код» на неверный пароль значило бы сказать нашедшему
+  // ссылку, что за ней есть кабинет с включённой защитой, — то есть что она
+  // живая и её стоит подбирать дальше.
+  if (cabinet.totpSecret) {
+    const typed = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!typed) {
+      res.status(401).json({ error: 'Введите код из приложения', mfaRequired: true });
+      return;
+    }
+    const accepted = verifyCode(cabinet.totpSecret, typed) || (await spendCabinetRecoveryCode(cabinet.id, typed));
+    if (!accepted) {
+      // Один и тот же ответ на неверный шестизначный код и на неверный код
+      // восстановления: подсказка, какой из них был ближе, не нужна никому,
+      // кто пришёл по праву.
+      res.status(401).json({ error: 'Код неверен или уже использован', mfaRequired: true });
+      return;
+    }
   }
 
   await prisma.ownerCabinet.update({ where: { id: cabinet.id }, data: { lastLoginAt: new Date() } });
@@ -298,4 +352,241 @@ cabinetRouter.post('/session/support/:id/:action', requireCabinet, async (req: C
   const expiresAt = expiryFrom(now);
   await prisma.supportAccess.update({ where: { id: row.id }, data: { grantedAt: now, expiresAt } });
   res.json({ state: 'active', expiresAt: expiresAt.toISOString() });
+});
+
+/**
+ * Второй фактор у кабинета.
+ *
+ * Кабинет был дверью только на чтение, и замка ему хватало одного: худшее, что
+ * делала украденная ссылка с паролем, — показывала цифры. Управление PIN-ами
+ * сотрудников это меняет. Тот же украденный адрес становится входом в кассу:
+ * поменял PIN кассиру, вошёл этим PIN-ом, торгуешь — и это уже не подглядывание,
+ * а торговля от чужого имени.
+ *
+ * Поэтому здесь не настройка «для желающих», а условие: PIN-ы в кабинете
+ * доступны только при включённом втором факторе. Порядок именно такой — сперва
+ * замок, потом то, что он запирает.
+ */
+cabinetRouter.get('/session/security', requireCabinet, async (req: CabinetRequest, res) => {
+  const cabinet = await prisma.ownerCabinet.findUnique({
+    where: { id: req.cabinetId },
+    include: { recoveryCodes: { where: { usedAt: null }, select: { id: true } } },
+  });
+  if (!cabinet) {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  res.json({
+    enabled: !!cabinet.totpSecret,
+    enabledAt: cabinet.totpEnabledAt?.toISOString() ?? null,
+    // Чтобы экран мог сказать «ключ вы уже сканировали», а не показать его как
+    // новый — та же ловушка, что чинили у админки 10.09.2026.
+    pending: !!cabinet.pendingTotpSecret,
+    recoveryCodesLeft: cabinet.recoveryCodes.length,
+  });
+});
+
+cabinetRouter.post('/session/security/setup', requireCabinet, async (req: CabinetRequest, res) => {
+  const cabinet = await prisma.ownerCabinet.findUnique({
+    where: { id: req.cabinetId },
+    include: { company: { select: { name: true } } },
+  });
+  if (!cabinet) {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  if (cabinet.totpSecret) {
+    res.status(409).json({ error: 'Двухфакторный вход уже включён' });
+    return;
+  }
+
+  // Уже выпущенный и ждущий ключ возвращается тот же самый, если не попросили
+  // новый явно. Иначе ловушка ровно там, ради чего «ожидание» и придумано:
+  // владелец сканирует QR, закрывает вкладку, возвращается ввести код — а
+  // повторное открытие экрана молча заменило секрет, и код не подходит.
+  const wantsFresh = req.body?.fresh === true;
+  const secret = !wantsFresh && cabinet.pendingTotpSecret ? cabinet.pendingTotpSecret : generateSecret();
+  const reused = secret === cabinet.pendingTotpSecret;
+  if (!reused) {
+    await prisma.ownerCabinet.update({ where: { id: cabinet.id }, data: { pendingTotpSecret: secret } });
+  }
+
+  res.json({
+    secret,
+    reused,
+    // И то, и другое: ссылка для камеры и сам ключ для того, кто вводит
+    // руками, потому что камера на телефоне не открылась.
+    otpauthUri: otpauthUri(secret, `${cabinet.company.name} · кабинет`),
+  });
+});
+
+/** Подтверждает, что ключ работает, включает замок и отдаёт коды восстановления. */
+cabinetRouter.post('/session/security/enable', requireCabinet, async (req: CabinetRequest, res) => {
+  const cabinet = await prisma.ownerCabinet.findUnique({ where: { id: req.cabinetId } });
+  if (!cabinet) {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  if (cabinet.totpSecret) {
+    res.status(409).json({ error: 'Двухфакторный вход уже включён' });
+    return;
+  }
+  if (!cabinet.pendingTotpSecret) {
+    res.status(409).json({ error: 'Сначала отсканируйте ключ' });
+    return;
+  }
+  const code = req.body?.code;
+  if (typeof code !== 'string' || !verifyCode(cabinet.pendingTotpSecret, code)) {
+    res.status(400).json({ error: 'Код неверен — проверьте время на телефоне и попробуйте ещё раз' });
+    return;
+  }
+
+  const recoveryCodes = generateRecoveryCodes();
+  const hashes = await Promise.all(
+    recoveryCodes.map((plain) => bcrypt.hash(normaliseRecoveryCode(plain), 10)),
+  );
+
+  await prisma.$transaction(async (tx) => {
+    // Коды с прошлого раза удаляются: оставить их живыми значило бы, что старая
+    // распечатка открывает кабинет после смены телефона.
+    await tx.cabinetRecoveryCode.deleteMany({ where: { cabinetId: cabinet.id } });
+    await tx.ownerCabinet.update({
+      where: { id: cabinet.id },
+      data: {
+        totpSecret: cabinet.pendingTotpSecret,
+        pendingTotpSecret: null,
+        totpEnabledAt: new Date(),
+      },
+    });
+    await tx.cabinetRecoveryCode.createMany({
+      data: hashes.map((codeHash) => ({ cabinetId: cabinet.id, codeHash })),
+    });
+  });
+
+  res.json({
+    enabled: true,
+    // Единственный раз, когда их видно. Хранятся хешем, второго раза нет — и
+    // ответ говорит об этом прямо.
+    recoveryCodes,
+    note: 'Сохраните коды восстановления сейчас — больше они не покажутся.',
+  });
+});
+
+/**
+ * Выключает — и требует для этого обоих факторов.
+ *
+ * Открытая вкладка на чужом телефоне иначе снимала бы ровно ту защиту, ради
+ * которой она и заводилась. Пароль здесь спрашивается не для вежливости: сессия
+ * у того, кто её открыл, уже есть.
+ */
+cabinetRouter.post('/session/security/disable', requireCabinet, async (req: CabinetRequest, res) => {
+  const cabinet = await prisma.ownerCabinet.findUnique({ where: { id: req.cabinetId } });
+  if (!cabinet) {
+    res.status(404).json({ error: 'Не найдено' });
+    return;
+  }
+  if (!cabinet.totpSecret) {
+    res.status(409).json({ error: 'Двухфакторный вход не включён' });
+    return;
+  }
+
+  const password = req.body?.password;
+  const passwordOk =
+    typeof password === 'string' &&
+    !!cabinet.passwordHash &&
+    (await bcrypt.compare(password, cabinet.passwordHash));
+  if (!passwordOk) {
+    res.status(401).json({ error: 'Неверный пароль' });
+    return;
+  }
+
+  const typed = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  const accepted = verifyCode(cabinet.totpSecret, typed) || (await spendCabinetRecoveryCode(cabinet.id, typed));
+  if (!accepted) {
+    res.status(401).json({ error: 'Код неверен или уже использован' });
+    return;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ownerCabinet.update({
+      where: { id: cabinet.id },
+      data: { totpSecret: null, pendingTotpSecret: null, totpEnabledAt: null },
+    });
+    await tx.cabinetRecoveryCode.deleteMany({ where: { cabinetId: cabinet.id } });
+  });
+
+  res.json({ enabled: false });
+});
+
+/**
+ * Сотрудники из кабинета — и только при включённом втором факторе.
+ *
+ * Это не настройка строгости, а условие существования этих маршрутов. Кабинет
+ * открыт в интернет, и до сих пор его худший исход был «чужой человек увидел
+ * цифры». PIN даёт другое: поменял кассиру, вошёл этим PIN-ом, торгуешь от
+ * чужого имени — и обнаружится это на сверке смены, если обнаружится вообще.
+ *
+ * Поэтому замок проверяется на каждом запросе, а не однажды при включении.
+ * Владелец, выключивший второй фактор, теряет PIN-ы из кабинета в ту же
+ * секунду: иначе «включил, сделал, выключил» оставляло бы дверь открытой.
+ *
+ * Сами правила — в `staff-operations.ts`, одни и те же с кассой. Вход другой,
+ * люди те же.
+ */
+async function requireSecondFactor(req: CabinetRequest, res: Response): Promise<boolean> {
+  const cabinet = await prisma.ownerCabinet.findUnique({ where: { id: req.cabinetId } });
+  if (!cabinet?.totpSecret) {
+    res.status(403).json({
+      error: 'Включите двухфакторный вход — без него PIN-ы из кабинета не выдаются',
+      needsSecondFactor: true,
+    });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Подпись в журнале — «кабинет владельца», а не «неизвестно».
+ *
+ * Владельца, вошедшего по ссылке, среди сотрудников может не быть вовсе, и
+ * `resolveActor` записал бы «неизвестно». Но тот, кто через полгода будет
+ * разбирать, почему у кассира сменился PIN, должен видеть не пробел, а откуда
+ * это сделали: из кабинета или с терминала в зале.
+ */
+function cabinetActor(companyId: string): AuditActor {
+  return { companyId, actorId: null, actorName: 'кабинет владельца' };
+}
+
+cabinetRouter.get('/session/staff', requireCabinet, async (req: CabinetRequest, res) => {
+  if (!(await requireSecondFactor(req, res))) return;
+  res.json(await listStaff(req.cabinetCompanyId!));
+});
+
+cabinetRouter.post('/session/staff', requireCabinet, async (req: CabinetRequest, res) => {
+  if (!(await requireSecondFactor(req, res))) return;
+  const outcome = await createStaff(req.cabinetCompanyId!, cabinetActor(req.cabinetCompanyId!), req.body ?? {});
+  if (!outcome.ok) {
+    res.status(outcome.status).json({ error: outcome.error });
+    return;
+  }
+  res.status(201).json(outcome.value);
+});
+
+cabinetRouter.patch('/session/staff/:id', requireCabinet, async (req: CabinetRequest, res) => {
+  if (!(await requireSecondFactor(req, res))) return;
+  // Действующего сотрудника здесь нет: владелец вошёл ссылкой, а не PIN-ом.
+  // Значит нет и запрета «не понижай сам себя» — понижать некого. Запрет на
+  // последнего владельца остаётся: он про компанию, а не про того, кто нажал.
+  const outcome = await updateStaff(
+    req.cabinetCompanyId!,
+    cabinetActor(req.cabinetCompanyId!),
+    null,
+    req.params.id,
+    req.body ?? {},
+  );
+  if (!outcome.ok) {
+    res.status(outcome.status).json({ error: outcome.error });
+    return;
+  }
+  res.json(outcome.value);
 });

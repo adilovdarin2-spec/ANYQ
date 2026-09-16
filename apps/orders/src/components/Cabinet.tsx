@@ -31,6 +31,7 @@ export function Cabinet({ secret }: { secret: string }) {
   const [token, setToken] = useState<string | null>(() => readCabinetToken(secret));
   const [gateSubmitting, setGateSubmitting] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
+  const [needsCode, setNeedsCode] = useState(false);
 
   const [company, setCompany] = useState('');
   const [locations, setLocations] = useState<CabinetLocation[]>([]);
@@ -140,18 +141,25 @@ export function Cabinet({ secret }: { secret: string }) {
     load();
   }, [load]);
 
-  async function handleGate(password: string) {
+  async function handleGate(password: string, code: string) {
     if (!status) return;
     setGateSubmitting(true);
     setGateError(null);
     try {
       const result = status.needsPassword
         ? await createCabinetPassword(secret, password)
-        : await cabinetLogin(secret, password);
+        : await cabinetLogin(secret, password, code || undefined);
       storeCabinetToken(secret, result.token);
       setToken(result.token);
+      setNeedsCode(false);
       setStatus({ ...status, needsPassword: false });
     } catch (err) {
+      // Просьбу о коде сервер помечает отдельно: без этого поле пришлось бы
+      // показывать всем заранее, то есть рассказывать о защите тому, кто
+      // подбирает пароль.
+      if (err instanceof ApiError && err.body.mfaRequired === true) {
+        setNeedsCode(true);
+      }
       setGateError(err instanceof ApiError ? err.message : 'Не удалось войти');
     } finally {
       setGateSubmitting(false);
@@ -178,6 +186,7 @@ export function Cabinet({ secret }: { secret: string }) {
         needsPassword={status!.needsPassword}
         submitting={gateSubmitting}
         error={gateError}
+        needsCode={needsCode}
         onSubmit={handleGate}
       />
     );
@@ -196,6 +205,7 @@ export function Cabinet({ secret }: { secret: string }) {
       onChangeDays={setDays}
       onRefresh={load}
       onSignOut={signOut}
+      token={token}
       supportRequests={supportRequests}
       onAnswerSupport={answerSupport}
     />

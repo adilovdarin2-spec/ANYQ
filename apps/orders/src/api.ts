@@ -25,9 +25,18 @@ export const WHATSAPP_NUMBER = '77784175136';
  */
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /**
+   * Ответ сервера целиком — ради полей рядом с текстом ошибки.
+   *
+   * `mfaRequired` на входе в кабинет: экран должен показать поле для кода, а
+   * отличить «нужен код» от «неверный пароль» по тексту нельзя — и не нужно,
+   * сервер сказал это отдельным полем.
+   */
+  body: Record<string, unknown>;
+  constructor(message: string, status: number, body: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -46,7 +55,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.error || 'Ошибка запроса', res.status);
+    throw new ApiError(data.error || 'Ошибка запроса', res.status, data);
   }
   return data as T;
 }
@@ -123,10 +132,99 @@ export function createCabinetPassword(secret: string, password: string): Promise
   });
 }
 
-export function cabinetLogin(secret: string, password: string): Promise<{ token: string }> {
+export function cabinetLogin(secret: string, password: string, code?: string): Promise<{ token: string }> {
   return request(`/cabinet/${encodeURIComponent(secret)}/login`, {
     method: 'POST',
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password, ...(code ? { code } : {}) }),
+  });
+}
+
+/**
+ * Замок на кабинете и то, что он запирает.
+ *
+ * Кабинет был дверью только на чтение, и одного пароля ему хватало: худшее,
+ * что делала украденная ссылка, — показывала цифры. PIN-ы сотрудников это
+ * меняют: поменял кассиру, вошёл этим PIN-ом, торгуешь. Поэтому PIN-ы здесь
+ * доступны только при включённом втором факторе — не как строгость, а как
+ * условие, и сервер проверяет это на каждом запросе.
+ */
+export interface CabinetSecurity {
+  enabled: boolean;
+  enabledAt: string | null;
+  pending: boolean;
+  recoveryCodesLeft: number;
+}
+
+export function fetchCabinetSecurity(token: string): Promise<CabinetSecurity> {
+  return authed('/cabinet/session/security', token);
+}
+
+export function startCabinetSecondFactor(
+  token: string,
+  fresh = false,
+): Promise<{ secret: string; reused: boolean; otpauthUri: string }> {
+  return authed('/cabinet/session/security/setup', token, {
+    method: 'POST',
+    body: JSON.stringify({ fresh }),
+  });
+}
+
+export function enableCabinetSecondFactor(
+  token: string,
+  code: string,
+): Promise<{ enabled: boolean; recoveryCodes: string[]; note: string }> {
+  return authed('/cabinet/session/security/enable', token, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function disableCabinetSecondFactor(
+  token: string,
+  password: string,
+  code: string,
+): Promise<{ enabled: boolean }> {
+  return authed('/cabinet/session/security/disable', token, {
+    method: 'POST',
+    body: JSON.stringify({ password, code }),
+  });
+}
+
+export interface CabinetStaffMember {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  /** Есть ли у человека вход в кассу. Сам PIN не отдаётся никогда. */
+  hasPin: boolean;
+}
+
+export interface CabinetStaffPayload {
+  name: string;
+  role: string;
+  phone?: string;
+  posPin?: string;
+  clearPin?: boolean;
+}
+
+export function fetchCabinetStaff(
+  token: string,
+): Promise<{ users: CabinetStaffMember[]; limit: number | null }> {
+  return authed('/cabinet/session/staff', token);
+}
+
+export function createCabinetStaff(token: string, body: CabinetStaffPayload): Promise<CabinetStaffMember> {
+  return authed('/cabinet/session/staff', token, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateCabinetStaff(
+  token: string,
+  id: string,
+  body: CabinetStaffPayload,
+): Promise<CabinetStaffMember> {
+  return authed(`/cabinet/session/staff/${encodeURIComponent(id)}`, token, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
   });
 }
 

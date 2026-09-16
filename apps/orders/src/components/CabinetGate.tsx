@@ -6,7 +6,15 @@ interface Props {
   needsPassword: boolean;
   submitting: boolean;
   error: string | null;
-  onSubmit: (password: string) => void;
+  /**
+   * Сервер попросил код из приложения.
+   *
+   * Поле появляется только после того, как пароль оказался верен: спросить код
+   * сразу значило бы сказать нашедшему ссылку, что за ней живой кабинет с
+   * защитой, — то есть что подбирать пароль имеет смысл.
+   */
+  needsCode: boolean;
+  onSubmit: (password: string, code: string) => void;
 }
 
 /**
@@ -20,8 +28,9 @@ interface Props {
  * убедиться, что открыл свою ссылку, а не соседа. Больше по ссылке не видно
  * ничего — ни выручки, ни точек, ни имён.
  */
-export function CabinetGate({ company, needsPassword, submitting, error, onSubmit }: Props) {
+export function CabinetGate({ company, needsPassword, submitting, error, needsCode, onSubmit }: Props) {
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
   const [repeat, setRepeat] = useState('');
   const [show, setShow] = useState(false);
 
@@ -45,7 +54,7 @@ export function CabinetGate({ company, needsPassword, submitting, error, onSubmi
           className="cab-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (canSubmit) onSubmit(password);
+            if (canSubmit) onSubmit(password, code.trim());
           }}
         >
           <label className="cab-label" htmlFor="cab-password">
@@ -84,6 +93,28 @@ export function CabinetGate({ company, needsPassword, submitting, error, onSubmi
             <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
             Показать пароль
           </label>
+
+          {needsCode && (
+            <>
+              <label className="cab-label" htmlFor="cab-code">
+                Код из приложения
+              </label>
+              <input
+                id="cab-code"
+                className="cab-input"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={code}
+                autoFocus
+                onChange={(e) => setCode(e.target.value)}
+              />
+              <p className="cab-hint">
+                Шесть цифр из приложения-аутентификатора. Телефон потерялся — введите сюда код
+                восстановления из тех, что вы сохранили при включении.
+              </p>
+            </>
+          )}
 
           {mismatch && <p className="cab-error">Пароли не совпадают</p>}
           {error && <p className="cab-error">{error}</p>}

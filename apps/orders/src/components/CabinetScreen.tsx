@@ -1,4 +1,5 @@
 import type { CabinetLocation, CabinetSummary, SupportRequest } from '../types';
+import { CabinetStaff } from './CabinetStaff';
 import { SupportRequests } from './SupportRequests';
 
 interface Props {
@@ -13,6 +14,8 @@ interface Props {
   onChangeDays: (days: number) => void;
   onRefresh: () => void;
   onSignOut: () => void;
+  /** Токен сессии — для раздела сотрудников, который ходит за своими данными сам. */
+  token: string;
   supportRequests: SupportRequest[];
   onAnswerSupport: (id: string, action: 'grant' | 'decline' | 'revoke') => Promise<void>;
 }
@@ -80,6 +83,7 @@ export function CabinetScreen({
   onChangeDays,
   onRefresh,
   onSignOut,
+  token,
   supportRequests,
   onAnswerSupport,
 }: Props) {
@@ -295,6 +299,8 @@ export function CabinetScreen({
               </p>
             )}
           </Section>
+
+          <CabinetStaff token={token} />
 
           <footer className="cab-foot">
             {/* Обещание должно быть правдой до последнего слова. Раньше здесь
