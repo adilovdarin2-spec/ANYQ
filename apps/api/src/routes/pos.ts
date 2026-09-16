@@ -70,7 +70,7 @@ import { matchPriceList, readDeliveryNote, readPriceList, summarisePriceList } f
 import type { LedgerTotal, CachedQuantity } from '../reconciliation';
 import type { Charge } from '../settlements';
 import type { SoldLine } from '../returns';
-import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost } from '../reports';
+import { buildSummary, buildTopProducts, buildCashierBreakdown, findLowStock, buildFoodCost, reportWindowStart } from '../reports';
 import type { SaleRecord } from '../reports';
 import { allocateFefo, allocateForRemoval, classifyExpiry, sellableQuantity, uncoveredStock, untrackedPolicy } from '../batches';
 import type { BatchStock } from '../batches';
@@ -1870,12 +1870,23 @@ posRouter.get('/reports', requirePosAuth, async (req: PosAuthedRequest, res) => 
     take: REPORT_SALE_LIMIT,
   });
 
+  // Возвраты — за тот же кусок времени, который правда прочитан.
+  //
+  // Предел стоял на продажах и не стоял на возвратах, а `netRevenue` — это
+  // разность двух этих чисел. У магазина с двадцатью тысячами чеков в месяце
+  // отчёт читал последние пять тысяч — примерно неделю, — и вычитал из
+  // недельной выручки возвраты за месяц. Число выходило не «неполным», а
+  // неправильным, и на достаточно большом магазине уходило в минус.
+  //
+  // Слово «усечён» на экране это не спасало: оно обещает более короткий
+  // период, а не смесь двух разных.
+  const coveredFrom = reportWindowStart(documents, from, REPORT_SALE_LIMIT);
   const returnDocuments = await prisma.document.findMany({
     where: {
       companyId: req.posCompanyId,
       locationId,
       type: 'return',
-      createdAt: { gte: from, lte: to },
+      createdAt: { gte: coveredFrom, lte: to },
     },
     select: { refundAmount: true },
   });
