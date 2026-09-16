@@ -51,7 +51,7 @@ import { resolveLocationId, resolveTransferLocations, locationErrorMessage } fro
 import { resolveTransferReceipt, transferReceiptErrorMessage, collapseTransferItems } from '../transfers';
 import { resolveReturn, returnErrorMessage } from '../returns';
 import { resolvePackagedLines, packagingErrorMessage } from '../packaging';
-import { buildDailyClosingBalances, estimateDailyDemand, recommendOrder } from '../replenishment';
+import { buildDailyClosingBalances, demandWindowDays, estimateDailyDemand, recommendOrder } from '../replenishment';
 import type { DailyMovement } from '../replenishment';
 import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
 import type { CashierActivity, ShiftCash, ShiftCashResult } from '../owner';
@@ -2527,6 +2527,21 @@ export async function replenishmentFor(companyId: string, locationId: string) {
   ]);
   const onOrderByProduct = await outstandingOnOrder(companyId!, locationId);
 
+  // Сколько дней журнала правда прочитано.
+  //
+  // Предел на движениях стоял, а окно оставалось двадцативосьмидневным — и у
+  // магазина, чей журнал в предел упирается, старые дни выглядели «товар лежал
+  // и не продавался». Спрос делится на дни, когда товар был в наличии, так что
+  // эти пустые дни попадали в делитель и занижали его: совет «заказывать не
+  // надо» ровно там, где журнал слишком плотный, то есть в самом бойком
+  // магазине.
+  //
+  // Экран про это честно писал «спрос занижен, возьмите окно короче» — совет,
+  // которому нельзя последовать: окно задано числом в коде, ни параметра, ни
+  // кнопки. Поэтому оно сужается само, до прочитанного, и совет больше не
+  // нужен: период получается короче, но правдивый.
+  const effectiveWindowDays = demandWindowDays(movements, DEMAND_WINDOW_DAYS, DEMAND_MOVEMENT_LIMIT, now);
+
   // Summed across bins: the question is what this point has, not what one
   // shelf in it has.
   const availableByProduct = new Map<string, number>();
@@ -2604,7 +2619,7 @@ export async function replenishmentFor(companyId: string, locationId: string) {
     const inTransit = inTransitByProduct.get(product.id) ?? 0;
     const policy = policyByProduct.get(product.id);
 
-    const closing = buildDailyClosingBalances(available, allByProduct.get(product.id) ?? [], DEMAND_WINDOW_DAYS);
+    const closing = buildDailyClosingBalances(available, allByProduct.get(product.id) ?? [], effectiveWindowDays);
     const demand = estimateDailyDemand(closing, demandByProduct.get(product.id) ?? [], () => true);
 
     const recommendation = recommendOrder({
@@ -2647,7 +2662,10 @@ export async function replenishmentFor(companyId: string, locationId: string) {
 
   return {
     locationId,
-    windowDays: DEMAND_WINDOW_DAYS,
+    // Сколько дней правда посчитано, а не сколько хотелось: экран пишет это
+    // число рядом с «дней без товара», и обещать там двадцать восемь, посчитав
+    // шесть, значит соврать в обе стороны сразу.
+    windowDays: effectiveWindowDays,
     // Каждая позиция, а не только дефицитные. Экрану пополнения нужно решение,
     // а прайсу поставщика — остаток по любой присланной строке: «сколько у нас
     // этого лежит» спрашивают и про то, что заказывать не надо.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDailyClosingBalances, estimateDailyDemand, recommendOrder } from './replenishment';
+import { buildDailyClosingBalances, demandWindowDays, estimateDailyDemand, recommendOrder } from './replenishment';
 import type { DailyMovement } from './replenishment';
 
 const isSale = (m: DailyMovement) => m.quantity < 0;
@@ -183,5 +183,95 @@ describe('recommendOrder and goods already on order', () => {
     const result = recommendOrder({ ...base, available: 12, onOrder: 60, demandPerDay: 12 });
     expect(result.daysOfCover).toBe(6);
     expect(result.trigger).toBe('sufficient');
+  });
+});
+
+describe('окно спроса сужается до прочитанного', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = new Date('2026-09-16T12:00:00.000Z');
+  const ago = (days: number) => ({ createdAt: new Date(now.getTime() - days * DAY) });
+
+  it('журнал уместился — окно то, которое просили', () => {
+    expect(demandWindowDays([ago(1), ago(20)], 28, 50_000, now)).toBe(28);
+  });
+
+  it('и на пустом журнале тоже', () => {
+    // Товар, которого за месяц никто не трогал, — это не «прочитали мало», а
+    // «продаж не было». Сузить окно здесь значило бы объявить спрос там, где
+    // его нет.
+    expect(demandWindowDays([], 28, 50_000, now)).toBe(28);
+  });
+
+  it('а упёрлось в предел — окно до самого старого прочитанного дня', () => {
+    // Предел два, значит журнал прочитан не весь. Самое старое прочитанное
+    // движение шестидневной давности лежит в дне номер шесть, а дней
+    // с нулевого по шестой семь.
+    expect(demandWindowDays([ago(1), ago(6)], 28, 2, now)).toBe(7);
+  });
+
+  it('и никогда не шире запрошенного', () => {
+    // Расчёт вправе сузить окно и не вправе его расширить: движение, пришедшее
+    // из-за границы окна, не делает окно длиннее.
+    expect(demandWindowDays([ago(1), ago(90)], 28, 2, now)).toBe(28);
+  });
+
+  it('и никогда не в ноль', () => {
+    // Всё прочитанное — за последний час. Ноль дней в делителе — это не
+    // «осторожно», а деление на ноль этажом ниже.
+    expect(demandWindowDays([ago(0), ago(0)], 28, 2, now)).toBe(1);
+  });
+});
+
+describe('что сужение окна чинит на самом деле', () => {
+  /**
+   * Тишина в непрочитанной части журнала — это не «не продавалось».
+   *
+   * Спрос делится на дни, когда товар был в наличии. Дни, до которых чтение не
+   * дошло, выглядят именно такими: движений нет, остаток не менялся, значит
+   * товар лежал и не продавался. Делитель растёт, спрос падает — и «заказывать
+   * не надо» приходит в магазин, который на самом деле разметает эту позицию.
+   *
+   * Здесь это показано арифметикой, а не пятьюдесятью тысячами строк в базе:
+   * весь вред состоит в том, какое число окажется делителем, и виден он на
+   * трёх функциях, поставленных рядом. Прогон на настоящем пределе стоил бы
+   * десяти секунд на каждом запуске набора и доказал бы ровно это же.
+   */
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = new Date('2026-09-16T12:00:00.000Z');
+  const ago = (days: number) => new Date(now.getTime() - days * DAY);
+
+  /** Четыре дня подряд по пять штук в день. Дальше журнал не прочитан. */
+  const sold: (DailyMovement & { createdAt: Date })[] = [0, 1, 2, 3].map((dayIndex) => ({
+    dayIndex,
+    quantity: -5,
+    reason: 'sale',
+    createdAt: ago(dayIndex),
+  }));
+
+  it('с прежним окном спрос занижался в разы', () => {
+    // Двадцать восемь дней в делителе, продажи — за четыре. Остаток на полке
+    // есть, значит все двадцать восемь считаются днями «в наличии».
+    const closing = buildDailyClosingBalances(100, sold, 28);
+    const demand = estimateDailyDemand(closing, sold, () => true);
+    expect(demand.daysInStock).toBe(28);
+    // Двадцать штук на двадцать восемь дней — меньше одной в день.
+    expect(demand.perDay).toBeCloseTo(20 / 28, 5);
+  });
+
+  it('а по прочитанному окну выходит правда', () => {
+    // Журнал упёрся в предел, и самое старое прочитанное движение —
+    // четырёхдневной давности.
+    const windowDays = demandWindowDays(
+      sold.map((m) => ({ createdAt: m.createdAt })),
+      28,
+      sold.length,
+      now,
+    );
+    expect(windowDays).toBe(4);
+
+    const closing = buildDailyClosingBalances(100, sold, windowDays);
+    const demand = estimateDailyDemand(closing, sold, () => true);
+    expect(demand.daysInStock).toBe(4);
+    expect(demand.perDay).toBe(5);
   });
 });
