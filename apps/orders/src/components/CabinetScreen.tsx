@@ -16,6 +16,8 @@ interface Props {
   onSignOut: () => void;
   /** Токен сессии — для раздела сотрудников, который ходит за своими данными сам. */
   token: string;
+  /** Замок гасит прежние входы и выдаёт новый токен — его надо сохранить. */
+  onToken: (token: string) => void;
   supportRequests: SupportRequest[];
   onAnswerSupport: (id: string, action: 'grant' | 'decline' | 'revoke') => Promise<void>;
 }
@@ -84,6 +86,7 @@ export function CabinetScreen({
   onRefresh,
   onSignOut,
   token,
+  onToken,
   supportRequests,
   onAnswerSupport,
 }: Props) {
@@ -300,7 +303,7 @@ export function CabinetScreen({
             )}
           </Section>
 
-          <CabinetStaff token={token} />
+          <CabinetStaff token={token} onToken={onToken} />
 
           <footer className="cab-foot">
             {/* Обещание должно быть правдой до последнего слова, и его

@@ -206,6 +206,13 @@ export function Cabinet({ secret }: { secret: string }) {
       onRefresh={load}
       onSignOut={signOut}
       token={token}
+      onToken={(next) => {
+        // Замок погасил прежние входы, включая наш. Свежий токен кладётся туда
+        // же, где лежал старый, иначе владелец, обновив страницу, окажется
+        // снаружи собственного кабинета сразу после того, как его запер.
+        storeCabinetToken(secret, next);
+        setToken(next);
+      }}
       supportRequests={supportRequests}
       onAnswerSupport={answerSupport}
     />

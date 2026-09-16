@@ -40,7 +40,16 @@ function roleLabel(code: string): string {
   return ROLES.find((r) => r.code === code)?.label ?? code;
 }
 
-export function CabinetStaff({ token }: { token: string }) {
+/**
+ * `onToken` — не мелочь.
+ *
+ * Постановка и снятие замка гасят все прежние входы кабинета: второй фактор,
+ * который переживают старые сессии, не заперт для того, кто уже внутри, — а это
+ * ровно тот, от кого его вешают. Сервер возвращает свежий токен тому, кто нажал;
+ * не забрать его — значит выкинуть владельца из кабинета в ту минуту, когда он
+ * настраивает защиту.
+ */
+export function CabinetStaff({ token, onToken }: { token: string; onToken: (token: string) => void }) {
   const [security, setSecurity] = useState<CabinetSecurity | null>(null);
   const [staff, setStaff] = useState<CabinetStaffMember[] | null>(null);
   const [limit, setLimit] = useState<number | null>(null);
@@ -95,10 +104,10 @@ export function CabinetStaff({ token }: { token: string }) {
     setError(null);
     try {
       const done = await enableCabinetSecondFactor(token, code.trim());
+      onToken(done.token);
       setRecoveryCodes(done.recoveryCodes);
       setSetup(null);
       setCode('');
-      await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Не удалось включить');
     } finally {
@@ -110,8 +119,8 @@ export function CabinetStaff({ token }: { token: string }) {
     setBusy(true);
     setError(null);
     try {
-      await disableCabinetSecondFactor(token, password, otp);
-      await load();
+      const done = await disableCabinetSecondFactor(token, password, otp);
+      onToken(done.token);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Не удалось выключить');
     } finally {

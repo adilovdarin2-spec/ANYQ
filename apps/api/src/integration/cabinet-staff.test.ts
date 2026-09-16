@@ -50,14 +50,21 @@ async function openCabinet(): Promise<string> {
   return set.body.token as string;
 }
 
-async function lockIt(token: string): Promise<string> {
+/**
+ * Повесить замок и вернуть ключ вместе со свежим токеном.
+ *
+ * Включение гасит все прежние входы, включая собственный: замок, который не
+ * запирает того, кто уже внутри, не защищает ни от чего. Поэтому дальше в
+ * тестах ходят новым токеном, а не тем, которым включали.
+ */
+async function lockIt(token: string): Promise<{ totp: string; token: string }> {
   const setup = await api(token, 'POST', '/cabinet/session/security/setup', {});
   expect(setup.status, JSON.stringify(setup.body)).toBe(200);
   const enabled = await api(token, 'POST', '/cabinet/session/security/enable', {
     code: currentCode(setup.body.secret),
   });
   expect(enabled.status, JSON.stringify(enabled.body)).toBe(200);
-  return setup.body.secret as string;
+  return { totp: setup.body.secret as string, token: enabled.body.token as string };
 }
 
 describe('PIN-ы из кабинета', () => {
@@ -74,8 +81,8 @@ describe('PIN-ы из кабинета', () => {
   });
 
   it('со вторым фактором — работают', async () => {
-    const token = await openCabinet();
-    await lockIt(token);
+    const opened = await openCabinet();
+    const { token } = await lockIt(opened);
 
     const created = await api(token, 'POST', '/cabinet/session/staff', {
       name: 'Кассир',
@@ -93,8 +100,8 @@ describe('PIN-ы из кабинета', () => {
   it('а выключенный посреди работы забирает их сразу', async () => {
     // Иначе «включил, сделал, выключил» оставляло бы дверь открытой: замок
     // проверялся бы однажды, а не на каждом запросе.
-    const token = await openCabinet();
-    const totp = await lockIt(token);
+    const opened = await openCabinet();
+    const { totp, token } = await lockIt(opened);
 
     const off = await api(token, 'POST', '/cabinet/session/security/disable', {
       password: PASSWORD,
@@ -102,15 +109,19 @@ describe('PIN-ы из кабинета', () => {
     });
     expect(off.status, JSON.stringify(off.body)).toBe(200);
 
-    const list = await api(token, 'GET', '/cabinet/session/staff');
+    // Прежний токен после снятия замка уже не годится вовсе — снятие гасит
+    // входы, как и постановка. Поэтому спрашиваем свежим: утверждение здесь не
+    // «токен протух», а «без замка сотрудников нет даже у того, кто вошёл».
+    const list = await api(off.body.token, 'GET', '/cabinet/session/staff');
     expect(list.status).toBe(403);
+    expect(list.body.needsSecondFactor).toBe(true);
   });
 
   it('и PIN наружу не отдаётся даже здесь', async () => {
     // Карточка сотрудника открывается на чужом экране чаще, чем кажется, а
     // прочитать PIN — значит войти кассой этого человека.
-    const token = await openCabinet();
-    await lockIt(token);
+    const opened = await openCabinet();
+    const { token } = await lockIt(opened);
     await api(token, 'POST', '/cabinet/session/staff', { name: 'Кассир', role: 'cashier', posPin: '4466' });
 
     const list = await api(token, 'GET', '/cabinet/session/staff');
@@ -121,8 +132,8 @@ describe('PIN-ы из кабинета', () => {
   it('последнего владельца из кабинета понизить так же нельзя', async () => {
     // Правило про компанию, а не про того, кто нажал: из кабинета некому
     // «понижать себя», но остаться без владельца магазин не должен.
-    const token = await openCabinet();
-    await lockIt(token);
+    const opened = await openCabinet();
+    const { token } = await lockIt(opened);
 
     const res = await api(token, 'PATCH', `/cabinet/session/staff/${shop.userId}`, {
       name: 'Владелец',
@@ -134,8 +145,8 @@ describe('PIN-ы из кабинета', () => {
   });
 
   it('занятый PIN отказывает тем же ответом, что и в кассе', async () => {
-    const token = await openCabinet();
-    await lockIt(token);
+    const opened = await openCabinet();
+    const { token } = await lockIt(opened);
     await api(token, 'POST', '/cabinet/session/staff', { name: 'Первый', role: 'cashier', posPin: '4477' });
 
     const second = await api(token, 'POST', '/cabinet/session/staff', {
@@ -153,8 +164,8 @@ describe('PIN-ы из кабинета', () => {
   it('смена PIN-а отключает токен, выданный кассиру раньше', async () => {
     // То, ради чего владелец вообще идёт менять PIN: человек ушёл. PIN, не
     // выгоняющий его из уже открытой смены, — это не смена PIN-а.
-    const token = await openCabinet();
-    await lockIt(token);
+    const opened = await openCabinet();
+    const { token } = await lockIt(opened);
     const created = await api(token, 'POST', '/cabinet/session/staff', {
       name: 'Кассир',
       role: 'cashier',
@@ -183,8 +194,8 @@ describe('PIN-ы из кабинета', () => {
   it('и в журнале видно, что это сделали из кабинета', async () => {
     // Через полгода разбирать, почему у кассира сменился PIN, будет человек, а
     // не программа. Пробел в колонке «кто» — это вопрос к нам, а не ответ ему.
-    const token = await openCabinet();
-    await lockIt(token);
+    const opened = await openCabinet();
+    const { token } = await lockIt(opened);
     await api(token, 'POST', '/cabinet/session/staff', { name: 'Кассир', role: 'cashier', posPin: '4400' });
 
     const entries = await prisma.auditEntry.findMany({ where: { companyId: shop.companyId, entity: 'user' } });
@@ -194,8 +205,8 @@ describe('PIN-ы из кабинета', () => {
 
   it('и чужую компанию из своего кабинета не тронуть', async () => {
     const other = await createFixture();
-    const token = await openCabinet();
-    await lockIt(token);
+    const opened = await openCabinet();
+    const { token } = await lockIt(opened);
 
     const res = await api(token, 'PATCH', `/cabinet/session/staff/${other.userId}`, {
       name: 'Чужой',

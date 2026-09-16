@@ -50,8 +50,17 @@ async function openCabinet(): Promise<{ secret: string; token: string }> {
   return { secret, token: set.body.token as string };
 }
 
-/** Пройти настройку целиком и вернуть ключ, которым телефон считает коды. */
-async function turnOnSecondFactor(token: string): Promise<{ secret: string; recoveryCodes: string[] }> {
+/**
+ * Пройти настройку целиком: ключ, коды восстановления и свежий токен.
+ *
+ * Токен возвращается не для удобства. Включение замка гасит все прежние входы,
+ * в том числе тот, которым его включали, — иначе замок не заперт для того, кто
+ * уже внутри. Продолжать пользоваться старым здесь значило бы проверять не то,
+ * что происходит на самом деле.
+ */
+async function turnOnSecondFactor(
+  token: string,
+): Promise<{ secret: string; recoveryCodes: string[]; token: string }> {
   const setup = await api(token, 'POST', '/cabinet/session/security/setup', {});
   expect(setup.status, JSON.stringify(setup.body)).toBe(200);
   const secret = setup.body.secret as string;
@@ -60,7 +69,11 @@ async function turnOnSecondFactor(token: string): Promise<{ secret: string; reco
     code: currentCode(secret),
   });
   expect(enabled.status, JSON.stringify(enabled.body)).toBe(200);
-  return { secret, recoveryCodes: enabled.body.recoveryCodes as string[] };
+  return {
+    secret,
+    recoveryCodes: enabled.body.recoveryCodes as string[],
+    token: enabled.body.token as string,
+  };
 }
 
 describe('замок на кабинете', () => {
@@ -136,8 +149,8 @@ describe('замок на кабинете', () => {
   it('выключить можно только обоими факторами сразу', async () => {
     // Открытая вкладка на чужом телефоне иначе снимала бы ровно ту защиту,
     // ради которой она и заводилась.
-    const { token } = await openCabinet();
-    const { secret: totp } = await turnOnSecondFactor(token);
+    const opened = await openCabinet();
+    const { secret: totp, token } = await turnOnSecondFactor(opened.token);
 
     const noPassword = await api(token, 'POST', '/cabinet/session/security/disable', {
       code: currentCode(totp),
@@ -155,6 +168,68 @@ describe('замок на кабинете', () => {
     expect(both.body.enabled).toBe(false);
   });
 
+  it('и гасит сессии, открытые до него', async () => {
+    // То, ради чего замок и вешают. Ссылку с паролем узнали, чужой человек
+    // вошёл — сессия кабинета живёт неделю. Владелец спохватился и включил
+    // второй фактор; если старый вход при этом остаётся рабочим, замок не
+    // заперт ни для кого, кроме самого владельца.
+    //
+    // Смену пароля кабинет гасит с самого начала: «пароль, смену которого
+    // переживают старые сессии, — это не смена пароля». Второй фактор — то же
+    // самое и по той же причине.
+    const { secret, token } = await openCabinet();
+
+    // Чужой вошёл раньше, чем владелец спохватился.
+    const thief = await api(null, 'POST', `/cabinet/${secret}/login`, { password: PASSWORD });
+    expect(thief.status, JSON.stringify(thief.body)).toBe(200);
+    const stolen = thief.body.token as string;
+    expect((await api(stolen, 'GET', '/cabinet/session/locations')).status).toBe(200);
+
+    await turnOnSecondFactor(token);
+
+    expect(
+      (await api(stolen, 'GET', '/cabinet/session/locations')).status,
+      'сессия, открытая до замка, обязана перестать работать',
+    ).toBe(401);
+  });
+
+  it('а тому, кто его включил, вход не ломает', async () => {
+    // Гасить все сессии и выкидывать самого владельца — значит на ровном месте
+    // заставить его входить заново ровно в ту минуту, когда он что-то
+    // настраивает. Поэтому включение возвращает свежий токен.
+    const { token } = await openCabinet();
+    const setup = await api(token, 'POST', '/cabinet/session/security/setup', {});
+    const enabled = await api(token, 'POST', '/cabinet/session/security/enable', {
+      code: currentCode(setup.body.secret),
+    });
+    expect(enabled.status, JSON.stringify(enabled.body)).toBe(200);
+    expect(enabled.body.token, 'включивший замок должен остаться внутри').toBeTruthy();
+
+    expect((await api(enabled.body.token, 'GET', '/cabinet/session/locations')).status).toBe(200);
+  });
+
+  it('и выключение гасит их так же', async () => {
+    // Снятие замка — тоже изменение доступа. Сессия, открытая при включённом
+    // втором факторе на чужом устройстве, не должна пережить его снятие.
+    const opened = await openCabinet();
+    const { secret: totp, token } = await turnOnSecondFactor(opened.token);
+
+    const other = await api(null, 'POST', `/cabinet/${opened.secret}/login`, {
+      password: PASSWORD,
+      code: currentCode(totp),
+    });
+    expect(other.status, JSON.stringify(other.body)).toBe(200);
+    const elsewhere = other.body.token as string;
+
+    const off = await api(token, 'POST', '/cabinet/session/security/disable', {
+      password: PASSWORD,
+      code: currentCode(totp),
+    });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+
+    expect((await api(elsewhere, 'GET', '/cabinet/session/locations')).status).toBe(401);
+  });
+
   it('состояние замка кабинет показывает сам', async () => {
     const { token } = await openCabinet();
     const before = await api(token, 'GET', '/cabinet/session/security');
@@ -162,8 +237,8 @@ describe('замок на кабинете', () => {
     expect(before.body.enabled).toBe(false);
     expect(before.body.recoveryCodesLeft).toBe(0);
 
-    await turnOnSecondFactor(token);
-    const after = await api(token, 'GET', '/cabinet/session/security');
+    const locked = await turnOnSecondFactor(token);
+    const after = await api(locked.token, 'GET', '/cabinet/session/security');
     expect(after.body.enabled).toBe(true);
     expect(after.body.recoveryCodesLeft).toBeGreaterThan(0);
   });

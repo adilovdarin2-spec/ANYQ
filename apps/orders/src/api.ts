@@ -172,18 +172,25 @@ export function startCabinetSecondFactor(
 export function enableCabinetSecondFactor(
   token: string,
   code: string,
-): Promise<{ enabled: boolean; recoveryCodes: string[]; note: string }> {
+): Promise<{ enabled: boolean; recoveryCodes: string[]; note: string; token: string }> {
   return authed('/cabinet/session/security/enable', token, {
     method: 'POST',
     body: JSON.stringify({ code }),
   });
 }
 
+/**
+ * Оба маршрута возвращают свежий токен, и его обязательно надо взять.
+ *
+ * Постановка замка и его снятие гасят все прежние входы кабинета — иначе
+ * второй фактор не запирал бы того, кто уже внутри, а это ровно тот, от кого
+ * его вешают. Токен, которым нажимали кнопку, после этого мёртв.
+ */
 export function disableCabinetSecondFactor(
   token: string,
   password: string,
   code: string,
-): Promise<{ enabled: boolean }> {
+): Promise<{ enabled: boolean; token: string }> {
   return authed('/cabinet/session/security/disable', token, {
     method: 'POST',
     body: JSON.stringify({ password, code }),

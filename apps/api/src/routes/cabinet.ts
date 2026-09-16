@@ -446,25 +446,36 @@ cabinetRouter.post('/session/security/enable', requireCabinet, async (req: Cabin
     recoveryCodes.map((plain) => bcrypt.hash(normaliseRecoveryCode(plain), 10)),
   );
 
-  await prisma.$transaction(async (tx) => {
+  const locked = await prisma.$transaction(async (tx) => {
     // Коды с прошлого раза удаляются: оставить их живыми значило бы, что старая
     // распечатка открывает кабинет после смены телефона.
     await tx.cabinetRecoveryCode.deleteMany({ where: { cabinetId: cabinet.id } });
-    await tx.ownerCabinet.update({
+    const updated = await tx.ownerCabinet.update({
       where: { id: cabinet.id },
       data: {
         totpSecret: cabinet.pendingTotpSecret,
         pendingTotpSecret: null,
         totpEnabledAt: new Date(),
+        // Все прежние входы — прочь. Это и есть весь смысл: замок вешают,
+        // когда ссылку с паролем могли узнать, а сессия кабинета живёт неделю.
+        // Второй фактор, который переживают старые сессии, не заперт ни для
+        // кого, кроме самого владельца, — то же самое уже сказано про пароль
+        // строчкой в `requireCabinet`.
+        tokenVersion: { increment: 1 },
       },
     });
     await tx.cabinetRecoveryCode.createMany({
       data: hashes.map((codeHash) => ({ cabinetId: cabinet.id, codeHash })),
     });
+    return updated;
   });
 
   res.json({
     enabled: true,
+    // Свежий токен тому, кто замок и повесил: выкинуть его вместе со всеми
+    // значило бы заставить входить заново ровно в ту минуту, когда он
+    // настраивает. Чужие входы при этом всё равно погашены.
+    token: signCabinetToken(locked.id, locked.companyId, locked.tokenVersion),
     // Единственный раз, когда их видно. Хранятся хешем, второго раза нет — и
     // ответ говорит об этом прямо.
     recoveryCodes,
@@ -507,15 +518,27 @@ cabinetRouter.post('/session/security/disable', requireCabinet, async (req: Cabi
     return;
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.ownerCabinet.update({
+  const unlocked = await prisma.$transaction(async (tx) => {
+    const updated = await tx.ownerCabinet.update({
       where: { id: cabinet.id },
-      data: { totpSecret: null, pendingTotpSecret: null, totpEnabledAt: null },
+      // Снятие замка — тоже изменение доступа, и старые входы переживать его не
+      // должны: сессия, открытая при включённом втором факторе на чужом
+      // устройстве, после снятия оказалась бы сильнее, чем была.
+      data: {
+        totpSecret: null,
+        pendingTotpSecret: null,
+        totpEnabledAt: null,
+        tokenVersion: { increment: 1 },
+      },
     });
     await tx.cabinetRecoveryCode.deleteMany({ where: { cabinetId: cabinet.id } });
+    return updated;
   });
 
-  res.json({ enabled: false });
+  res.json({
+    enabled: false,
+    token: signCabinetToken(unlocked.id, unlocked.companyId, unlocked.tokenVersion),
+  });
 });
 
 /**
