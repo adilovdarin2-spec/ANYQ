@@ -79,11 +79,26 @@ export function startMfaSetup(token: string, fresh = false): Promise<MfaSetup> {
   return request('/auth/mfa/setup', { method: 'POST', body: JSON.stringify({ fresh }) }, token);
 }
 
-export function enableMfa(token: string, code: string): Promise<{ enabled: boolean; recoveryCodes: string[] }> {
+/**
+ * Включение и выключение гасят все прежние сессии этой учётной записи.
+ *
+ * Второй фактор включают тогда, когда есть подозрение, что пароль узнали, — то
+ * есть когда чужая сессия уже открыта. Замок, который её переживает, повешен на
+ * дверь, за которой человек уже сидит. Поэтому сервер возвращает свежий токен
+ * тому, кто нажал, и его обязательно надо положить на место старого.
+ */
+export function enableMfa(
+  token: string,
+  code: string,
+): Promise<{ enabled: boolean; recoveryCodes: string[]; token: string }> {
   return request('/auth/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }, token);
 }
 
-export function disableMfa(token: string, password: string, code: string): Promise<{ enabled: boolean }> {
+export function disableMfa(
+  token: string,
+  password: string,
+  code: string,
+): Promise<{ enabled: boolean; token: string }> {
   return request('/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) }, token);
 }
 

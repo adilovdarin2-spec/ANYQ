@@ -76,7 +76,7 @@ authRouter.post('/login', loginRateLimit, async (req, res) => {
     }
   }
 
-  const token = signToken(user.id);
+  const token = signToken(user.id, user.tokenVersion);
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
 });
 
@@ -174,27 +174,36 @@ authRouter.post('/mfa/enable', requireAuth, async (req: AuthedRequest, res) => {
     recoveryCodes.map((plain) => bcrypt.hash(normaliseRecoveryCode(plain), 10)),
   );
 
-  await prisma.$transaction(async (tx) => {
+  const locked = await prisma.$transaction(async (tx) => {
     // Any codes from a previous enrolment go: leaving them live would mean an
     // old printout still opens the account after the phone was replaced.
     await tx.adminRecoveryCode.deleteMany({ where: { adminUserId: user.id } });
-    await tx.adminUser.update({
+    const updated = await tx.adminUser.update({
       where: { id: user.id },
       data: {
         totpSecret: user.pendingTotpSecret,
         pendingTotpSecret: null,
         totpEnabledAt: new Date(),
+        // И все прежние входы — прочь. Второй фактор включают тогда, когда есть
+        // подозрение, что пароль узнали, то есть когда чужая сессия уже
+        // открыта; замок, который её переживает, повешен на дверь, за которой
+        // человек уже сидит.
+        tokenVersion: { increment: 1 },
       },
     });
     await tx.adminRecoveryCode.createMany({
       data: hashes.map((codeHash) => ({ adminUserId: user.id, codeHash })),
     });
+    return updated;
   });
 
   // The only time these are ever readable. Stored hashed, so there is no
   // second chance to show them and the response says so.
   res.json({
     enabled: true,
+    // Свежий токен тому, кто включил: выкинуть его вместе со всеми значило бы
+    // прервать настройку ровно перед тем, как он сохранит коды ниже.
+    token: signToken(locked.id, locked.tokenVersion),
     recoveryCodes,
     note: 'Сохраните коды восстановления сейчас — больше они не покажутся.',
   });
@@ -229,13 +238,21 @@ authRouter.post('/mfa/disable', requireAuth, async (req: AuthedRequest, res) => 
     return;
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.adminUser.update({
+  const unlocked = await prisma.$transaction(async (tx) => {
+    const updated = await tx.adminUser.update({
       where: { id: user.id },
-      data: { totpSecret: null, pendingTotpSecret: null, totpEnabledAt: null },
+      // Снятие защиты — тоже изменение доступа: сессия, открытая при включённом
+      // втором факторе, не должна оказаться сильнее после его снятия.
+      data: {
+        totpSecret: null,
+        pendingTotpSecret: null,
+        totpEnabledAt: null,
+        tokenVersion: { increment: 1 },
+      },
     });
     await tx.adminRecoveryCode.deleteMany({ where: { adminUserId: user.id } });
+    return updated;
   });
 
-  res.json({ enabled: false });
+  res.json({ enabled: false, token: signToken(unlocked.id, unlocked.tokenVersion) });
 });

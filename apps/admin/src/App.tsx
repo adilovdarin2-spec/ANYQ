@@ -173,6 +173,13 @@ export default function App() {
               pending={me?.mfaPending ?? false}
               recoveryCodesLeft={me?.recoveryCodesLeft ?? 0}
               onChanged={loadMe}
+              onToken={(next) => {
+                // Замок погасил все прежние входы, включая наш. Свежий токен
+                // кладётся туда же, где лежал старый, иначе человек, обновив
+                // страницу, окажется снаружи сразу после того, как заперся.
+                localStorage.setItem(TOKEN_KEY, next);
+                setToken(next);
+              }}
             />
           </div>
         )}

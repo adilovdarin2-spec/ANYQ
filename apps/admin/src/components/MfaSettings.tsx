@@ -9,6 +9,13 @@ interface Props {
   pending: boolean;
   recoveryCodesLeft: number;
   onChanged: () => void;
+  /**
+   * Замок гасит все прежние входы, включая наш, и сервер отдаёт свежий токен.
+   *
+   * Не забрать его — значит выкинуть человека из админки в ту минуту, когда он
+   * ещё не переписал коды восстановления, а показываются они один раз.
+   */
+  onToken: (token: string) => void;
 }
 
 /**
@@ -18,7 +25,7 @@ interface Props {
  * A password alone on that account is the whole platform's security, and
  * passwords are reused.
  */
-export function MfaSettings({ token, enabled, pending, recoveryCodesLeft, onChanged }: Props) {
+export function MfaSettings({ token, enabled, pending, recoveryCodesLeft, onChanged, onToken }: Props) {
   const [setup, setSetup] = useState<MfaSetup | null>(null);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -90,7 +97,8 @@ export function MfaSettings({ token, enabled, pending, recoveryCodesLeft, onChan
           style={{ marginTop: 16 }}
           disabled={busy || !password || !code}
           onClick={() => run(async () => {
-            await disableMfa(token, password, code);
+            const off = await disableMfa(token, password, code);
+            onToken(off.token);
             setPassword('');
             setCode('');
             onChanged();
@@ -124,6 +132,7 @@ export function MfaSettings({ token, enabled, pending, recoveryCodesLeft, onChan
           disabled={busy || code.trim().length < 6}
           onClick={() => run(async () => {
             const result = await enableMfa(token, code.trim());
+            onToken(result.token);
             setCode('');
             setSetup(null);
             setRecoveryCodes(result.recoveryCodes);
