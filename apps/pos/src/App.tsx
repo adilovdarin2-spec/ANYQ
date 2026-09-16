@@ -113,7 +113,7 @@ import {
 import type { DocumentFilter, ImportSource } from './api';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from './api';
 import { pushSupported, getExistingSubscription, enablePush, disablePush } from './push';
-import type { PosSession, PosRegister, CustomerLookupResult, PosDevice, OpenShiftInfo, UncoveredStockRow } from './api';
+import type { PosSession, PosRegister, CustomerLookupResult, PosDevice, OpenShiftInfo, ShiftCash, UncoveredStockRow } from './api';
 import { InstallPrompt } from './components/InstallPrompt';
 import { PinLogin } from './components/PinLogin';
 import { RegisterChoiceScreen } from './components/RegisterChoiceScreen';
@@ -330,8 +330,8 @@ export default function App() {
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [fiscalDevice, setFiscalDevice] = useState<FiscalDevice | null>(null);
   const [fiscalDeviceSaving, setFiscalDeviceSaving] = useState(false);
-  // Сколько сервер ждёт в ящике этой смены. null — не спросили или не дозвонились.
-  const [serverExpected, setServerExpected] = useState<number | null>(null);
+  // Что сервер насчитал по ящику этой смены. null — не спросили или не дозвонились.
+  const [serverCash, setServerCash] = useState<ShiftCash | null>(null);
   const [pendingFiscal, setPendingFiscal] = useState<PendingFiscalReceipt[]>([]);
   const [fiscalLoading, setFiscalLoading] = useState(false);
   const [fiscalError, setFiscalError] = useState<string | null>(null);
@@ -3314,7 +3314,7 @@ export default function App() {
           shift={shift}
           sales={salesForShift(shift.id)}
           drawer={drawerEntriesForShift(shift.id)}
-          serverExpected={serverExpected}
+          serverCash={serverCash}
           onCancel={() => setView('sale')}
           onConfirm={closeShift}
         />
@@ -3847,14 +3847,14 @@ export default function App() {
           onCloseShift={() => {
             // Спрашиваем сервер заранее, пока кассир считает деньги: его число
             // видит весь ящик, а наше — только эту кассу.
-            setServerExpected(null);
+            setServerCash(null);
             if (session && shift) {
               void fetchShiftCash(session.token, shift.id)
-                .then((cash) => setServerExpected(cash.expected))
+                .then((cash) => setServerCash(cash))
                 // Молча: нет сети — считаем сами и говорим об этом строкой на
                 // экране. Красная полоска здесь означала бы поломку там, где
                 // всё работает как задумано.
-                .catch(() => setServerExpected(null));
+                .catch(() => setServerCash(null));
             }
             setView('close-shift');
           }}

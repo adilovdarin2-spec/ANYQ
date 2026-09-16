@@ -685,6 +685,14 @@ export interface CreateReturnPayload {
 export interface ShiftCash {
   shiftId: string;
   openingCash: number;
+  /** Наличная часть чеков этой смены — по данным сервера. */
+  takings: number;
+  /** Возвраты, выданные наличными. */
+  refunded: number;
+  /** Долги, принятые наличными, — в том числе на другом устройстве. */
+  settledIn: number;
+  /** Выдано наличными поставщикам. */
+  settledOut: number;
   /** Сколько сервер ждёт в ящике. */
   expected: number;
 }

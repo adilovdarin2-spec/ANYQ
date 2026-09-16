@@ -1599,15 +1599,22 @@ function shiftCashFrom(
     // был полгода назад, уже не установить, — поэтому для них остаётся прежнее
     // правило. Оно же работает и для записи, которую не к чему было привязать:
     // когда на точке открыто несколько смен, ящик не угадывается.
-    const settled = cashSettlements.reduce((sum, row) => {
-      const mine = row.shiftId
+    const mineSettlement = (row: { createdAt: Date; createdBy: string | null; shiftId: string | null }) =>
+      row.shiftId
         ? row.shiftId === shift.id
         : row.createdAt >= shift.openedAt &&
           row.createdAt <= until &&
           (!shift.userId || row.createdBy === shift.userId);
-      if (!mine) return sum;
-      return sum + (row.direction === 'in' ? row.amount : -row.amount);
-    }, 0);
+    // Врозь, а не одним числом: на закрытии это две разные строки — «принято по
+    // долгам» и «выдано поставщику», — и свернув их в сальдо, мы отдали бы
+    // кассиру число, по которому нельзя понять, что произошло.
+    const settledIn = cashSettlements
+      .filter((row) => row.direction === 'in' && mineSettlement(row))
+      .reduce((sum, row) => sum + row.amount, 0);
+    const settledOut = cashSettlements
+      .filter((row) => row.direction === 'out' && mineSettlement(row))
+      .reduce((sum, row) => sum + row.amount, 0);
+    const settled = settledIn - settledOut;
 
     return {
       shiftId: shift.id,
@@ -1616,6 +1623,10 @@ function shiftCashFrom(
       closedAt: shift.closedAt,
       openingCash: shift.openingCash,
       cashMovement: takings - paidOut + settled,
+      takings,
+      refunded: paidOut,
+      settledIn,
+      settledOut,
       countedAtClose: shift.closingCashCounted,
     };
   });
@@ -1649,6 +1660,13 @@ posRouter.get('/shifts/:id/cash', requirePosAuth, async (req: PosAuthedRequest, 
   res.json({
     shiftId: mine.shiftId,
     openingCash: mine.openingCash,
+    // Слагаемые вместе с итогом: касса показывает их теми же строками, что и
+    // свои, и они обязаны сойтись в число ниже. Итог без слагаемых кассиру
+    // нечем проверить — а проверять его будет именно он.
+    takings: mine.takings,
+    refunded: mine.refunded,
+    settledIn: mine.settledIn,
+    settledOut: mine.settledOut,
     expected: mine.expected,
     countedAtClose: mine.countedAtClose,
     difference: mine.difference,

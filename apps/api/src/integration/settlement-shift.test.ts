@@ -135,6 +135,48 @@ describe('долг, принятый наличными', () => {
     expect(asked.body.openingCash).toBe(20000);
   });
 
+  it('и называет слагаемые, а не только итог', async () => {
+    // Итог без слагаемых кассиру нечем проверить. На экране закрытия под ним
+    // стоят строки — «принято по долгам», «выдано поставщику», — и если их
+    // считать по-своему, пока итог берётся у сервера, столбец не сложится:
+    // ожидается 23 000, а строками объяснено 20 000.
+    const party = await debtor();
+    const shiftId = await openShift(fx.token);
+    await takeDebtPayment(fx.token, party.id, 3000, 'settle-breakdown');
+
+    const asked = await api(fx.token, 'GET', `/pos/shifts/${shiftId}/cash`);
+    expect(asked.status, JSON.stringify(asked.body)).toBe(200);
+    const { openingCash, takings, refunded, settledIn, settledOut, expected } = asked.body;
+    expect(settledIn).toBe(3000);
+    expect(settledOut).toBe(0);
+    expect(openingCash + takings + settledIn - refunded - settledOut).toBe(expected);
+  });
+
+  it('и выдачу поставщику показывает отдельной строкой, а не сальдо', async () => {
+    // Свернув приход и расход в одно число, мы отдали бы кассиру величину, по
+    // которой нельзя понять, что произошло: «минус 500» — это выдали 500 или
+    // приняли 2500 и выдали 3000?
+    const supplier = await prisma.counterparty.create({
+      data: { companyId: fx.companyId, name: 'Поставщик', phone: '+77001112233', type: 'supplier' },
+    });
+    const party = await debtor();
+    const shiftId = await openShift(fx.token);
+    await takeDebtPayment(fx.token, party.id, 3000, 'settle-both-in');
+    const out = await api(
+      fx.token,
+      'POST',
+      '/pos/settlements',
+      { counterpartyId: supplier.id, locationId: fx.locationId, amount: 500, paymentMethod: 'cash' },
+      { 'Idempotency-Key': 'settle-both-out' },
+    );
+    expect(out.status, JSON.stringify(out.body)).toBe(201);
+
+    const asked = await api(fx.token, 'GET', `/pos/shifts/${shiftId}/cash`);
+    expect(asked.body.settledIn).toBe(3000);
+    expect(asked.body.settledOut).toBe(500);
+    expect(asked.body.expected).toBe(22_500);
+  });
+
   it('но не чужой ящик', async () => {
     // Чужую смену кассиру не показывают — как и закрыть её не дают.
     const ownerShift = await openShift(fx.token);

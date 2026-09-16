@@ -96,25 +96,76 @@ export function refusedInShift(sales: Sale[]): Sale[] {
 }
 
 /**
- * Сколько ждать в ящике, когда сервер ответил своим числом.
+ * Что сервер насчитал по этому ящику. Ровно те числа, что показывает экран.
+ */
+export interface ServerDrawer {
+  takings: number;
+  refunded: number;
+  settledIn: number;
+  settledOut: number;
+  expected: number;
+}
+
+/** Строки ящика на закрытии — и итог, в который они обязаны сложиться. */
+export interface DrawerFigures {
+  cash: number;
+  refundedCash: number;
+  settledIn: number;
+  settledOut: number;
+  expectedCash: number;
+  /** Посчитано сервером. `false` — своим устройством, сети не было. */
+  fromServer: boolean;
+}
+
+/**
+ * Откуда брать числа для экрана закрытия.
  *
  * Сервер считает весь ящик: он видит и долг, принятый на соседней кассе, чего
- * это устройство не знает в принципе. Поэтому его число главнее. Но видит он
+ * это устройство не знает в принципе. Поэтому его числа главнее. Но видит он
  * только то, что до него доехало — а продажа, лежащая в очереди на отправку,
- * уже оплачена, и деньги за неё лежат в ящике настоящие.
+ * уже оплачена, и деньги за неё в ящике настоящие. Поэтому очередь
+ * прибавляется к его выручке.
  *
- * Считать по серверу и не добавить их — значит сказать кассиру, что у него
- * излишек ровно на очередь. Это тот же придуманный излишек, от которого
- * лечили `tallyShift`, только зашедший с другой стороны: не «касса не умеет
- * читать разбитый чек», а «касса поверила тому, кто ещё не всё услышал».
+ * Непринятые продажи (`syncError`) прибавляются тоже, и это не описка: деньги
+ * за них взяли, в Z-отчёте их не будет, и разговор об этом — отдельной строкой
+ * на том же экране. Ожидаемая сумма отвечает на вопрос «сколько бумажек
+ * пересчитать», а не «сколько сойдётся в отчёте».
  *
- * Непринятые продажи (`syncError`) добавляются тоже, и это не описка: деньги
- * за них в ящике есть, в Z-отчёте не будет, и разговор об этом — отдельной
- * строкой на том же экране. Ожидаемая сумма отвечает на вопрос «сколько
- * бумажек пересчитать», а не «сколько сойдётся в отчёте».
+ * И всё — из одного источника. Взять итог у сервера, а строки под ним у себя
+ * значило бы показать кассиру столбец, который не складывается: ожидается
+ * 23 000, а строками объяснено 20 000, и недостающие три тысячи не названы
+ * ничем. Это та же необъяснённая разница, от которой всё и затевалось, только
+ * переехавшая из итога в разбивку.
  */
-export function expectedInDrawer(serverExpected: number | null, sales: Sale[], localExpected: number): number {
-  if (serverExpected === null) return localExpected;
-  const notYetOnServer = sales.filter((sale) => !sale.synced);
-  return serverExpected + tallyShift(notYetOnServer, 0, []).byMethod.cash;
+export function drawerFigures(local: ShiftTally, server: ServerDrawer | null, sales: Sale[]): DrawerFigures {
+  if (!server) {
+    return {
+      cash: local.byMethod.cash,
+      refundedCash: local.refundedCash,
+      settledIn: local.settledIn,
+      settledOut: local.settledOut,
+      expectedCash: local.expectedCash,
+      fromServer: false,
+    };
+  }
+  const queued = tallyShift(sales.filter((sale) => !sale.synced), 0, []).byMethod.cash;
+  return {
+    cash: server.takings + queued,
+    refundedCash: server.refunded,
+    settledIn: server.settledIn,
+    settledOut: server.settledOut,
+    expectedCash: server.expected + queued,
+    fromServer: true,
+  };
+}
+
+/**
+ * Сходятся ли строки в итог. Ровно та арифметика, которую кассир сделает в уме.
+ *
+ * Отдельной функцией, чтобы её можно было проверить на любых числах: столбец,
+ * который не складывается, читается как обман, а не как опечатка.
+ */
+export function drawerAddsUp(figures: DrawerFigures, openingCash: number): boolean {
+  const sum = openingCash + figures.cash + figures.settledIn - figures.refundedCash - figures.settledOut;
+  return sum === figures.expectedCash;
 }

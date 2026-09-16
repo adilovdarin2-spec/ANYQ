@@ -199,6 +199,17 @@ export interface ShiftCash {
   openingCash: number;
   /** Cash taken during the shift, less cash refunded. */
   cashMovement: number;
+  /**
+   * Из чего это движение сложилось.
+   *
+   * Итог без слагаемых на экране закрытия читается как произвол: кассир видит
+   * «ожидается 23 000», строкой выше нули, и сойтись у него не может ничего.
+   * Каждое слагаемое здесь — строка, которую он может узнать.
+   */
+  takings: number;
+  refunded: number;
+  settledIn: number;
+  settledOut: number;
   countedAtClose: number | null;
 }
 

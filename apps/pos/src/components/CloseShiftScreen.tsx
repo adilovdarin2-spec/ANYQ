@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { DrawerEntry, Sale, Shift } from '../types';
+import type { ServerDrawer } from '../shift-tally';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
-import { expectedInDrawer, refusedInShift, tallyShift } from '../shift-tally';
+import { drawerFigures, refusedInShift, tallyShift } from '../shift-tally';
 
 interface Props {
   shift: Shift;
@@ -10,25 +11,27 @@ interface Props {
   /** Движения наличных мимо чека за эту смену: возвраты и расчёты. */
   drawer: DrawerEntry[];
   /**
-   * Сколько ждёт сервер, если до него удалось дозвониться.
+   * Что насчитал по этому ящику сервер, если до него удалось дозвониться.
    *
    * `null` — не удалось, и тогда показывается свой счёт. Разница между этими
-   * двумя числами — не ошибка кассы: своё устройство знает только свои чеки, а
+   * двумя счетами — не ошибка кассы: своё устройство знает только свои чеки, а
    * долг, принятый на соседней кассе, ложится в тот же ящик.
    */
-  serverExpected: number | null;
+  serverCash: ServerDrawer | null;
   onCancel: () => void;
   onConfirm: (closingCashCounted: number) => void;
 }
 
-export function CloseShiftScreen({ shift, sales, drawer, serverExpected, onCancel, onConfirm }: Props) {
+export function CloseShiftScreen({ shift, sales, drawer, serverCash, onCancel, onConfirm }: Props) {
   const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
-  const { byMethod, total, refundedCash, settledIn, settledOut, expectedCash: localExpected } = tallyShift(sales, shift.openingCash, drawer);
-  // Число сервера главнее своего: оно видит весь ящик, а не только эту кассу,
-  // — но только то, что до него доехало, поэтому очередь добавляется сверху.
-  const expectedCash = expectedInDrawer(serverExpected, sales, localExpected);
+  const local = tallyShift(sales, shift.openingCash, drawer);
+  const { byMethod, total } = local;
+  // Все строки ящика — из одного источника: серверного, если дозвонились, и
+  // своего, если нет. Половина оттуда, половина отсюда даёт столбец, который
+  // не складывается, а это хуже, чем посчитать по-своему.
+  const { cash, refundedCash, settledIn, settledOut, expectedCash, fromServer } = drawerFigures(local, serverCash, sales);
   // Их деньги в ящике есть, а в Z-отчёте на сервере не будет. Сказать об этом
   // нужно здесь — на этом экране человек последний раз смотрит на смену.
   const refused = refusedInShift(sales);
@@ -46,7 +49,7 @@ export function CloseShiftScreen({ shift, sales, drawer, serverExpected, onCance
       <div className="screen-body">
         <div className="summary-row"><span className="sr-muted">{t('shift.close.openedAt')}</span><span>{formatTime(shift.openedAt)}</span></div>
         <div className="summary-row"><span className="sr-muted">{t('shift.close.salesCount')}</span><span>{sales.length}</span></div>
-        <div className="summary-row"><span className="sr-muted">{t('payment.cash')}</span><span>{formatMoney(byMethod.cash)}</span></div>
+        <div className="summary-row"><span className="sr-muted">{t('payment.cash')}</span><span>{formatMoney(cash)}</span></div>
         <div className="summary-row"><span className="sr-muted">{t('payment.kaspi')}</span><span>{formatMoney(byMethod.kaspi)}</span></div>
         <div className="summary-row"><span className="sr-muted">{t('payment.card')}</span><span>{formatMoney(byMethod.card)}</span></div>
         {/* Долг показываем, только когда он есть: в магазине, где в долг не
@@ -90,7 +93,7 @@ export function CloseShiftScreen({ shift, sales, drawer, serverExpected, onCance
         {/* Сказано, а не умолчано: кассир, у которого не сходится, должен
             знать, по чьим данным посчитано. Своё устройство видит только свои
             чеки — долг, принятый на соседней кассе, в нём не отражён. */}
-        {serverExpected === null && (
+        {!fromServer && (
           <p className="field-hint">{t('shift.close.countedHere')}</p>
         )}
 

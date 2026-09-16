@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { expectedInDrawer, refusedInShift, tallyShift } from './shift-tally';
+import { drawerAddsUp, drawerFigures, refusedInShift, tallyShift } from './shift-tally';
 import type { DrawerEntry, PaymentLine, Sale } from './types';
 
 /**
@@ -173,43 +173,95 @@ describe('непринятые продажи на закрытии', () => {
 });
 
 
-describe('ожидаемая сумма, когда сервер ответил', () => {
-  it('без сети считаем сами', () => {
-    const свой = tallyShift([продажа({ total: 3000, paymentMethod: 'cash' })], 10_000).expectedCash;
-    expect(expectedInDrawer(null, [], свой)).toBe(13_000);
+describe('строки ящика на закрытии', () => {
+  const сервер = (over: Partial<{ takings: number; refunded: number; settledIn: number; settledOut: number; expected: number }> = {}) => ({
+    takings: 0,
+    refunded: 0,
+    settledIn: 0,
+    settledOut: 0,
+    expected: 0,
+    ...over,
   });
 
-  it('с сетью верим серверу, а не себе', () => {
-    // Ради этого всё и затевалось: долг, принятый на соседней кассе, лёг в тот
-    // же ящик. Своё устройство о нём не знает и никогда не узнает.
-    expect(expectedInDrawer(23_000, [продажа({ synced: true, total: 1000 })], 20_000)).toBe(23_000);
+  it('без сети — свои', () => {
+    const свой = tallyShift([продажа({ total: 3000, paymentMethod: 'cash' })], 10_000);
+    const строки = drawerFigures(свой, null, []);
+    expect(строки.expectedCash).toBe(13_000);
+    expect(строки.cash).toBe(3000);
+    expect(строки.fromServer).toBe(false);
   });
 
-  it('но добавляем то, что до сервера ещё не доехало', () => {
-    // Продажа лежит в очереди на отправку. Деньги за неё в ящике настоящие, а
-    // сервер о ней не слышал: поверить ему целиком значит объявить кассиру
-    // излишек ровно на очередь.
-    const очередь = [продажа({ id: 'в-очереди', total: 4000, paymentMethod: 'cash', synced: false })];
-    expect(expectedInDrawer(23_000, очередь, 0)).toBe(27_000);
+  it('с сетью — серверные, включая долг с соседней кассы', () => {
+    // Ради этого всё и затевалось: владелец принял 3000 по долгу на своём
+    // устройстве, деньги легли в этот ящик. Здесь о них не знают и не узнают.
+    const свой = tallyShift([продажа({ total: 20_000, paymentMethod: 'cash' })], 0);
+    const строки = drawerFigures(свой, сервер({ takings: 20_000, settledIn: 3000, expected: 23_000 }), [
+      продажа({ total: 20_000, paymentMethod: 'cash', synced: true }),
+    ]);
+    expect(строки.expectedCash).toBe(23_000);
+    expect(строки.settledIn).toBe(3000);
+    expect(строки.fromServer).toBe(true);
+  });
+
+  it('и строки складываются в итог — иначе кассиру нечего проверять', () => {
+    // Тот самый столбец. Половина чисел от сервера, половина своя давала
+    // «ожидается 23 000» при нулях в строках: необъяснённая разница, ровно
+    // такая же, от какой лечили сам итог.
+    const продажи = [продажа({ total: 20_000, paymentMethod: 'cash', synced: true })];
+    const свой = tallyShift(продажи, 0);
+    const строки = drawerFigures(свой, сервер({ takings: 20_000, settledIn: 3000, expected: 23_000 }), продажи);
+    expect(drawerAddsUp(строки, 0)).toBe(true);
+  });
+
+  it('складываются и с очередью, и с возвратом, и с выдачей поставщику', () => {
+    const продажи = [
+      продажа({ id: 'ушла', total: 20_000, paymentMethod: 'cash', synced: true }),
+      продажа({ id: 'в-очереди', total: 4000, paymentMethod: 'cash', synced: false }),
+    ];
+    const свой = tallyShift(продажи, 10_000);
+    const строки = drawerFigures(
+      свой,
+      сервер({ takings: 20_000, refunded: 1500, settledIn: 3000, settledOut: 500, expected: 31_000 }),
+      продажи,
+    );
+    expect(строки.cash).toBe(24_000);
+    expect(строки.expectedCash).toBe(35_000);
+    expect(drawerAddsUp(строки, 10_000)).toBe(true);
+  });
+
+  it('очередь прибавляется к выручке — деньги за неё в ящике', () => {
+    const продажи = [продажа({ total: 4000, paymentMethod: 'cash', synced: false })];
+    const строки = drawerFigures(tallyShift(продажи, 0), сервер({ expected: 23_000 }), продажи);
+    expect(строки.expectedCash).toBe(27_000);
   });
 
   it('и непринятые — тоже: деньги за них взяли', () => {
     // В Z-отчёт они не попадут, и об этом на экране отдельная строка. Но
     // пересчитать кассир должен те бумажки, которые лежат в ящике.
-    const отказ = [продажа({ total: 3000, paymentMethod: 'cash', synced: false, syncError: 'Недостаточно товара' })];
-    expect(expectedInDrawer(20_000, отказ, 0)).toBe(23_000);
+    const продажи = [продажа({ total: 3000, paymentMethod: 'cash', synced: false, syncError: 'Недостаточно товара' })];
+    const строки = drawerFigures(tallyShift(продажи, 0), сервер({ expected: 20_000 }), продажи);
+    expect(строки.expectedCash).toBe(23_000);
   });
 
   it('а очередь, оплаченная картой, ящика не касается', () => {
     // Самопроверка: иначе всё выше было бы зелёным и на правиле «прибавить
     // сумму любой неотправленной продажи».
-    const очередь = [продажа({ total: 4000, paymentMethod: 'card', synced: false })];
-    expect(expectedInDrawer(23_000, очередь, 0)).toBe(23_000);
+    const продажи = [продажа({ total: 4000, paymentMethod: 'card', synced: false })];
+    const строки = drawerFigures(tallyShift(продажи, 0), сервер({ expected: 23_000 }), продажи);
+    expect(строки.expectedCash).toBe(23_000);
   });
 
   it('и отправленная продажа второй раз не считается', () => {
     // Сервер её уже учёл. Прибавить ещё раз — придумать недостачу.
-    const отправлена = [продажа({ total: 4000, paymentMethod: 'cash', synced: true })];
-    expect(expectedInDrawer(23_000, отправлена, 0)).toBe(23_000);
+    const продажи = [продажа({ total: 4000, paymentMethod: 'cash', synced: true })];
+    const строки = drawerFigures(tallyShift(продажи, 0), сервер({ takings: 4000, expected: 4000 }), продажи);
+    expect(строки.expectedCash).toBe(4000);
+  });
+
+  it('а сама проверка сложения умеет сказать «нет»', () => {
+    // Иначе `drawerAddsUp` мог бы возвращать true всегда, и все проверки выше
+    // проходили бы вхолостую.
+    const строки = drawerFigures(tallyShift([], 0), сервер({ takings: 20_000, settledIn: 3000, expected: 99_999 }), []);
+    expect(drawerAddsUp(строки, 0)).toBe(false);
   });
 });

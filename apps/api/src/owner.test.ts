@@ -193,6 +193,10 @@ describe('reconcileShiftCash', () => {
     closedAt: new Date('2026-09-04T20:00:00Z'),
     openingCash: 20000,
     cashMovement: 145000,
+    takings: 150000,
+    refunded: 5000,
+    settledIn: 0,
+    settledOut: 0,
     countedAtClose: 165000,
   };
 
