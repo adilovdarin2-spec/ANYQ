@@ -54,7 +54,7 @@ import { resolvePackagedLines, packagingErrorMessage } from '../packaging';
 import { buildDailyClosingBalances, estimateDailyDemand, recommendOrder } from '../replenishment';
 import type { DailyMovement } from '../replenishment';
 import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
-import type { CashierActivity, ShiftCash } from '../owner';
+import type { CashierActivity, ShiftCash, ShiftCashResult } from '../owner';
 import { isValidManualEntry, manualRegistration } from '../fiscal';
 import { canTransition, nextStatus, transitionErrorMessage, computeOrderProgress, detectPriceDeviation } from '../purchasing';
 import type { PurchaseOrderStatus, OrderedLine } from '../purchasing';
@@ -1479,6 +1479,180 @@ posRouter.get('/shifts/open', requirePosAuth, async (req: PosAuthedRequest, res)
       mine: shift.userId === req.posUserId,
     })),
   );
+});
+
+/**
+ * Сколько сервер ждёт в этом ящике.
+ *
+ * Касса считает ожидаемую сумму сама — иначе смену нельзя было бы закрыть без
+ * сети, — и считает по тому, что видела своё устройство: свои чеки, свои
+ * возвраты, свои расчёты. До 16.09.2026 сервер считал так же, и числа
+ * совпадали.
+ *
+ * Потом расчёт наличными научился попадать в смену по ссылке, а не по автору,
+ * — и деньги, принятые в счёт долга на другом устройстве, стали попадать в
+ * сверку правильно. Правильно, но мимо кассы: у неё такой записи нет вовсе, и
+ * кассир на своём экране видел одно число, а владелец в отчёте другое.
+ *
+ * Поэтому число можно спросить. Касса спрашивает, когда есть сеть, и считает
+ * сама, когда сети нет, — и говорит, какое из двух показывает.
+ *
+ * Своя смена — или владелец с менеджером: чужой ящик кассиру не показывают,
+ * как и чужую смену не дают закрыть.
+ */
+/**
+ * То же самое, но для одной смены: загрузить и посчитать.
+ *
+ * Отдельный, узкий запрос вместо сводки владельца целиком: кассиру на закрытии
+ * нужно одно число, а сводка считает ещё маржу, неликвид и выбросы по
+ * кассирам — и ничего из этого он всё равно не увидит.
+ */
+async function shiftCashFor(companyId: string, locationId: string): Promise<ShiftCashResult[]> {
+  const now = new Date();
+  const [shifts, salesDocs, returnDocs, cashSettlements] = await Promise.all([
+    prisma.shift.findMany({ where: { companyId, locationId }, orderBy: { openedAt: 'desc' }, take: 50 }),
+    prisma.document.findMany({
+      where: { companyId, locationId, type: 'sale', status: 'confirmed' },
+      include: { items: true, payments: true },
+      orderBy: { createdAt: 'desc' },
+      take: 2000,
+    }),
+    prisma.document.findMany({
+      where: { companyId, locationId, type: 'return', status: 'confirmed' },
+      orderBy: { createdAt: 'desc' },
+      take: 2000,
+    }),
+    prisma.settlement.findMany({
+      where: { companyId, locationId, paymentMethod: 'cash' },
+      select: { direction: true, amount: true, createdAt: true, createdBy: true, shiftId: true },
+      orderBy: { createdAt: 'desc' },
+      take: 2000,
+    }),
+  ]);
+
+  return reconcileShiftCash(shiftCashFrom(shifts, salesDocs, returnDocs, cashSettlements, now));
+}
+
+/**
+ * Сколько наличных должно быть в каждом ящике.
+ *
+ * Отсюда берут число два места: сводка владельца и касса на закрытии смены.
+ * Считать их по-отдельности значило бы, что однажды поправят одно, а второе
+ * останется — и кассир на своём экране увидит одно, а владелец в отчёте
+ * другое. Разница в такой паре чисел всегда читается как чья-то недостача.
+ */
+function shiftCashFrom(
+  shifts: { id: string; cashierName: string; userId: string | null; openedAt: Date; closedAt: Date | null; openingCash: number; closingCashCounted: number | null }[],
+  salesDocs: { createdBy: string | null; createdAt: Date; shiftId: string | null; paymentMethod: string | null; discountType: string | null; discountValue: number | null; pointsRedeemed: number | null; items: { price: number; quantity: number }[]; payments: { method: string; amount: number }[] }[],
+  returnDocs: { createdBy: string | null; createdAt: Date; shiftId: string | null; paymentMethod: string | null; refundAmount: number | null }[],
+  cashSettlements: { direction: string; amount: number; createdAt: Date; createdBy: string | null; shiftId: string | null }[],
+  now: Date,
+): ShiftCash[] {
+  return shifts.map<ShiftCash>((shift) => {
+    const until = shift.closedAt ?? now;
+    // A sale that says which shift it belongs to is believed. Only the ones
+    // written before that link existed fall back to the time window, and that
+    // fallback is the reason this used to be wrong: an offline sale uploaded
+    // at midnight is stamped midnight, and lands in whichever shift happened
+    // to be open then.
+    const belongsToShift = (doc: {
+      createdBy: string | null;
+      createdAt: Date;
+      shiftId: string | null;
+    }) => {
+      if (doc.shiftId) return doc.shiftId === shift.id;
+      return (
+        doc.createdAt >= shift.openedAt &&
+        doc.createdAt <= until &&
+        (!shift.userId || doc.createdBy === shift.userId)
+      );
+    };
+    const matches = (doc: {
+      createdBy: string | null;
+      paymentMethod: string | null;
+      createdAt: Date;
+      shiftId: string | null;
+    }) => doc.paymentMethod === 'cash' && belongsToShift(doc);
+
+    // Only the cash half of a split sale reaches the drawer. Counting the whole
+    // total would leave the cashier short at close by exactly what the customer
+    // paid on the phone, through no fault of theirs — and a shortage the
+    // system invented is worse than no reconciliation at all, because somebody
+    // will believe it.
+    const takings = salesDocs.filter(belongsToShift).reduce((sum, doc) => {
+      const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
+      const total = receiptTotal(subtotal, computeDiscount(subtotal, saleDiscount(doc)).discountAmount, doc.pointsRedeemed);
+      return sum + cashPortion(paymentsOrLegacy(doc.payments as PaymentLine[], doc.paymentMethod, total));
+    }, 0);
+    // Refunds leave the same drawer, so they belong in the same figure.
+    const paidOut = returnDocs.filter(matches).reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
+
+    // Расчёты наличными — туда же: они ложатся в тот же ящик.
+    //
+    // По ссылке на смену, записанной в момент приёма. Ссылки не было до
+    // 16.09.2026, и относили их по времени и по тому, кто провёл, — а это одно
+    // и то же только пока за кассой один человек. Владелец, принявший долг во
+    // время смены кассира, клал деньги в общий ящик, и в сверке кассира их не
+    // было: излишек на закрытии, которого никто не делал.
+    //
+    // Старым строкам ссылку задним числом не приписывали — кто в каком ящике
+    // был полгода назад, уже не установить, — поэтому для них остаётся прежнее
+    // правило. Оно же работает и для записи, которую не к чему было привязать:
+    // когда на точке открыто несколько смен, ящик не угадывается.
+    const settled = cashSettlements.reduce((sum, row) => {
+      const mine = row.shiftId
+        ? row.shiftId === shift.id
+        : row.createdAt >= shift.openedAt &&
+          row.createdAt <= until &&
+          (!shift.userId || row.createdBy === shift.userId);
+      if (!mine) return sum;
+      return sum + (row.direction === 'in' ? row.amount : -row.amount);
+    }, 0);
+
+    return {
+      shiftId: shift.id,
+      cashierName: shift.cashierName,
+      openedAt: shift.openedAt,
+      closedAt: shift.closedAt,
+      openingCash: shift.openingCash,
+      cashMovement: takings - paidOut + settled,
+      countedAtClose: shift.closingCashCounted,
+    };
+  });
+}
+
+posRouter.get('/shifts/:id/cash', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const shift = await prisma.shift.findFirst({
+    where: {
+      companyId: req.posCompanyId,
+      OR: [{ id: req.params.id }, { clientCommandId: req.params.id }],
+    },
+  });
+  if (!shift) {
+    res.status(404).json({ error: 'Смена не найдена' });
+    return;
+  }
+  if (shift.userId !== req.posUserId && !(await requireOwnerOrManager(req.posUserId))) {
+    res.status(403).json({ error: 'Чужую смену считает владелец или менеджер' });
+    return;
+  }
+
+  // Тем же расчётом, что и сводка владельца: два способа посчитать один ящик
+  // разошлись бы в тот день, когда поправят один из них.
+  const money = await shiftCashFor(req.posCompanyId!, shift.locationId);
+  const mine = money.find((row) => row.shiftId === shift.id);
+  if (!mine) {
+    res.status(404).json({ error: 'Смена не найдена' });
+    return;
+  }
+
+  res.json({
+    shiftId: mine.shiftId,
+    openingCash: mine.openingCash,
+    expected: mine.expected,
+    countedAtClose: mine.countedAtClose,
+    difference: mine.difference,
+  });
 });
 
 posRouter.patch('/shifts/:id/close', requirePosAuth, async (req: PosAuthedRequest, res) => {
@@ -3710,77 +3884,10 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
   const refundTotal = returnDocs.reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
 
   // --- Cash in the drawer, per shift -----------------------------------
-  const cashByShift = shifts.map<ShiftCash>((shift) => {
-    const until = shift.closedAt ?? now;
-    // A sale that says which shift it belongs to is believed. Only the ones
-    // written before that link existed fall back to the time window, and that
-    // fallback is the reason this used to be wrong: an offline sale uploaded
-    // at midnight is stamped midnight, and lands in whichever shift happened
-    // to be open then.
-    const belongsToShift = (doc: {
-      createdBy: string | null;
-      createdAt: Date;
-      shiftId: string | null;
-    }) => {
-      if (doc.shiftId) return doc.shiftId === shift.id;
-      return (
-        doc.createdAt >= shift.openedAt &&
-        doc.createdAt <= until &&
-        (!shift.userId || doc.createdBy === shift.userId)
-      );
-    };
-    const matches = (doc: {
-      createdBy: string | null;
-      paymentMethod: string | null;
-      createdAt: Date;
-      shiftId: string | null;
-    }) => doc.paymentMethod === 'cash' && belongsToShift(doc);
-
-    // Only the cash half of a split sale reaches the drawer. Counting the whole
-    // total would leave the cashier short at close by exactly what the customer
-    // paid on the phone, through no fault of theirs — and a shortage the
-    // system invented is worse than no reconciliation at all, because somebody
-    // will believe it.
-    const takings = salesDocs.filter(belongsToShift).reduce((sum, doc) => {
-      const subtotal = doc.items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
-      const total = receiptTotal(subtotal, computeDiscount(subtotal, saleDiscount(doc)).discountAmount, doc.pointsRedeemed);
-      return sum + cashPortion(paymentsOrLegacy(doc.payments as PaymentLine[], doc.paymentMethod, total));
-    }, 0);
-    // Refunds leave the same drawer, so they belong in the same figure.
-    const paidOut = returnDocs.filter(matches).reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
-
-    // Расчёты наличными — туда же: они ложатся в тот же ящик.
-    //
-    // По ссылке на смену, записанной в момент приёма. Ссылки не было до
-    // 16.09.2026, и относили их по времени и по тому, кто провёл, — а это одно
-    // и то же только пока за кассой один человек. Владелец, принявший долг во
-    // время смены кассира, клал деньги в общий ящик, и в сверке кассира их не
-    // было: излишек на закрытии, которого никто не делал.
-    //
-    // Старым строкам ссылку задним числом не приписывали — кто в каком ящике
-    // был полгода назад, уже не установить, — поэтому для них остаётся прежнее
-    // правило. Оно же работает и для записи, которую не к чему было привязать:
-    // когда на точке открыто несколько смен, ящик не угадывается.
-    const settled = cashSettlements.reduce((sum, row) => {
-      const mine = row.shiftId
-        ? row.shiftId === shift.id
-        : row.createdAt >= shift.openedAt &&
-          row.createdAt <= until &&
-          (!shift.userId || row.createdBy === shift.userId);
-      if (!mine) return sum;
-      return sum + (row.direction === 'in' ? row.amount : -row.amount);
-    }, 0);
-
-    return {
-      shiftId: shift.id,
-      cashierName: shift.cashierName,
-      openedAt: shift.openedAt,
-      closedAt: shift.closedAt,
-      openingCash: shift.openingCash,
-      cashMovement: takings - paidOut + settled,
-      countedAtClose: shift.closingCashCounted,
-    };
-  });
+  //
+  // Той же функцией, что отвечает кассе на закрытии смены: два способа
+  // посчитать один ящик разошлись бы в тот день, когда поправят один из них.
+  const cashByShift = shiftCashFrom(shifts, salesDocs, returnDocs, cashSettlements, now);
   const reconciled = reconcileShiftCash(cashByShift);
 
   // --- Who is an outlier ------------------------------------------------

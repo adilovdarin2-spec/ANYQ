@@ -120,6 +120,30 @@ describe('долг, принятый наличными', () => {
     expect(await expectedCash(shiftId)).toBe(20000);
   });
 
+  it('и касса может спросить это число сама', async () => {
+    // Касса считает ожидаемую сумму по своим данным — иначе смену не закрыть
+    // без сети. Про долг, принятый на другом устройстве, она не знает вовсе, и
+    // её число разошлось бы с серверным. Теперь его можно спросить.
+    const party = await debtor();
+    const cashierToken = await asCashier();
+    const shiftId = await openShift(cashierToken);
+    await takeDebtPayment(fx.token, party.id, 3000, 'settle-ask-server');
+
+    const asked = await api(cashierToken, 'GET', `/pos/shifts/${shiftId}/cash`);
+    expect(asked.status, JSON.stringify(asked.body)).toBe(200);
+    expect(asked.body.expected).toBe(23000);
+    expect(asked.body.openingCash).toBe(20000);
+  });
+
+  it('но не чужой ящик', async () => {
+    // Чужую смену кассиру не показывают — как и закрыть её не дают.
+    const ownerShift = await openShift(fx.token);
+    const cashierToken = await asCashier();
+
+    const asked = await api(cashierToken, 'GET', `/pos/shifts/${ownerShift}/cash`);
+    expect(asked.status).toBe(403);
+  });
+
   it('и в чужую смену не заглядывает', async () => {
     // Смена закрыта, деньги приняли после — они принадлежат следующей смене, а
     // не этой. Иначе закрытая сверка меняется задним числом.

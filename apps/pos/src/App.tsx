@@ -59,6 +59,7 @@ import {
   fetchOwnerDashboard,
   fetchPackagings,
   fetchPendingFiscal,
+  fetchShiftCash,
   saveFiscalDevice,
   fetchProductionRecipes,
   saveRecipe,
@@ -329,6 +330,8 @@ export default function App() {
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [fiscalDevice, setFiscalDevice] = useState<FiscalDevice | null>(null);
   const [fiscalDeviceSaving, setFiscalDeviceSaving] = useState(false);
+  // Сколько сервер ждёт в ящике этой смены. null — не спросили или не дозвонились.
+  const [serverExpected, setServerExpected] = useState<number | null>(null);
   const [pendingFiscal, setPendingFiscal] = useState<PendingFiscalReceipt[]>([]);
   const [fiscalLoading, setFiscalLoading] = useState(false);
   const [fiscalError, setFiscalError] = useState<string | null>(null);
@@ -3311,6 +3314,7 @@ export default function App() {
           shift={shift}
           sales={salesForShift(shift.id)}
           drawer={drawerEntriesForShift(shift.id)}
+          serverExpected={serverExpected}
           onCancel={() => setView('sale')}
           onConfirm={closeShift}
         />
@@ -3840,7 +3844,20 @@ export default function App() {
           onShowExport={isOwnerOrManager ? () => setView('export') : undefined}
           onShowReports={hasTerminal ? handleShowReports : undefined}
           onShowInstall={install.reopen}
-          onCloseShift={() => setView('close-shift')}
+          onCloseShift={() => {
+            // Спрашиваем сервер заранее, пока кассир считает деньги: его число
+            // видит весь ящик, а наше — только эту кассу.
+            setServerExpected(null);
+            if (session && shift) {
+              void fetchShiftCash(session.token, shift.id)
+                .then((cash) => setServerExpected(cash.expected))
+                // Молча: нет сети — считаем сами и говорим об этом строкой на
+                // экране. Красная полоска здесь означала бы поломку там, где
+                // всё работает как задумано.
+                .catch(() => setServerExpected(null));
+            }
+            setView('close-shift');
+          }}
           onLogout={handleLogout}
         />
       )}

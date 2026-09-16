@@ -682,6 +682,25 @@ export interface CreateReturnPayload {
   items: { documentItemId: string; quantity: number }[];
 }
 
+export interface ShiftCash {
+  shiftId: string;
+  openingCash: number;
+  /** Сколько сервер ждёт в ящике. */
+  expected: number;
+}
+
+/**
+ * Спросить сервер, сколько должно быть в ящике.
+ *
+ * Касса считает это число сама и обязана уметь считать — смену закрывают и без
+ * сети. Но своё устройство знает только свои чеки: долг, принятый на соседней
+ * кассе, ложится в тот же ящик, а в местном счёте его нет. Когда сеть есть,
+ * спрашиваем; когда нет — считаем сами и говорим об этом.
+ */
+export function fetchShiftCash(token: string, shiftId: string): Promise<ShiftCash> {
+  return request(`/pos/shifts/${encodeURIComponent(shiftId)}/cash`, { method: 'GET' }, token);
+}
+
 export interface CreateReturnResult {
   id: string;
   createdAt: string;

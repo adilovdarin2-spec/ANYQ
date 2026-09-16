@@ -94,3 +94,27 @@ export function tallyShift(sales: Sale[], openingCash: number, drawer: DrawerEnt
 export function refusedInShift(sales: Sale[]): Sale[] {
   return splitQueue(sales).stuck;
 }
+
+/**
+ * Сколько ждать в ящике, когда сервер ответил своим числом.
+ *
+ * Сервер считает весь ящик: он видит и долг, принятый на соседней кассе, чего
+ * это устройство не знает в принципе. Поэтому его число главнее. Но видит он
+ * только то, что до него доехало — а продажа, лежащая в очереди на отправку,
+ * уже оплачена, и деньги за неё лежат в ящике настоящие.
+ *
+ * Считать по серверу и не добавить их — значит сказать кассиру, что у него
+ * излишек ровно на очередь. Это тот же придуманный излишек, от которого
+ * лечили `tallyShift`, только зашедший с другой стороны: не «касса не умеет
+ * читать разбитый чек», а «касса поверила тому, кто ещё не всё услышал».
+ *
+ * Непринятые продажи (`syncError`) добавляются тоже, и это не описка: деньги
+ * за них в ящике есть, в Z-отчёте не будет, и разговор об этом — отдельной
+ * строкой на том же экране. Ожидаемая сумма отвечает на вопрос «сколько
+ * бумажек пересчитать», а не «сколько сойдётся в отчёте».
+ */
+export function expectedInDrawer(serverExpected: number | null, sales: Sale[], localExpected: number): number {
+  if (serverExpected === null) return localExpected;
+  const notYetOnServer = sales.filter((sale) => !sale.synced);
+  return serverExpected + tallyShift(notYetOnServer, 0, []).byMethod.cash;
+}

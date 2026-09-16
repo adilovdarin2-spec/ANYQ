@@ -2,22 +2,33 @@ import { useState } from 'react';
 import type { DrawerEntry, Sale, Shift } from '../types';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
-import { refusedInShift, tallyShift } from '../shift-tally';
+import { expectedInDrawer, refusedInShift, tallyShift } from '../shift-tally';
 
 interface Props {
   shift: Shift;
   sales: Sale[];
   /** Движения наличных мимо чека за эту смену: возвраты и расчёты. */
   drawer: DrawerEntry[];
+  /**
+   * Сколько ждёт сервер, если до него удалось дозвониться.
+   *
+   * `null` — не удалось, и тогда показывается свой счёт. Разница между этими
+   * двумя числами — не ошибка кассы: своё устройство знает только свои чеки, а
+   * долг, принятый на соседней кассе, ложится в тот же ящик.
+   */
+  serverExpected: number | null;
   onCancel: () => void;
   onConfirm: (closingCashCounted: number) => void;
 }
 
-export function CloseShiftScreen({ shift, sales, drawer, onCancel, onConfirm }: Props) {
+export function CloseShiftScreen({ shift, sales, drawer, serverExpected, onCancel, onConfirm }: Props) {
   const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
-  const { byMethod, total, refundedCash, settledIn, settledOut, expectedCash } = tallyShift(sales, shift.openingCash, drawer);
+  const { byMethod, total, refundedCash, settledIn, settledOut, expectedCash: localExpected } = tallyShift(sales, shift.openingCash, drawer);
+  // Число сервера главнее своего: оно видит весь ящик, а не только эту кассу,
+  // — но только то, что до него доехало, поэтому очередь добавляется сверху.
+  const expectedCash = expectedInDrawer(serverExpected, sales, localExpected);
   // Их деньги в ящике есть, а в Z-отчёте на сервере не будет. Сказать об этом
   // нужно здесь — на этом экране человек последний раз смотрит на смену.
   const refused = refusedInShift(sales);
@@ -76,6 +87,12 @@ export function CloseShiftScreen({ shift, sales, drawer, onCancel, onConfirm }: 
           <span className="sr-muted">{t('shift.close.expectedCash')}</span>
           <span>{formatMoney(expectedCash)}</span>
         </div>
+        {/* Сказано, а не умолчано: кассир, у которого не сходится, должен
+            знать, по чьим данным посчитано. Своё устройство видит только свои
+            чеки — долг, принятый на соседней кассе, в нём не отражён. */}
+        {serverExpected === null && (
+          <p className="field-hint">{t('shift.close.countedHere')}</p>
+        )}
 
         <div className="form-field" style={{ marginTop: 10 }}>
           <label htmlFor="counted-cash">{t('shift.close.countedCash')}</label>

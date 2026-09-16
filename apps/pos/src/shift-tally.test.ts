@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { refusedInShift, tallyShift } from './shift-tally';
+import { expectedInDrawer, refusedInShift, tallyShift } from './shift-tally';
 import type { DrawerEntry, PaymentLine, Sale } from './types';
 
 /**
@@ -169,5 +169,47 @@ describe('непринятые продажи на закрытии', () => {
     // пересчитавший ящик правильно, получит излишек за чужую ошибку.
     const sales = [продажа({ total: 3000, synced: false, syncError: 'Недостаточно товара на складе' })];
     expect(tallyShift(sales, 10_000).expectedCash).toBe(13_000);
+  });
+});
+
+
+describe('ожидаемая сумма, когда сервер ответил', () => {
+  it('без сети считаем сами', () => {
+    const свой = tallyShift([продажа({ total: 3000, paymentMethod: 'cash' })], 10_000).expectedCash;
+    expect(expectedInDrawer(null, [], свой)).toBe(13_000);
+  });
+
+  it('с сетью верим серверу, а не себе', () => {
+    // Ради этого всё и затевалось: долг, принятый на соседней кассе, лёг в тот
+    // же ящик. Своё устройство о нём не знает и никогда не узнает.
+    expect(expectedInDrawer(23_000, [продажа({ synced: true, total: 1000 })], 20_000)).toBe(23_000);
+  });
+
+  it('но добавляем то, что до сервера ещё не доехало', () => {
+    // Продажа лежит в очереди на отправку. Деньги за неё в ящике настоящие, а
+    // сервер о ней не слышал: поверить ему целиком значит объявить кассиру
+    // излишек ровно на очередь.
+    const очередь = [продажа({ id: 'в-очереди', total: 4000, paymentMethod: 'cash', synced: false })];
+    expect(expectedInDrawer(23_000, очередь, 0)).toBe(27_000);
+  });
+
+  it('и непринятые — тоже: деньги за них взяли', () => {
+    // В Z-отчёт они не попадут, и об этом на экране отдельная строка. Но
+    // пересчитать кассир должен те бумажки, которые лежат в ящике.
+    const отказ = [продажа({ total: 3000, paymentMethod: 'cash', synced: false, syncError: 'Недостаточно товара' })];
+    expect(expectedInDrawer(20_000, отказ, 0)).toBe(23_000);
+  });
+
+  it('а очередь, оплаченная картой, ящика не касается', () => {
+    // Самопроверка: иначе всё выше было бы зелёным и на правиле «прибавить
+    // сумму любой неотправленной продажи».
+    const очередь = [продажа({ total: 4000, paymentMethod: 'card', synced: false })];
+    expect(expectedInDrawer(23_000, очередь, 0)).toBe(23_000);
+  });
+
+  it('и отправленная продажа второй раз не считается', () => {
+    // Сервер её уже учёл. Прибавить ещё раз — придумать недостачу.
+    const отправлена = [продажа({ total: 4000, paymentMethod: 'cash', synced: true })];
+    expect(expectedInDrawer(23_000, отправлена, 0)).toBe(23_000);
   });
 });

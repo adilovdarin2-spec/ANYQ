@@ -53,6 +53,7 @@ export const ru = {
   'shift.close.settledIn': 'Принято наличными по долгам',
   'shift.close.settledOut': 'Выдано наличными поставщикам',
   'shift.close.expectedCash': 'Наличными должно быть в кассе',
+  'shift.close.countedHere': 'Посчитано по этой кассе: связи с сервером нет. Если в ящик клали деньги с другой кассы, их здесь не видно.',
   'shift.close.countedCash': 'Пересчитано наличными фактически',
   'shift.close.matches': 'Сходится',
   'shift.close.short': 'Недостача {amount}',
