@@ -1172,6 +1172,28 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
     return;
   }
 
+  // Из какого ящика достали деньги.
+  //
+  // Та же ссылка и по той же причине, что у расчётов с контрагентами, только
+  // ошибка здесь дороже. Расчёт, принятый не тем человеком, не попадал никуда,
+  // и у кассира выходил излишек. Возврат — это деньги, *выданные* из общего
+  // ящика: не попав в сверку, они становятся у кассира недостачей ровно на
+  // сумму возврата. Излишек человек не может объяснить, недостачу —
+  // оплачивает.
+  //
+  // Присылать её касса не может: возврат оформляют и с устройства, где смены
+  // нет вовсе, — владелец со своего телефона, пока за кассой стоит кассир.
+  // Поэтому сначала своя смена, потом единственная открытая на точке; если
+  // открытых несколько, ссылка остаётся пустой и запись считается по-старому,
+  // по времени и автору: у каждой кассы свой ящик, и угадывать не по чему.
+  const openHere = await prisma.shift.findMany({
+    where: { companyId: req.posCompanyId, locationId: sale.locationId, closedAt: null },
+    select: { id: true, userId: true },
+  });
+  const returnShiftId =
+    openHere.find((shift) => shift.userId === req.posUserId)?.id ??
+    (openHere.length === 1 ? openHere[0].id : null);
+
   const returnedRows = await prisma.documentItem.groupBy({
     by: ['originalItemId'],
     where: { originalItemId: { in: sale.items.map((it) => it.id) } },
@@ -1230,6 +1252,7 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
           // reconciliation, which counts refunds by this very field: the money
           // left the drawer and the figures say it did not.
           paymentMethod: refundMethod(b.paymentMethod, sale.paymentMethod),
+          shiftId: returnShiftId,
           counterpartyId: sale.counterpartyId,
           originalDocumentId: sale.id,
           reason,
