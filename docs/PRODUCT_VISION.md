@@ -14,7 +14,7 @@
 
 Distilled from the "Universal Business OS" strategy brief (2026-07-28). This is not a build
 spec for right now — it's the north star that future architecture decisions should be checked
-against. See [PRICING.md](PRICING.md) for the current tariff grid.
+against. The current tariff grid lives with the owner, outside this repository.
 
 ## Positioning
 
@@ -37,7 +37,7 @@ database per vertical.
 | Terminal/reports | Desktop layout, sales analytics, receipt printing | Built (2026-07-28, MVP scope) |
 
 Keep this table honest going forward — a module only "counts" once it has real routes and UI,
-not just a schema field. [PRICING.md](PRICING.md) already follows this discipline for Core vs. Supply.
+not just a schema field. The tariff grid already follows this discipline for Core vs. Supply.
 
 ## The B2B network effect — already seeded, worth deliberately growing
 

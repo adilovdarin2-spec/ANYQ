@@ -110,9 +110,11 @@ until docker exec anyq-db psql -U anyq -d anyq_test -tAc "select 1" >/dev/null 2
 
 Бизнес:
 
-- [PRICING](docs/PRICING.md), [BUDGET](docs/BUDGET.md),
-  [MARKETING](docs/MARKETING.md), [PILOT_CHARTER](docs/PILOT_CHARTER.md),
-  [PRODUCT_VISION](docs/PRODUCT_VISION.md).
+- [PILOT_CHARTER](docs/PILOT_CHARTER.md), [PRODUCT_VISION](docs/PRODUCT_VISION.md).
+
+Цены, себестоимость, маркетинг и план до первых денег в этом репозитории не
+лежат и лежать не будут: репозиторий открытый, а это цифры, по которым читается
+заработок с магазина и то, на чём можно уступить. Они у владельца отдельно.
 
 ## Цвет
 
