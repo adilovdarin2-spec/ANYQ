@@ -99,56 +99,37 @@ export function subscriptionIsGone(err: unknown): boolean {
 }
 
 /** Всем устройствам компании. Годится для того, что касается всей смены. */
-export async function sendPushToCompany(companyId: string, payload: PushPayload): Promise<void> {
-  await sendTo(await prisma.pushSubscription.findMany({ where: { companyId } }), payload);
-}
+/**
+ * Язык, на котором разговаривают с человеком вне кассы.
+ *
+ * Внутри кассы перевод живёт в самой кассе: сервер отвечает по-русски, экран
+ * говорит по-казахски. С уведомлением этот приём не работает — его рисует
+ * операционная система телефона, и словарь кассы до него не дотягивается даже
+ * в принципе. Значит для уведомлений язык обязан знать сервер.
+ */
+export type PushLanguage = 'ru' | 'kk';
 
 /**
- * Только владельцу.
+ * Разослать — каждому на его языке.
  *
- * Разница не косметическая. `sendPushToCompany` доходит до планшета кассира —
- * и это правильно для «поступил новый заказ» и категорически неправильно для
- * выручки и сходимости кассы. Отправить сводку владельца всем устройствам
- * компании означало бы разослать кассирам то, ради закрытия чего написан
- * отдельный кабинет с отдельным паролем.
+ * Текст просят функцией, а не берут готовым, и это единственный способ его
+ * задать. Приняв готовую строку, отправка разрешила бы написать уведомление на
+ * одном языке — а до 16.09.2026 именно так и было написано всё: и утренняя
+ * сводка, и «Новый заказ» на планшет кассира. Ошибка при этом не видна ни в
+ * одном тесте и ни на одном экране: по-русски всё правильно.
  *
- * Подписка знает своего человека с самого начала (`PushSubscription.userId`
- * заполняется при подписке), так что фильтр — это запрос, а не миграция.
+ * Собирается по разу на язык, а не по разу на подписку: у одного человека
+ * телефон и планшет — это две подписки и одно и то же сообщение.
  */
-export async function sendPushToOwners(companyId: string, payload: PushPayload): Promise<number> {
-  return sendTo(
-    await prisma.pushSubscription.findMany({
-      where: { companyId, user: { role: 'owner' } },
-    }),
-    payload,
-  );
-}
-
-/**
- * То же самое, но каждому — на его языке.
- *
- * У компании владельцев может быть двое, и язык у них может быть разный: один
- * ведёт кассу по-казахски, второй по-русски. Одно сообщение на всех означало
- * бы, что одному из них оно приходит чужим — а это единственное, что ANYQ сам
- * говорит владельцу, и приходит оно каждое утро.
- *
- * Текст собирается по разу на язык, а не по разу на подписку: у одного
- * человека телефон и планшет — это две подписки и одно и то же сообщение.
- */
-export async function sendPushToOwnersInTheirLanguage(
-  companyId: string,
-  build: (language: 'ru' | 'kk') => PushPayload,
+async function sendEachInTheirLanguage(
+  subscriptions: (Subscription & { user?: { language: string | null } | null })[],
+  build: (language: PushLanguage) => PushPayload,
 ): Promise<number> {
-  const subscriptions = await prisma.pushSubscription.findMany({
-    where: { companyId, user: { role: 'owner' } },
-    include: { user: { select: { language: true } } },
-  });
-
-  const byLanguage = new Map<'ru' | 'kk', typeof subscriptions>();
+  const byLanguage = new Map<PushLanguage, Subscription[]>();
   for (const subscription of subscriptions) {
     // Незнакомое значение читается как русский, а не роняет рассылку: язык —
     // строка в базе, и однажды туда попадёт что-то третье.
-    const language = subscription.user?.language === 'kk' ? 'kk' : 'ru';
+    const language: PushLanguage = subscription.user?.language === 'kk' ? 'kk' : 'ru';
     const list = byLanguage.get(language) ?? [];
     list.push(subscription);
     byLanguage.set(language, list);
@@ -159,4 +140,39 @@ export async function sendPushToOwnersInTheirLanguage(
     sent += await sendTo(list, build(language));
   }
   return sent;
+}
+
+/** Всем устройствам компании — «новый заказ с витрины» и подобное. */
+export async function sendPushToCompany(
+  companyId: string,
+  build: (language: PushLanguage) => PushPayload,
+): Promise<number> {
+  return sendEachInTheirLanguage(
+    await prisma.pushSubscription.findMany({
+      where: { companyId },
+      include: { user: { select: { language: true } } },
+    }),
+    build,
+  );
+}
+
+/**
+ * Только владельцу — выручка и сходимость кассы.
+ *
+ * Разница не косметическая: `sendPushToCompany` доходит до планшета кассира, и
+ * это правильно для «поступил новый заказ» и категорически неправильно для
+ * денег. Отправить их всем устройствам компании значило бы обойти
+ * уведомлением собственный кабинет с отдельным паролем.
+ */
+export async function sendPushToOwners(
+  companyId: string,
+  build: (language: PushLanguage) => PushPayload,
+): Promise<number> {
+  return sendEachInTheirLanguage(
+    await prisma.pushSubscription.findMany({
+      where: { companyId, user: { role: 'owner' } },
+      include: { user: { select: { language: true } } },
+    }),
+    build,
+  );
 }

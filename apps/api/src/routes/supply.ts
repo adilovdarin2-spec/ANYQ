@@ -354,11 +354,14 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
   }
 
   const total = ordered.reduce((sum, it) => sum + productById.get(it.productId)!.salePrice * it.quantity, 0);
-  sendPushToCompany(company.id, {
-    title: 'Новый заказ',
+  // На языке того, у кого зазвонит телефон. Тело — имя и сумма, они одинаковы
+  // на обоих языках; переводится заголовок, а он и есть то, что человек видит
+  // на заблокированном экране.
+  sendPushToCompany(company.id, (language) => ({
+    title: language === 'kk' ? 'Жаңа тапсырыс' : 'Новый заказ',
     body: `${customerName} · ${total.toLocaleString('ru-RU')} ₸`,
     url: '/',
-  }).catch(() => {});
+  })).catch(() => {});
 
   // Номер заказа. Его ставит триггер базы, и до сих пор он оставался внутри:
   // клиент получал идентификатор из двадцати пяти знаков и экран «спасибо», в

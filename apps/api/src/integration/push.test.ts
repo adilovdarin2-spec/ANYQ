@@ -116,7 +116,7 @@ describe('кому уходит сводка', () => {
 
     // Владелец не подписан — отправлять некому, и на планшет кассира это не
     // уходит. Ноль здесь означает «никому», а не «не смогли».
-    const delivered = await sendPushToOwners(fx.companyId, { title: 'Сводка', body: 'Выручка 12 500 ₸' });
+    const delivered = await sendPushToOwners(fx.companyId, () => ({ title: 'Сводка', body: 'Выручка 12 500 ₸' }));
     expect(delivered).toBe(0);
     expect(await prisma.pushSubscription.count()).toBe(1);
   });

@@ -1,6 +1,6 @@
 import { prisma } from '@anyq/db';
 import { buildSummary, worthSending, type SummaryInput } from './daily-summary';
-import { sendPushToOwnersInTheirLanguage } from './push';
+import { sendPushToOwners } from './push';
 import { dashboardFor, replenishmentFor } from './routes/pos';
 import { tariffState } from './tariff';
 import { localDay, localHour } from './kz-time';
@@ -16,7 +16,7 @@ import { localDay, localHour } from './kz-time';
  *
  * Что здесь важнее кода:
  *
- *   - **Адресат — владелец, и только он.** См. `sendPushToOwnersInTheirLanguage`.
+ *   - **Адресат — владелец, и только он.** См. `sendPushToOwners`.
  *   - **Молчание — допустимый исход.** Магазин, где вчера ничего не продали и
  *     ничего не нашлось, уведомления не получает.
  *   - **Тариф уважается.** Магазин, у которого кончился тариф, не получает
@@ -162,7 +162,7 @@ export async function sendMorningSummaries(now: Date = new Date()): Promise<Morn
         // Текст собирается под каждый язык отдельно, а не переводится после.
         // Уведомление рисует телефон: словарь кассы до него не дотягивается, и
         // это единственное место, где язык владельца обязан знать сервер.
-        result.delivered += await sendPushToOwnersInTheirLanguage(company.id, (language) => {
+        result.delivered += await sendPushToOwners(company.id, (language) => {
           const message = buildSummary(input, language);
           return { title: message.title, body: message.body };
         });
