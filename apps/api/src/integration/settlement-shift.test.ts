@@ -177,6 +177,30 @@ describe('долг, принятый наличными', () => {
     expect(asked.body.expected).toBe(22_500);
   });
 
+  it('и находит смену, даже если она не из последних', async () => {
+    // Ручка грузила «последние 50 смен точки» и искала свою среди них. Смена
+    // постарше в список не попадала, и ответом было «Смена не найдена» — при
+    // том что смена есть и владелец на неё смотрит.
+    //
+    // Соврать «не найдено» про существующую запись хуже, чем ошибиться в
+    // числе: число перепроверяют, а отсутствие принимают на веру.
+    const party = await debtor();
+    const shiftId = await openShift(fx.token);
+    await takeDebtPayment(fx.token, party.id, 3000, 'settle-old-shift');
+    const closed = await api(fx.token, 'PATCH', `/pos/shifts/${shiftId}/close`, { closingCashCounted: 23000 });
+    expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+
+    // Пятьдесят смен сверху — ровно столько, сколько помещалось в прежний срез.
+    for (let i = 0; i < 50; i += 1) {
+      const next = await openShift(fx.token, 0);
+      await api(fx.token, 'PATCH', `/pos/shifts/${next}/close`, { closingCashCounted: 0 });
+    }
+
+    const asked = await api(fx.token, 'GET', `/pos/shifts/${shiftId}/cash`);
+    expect(asked.status, JSON.stringify(asked.body)).toBe(200);
+    expect(asked.body.expected).toBe(23000);
+  });
+
   it('но не чужой ящик', async () => {
     // Чужую смену кассиру не показывают — как и закрыть её не дают.
     const ownerShift = await openShift(fx.token);

@@ -1543,30 +1543,50 @@ posRouter.get('/shifts/open', requirePosAuth, async (req: PosAuthedRequest, res)
  * нужно одно число, а сводка считает ещё маржу, неликвид и выбросы по
  * кассирам — и ничего из этого он всё равно не увидит.
  */
-async function shiftCashFor(companyId: string, locationId: string): Promise<ShiftCashResult[]> {
+async function shiftCashFor(shift: {
+  id: string;
+  companyId: string;
+  locationId: string;
+  cashierName: string;
+  userId: string | null;
+  openedAt: Date;
+  closedAt: Date | null;
+  openingCash: number;
+  closingCashCounted: number | null;
+}): Promise<ShiftCashResult> {
   const now = new Date();
-  const [shifts, salesDocs, returnDocs, cashSettlements] = await Promise.all([
-    prisma.shift.findMany({ where: { companyId, locationId }, orderBy: { openedAt: 'desc' }, take: 50 }),
+  const until = shift.closedAt ?? now;
+  const { companyId, locationId } = shift;
+
+  // Окном самой смены, а не «последними двумя тысячами записей точки».
+  //
+  // Срез числом сначала выглядел осторожностью, а на деле был ловушкой: смена
+  // старше пятидесятой в список не попадала, и ответом становилось «Смена не
+  // найдена» — про существующую смену, на которую владелец в эту минуту
+  // смотрит. Соврать «нет такого» хуже, чем ошибиться в числе: число
+  // перепроверяют, отсутствие принимают на веру.
+  //
+  // Границы окна взяты с запасом в обе стороны: запись со ссылкой на смену
+  // принадлежит ей, даже если её время выбилось — касса без сети ставит своё,
+  // а часы у планшета бывают сбиты. Отсюда «или ссылка, или окно», а не
+  // «окно».
+  const inThisShift = { OR: [{ shiftId: shift.id }, { createdAt: { gte: shift.openedAt, lte: until } }] };
+  const [salesDocs, returnDocs, cashSettlements] = await Promise.all([
     prisma.document.findMany({
-      where: { companyId, locationId, type: 'sale', status: 'confirmed' },
+      where: { companyId, locationId, type: 'sale', status: 'confirmed', ...inThisShift },
       include: { items: true, payments: true },
-      orderBy: { createdAt: 'desc' },
-      take: 2000,
     }),
     prisma.document.findMany({
-      where: { companyId, locationId, type: 'return', status: 'confirmed' },
-      orderBy: { createdAt: 'desc' },
-      take: 2000,
+      where: { companyId, locationId, type: 'return', status: 'confirmed', ...inThisShift },
     }),
     prisma.settlement.findMany({
-      where: { companyId, locationId, paymentMethod: 'cash' },
+      where: { companyId, locationId, paymentMethod: 'cash', ...inThisShift },
       select: { direction: true, amount: true, createdAt: true, createdBy: true, shiftId: true },
-      orderBy: { createdAt: 'desc' },
-      take: 2000,
     }),
   ]);
 
-  return reconcileShiftCash(shiftCashFrom(shifts, salesDocs, returnDocs, cashSettlements, now));
+  const [result] = reconcileShiftCash(shiftCashFrom([shift], salesDocs, returnDocs, cashSettlements, now));
+  return result;
 }
 
 /**
@@ -1686,12 +1706,7 @@ posRouter.get('/shifts/:id/cash', requirePosAuth, async (req: PosAuthedRequest, 
 
   // Тем же расчётом, что и сводка владельца: два способа посчитать один ящик
   // разошлись бы в тот день, когда поправят один из них.
-  const money = await shiftCashFor(req.posCompanyId!, shift.locationId);
-  const mine = money.find((row) => row.shiftId === shift.id);
-  if (!mine) {
-    res.status(404).json({ error: 'Смена не найдена' });
-    return;
-  }
+  const mine = await shiftCashFor(shift);
 
   res.json({
     shiftId: mine.shiftId,
