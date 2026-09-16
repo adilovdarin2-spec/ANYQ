@@ -531,6 +531,19 @@ posRouter.get('/catalog', requirePosAuth, async (req: PosAuthedRequest, res) => 
 const REFUND_METHODS = ['cash', 'kaspi', 'card'];
 
 function refundMethod(requested: unknown, saleMethod: string | null): string {
+  // Чек в долг — отдельный случай, и он сильнее просьбы кассы.
+  //
+  // За такой чек денег не брали: товар отпустили под запись. Возврат по нему
+  // уменьшает долг, и на этом всё. До 16.09.2026 `credit` не было в списке
+  // способов возврата, поэтому такой возврат подписывался наличными — и сверка
+  // смены, которая считает расход по этому полю, вычитала его из ящика.
+  // Магазин отдавал покупателю одно и то же дважды: гасил долг и ждал, что
+  // кассир выложит наличные.
+  //
+  // Просьба кассы здесь не спрашивается намеренно: выдать наличные за товар, за
+  // который не платили, — это не возврат, а выдача из кассы, и у неё свой
+  // документ.
+  if (saleMethod === 'credit') return 'credit';
   if (typeof requested === 'string' && REFUND_METHODS.includes(requested)) return requested;
   if (saleMethod && REFUND_METHODS.includes(saleMethod)) return saleMethod;
   return 'cash';
@@ -5490,6 +5503,8 @@ async function loadLedgers(
         status: 'confirmed',
         ...(chargeType === 'sale' ? { paymentMethod: 'credit' } : {}),
       },
+      // Скидка и баллы — часть суммы чека, и без них начисление получается
+      // больше того, с чем покупатель согласился.
       include: { items: true },
     }),
     prisma.settlement.findMany({ where: { companyId, counterpartyId: { in: counterpartyIds } } }),
@@ -5499,15 +5514,23 @@ async function loadLedgers(
   // without any money moving. That is what a credit note is, and reading it as
   // a settlement keeps one figure — "what we owe this supplier" — rather than
   // two that somebody has to reconcile by hand.
-  const supplierCredits = chargeType === 'receipt'
-    ? await prisma.document.findMany({
-        where: { companyId, type: 'supplier_return', originalDocumentId: { not: null } },
-        select: { originalDocumentId: true, refundAmount: true },
-      })
-    : [];
+  //
+  // Симметрично для покупателя, и до 16.09.2026 этой половины не было вовсе.
+  // Возврат по чеку в долг не двигает деньги — их и не платили, — он уменьшает
+  // долг. Не уменьшал: возврат это документ типа `return`, в список начислений
+  // он не попадает, а settlement создаёт только запись об оплате. Покупатель
+  // приносил товар обратно и оставался должен за него полностью.
+  const credits = await prisma.document.findMany({
+    where: {
+      companyId,
+      type: chargeType === 'receipt' ? 'supplier_return' : 'return',
+      originalDocumentId: { not: null },
+    },
+    select: { originalDocumentId: true, refundAmount: true },
+  });
 
   const settledByDocument = new Map<string, number>();
-  for (const credit of supplierCredits) {
+  for (const credit of credits) {
     if (!credit.originalDocumentId) continue;
     settledByDocument.set(
       credit.originalDocumentId,
@@ -5530,19 +5553,34 @@ async function loadLedgers(
     if (!doc.counterpartyId) continue;
     const ledger = ledgers.get(doc.counterpartyId);
     if (!ledger) continue;
+    // A receipt is billed at what was actually paid per pack, not the rounded
+    // per-unit figure times the units — the same reading the receipt list uses.
+    const lines = doc.items.reduce(
+      (sum, it) =>
+        sum +
+        (it.packPrice !== null && it.packQuantity !== null
+          ? Math.round(it.packPrice * it.packQuantity)
+          : Math.round(it.price * it.quantity)),
+      0,
+    );
+    // Долг — это то, с чем покупатель согласился, то есть сумма чека: позиции
+    // минус скидка минус баллы. Считалось по одним позициям, и покупателю со
+    // скидкой в долг записывали полную цену, а закрывшему часть чека баллами —
+    // ещё и эти баллы. Заплатив ровно по чеку, он оставался должен, и разницу
+    // не объяснял никто.
+    //
+    // Та же формула, что в `sale-money.test.ts` сверяет чек с принятой оплатой.
+    // У приёмки скидок и баллов не бывает, и вычитается там ноль.
+    const { discountAmount } = computeDiscount(
+      lines,
+      doc.discountType === 'percent' || doc.discountType === 'fixed'
+        ? { type: doc.discountType, value: doc.discountValue ?? 0 }
+        : null,
+    );
+
     ledger.charges.push({
       documentId: doc.id,
-      // A receipt is billed at what was actually paid per pack, not the
-      // rounded per-unit figure times the units — the same reading the receipt
-      // list uses.
-      amount: doc.items.reduce(
-        (sum, it) =>
-          sum +
-          (it.packPrice !== null && it.packQuantity !== null
-            ? Math.round(it.packPrice * it.packQuantity)
-            : Math.round(it.price * it.quantity)),
-        0,
-      ),
+      amount: lines - discountAmount - (doc.pointsRedeemed ?? 0),
       settled: settledByDocument.get(doc.id) ?? 0,
       at: doc.createdAt,
     });

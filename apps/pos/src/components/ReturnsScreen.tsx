@@ -65,6 +65,10 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
     // селект стоял пустым, а уходило на сервер «mixed». В сверке смены такой
     // возврат не вычитался из ящика — то есть кассир, отдавший деньги из
     // кассы, оказывался в конце смены должен ровно эту сумму.
+    // Чек в долг выбора не имеет: денег за него не брали, и возврат уменьшает
+    // долг, а не открывает ящик. Сервер это и запишет, что бы касса ни
+    // прислала (`refundMethod`), — а спрашивать о том, что уже решено, значит
+    // предлагать кассиру выдать наличные за товар, за который не платили.
     const original = picked.paymentMethod as PaymentMethod;
     setPaymentMethod(PAYMENT_METHODS.includes(original) ? original : 'cash');
     setView('compose');
@@ -212,14 +216,18 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
               />
             </div>
 
-            <div className="form-field">
-              <label htmlFor="return-payment">{t('return.howBack')}</label>
-              <select id="return-payment" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}>
-                {PAYMENT_METHODS.map((method) => (
-                  <option key={method} value={method}>{t(PAYMENT_PHRASES[method])}</option>
-                ))}
-              </select>
-            </div>
+            {sale.paymentMethod === 'credit' ? (
+              <p className="field-hint">{t('return.toDebt')}</p>
+            ) : (
+              <div className="form-field">
+                <label htmlFor="return-payment">{t('return.howBack')}</label>
+                <select id="return-payment" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}>
+                  {PAYMENT_METHODS.map((method) => (
+                    <option key={method} value={method}>{t(PAYMENT_PHRASES[method])}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {refundEstimate > 0 && (
               <p className="order-meta">

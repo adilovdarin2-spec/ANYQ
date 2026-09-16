@@ -615,6 +615,7 @@ export const ru = {
   'return.reason': 'Причина возврата',
   'return.reasonPlaceholder': 'Например: брак, не подошёл размер',
   'return.howBack': 'Чем возвращаем',
+  'return.toDebt': 'Чек был в долг — возврат уменьшит долг клиента. Деньги из кассы не выдаются.',
   'return.estimate': 'К возврату примерно {amount} — точная сумма учтёт скидку и баллы этого чека.',
   'return.submitting': 'Оформляем…',
   'return.submit': 'Оформить возврат',

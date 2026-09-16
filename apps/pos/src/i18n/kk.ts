@@ -983,6 +983,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'devices.title': 'Құрылғылар',
   'register.number': '№{number} касса',
   'production.recipes': 'Ерекшеліктер (BOM)',
+  'return.toDebt': 'Чек қарызға болған — қайтару клиенттің қарызын азайтады. Кассадан ақша берілмейді.',
   'fiscal.setUp': 'Касса аппаратын көрсету',
   'fiscal.change': 'Касса аппаратын өзгерту',
   'fiscal.setUpWhy': 'Осы нүктенің жанында тіркелген ККМ тұр. Оның тіркеу нөмірін көрсетіңіз — содан кейін сатылымдар оның чегіндегі нөмірді күтеді.',
