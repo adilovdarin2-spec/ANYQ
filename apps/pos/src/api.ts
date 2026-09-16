@@ -181,10 +181,26 @@ export function fetchCatalog(token: string, locationId: string): Promise<{ locat
 export function posLogin(pin: string): Promise<PosSession> {
   // The register names itself at login so the owner can switch this one off
   // without signing the cashier out of every till in the shop.
+  //
+  // Язык — отсюда же. Внутри кассы он нужен только экрану, но утреннюю сводку
+  // рисует телефон, и словарь кассы до неё не дотягивается: язык обязан знать
+  // сервер. Спрашивать отдельно нечего — человек его уже выбрал, и выбрал на
+  // том самом экране, где сейчас вводит PIN.
   return request('/pos/login', {
     method: 'POST',
-    body: JSON.stringify({ pin, deviceKey: getDeviceKey() }),
+    body: JSON.stringify({ pin, deviceKey: getDeviceKey(), language: getLanguage() }),
   });
+}
+
+/**
+ * Язык переключили, уже войдя.
+ *
+ * Вход его тоже записывает, но переключают чаще потом — зашёл, огляделся,
+ * поменял. Без этого вызова выбор доехал бы до сервера со следующим входом, а
+ * тот бывает раз в месяц.
+ */
+export function saveLanguage(token: string, language: string): Promise<{ language: string }> {
+  return request('/pos/me/language', { method: 'PUT', body: JSON.stringify({ language }) }, token);
 }
 
 /**

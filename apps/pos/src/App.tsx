@@ -60,6 +60,7 @@ import {
   fetchPackagings,
   fetchPendingFiscal,
   fetchShiftCash,
+  saveLanguage,
   saveFiscalDevice,
   fetchProductionRecipes,
   saveRecipe,
@@ -480,7 +481,29 @@ export default function App() {
   // opposite rules on refusal: a rejected sale is skipped so it cannot strand
   // the day's takings, a rejected warehouse command stops the queue because
   // everything behind it was given against the world it was meant to make.
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+
+  // Язык — серверу. Здесь, а не в переключателе: переключить его можно с
+  // нескольких экранов, а рассказать об этом надо один раз и одинаково.
+  //
+  // Отправляется только когда он правда поменялся: вход язык записывает сам, и
+  // повторять это при каждом запуске кассы значило бы слать запрос на пустом
+  // месте. Ошибка глушится молча — сводка на чужом языке неприятна, красная
+  // полоска поверх продажи хуже.
+  const languageSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!session) {
+      languageSent.current = null;
+      return;
+    }
+    if (languageSent.current === null) {
+      languageSent.current = language;
+      return;
+    }
+    if (languageSent.current === language) return;
+    languageSent.current = language;
+    void saveLanguage(session.token, language).catch(() => {});
+  }, [language, session]);
   const outbox = useOutboxSync(session?.token ?? null);
 
   // Whether the till can be opened without a network at all, as opposed to

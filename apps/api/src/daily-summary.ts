@@ -54,17 +54,34 @@ export interface SummaryMessage {
  *  пробелом переносится и читается как две разные суммы. */
 const NBSP = ' ';
 
-function money(value: number): string {
+/**
+ * Язык, на котором говорят с человеком вне кассы.
+ *
+ * Внутри кассы перевод живёт в самой кассе: сервер отвечает по-русски, а экран
+ * говорит по-казахски. С уведомлением этот приём не работает — его рисует
+ * операционная система телефона, и словарь кассы до него не дотягивается даже
+ * в принципе. Значит для этого одного сообщения язык обязан знать сервер.
+ */
+export type SummaryLanguage = 'ru' | 'kk';
+
+function money(value: number, language: SummaryLanguage): string {
+  // Разряды разделяются пробелом в обоих языках; `ru-RU` берётся ради самого
+  // разделителя, а не ради языка.
+  void language;
   return `${Math.round(value).toLocaleString('ru-RU').replace(/\s/g, NBSP)}${NBSP}₸`;
 }
 
 /**
- * Три формы считаемого существительного.
+ * Три формы считаемого существительного — по-русски.
  *
  * То же правило, что у `pluralPhrase` в словаре кассы, но своё: там оно выбирает
  * ключ фразы из каталога, а здесь предложение собирает сервер, и каталога у него
  * нет. Дублируется правило, а не текст, и это дешевле, чем тащить на сервер
  * половину системы переводов ради одного сообщения.
+ *
+ * По-казахски форм нет вовсе: после числительного существительное остаётся в
+ * единственном числе — «3 атау», а не «3 атаулар». Поэтому в казахской половине
+ * словаря ниже стоит одно слово там, где в русской три, и это не недоделка.
  */
 function plural(count: number, one: string, few: string, many: string): string {
   const mod10 = Math.abs(count) % 10;
@@ -74,10 +91,79 @@ function plural(count: number, one: string, few: string, many: string): string {
   return many;
 }
 
-const POSITIONS = (n: number) => plural(n, 'позиция', 'позиции', 'позиций');
-const RECEIPTS = (n: number) => plural(n, 'чек', 'чека', 'чеков');
-const SHIFTS = (n: number) => plural(n, 'смене', 'сменам', 'сменам');
-const OPEN_SHIFTS = (n: number) => plural(n, 'смена', 'смены', 'смен');
+/**
+ * Всё, что сводка умеет сказать, — на обоих языках рядом.
+ *
+ * Одной таблицей, а не двумя файлами: пропущенную фразу тогда называет
+ * компилятор, а не владелец, которому пришло уведомление наполовину по-русски.
+ * Слова взяты из словаря кассы — `түсім`, `атау`, `ауысым`, `мерзімі бітеді`, —
+ * чтобы на телефоне и на экране одно и то же называлось одинаково.
+ */
+interface SummaryWords {
+  positions: (n: number) => string;
+  receipts: (n: number) => string;
+  /** «по 2 сменам» — форма после предлога. */
+  shifts: (n: number) => string;
+  openShifts: (n: number) => string;
+  soldYesterday: (shop: string, amount: string) => string;
+  nothingSold: (shop: string) => string;
+  earned: (amount: string) => string;
+  cashMatches: (count: number, shifts: string) => string;
+  noShiftsToCount: string;
+  cashShort: (amount: string) => string;
+  cashOver: (amount: string) => string;
+  oneShiftOpen: string;
+  shiftsOpen: (count: number, shifts: string) => string;
+  ledgerOff: (count: number, positions: string) => string;
+  notFiscalised: (count: number, receipts: string) => string;
+  runningOut: (count: number, positions: string) => string;
+  willSpoil: (amount: string) => string;
+  /** «Ещё: …» — хвост из оставшихся тревог. */
+  more: (rest: string) => string;
+}
+
+const WORDS: Record<SummaryLanguage, SummaryWords> = {
+  ru: {
+    positions: (n) => plural(n, 'позиция', 'позиции', 'позиций'),
+    receipts: (n) => plural(n, 'чек', 'чека', 'чеков'),
+    shifts: (n) => plural(n, 'смене', 'сменам', 'сменам'),
+    openShifts: (n) => plural(n, 'смена', 'смены', 'смен'),
+    soldYesterday: (shop, amount) => `${shop}: вчера ${amount}`,
+    nothingSold: (shop) => `${shop}: вчера продаж не было`,
+    earned: (amount) => `Заработали ${amount}. `,
+    cashMatches: (count, shifts) => `Касса сошлась по ${count} ${shifts}.`,
+    noShiftsToCount: 'Смен к пересчёту нет.',
+    cashShort: (amount) => `наличных не хватает ${amount}`,
+    cashOver: (amount) => `наличных больше на ${amount}`,
+    oneShiftOpen: 'вчерашняя смена не закрыта',
+    shiftsOpen: (count, shifts) => `не закрыто ${count} ${shifts}`,
+    ledgerOff: (count, positions) => `журнал не сходится: ${count} ${positions}`,
+    notFiscalised: (count, receipts) => `не ушло в налоговую ${count} ${receipts}`,
+    runningOut: (count, positions) => `кончается ${count} ${positions}`,
+    willSpoil: (amount) => `испортится на ${amount}`,
+    more: (rest) => ` Ещё: ${rest}.`,
+  },
+  kk: {
+    positions: () => 'атау',
+    receipts: () => 'чек',
+    shifts: () => 'ауысым',
+    openShifts: () => 'ауысым',
+    soldYesterday: (shop, amount) => `${shop}: кеше ${amount}`,
+    nothingSold: (shop) => `${shop}: кеше сатылым болмады`,
+    earned: (amount) => `${amount} таптыңыз. `,
+    cashMatches: (count, shifts) => `${count} ${shifts} бойынша касса сәйкес келді.`,
+    noShiftsToCount: 'Қайта санайтын ауысым жоқ.',
+    cashShort: (amount) => `қолма-қол ақша ${amount} жетіспейді`,
+    cashOver: (amount) => `қолма-қол ақша ${amount} артық`,
+    oneShiftOpen: 'кешегі ауысым жабылмаған',
+    shiftsOpen: (count, shifts) => `${count} ${shifts} жабылмаған`,
+    ledgerOff: (count, positions) => `журнал сәйкес келмейді: ${count} ${positions}`,
+    notFiscalised: (count, receipts) => `салыққа ${count} ${receipts} кетпеді`,
+    runningOut: (count, positions) => `${count} ${positions} таусылып қалды`,
+    willSpoil: (amount) => `${amount} бұзылады`,
+    more: (rest) => ` Тағы: ${rest}.`,
+  },
+};
 
 /**
  * Стоит ли вообще будить владельца.
@@ -104,15 +190,21 @@ export function worthSending(input: SummaryInput): boolean {
  * тело говорит, что сходится, и это тоже новость: владелец, который каждое утро
  * видит «касса сошлась», замечает то утро, когда написано другое.
  */
-export function buildSummary(input: SummaryInput): SummaryMessage {
+export function buildSummary(input: SummaryInput, language: SummaryLanguage = 'ru'): SummaryMessage {
   // Порядок не случайный и задан здесь: деньги, потом учёт, потом полки.
   // Первым в сообщение попадает то, что дороже всего стоит промедления.
+  //
+  // Язык по умолчанию русский — и не потому, что он главный, а потому, что
+  // владелец, который языка не называл, в кассу не заходил вовсе. Угадывать за
+  // него не по чему.
+  const w = WORDS[language];
+  const sum = (value: number) => money(value, language);
   const alarms: string[] = [];
 
   if (input.cashDifference < 0) {
-    alarms.push(`наличных не хватает ${money(-input.cashDifference)}`);
+    alarms.push(w.cashShort(sum(-input.cashDifference)));
   } else if (input.cashDifference > 0) {
-    alarms.push(`наличных больше на ${money(input.cashDifference)}`);
+    alarms.push(w.cashOver(sum(input.cashDifference)));
   }
   // Сразу после денег: это и есть деньги — те, которых вчера никто не считал.
   if (input.openShifts > 0) {
@@ -122,37 +214,37 @@ export function buildSummary(input: SummaryInput): SummaryMessage {
     // сводке.
     alarms.push(
       input.openShifts === 1
-        ? 'вчерашняя смена не закрыта'
-        : `не закрыто ${input.openShifts} ${OPEN_SHIFTS(input.openShifts)}`,
+        ? w.oneShiftOpen
+        : w.shiftsOpen(input.openShifts, w.openShifts(input.openShifts)),
     );
   }
   if (input.ledgerMismatched > 0) {
-    alarms.push(`журнал не сходится: ${input.ledgerMismatched} ${POSITIONS(input.ledgerMismatched)}`);
+    alarms.push(w.ledgerOff(input.ledgerMismatched, w.positions(input.ledgerMismatched)));
   }
   if (input.unfiscalised > 0) {
-    alarms.push(`не ушло в налоговую ${input.unfiscalised} ${RECEIPTS(input.unfiscalised)}`);
+    alarms.push(w.notFiscalised(input.unfiscalised, w.receipts(input.unfiscalised)));
   }
   if (input.runningOut > 0) {
-    alarms.push(`кончается ${input.runningOut} ${POSITIONS(input.runningOut)}`);
+    alarms.push(w.runningOut(input.runningOut, w.positions(input.runningOut)));
   }
   if (input.expiringValue > 0) {
-    alarms.push(`испортится на ${money(input.expiringValue)}`);
+    alarms.push(w.willSpoil(sum(input.expiringValue)));
   }
 
   const title = input.netRevenue > 0
-    ? `${input.shopName}: вчера ${money(input.netRevenue)}`
-    : `${input.shopName}: вчера продаж не было`;
+    ? w.soldYesterday(input.shopName, sum(input.netRevenue))
+    : w.nothingSold(input.shopName);
 
   if (alarms.length === 0) {
-    const earned = input.grossMargin > 0 ? `Заработали ${money(input.grossMargin)}. ` : '';
+    const earned = input.grossMargin > 0 ? w.earned(sum(input.grossMargin)) : '';
     const shifts = input.countedShifts > 0
-      ? `Касса сошлась по ${input.countedShifts} ${SHIFTS(input.countedShifts)}.`
-      : 'Смен к пересчёту нет.';
+      ? w.cashMatches(input.countedShifts, w.shifts(input.countedShifts))
+      : w.noShiftsToCount;
     return { title, body: `${earned}${shifts}` };
   }
 
   const first = alarms[0][0].toUpperCase() + alarms[0].slice(1);
   const rest = alarms.slice(1);
-  const tail = rest.length > 0 ? ` Ещё: ${rest.join(', ')}.` : '';
+  const tail = rest.length > 0 ? w.more(rest.join(', ')) : '';
   return { title, body: `${first}.${tail}` };
 }

@@ -107,6 +107,49 @@ describe('утренняя сводка', () => {
     expect(sent.map((s) => s.endpoint)).toEqual(['https://push.example/owner']);
   });
 
+  it('приходит владельцу на его языке', async () => {
+    // Единственное, что ANYQ говорит владельцу сам. Внутри кассы перевод живёт
+    // в кассе — сервер отвечает по-русски, экран переводит; уведомление рисует
+    // телефон, и словарь кассы до него не дотягивается даже в принципе.
+    await prisma.user.update({ where: { id: fx.userId }, data: { language: 'kk' } });
+    await subscribe(fx.userId, 'https://push.example/kk-owner');
+    await sell();
+
+    await sendMorningSummaries(MORNING);
+    expect(sent.length).toBe(1);
+    const payload = sent[0].payload as { title: string; body: string };
+    expect(payload.title).toContain('кеше');
+    expect(payload.title).not.toContain('вчера');
+  });
+
+  it('а двум владельцам с разными языками — два разных сообщения', async () => {
+    // Одно сообщение на всех означало бы, что одному из двоих оно приходит
+    // чужим. Приходит оно каждое утро, и это всё, что система говорит сама.
+    const second = await prisma.user.create({
+      data: { companyId: fx.companyId, name: 'Второй владелец', role: 'owner', posPin: '9922', language: 'kk' },
+    });
+    await subscribe(fx.userId, 'https://push.example/ru-owner');
+    await subscribe(second.id, 'https://push.example/kk-owner');
+    await sell();
+
+    await sendMorningSummaries(MORNING);
+    const byEndpoint = new Map(sent.map((s) => [s.endpoint, s.payload as { title: string }]));
+    expect(byEndpoint.size).toBe(2);
+    expect(byEndpoint.get('https://push.example/ru-owner')!.title).toContain('вчера');
+    expect(byEndpoint.get('https://push.example/kk-owner')!.title).toContain('кеше');
+  });
+
+  it('а тот, кто языка не называл, получает по-русски', async () => {
+    // Самопроверка: иначе всё выше было бы зелёным и на правиле «писать всем
+    // по-казахски». Владелец, который в кассу не заходит, языка не выбирал, и
+    // угадывать за него не по чему.
+    await subscribe(fx.userId, 'https://push.example/silent');
+    await sell();
+
+    await sendMorningSummaries(MORNING);
+    expect((sent[0].payload as { title: string }).title).toContain('вчера');
+  });
+
   it('и не уходит подписке без человека', async () => {
     // Подписки, записанные до того, как в них появился пользователь, ничьи —
     // и «ничей» здесь не значит «владельца».

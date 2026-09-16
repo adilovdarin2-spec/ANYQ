@@ -123,3 +123,40 @@ export async function sendPushToOwners(companyId: string, payload: PushPayload):
     payload,
   );
 }
+
+/**
+ * То же самое, но каждому — на его языке.
+ *
+ * У компании владельцев может быть двое, и язык у них может быть разный: один
+ * ведёт кассу по-казахски, второй по-русски. Одно сообщение на всех означало
+ * бы, что одному из них оно приходит чужим — а это единственное, что ANYQ сам
+ * говорит владельцу, и приходит оно каждое утро.
+ *
+ * Текст собирается по разу на язык, а не по разу на подписку: у одного
+ * человека телефон и планшет — это две подписки и одно и то же сообщение.
+ */
+export async function sendPushToOwnersInTheirLanguage(
+  companyId: string,
+  build: (language: 'ru' | 'kk') => PushPayload,
+): Promise<number> {
+  const subscriptions = await prisma.pushSubscription.findMany({
+    where: { companyId, user: { role: 'owner' } },
+    include: { user: { select: { language: true } } },
+  });
+
+  const byLanguage = new Map<'ru' | 'kk', typeof subscriptions>();
+  for (const subscription of subscriptions) {
+    // Незнакомое значение читается как русский, а не роняет рассылку: язык —
+    // строка в базе, и однажды туда попадёт что-то третье.
+    const language = subscription.user?.language === 'kk' ? 'kk' : 'ru';
+    const list = byLanguage.get(language) ?? [];
+    list.push(subscription);
+    byLanguage.set(language, list);
+  }
+
+  let sent = 0;
+  for (const [language, list] of byLanguage) {
+    sent += await sendTo(list, build(language));
+  }
+  return sent;
+}

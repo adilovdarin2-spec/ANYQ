@@ -198,6 +198,19 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     return;
   }
 
+  // На каком языке с этим человеком разговаривать вне кассы.
+  //
+  // Не спрашивается отдельным экраном: он только что выбрал язык, на котором
+  // ему показали этот самый вход, и переспрашивать значит требовать ответа на
+  // вопрос, на который уже ответили. Пишется, только если пришло знакомое
+  // значение и оно изменилось — чтобы вход не превращался в запись в базу на
+  // каждое прикладывание пальца.
+  const said = (req.body ?? {}).language;
+  const language = said === 'kk' || said === 'ru' ? said : null;
+  if (language && language !== user.language) {
+    await prisma.user.update({ where: { id: user.id }, data: { language } });
+  }
+
   // The device, before anything else is loaded: a register the owner has
   // switched off is refused here as well as on every request it makes. Blocking
   // only the token would leave a thief one shoulder-surfed PIN from being back.
@@ -4496,6 +4509,25 @@ posRouter.post('/fiscal/:documentId/manual', requirePosAuth, async (req: PosAuth
     fiscalNumber: updated.fiscalNumber,
     registeredAt: updated.registeredAt?.toISOString() ?? null,
   });
+});
+
+/**
+ * Язык переключили, уже войдя, — самый частый случай.
+ *
+ * Вход язык тоже записывает, но владелец чаще меняет его потом: зашёл,
+ * огляделся, переключил. Без этого маршрута его выбор доехал бы до сервера
+ * только при следующем входе, а тот бывает раз в месяц — и утренняя сводка всё
+ * это время приходила бы на чужом языке, притом что на экране всё правильно.
+ * Хуже неработающего — работающее через раз и непонятно почему.
+ */
+posRouter.put('/me/language', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  const said = (req.body ?? {}).language;
+  if (said !== 'ru' && said !== 'kk') {
+    res.status(400).json({ error: 'Неизвестный язык' });
+    return;
+  }
+  await prisma.user.update({ where: { id: req.posUserId! }, data: { language: said } });
+  res.json({ language: said });
 });
 
 posRouter.put('/fiscal/device', requirePosAuth, async (req: PosAuthedRequest, res) => {
