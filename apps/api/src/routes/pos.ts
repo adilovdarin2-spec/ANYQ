@@ -667,7 +667,16 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   // а пишут его каждый раз иначе — «+7 700 …», «8 700 …», «700 …».
   const customerPhone = phoneKey(typeof b.customerPhone === 'string' ? b.customerPhone : '');
   const pointsToRedeem = Number.isFinite(b.pointsToRedeem) ? Number(b.pointsToRedeem) : 0;
-  if ((customerPhone || pointsToRedeem > 0) && !modules.includes('retail')) {
+  /* Назвать покупателя можно всегда; баллы — только с розницей.
+     Раньше отказывало и то, и другое разом, потому что оба завязаны на этот
+     телефон. Но долг — не лояльность: продажа под запись без названного
+     клиента невозможна по устройству (долг пишется на счёт, счёт ищется по
+     телефону), и склад с тарифом без розницы не мог продать в долг вовсе —
+     притом что это ровно тот бизнес, у которого половина оборота под запись.
+     Отказ при этом приходил не про то: человек просил отпустить под запись, а
+     ему отвечали про баллы, и он шёл искать не ту настройку. */
+  const hasLoyalty = modules.includes('retail');
+  if (pointsToRedeem > 0 && !hasLoyalty) {
     res.status(403).json({ error: 'Программа лояльности недоступна на вашем тарифе' });
     return;
   }
@@ -765,7 +774,11 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         netAfterDiscount: subtotal - discountAmount,
         availablePoints: customer?.loyaltyPoints ?? 0,
         pointsToRedeem,
-        earnRatePercent: LOYALTY_EARN_RATE_PERCENT,
+        // Без розницы баллы не копятся. Разрешив назвать покупателя ради
+        // долга, легко заодно начать тихо начислять то, что модулем не
+        // продано, — а копить их некому и потратить нечем: это не подарок, а
+        // обещание, о котором продукт потом не вспомнит.
+        earnRatePercent: hasLoyalty ? LOYALTY_EARN_RATE_PERCENT : 0,
       });
 
       // Dishes (products with a recipe, on restaurant-tariff companies) don't carry
@@ -1388,18 +1401,43 @@ posRouter.get('/customers', requirePosAuth, async (req: PosAuthedRequest, res) =
 
   const company = await prisma.company.findUnique({ where: { id: req.posCompanyId }, include: { tariff: true } });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
-  if (!modules.includes('retail')) {
-    res.status(403).json({ error: 'Программа лояльности недоступна на вашем тарифе' });
-    return;
-  }
   const state = tariffState(company?.tariff ?? null);
   if (state !== 'active') {
     res.status(403).json({ error: tariffDenialMessage(state) });
     return;
   }
 
+  /* Маршрут отказывал целиком без модуля розницы — как «программа лояльности».
+     Но по этому же номеру ищется долг, а долг есть у любой компании: продажа
+     под запись модулем не гасится. Склад, у которого половина оборота под
+     запись, не мог даже посмотреть, кому отпускает.
+
+     Поэтому дверь общая, а за ней — только своё: баллы отдаются с розницей,
+     долг и лимит — всегда. */
+  const hasLoyalty = modules.includes('retail');
   const customer = await prisma.counterparty.findFirst({ where: { companyId: req.posCompanyId, phone, type: 'customer' } });
-  res.json({ found: !!customer, name: customer?.name ?? null, loyaltyPoints: customer?.loyaltyPoints ?? 0 });
+  if (!customer) {
+    res.json({ found: false, name: null, loyaltyPoints: 0, creditAllowed: false, owed: 0, creditLimit: 0, creditAvailable: 0 });
+    return;
+  }
+
+  /* Сколько уже должен — в ту секунду, когда кассир назвал покупателя.
+     Раньше это выяснялось отказом сервера после собранной корзины, и сказать
+     человеку у прилавка «больше тридцати тысяч не дам» было нечем: кассир
+     узнавал про лимит только когда набрали на восемьдесят. */
+  const ledger = await loadLedger(req.posCompanyId!, customer.id, 'customer');
+  const owed = computeBalance(ledger.charges, ledger.unapplied).balance;
+  res.json({
+    found: true,
+    name: customer.name,
+    loyaltyPoints: hasLoyalty ? customer.loyaltyPoints : 0,
+    creditAllowed: customer.creditAllowed,
+    owed,
+    creditLimit: customer.creditLimit,
+    // Отдельным числом, а не разностью на экране: считать её должен тот, кто
+    // знает правило, и знать его должен один.
+    creditAvailable: Math.max(customer.creditLimit - owed, 0),
+  });
 });
 
 posRouter.post('/shifts', requirePosAuth, async (req: PosAuthedRequest, res) => {

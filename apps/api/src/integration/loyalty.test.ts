@@ -137,7 +137,19 @@ describe('loyalty points', () => {
   it('is not available to a company without the retail module', async () => {
     // The module gate, on a route that moves money. A shop paying for the base
     // package should not quietly get the loyalty scheme.
+    //
+    // До 17.09.2026 это проверялось иначе: такой компании отказывали **назвать
+    // покупателя**. Намерение было верное, способ — нет. Долг тоже ищется по
+    // этому телефону, и продажа под запись без названного клиента невозможна,
+    // так что запрет закрывал заодно торговлю в долг — у склада, у которого
+    // половина оборота под запись. Проверка утверждала правильную вещь
+    // неправильным способом, и потому пережила дефект.
+    //
+    // Теперь по существу: покупателя назвать можно, а баллы ему не копятся.
     const plain = await createFixture({ openingQuantity: 10, modules: ['shop'] });
+    const customer = await prisma.counterparty.create({
+      data: { companyId: plain.companyId, name: 'Постоянный', phone: PHONE, type: 'customer', loyaltyPoints: 0 },
+    });
     const sale = await api(
       plain.token,
       'POST',
@@ -149,6 +161,32 @@ describe('loyalty points', () => {
         items: [{ productId: plain.productId, quantity: 1, price: 200 }],
       },
       { 'Idempotency-Key': 'loyalty-7' },
+    );
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+    expect(sale.body.pointsEarned).toBe(0);
+    const after = await prisma.counterparty.findUniqueOrThrow({ where: { id: customer.id } });
+    expect(after.loyaltyPoints, 'баллы не копятся без модуля').toBe(0);
+  });
+
+  it('and such a company cannot spend points either', async () => {
+    // Вторая половина того же: накопленное когда-то (или заведённое руками)
+    // нельзя потратить там, где модуля нет.
+    const plain = await createFixture({ openingQuantity: 10, modules: ['shop'] });
+    await prisma.counterparty.create({
+      data: { companyId: plain.companyId, name: 'Постоянный', phone: PHONE, type: 'customer', loyaltyPoints: 500 },
+    });
+    const sale = await api(
+      plain.token,
+      'POST',
+      '/pos/sales',
+      {
+        locationId: plain.locationId,
+        paymentMethod: 'cash',
+        customerPhone: PHONE,
+        pointsToRedeem: 100,
+        items: [{ productId: plain.productId, quantity: 1, price: 200 }],
+      },
+      { 'Idempotency-Key': 'loyalty-7b' },
     );
     expect(sale.status).toBe(403);
     expect(sale.body.error).toContain('лояльности');
