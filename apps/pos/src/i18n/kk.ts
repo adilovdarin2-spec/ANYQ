@@ -770,6 +770,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'grid.perKg': '/кг',
   'unit.kg': 'кг',
   'grid.stopListed': 'стоп-тізім',
+  'grid.expiresOn': '{date} дейін · {amount} дана',
   'grid.outOfStock': 'қолда жоқ',
   'grid.leftWeight': 'қалды {amount}',
   'grid.removeFromStopList': 'Стоп-тізімнен шығару',

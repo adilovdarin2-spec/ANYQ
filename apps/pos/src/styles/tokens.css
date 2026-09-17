@@ -24,6 +24,7 @@
   --status-trial: #2E6FA3;
   --status-trial-bg: #DDEAF4;
   --status-overdue: #C0392B;
+  --status-soon: #B26B00;
   --status-overdue-bg: #FBE8E5;
   --status-suspended: #64736A;
   --status-suspended-bg: #EEF2EF;
@@ -55,6 +56,7 @@
     --status-trial: #7FB8E8;
     --status-trial-bg: #1B2E3D;
     --status-overdue: #E8917A;
+    --status-soon: #E0B050;
     --status-overdue-bg: #35221C;
     --status-suspended: #9AA79E;
     --status-suspended-bg: #1F2724;
@@ -81,6 +83,7 @@
   --status-trial: #7FB8E8;
   --status-trial-bg: #1B2E3D;
   --status-overdue: #E8917A;
+  --status-soon: #E0B050;
   --status-overdue-bg: #35221C;
   --status-suspended: #9AA79E;
   --status-suspended-bg: #1F2724;
@@ -108,6 +111,7 @@
   --status-trial: #2E6FA3;
   --status-trial-bg: #DDEAF4;
   --status-overdue: #C0392B;
+  --status-soon: #B26B00;
   --status-overdue-bg: #FBE8E5;
   --status-suspended: #64736A;
   --status-suspended-bg: #EEF2EF;

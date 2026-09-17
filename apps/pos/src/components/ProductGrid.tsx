@@ -1,4 +1,6 @@
 import type { Product } from '../types';
+import type { SoonExpiring } from '../expiry';
+import { shortDate } from '../expiry';
 import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney, formatWeight } from '../utils';
 
@@ -8,6 +10,19 @@ interface Props {
   onPick: (product: Product) => void;
   canManageStopList?: boolean;
   onToggleStopList?: (product: Product) => void;
+  /**
+   * Товары, у которых ближайшая партия скоро кончится. Только для аптеки.
+   *
+   * Плитка здесь была одна на всех: название, цена, остаток — и фармацевт,
+   * отпускающий лекарство, не видел, что ближайшая пачка кончается через
+   * неделю. Сроки лежат на отдельном экране, а на каждую продажу туда никто
+   * не пойдёт.
+   *
+   * Пусто у всех, кроме аптеки, и пусто у товаров, с которыми всё в порядке:
+   * подпись на каждой кнопке перестают читать через день, а с ней перестают
+   * читать ту одну, ради которой всё и затевалось. См. `expiry.ts`.
+   */
+  expiringSoon?: Map<string, SoonExpiring>;
 }
 
 /**
@@ -28,7 +43,7 @@ interface Props {
  */
 export const GRID_LIMIT = 150;
 
-export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopList, onToggleStopList }: Props) {
+export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopList, onToggleStopList, expiringSoon }: Props) {
   const { t } = useTranslation();
   if (products.length === 0) {
     return <div className="empty-state">{t('grid.nothingFound')}</div>;
@@ -45,6 +60,16 @@ export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopL
           <div key={p.id} className="product-tile-wrap">
             <button className={`product-tile${out ? ' out' : ''}`} disabled={out} onClick={() => onPick(p)}>
               <span className="p-name">{p.name}</span>
+              {/* Над ценой, а не под ней: взгляд идёт по кнопке сверху вниз, и
+                  предупреждение, стоящее последним, читается уже после нажатия. */}
+              {expiringSoon?.get(p.id) && (
+                <span className="p-expiry">
+                  {t('grid.expiresOn', {
+                    date: shortDate(expiringSoon.get(p.id)!.expiryDate),
+                    amount: expiringSoon.get(p.id)!.quantity,
+                  })}
+                </span>
+              )}
               <span className="p-footer">
                 <span className="p-price">{formatMoney(p.price)}{p.saleUnit === 'weight' ? t('grid.perKg') : ''}</span>
                 {p.stopListed ? (

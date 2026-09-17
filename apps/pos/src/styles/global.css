@@ -112,6 +112,19 @@ button { cursor: pointer; }
      уплывала от названия, и экран выглядел полупустым при полном ассортименте. */
   align-content: start;
 }
+/* Срок годности на кнопке продажи — только в аптеке и только когда он близок.
+   Жёлтым, а не красным: красное на кнопке читается как «нельзя», а продавать
+   это можно и нужно — раньше остального. Мелко и над ценой: взгляд идёт по
+   кнопке сверху вниз, и предупреждение, стоящее последним, читается уже после
+   нажатия. */
+.p-expiry {
+  align-self: flex-start;
+  font-size: 0.72rem; font-weight: 700; line-height: 1;
+  color: var(--status-soon);
+  background: color-mix(in srgb, var(--status-soon) 14%, transparent);
+  border-radius: 6px; padding: 3px 6px; margin-top: 2px;
+}
+
 .product-tile-wrap { position: relative; }
 .product-tile {
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;

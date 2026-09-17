@@ -779,6 +779,7 @@ export const ru = {
   'grid.perKg': '/кг',
   'unit.kg': 'кг',
   'grid.stopListed': 'стоп-лист',
+  'grid.expiresOn': 'до {date} · {amount} шт',
   'grid.outOfStock': 'нет в наличии',
   'grid.leftWeight': 'ост. {amount}',
   'grid.removeFromStopList': 'Убрать из стоп-листа',

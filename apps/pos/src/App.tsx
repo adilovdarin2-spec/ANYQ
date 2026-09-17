@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
+import { expiringSoonByProduct } from './expiry';
 import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveLicenceConfirmedAt, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
@@ -725,6 +726,14 @@ export default function App() {
       onClick: handleShowSettlements,
     });
   }
+  /* Сроки на плитку — только в аптеке и только те, о которых стоит сказать.
+     Считается один раз здесь, а не в каждой плитке: список товаров рисуется на
+     каждую букву в поиске, и проход по партиям внутри плитки повторялся бы по
+     разу на товар. См. `expiry.ts`. */
+  const expiringSoonByProductId = useMemo(
+    () => (hasPharmacy ? expiringSoonByProduct(batches) : undefined),
+    [hasPharmacy, batches],
+  );
   const operationsBadge = pendingOrdersCount + expiringBatchesCount;
 
 
@@ -3252,6 +3261,7 @@ export default function App() {
               onPick={handleProductClick}
               canManageStopList={hasRestaurant}
               onToggleStopList={handleToggleStopList}
+              expiringSoon={expiringSoonByProductId}
             />
           </div>
           <CartPanel
@@ -3292,6 +3302,7 @@ export default function App() {
             onPick={handleProductClick}
             canManageStopList={hasRestaurant}
             onToggleStopList={handleToggleStopList}
+              expiringSoon={expiringSoonByProductId}
           />
           {cartCount > 0 && <CartBar count={cartCount} total={cartTotal} onOpen={() => setView('cart')} />}
         </>
