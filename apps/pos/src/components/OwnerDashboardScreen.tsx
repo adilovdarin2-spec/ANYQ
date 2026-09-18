@@ -1,5 +1,6 @@
 import type { OwnerDashboard, OwnerFlag } from '../types';
 import { needsOwnerAttention } from '../owner-attention';
+import { OwnerQueue } from './OwnerQueue';
 import { formatDateTime, formatMoney, hoursSince } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
@@ -74,6 +75,13 @@ export function OwnerDashboardScreen({
 
         {dashboard && (
           <>
+            {/* 0. Что делать — до всего остального.
+                Разделы ниже отвечают на «как дела», а человек, открывший это
+                утром между поставкой и очередью, спрашивает «с чего начать».
+                Поэтому очередь выше: она говорит, что делать, разделы — почему
+                так вышло. */}
+            <OwnerQueue dashboard={dashboard} />
+
             {/* 1. Где деньги */}
             <div className="orders-section-title">{t('owner.money')}</div>
             <div className="report-cards">
