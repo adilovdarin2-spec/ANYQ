@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseMarkedCode } from '../marking';
+import { sameMarkedCode } from '../marking-scan';
 import type { Product, WriteOffRecord, WriteOffReason } from '../types';
 import { WRITE_OFF_PHRASES } from '../types';
 import { formatDateTime } from '../utils';
@@ -21,7 +23,7 @@ interface Props {
   onWriteOff: (payload: {
     reasonCode: WriteOffReason;
     note: string;
-    items: { productId: string; quantity: number }[];
+    items: { productId: string; quantity: number; codes?: string[] }[];
   }) => Promise<boolean>;
   onQuarantine: (
     action: 'block' | 'release',
@@ -57,6 +59,41 @@ export function WriteOffScreen({
   const [lines, setLines] = useState<Line[]>([]);
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [quantity, setQuantity] = useState('');
+  /* Коды списываемых упаковок, по строке. Списать «любую из трёх» значит
+     объявить списанной пачку, которая цела и лежит на полке: продать её потом
+     будет нельзя, а разбитая останется в остатке.
+
+     Только для списания: изоляция товар со склада не убирает — он здесь, просто
+     не для продажи, — и коды при ней трогать нечего. */
+  const [codes, setCodes] = useState<Record<number, string[]>>({});
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  function isMarked(productId: string): boolean {
+    return products.find((p) => p.id === productId)?.marked === true;
+  }
+
+  function scanWriteOffCode(index: number, line: Line, raw: string) {
+    const already = codes[index] ?? [];
+    if (!parseMarkedCode(raw).ok) {
+      setCodeError(t('writeOff.codeUnreadable'));
+      return;
+    }
+    if (already.some((seen) => sameMarkedCode(seen, raw))) {
+      setCodeError(t('writeOff.codeDuplicate'));
+      return;
+    }
+    if (already.length >= line.quantity) {
+      setCodeError(t('writeOff.codeExtra'));
+      return;
+    }
+    setCodeError(null);
+    setCodes((prev) => ({ ...prev, [index]: [...already, raw] }));
+  }
+
+  const missingCodes =
+    mode === 'write_off'
+      ? lines.filter((l, i) => isMarked(l.productId) && (codes[i]?.length ?? 0) !== l.quantity)
+      : [];
 
   function addLine() {
     const product = products.find((p) => p.id === productId);
@@ -67,20 +104,26 @@ export function WriteOffScreen({
   }
 
   async function submit() {
-    const items = lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
+    const items = lines.map((l, i) => ({
+      productId: l.productId,
+      quantity: l.quantity,
+      ...(codes[i]?.length ? { codes: codes[i] } : {}),
+    }));
     const done =
       mode === 'write_off'
         ? await onWriteOff({ reasonCode, note: note.trim(), items })
-        : await onQuarantine(mode, { note: note.trim(), items });
+        : await onQuarantine(mode, { note: note.trim(), items: items.map(({ productId, quantity }) => ({ productId, quantity })) });
     if (done) {
       setLines([]);
+      setCodes({});
+      setCodeError(null);
       setNote('');
       setView('list');
     }
   }
 
   const noteRequired = mode !== 'release';
-  const canSubmit = lines.length > 0 && (!noteRequired || note.trim() !== '') && !submitting;
+  const canSubmit = lines.length > 0 && (!noteRequired || note.trim() !== '') && missingCodes.length === 0 && !submitting;
 
   return (
     <div className="screen">
@@ -198,13 +241,33 @@ export function WriteOffScreen({
             <div className="section-title">{t('transfer.products')}</div>
             {lines.length === 0 && <div className="empty-state">{t('transfer.addAtLeastOne')}</div>}
             {lines.map((l, i) => (
-              <div key={`${l.productId}-${i}`} className="report-row">
-                <span>{l.name} × {formatQuantity(l.quantity)}</span>
-                <button className="li-remove" onClick={() => setLines((prev) => prev.filter((_, index) => index !== i))}>
-                  {t('common.delete')}
-                </button>
+              <div key={`${l.productId}-${i}`}>
+                <div className="report-row">
+                  <span>{l.name} × {formatQuantity(l.quantity)}</span>
+                  <button className="li-remove" onClick={() => setLines((prev) => prev.filter((_, index) => index !== i))}>
+                    {t('common.delete')}
+                  </button>
+                </div>
+                {mode === 'write_off' && isMarked(l.productId) && (
+                  <div className="form-field">
+                    <label htmlFor={`writeoff-scan-${i}`}>{t('writeOff.scanCodes')}</label>
+                    <input
+                      id={`writeoff-scan-${i}`}
+                      type="text"
+                      placeholder={t('writeOff.scanPlaceholder')}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        const field = e.currentTarget;
+                        scanWriteOffCode(i, l, field.value);
+                        field.value = '';
+                      }}
+                    />
+                    <span className="field-hint">{t('writeOff.scanned', { done: codes[i]?.length ?? 0, need: l.quantity })}</span>
+                  </div>
+                )}
               </div>
             ))}
+            {codeError && <div className="login-error">{codeError}</div>}
 
             <div className="transfer-add-row">
               <select value={productId} onChange={(e) => setProductId(e.target.value)}>

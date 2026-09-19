@@ -1884,7 +1884,7 @@ export default function App() {
   async function handleCreateWriteOff(payload: {
     reasonCode: WriteOffReason;
     note: string;
-    items: { productId: string; quantity: number }[];
+    items: { productId: string; quantity: number; codes?: string[] }[];
   }) {
     if (!session || !currentLocationId) return false;
     setWriteOffSubmitting(true);

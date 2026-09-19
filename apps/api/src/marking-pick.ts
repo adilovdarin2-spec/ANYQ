@@ -128,3 +128,24 @@ export function transferCodesRefusalMessage(refusal: ReturnCodesRefusal): string
       return `Кодов ${refusal.codes}, а упаковок ${refusal.quantity} — их должно быть поровну`;
   }
 }
+
+/**
+ * Те же отказы, но словами списания.
+ *
+ * Списывает обычно владелец или старший смены, и разговор у него не с
+ * покупателем, а с полкой: что именно разбилось, просрочилось, не доехало.
+ */
+export function writeOffCodesRefusalMessage(refusal: ReturnCodesRefusal): string {
+  switch (refusal.kind) {
+    case 'needScan':
+      return 'Отсканируйте коды списываемых упаковок — иначе списанной окажется не та';
+    case 'unreadable':
+      return 'Код не читается — поднесите сканер к квадратному коду на упаковке ещё раз';
+    case 'notInSale':
+      return 'Этой упаковки нет в остатке этой точки — проверьте, ту ли взяли';
+    case 'duplicate':
+      return 'Один и тот же код поднесён дважды — каждая упаковка сканируется один раз';
+    case 'countMismatch':
+      return `Кодов ${refusal.codes}, а упаковок ${refusal.quantity} — их должно быть поровну`;
+  }
+}

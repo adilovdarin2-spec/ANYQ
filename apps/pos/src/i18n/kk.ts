@@ -208,6 +208,12 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'bins.unblock': 'Бұғаттан шығару',
   'bins.delete': 'Жою',
 
+  'writeOff.scanCodes': 'Есептен шығарылатын қаптамалардың кодтары',
+  'writeOff.scanPlaceholder': 'Сканерді қаптамадағы кодқа тигізіңіз',
+  'writeOff.scanned': '{need} қаптамадан {done} сканерленді',
+  'writeOff.codeUnreadable': 'Код оқылмайды — сканерді тағы бір рет тигізіңіз',
+  'writeOff.codeDuplicate': 'Бұл қаптама сканерленіп қойған',
+  'writeOff.codeExtra': 'Есептен шығарылатыннан көп қаптама сканерленді',
   'writeOff.title': 'Есептен шығару және карантин',
   'writeOff.reason': 'Себебі',
   'writeOff.note': 'Не болды',

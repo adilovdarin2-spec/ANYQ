@@ -81,7 +81,7 @@ import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
 import { markedCodeKey } from '../marking';
-import { pickCodes, returnCodesRefusalMessage, transferCodesRefusalMessage } from '../marking-pick';
+import { pickCodes, returnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { catalogXml, offersXml } from '../commerceml';
@@ -5034,7 +5034,7 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
   if (!(await allow(req, res, 'writeOff'))) return;
   const b = req.body ?? {};
   const note = typeof b.note === 'string' ? b.note.trim() : '';
-  const lines: { productId: string; quantity: number; batchId?: string | null }[] = Array.isArray(b.items) ? b.items : [];
+  const lines: { productId: string; quantity: number; batchId?: string | null; codes?: string[] }[] = Array.isArray(b.items) ? b.items : [];
   if (!isWriteOffReason(b.reasonCode)) {
     res.status(400).json({ error: 'Выберите причину списания' });
     return;
@@ -5077,6 +5077,42 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
   }
 
   const stockByProduct = groupStockByProduct(stockRows);
+
+  /* Списанная пачка перестаёт быть товаром — и её код тоже.
+     Иначе код навсегда остаётся «лежит» при том, что упаковки в магазине уже
+     нет: по кодам товара больше, чем на полке, и первая же сверка с
+     государственной системой этим и кончится. */
+  const stockCodes = await prisma.markedCode.findMany({
+    where: {
+      companyId: req.posCompanyId!,
+      locationId,
+      state: 'in_stock',
+      productId: { in: lines.map((line) => line.productId) },
+    },
+    select: { id: true, productId: true, gtin: true, serial: true },
+  });
+  const retiringCodeIds: string[] = [];
+  if (stockCodes.length > 0) {
+    const byProduct = new Map<string, { quantity: number; scanned: string[] }>();
+    for (const line of lines) {
+      const entry = byProduct.get(line.productId) ?? { quantity: 0, scanned: [] };
+      entry.quantity += line.quantity;
+      if (Array.isArray(line.codes)) entry.scanned.push(...line.codes.map((c: unknown) => String(c)));
+      byProduct.set(line.productId, entry);
+    }
+    for (const [productId, entry] of byProduct) {
+      const plan = pickCodes({
+        quantity: entry.quantity,
+        outstanding: stockCodes.filter((c) => c.productId === productId),
+        scanned: entry.scanned,
+      });
+      if (!plan.ok) {
+        res.status(400).json({ error: writeOffCodesRefusalMessage(plan.refusal) });
+        return;
+      }
+      retiringCodeIds.push(...plan.codeIds);
+    }
+  }
 
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
   if (keyResult.status === 'invalid') {
@@ -5195,6 +5231,17 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
         });
       }
 
+      if (retiringCodeIds.length > 0) {
+        // Условием по состоянию: между проверкой и записью помещается продажа
+        // этой же пачки на кассе. Списать проданное значит объяснять потом,
+        // куда делась упаковка, которая ушла с покупателем.
+        const { count } = await tx.markedCode.updateMany({
+          where: { id: { in: retiringCodeIds }, state: 'in_stock' },
+          data: { state: 'written_off' },
+        });
+        if (count !== retiringCodeIds.length) throw new MarkedCodeRaceError('write-off');
+      }
+
       return { id: created.id, createdAt: created.createdAt.toISOString() };
     });
 
@@ -5206,6 +5253,10 @@ posRouter.post('/write-offs', requirePosAuth, async (req: PosAuthedRequest, res)
     }
     if (err instanceof ConcurrentStockChangeError) {
       res.status(409).json({ error: 'Остаток изменился — обновите и повторите' });
+      return;
+    }
+    if (err instanceof MarkedCodeRaceError) {
+      res.status(409).json({ error: 'Одну из упаковок успели продать — обновите и повторите' });
       return;
     }
     throw err;

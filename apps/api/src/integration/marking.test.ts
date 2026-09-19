@@ -576,6 +576,74 @@ describe('коды маркировки', () => {
     expect(sale.status, JSON.stringify(sale.body)).toBe(201);
   });
 
+  it('списание убирает и код тоже', async () => {
+    // Иначе код навсегда остаётся «лежит», хотя упаковки в магазине уже нет:
+    // по кодам товара больше, чем на полке, и первая же сверка с
+    // государственной системой этим и кончится.
+    expect((await receive(['A1'], 'wo-receive')).status).toBe(201);
+
+    const off = await api(
+      fx.token,
+      'POST',
+      '/pos/write-offs',
+      {
+        locationId: fx.locationId,
+        reasonCode: 'damage',
+        note: 'раздавили коробкой',
+        items: [{ productId: fx.productId, quantity: 1 }],
+      },
+      { 'Idempotency-Key': 'wo-off' },
+    );
+    expect(off.status, JSON.stringify(off.body)).toBe(201);
+
+    const code = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } });
+    expect(code.state).toBe('written_off');
+  });
+
+  it('и списанную пачку продать нельзя', async () => {
+    expect((await receive(['A1', 'A2'], 'wo-sell-receive')).status).toBe(201);
+    expect((await api(
+      fx.token,
+      'POST',
+      '/pos/write-offs',
+      {
+        locationId: fx.locationId,
+        reasonCode: 'damage',
+        note: 'раздавили',
+        items: [{ productId: fx.productId, quantity: 1, codes: [code('A1')] }],
+      },
+      { 'Idempotency-Key': 'wo-sell-off' },
+    )).status).toBe(201);
+
+    const sale = await sell(['A1'], 'wo-sell-sale', 1);
+    expect(sale.status).toBe(409);
+    expect(sale.body.error).toContain('списали');
+
+    // А вторая пачка продаётся как ни в чём не бывало.
+    expect((await sell(['A2'], 'wo-sell-other', 1)).status).toBe(201);
+  });
+
+  it('а часть пачек без скана не списывается', async () => {
+    // Списать «любую из трёх» значит объявить списанной целую пачку: продать
+    // её потом будет нельзя, а разбитая останется в остатке.
+    expect((await receive(['A1', 'A2', 'A3'], 'wo-part-receive')).status).toBe(201);
+    const off = await api(
+      fx.token,
+      'POST',
+      '/pos/write-offs',
+      {
+        locationId: fx.locationId,
+        reasonCode: 'damage',
+        note: 'одну разбили',
+        items: [{ productId: fx.productId, quantity: 1 }],
+      },
+      { 'Idempotency-Key': 'wo-part-off' },
+    );
+    expect(off.status).toBe(400);
+    expect(off.body.error).toContain('Отсканируйте коды');
+    expect(await prisma.markedCode.count({ where: { state: 'written_off' } })).toBe(0);
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.

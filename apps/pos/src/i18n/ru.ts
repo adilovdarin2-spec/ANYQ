@@ -197,6 +197,12 @@ export const ru = {
   'bins.unblock': 'Разблокировать',
   'bins.delete': 'Удалить',
 
+  'writeOff.scanCodes': 'Коды списываемых упаковок',
+  'writeOff.scanPlaceholder': 'Поднесите сканер к коду на упаковке',
+  'writeOff.scanned': 'Отсканировано {done} из {need}',
+  'writeOff.codeUnreadable': 'Код не читается — поднесите сканер ещё раз',
+  'writeOff.codeDuplicate': 'Эту упаковку уже отсканировали',
+  'writeOff.codeExtra': 'Упаковок отсканировали больше, чем списывают',
   'writeOff.title': 'Списание и карантин',
   'writeOff.reason': 'Причина',
   'writeOff.note': 'Что произошло',

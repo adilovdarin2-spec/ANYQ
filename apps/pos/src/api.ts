@@ -893,7 +893,8 @@ export interface CreateWriteOffPayload {
   locationId: string;
   reasonCode: WriteOffReason;
   note: string;
-  items: { productId: string; quantity: number }[];
+  /** `codes` — коды списываемых упаковок для маркированного товара. */
+  items: { productId: string; quantity: number; codes?: string[] }[];
   /** Когда списали на складе, а не когда команда дошла до сервера. */
   occurredAt?: string;
 }
