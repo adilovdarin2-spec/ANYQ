@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { creditRoom } from './credit-room';
+import { creditRoom, creditWorthShowing } from './credit-room';
 import { resolveCreditSale } from '../../api/src/settlements';
 
 /**
@@ -79,5 +79,29 @@ describe('остаток лимита', () => {
     const room = creditRoom({ creditAllowed: true, creditLimit: 100_000, owed: 100_000 }, 0);
     expect(room.state).toBe('room');
     expect(room.state === 'room' && room.left).toBe(0);
+  });
+});
+
+describe('когда про долг вообще стоит говорить', () => {
+  it('всегда, если долг есть', () => {
+    for (const account of [
+      { creditAllowed: true, creditLimit: 100_000, owed: 20_000 },
+      { creditAllowed: true, creditLimit: 0, owed: 20_000 },
+      { creditAllowed: false, creditLimit: 0, owed: 20_000 },
+    ]) {
+      expect(creditWorthShowing(creditRoom(account, 0)), JSON.stringify(account)).toBe(true);
+    }
+  });
+
+  it('и когда есть потолок — до него можно дойти этой корзиной', () => {
+    expect(creditWorthShowing(creditRoom({ creditAllowed: true, creditLimit: 50_000, owed: 0 }, 1_000))).toBe(true);
+  });
+
+  it('но не когда сказать нечего', () => {
+    // «Долг 0 ₸ · потолок не задан» под каждым чеком — шум, за которым
+    // перестают замечать строку, в которой появилось число. В продуктовом
+    // такой клиент — обычный держатель карты.
+    expect(creditWorthShowing(creditRoom({ creditAllowed: true, creditLimit: 0, owed: 0 }, 5_000))).toBe(false);
+    expect(creditWorthShowing(creditRoom({ creditAllowed: false, creditLimit: 0, owed: 0 }, 5_000))).toBe(false);
   });
 });

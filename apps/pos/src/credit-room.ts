@@ -46,3 +46,19 @@ export function creditRoom(account: CreditAccount, cartTotal: number): CreditRoo
   }
   return { state: 'room', owed, left: account.creditLimit - after };
 }
+
+/**
+ * Есть ли про долг что сказать.
+ *
+ * Строка «Долг 0 ₸ · потолок не задан» под каждым чеком — это шум, а шум
+ * опаснее молчания: за строкой, которая всегда одинаковая, перестают замечать
+ * ту, в которой появилось число. В продуктовом магазине такой клиент —
+ * обычный держатель карты, и долг ему разрешили когда-то на всякий случай.
+ *
+ * Говорить стоит о двух вещах: о существующем долге — всегда, и о потолке,
+ * когда он задан, потому что до него можно дойти прямо этой корзиной.
+ */
+export function creditWorthShowing(room: CreditRoom): boolean {
+  if (room.owed > 0) return true;
+  return room.state === 'room' || room.state === 'over';
+}

@@ -4,7 +4,7 @@ import type { LoyaltySelection } from '../types';
 import { ApiError } from '../api';
 import type { CustomerLookupResult } from '../api';
 import { formatMoney } from '../utils';
-import { creditRoom } from '../credit-room';
+import { creditRoom, creditWorthShowing } from '../credit-room';
 
 /**
  * Кому продаём — вопрос не розничный.
@@ -193,7 +193,7 @@ function CreditLine({ selection, netAfterDiscount }: { selection: LoyaltySelecti
 
   // Розничному покупателю без долга говорить нечего: строка «долг 0 ₸» у
   // каждого чека — это шум, за которым перестают замечать настоящий долг.
-  if (room.state === 'notAllowed' && room.owed === 0) return null;
+  if (!creditWorthShowing(room)) return null;
 
   if (room.state === 'over') {
     return (
