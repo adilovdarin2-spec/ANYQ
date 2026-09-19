@@ -123,7 +123,7 @@ import { RegisterChoiceScreen } from './components/RegisterChoiceScreen';
 import { ShiftBar } from './components/ShiftBar';
 import { TabBar } from './components/TabBar';
 import type { MainTab } from './components/TabBar';
-import { mainTabFor } from './views';
+import { homeViewFor, mainTabFor } from './views';
 import type { View } from './views';
 import { OpenShiftScreen } from './components/OpenShiftScreen';
 import { CloseShiftScreen } from './components/CloseShiftScreen';
@@ -218,7 +218,10 @@ export default function App() {
       // every warehouse screen refusing to load until someone signs in again.
       : session?.catalogLocationId ?? session?.locations[0]?.id ?? null;
   const currentLocation = session?.locations.find((l) => l.id === currentLocationId) ?? null;
-  const [view, setView] = useState<View>('sale');
+  // Не всегда 'sale': кафе начинает смену с зала. Сессия читается синхронно
+  // из хранилища, поэтому нужный экран виден с первого кадра, а не после
+  // подскока с кассы на зал у официанта на глазах.
+  const [view, setView] = useState<View>(() => homeViewFor(getSession()?.modules ?? []));
   /**
    * Чек показывает продажу такой, какая она сейчас, а не снимок момента оплаты.
    *
@@ -703,8 +706,10 @@ export default function App() {
   }
 
   if (hasRestaurant) {
+    // Зал отсюда ушёл: он теперь свой раздел внизу экрана. Держать его ещё и
+    // здесь — значит учить двум дорогам к одному месту, а «Операции» мы как
+    // раз разбирали, чтобы в них осталось только то, что открывают редко.
     operationsItems.push(
-      { key: 'floorplan', weight: 'daily', group: 'restaurant', icon: 'table', label: t('floor.title'), onClick: handleShowFloorPlan },
       { key: 'kds', weight: 'daily', group: 'restaurant', icon: 'flame', label: t('kds.title'), onClick: handleShowKds },
     );
   }
@@ -2604,11 +2609,15 @@ export default function App() {
 
   function handleShowFloorPlan() {
     setView('floorplan');
-    void loadTables();
   }
 
   useEffect(() => {
     if (view !== 'floorplan' || !session) return;
+    // Загрузка здесь, а не в обработчике перехода: на зал теперь попадают и не
+    // нажимая — это первый экран смены в кафе. Пока её делал обработчик,
+    // официант утром открывал приложение и видел «Столов пока нет» — не
+    // «загружаю», а именно «нет», — и так пятнадцать секунд до первого опроса.
+    void loadTables();
     const interval = setInterval(loadTables, 15000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2768,7 +2777,10 @@ export default function App() {
 
     saveShift(s);
     setShift(s);
-    setView('sale');
+    // Туда же, где смена начинается: у кафе это зал. Жёсткое 'sale' здесь
+    // сводило на нет весь выбор первого экрана — смену открывают каждое утро,
+    // и каждое утро официант оказывался на сетке товаров.
+    setView(homeViewFor(session?.modules ?? []));
 
     // Attempted now and retried by the sync loop for as long as it takes. A
     // shift that never reaches the server takes its whole day's sales out of
@@ -2818,7 +2830,7 @@ export default function App() {
     saveShift(null);
     setShift(null);
     setCart([]);
-    setView('sale');
+    setView(homeViewFor(session?.modules ?? []));
 
     void flushShiftCloses();
   }
@@ -3844,7 +3856,6 @@ export default function App() {
           loading={tablesLoading}
           error={tablesError}
           submitting={tableSubmitting}
-          onBack={() => setView('operations')}
           onRefresh={loadTables}
           onSelectTable={handleSelectTable}
           onCreateTable={handleCreateTable}
@@ -3974,16 +3985,18 @@ export default function App() {
         />
       )}
 
-      {(view === 'sale' || view === 'products' || view === 'operations' || view === 'profile') && (
+      {(view === 'sale' || view === 'products' || view === 'operations' || view === 'profile' || view === 'floorplan') && (
         <TabBar
           active={activeTab}
           onChange={(tab) => {
             if (tab === 'products') handleShowProducts();
             else if (tab === 'profile') setView('profile');
+            else if (tab === 'floor') handleShowFloorPlan();
             else setView(tab);
           }}
           showProducts={canManageProducts}
           showOperations={operationsItems.length > 0}
+          showFloor={hasRestaurant}
           operationsBadge={operationsBadge}
         />
       )}

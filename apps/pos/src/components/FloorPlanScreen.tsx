@@ -9,13 +9,12 @@ interface Props {
   loading: boolean;
   error: string | null;
   submitting: boolean;
-  onBack: () => void;
   onRefresh: () => void;
   onSelectTable: (table: RestaurantTable) => void;
   onCreateTable: (name: string, seats: number) => void;
 }
 
-export function FloorPlanScreen({ tables, loading, error, submitting, onBack, onRefresh, onSelectTable, onCreateTable }: Props) {
+export function FloorPlanScreen({ tables, loading, error, submitting, onRefresh, onSelectTable, onCreateTable }: Props) {
   const { t } = useTranslation();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -34,8 +33,10 @@ export function FloorPlanScreen({ tables, loading, error, submitting, onBack, on
 
   return (
     <div className="screen">
+      {/* Без стрелки «назад»: зал — свой раздел внизу экрана, и назад из него
+          некуда. Стрелка, ведущая неизвестно откуда, — это вопрос «где я»,
+          заданный кассиру посреди смены. */}
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
         <span className="screen-title">{t('floor.title')}</span>
         <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>

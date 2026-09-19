@@ -122,6 +122,7 @@ export const ru = {
   'receipt.newSale': 'Новая продажа',
 
   // --- getting around -----------------------------------------------------
+  'tab.floor': 'Столики',
   'tab.sale': 'Касса',
   'tab.products': 'Товары',
   'tab.operations': 'Операции',
