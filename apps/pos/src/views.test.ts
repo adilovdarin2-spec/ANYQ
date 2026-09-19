@@ -16,7 +16,7 @@ describe('какой раздел подсвечен', () => {
 
   it('и любой экран, открытый из «Операций», тоже', () => {
     const fromOperations: View[] = [
-      'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns',
+      'batches', 'transfers', 'incoming', 'counts', 'returns',
       'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins',
       'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet',
       'price-list', 'delivery', 'settlements', 'production',
@@ -61,9 +61,35 @@ describe('с чего начинается смена', () => {
     expect(homeViewFor(['restaurant', 'terminal'])).toBe('floorplan');
   });
 
+  it('у поставщика — с заказов', () => {
+    // Его день состоит из них: пришёл заказ, собрали, отгрузили.
+    expect(homeViewFor(['supply'])).toBe('orders');
+  });
+
+  it('но не у того, кто заказы не выдаёт', () => {
+    // Выдача снимает товар со склада. Кассиру без этого права экран открывать
+    // незачем — нажать в нём будет нечего, и первое, что он увидит утром, —
+    // список чужой работы.
+    expect(homeViewFor(['supply'], ['sell'])).toBe('sale');
+    expect(homeViewFor(['supply'], ['sell', 'moveStock'])).toBe('orders');
+  });
+
+  it('и не у магазина, который просто завёл витрину', () => {
+    // Розница — признак, что за прилавком всё-таки торгуют: у такого магазина
+    // день начинается с чека, а заказы с витрины идут фоном.
+    expect(homeViewFor(['supply', 'retail', 'stock'])).toBe('sale');
+  });
+
   it('у остальных — с кассы', () => {
-    for (const modules of [['retail', 'stock'], ['warehouse', 'stock'], ['supply'], ['pharmacy', 'retail'], []]) {
+    for (const modules of [['retail', 'stock'], ['warehouse', 'stock'], ['pharmacy', 'retail'], []]) {
       expect(homeViewFor(modules), modules.join('+') || 'без модулей').toBe('sale');
     }
+  });
+
+  it('а старая сессия без списка прав ничего не теряет', () => {
+    // Список прав приходит с сервером, и сессия, выданная прежней сборкой, его
+    // не знает. Прятать по незнанию — значит отобрать экран у того, у кого
+    // право есть.
+    expect(homeViewFor(['supply'], null)).toBe('orders');
   });
 });

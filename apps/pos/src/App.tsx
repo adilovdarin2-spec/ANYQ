@@ -221,7 +221,10 @@ export default function App() {
   // Не всегда 'sale': кафе начинает смену с зала. Сессия читается синхронно
   // из хранилища, поэтому нужный экран виден с первого кадра, а не после
   // подскока с кассы на зал у официанта на глазах.
-  const [view, setView] = useState<View>(() => homeViewFor(getSession()?.modules ?? []));
+  const [view, setView] = useState<View>(() => {
+    const saved = getSession();
+    return homeViewFor(saved?.modules ?? [], saved?.capabilities ?? null);
+  });
   /**
    * Чек показывает продажу такой, какая она сейчас, а не снимок момента оплаты.
    *
@@ -648,9 +651,9 @@ export default function App() {
   const operationsItems: OperationItem[] = [];
   // Заказы с витрины — там же, где их выдают: выдача снимает товар со склада,
   // и кассиру этот экран показывать незачем, раз нажать в нём будет нечего.
-  if (hasSupply && may('moveStock')) {
-    operationsItems.push({ key: 'orders', weight: 'daily', group: 'suppliers', icon: 'orders', label: t('ops.orders'), badge: pendingOrdersCount, onClick: () => { setView('orders'); void loadOrders(); } });
-  }
+  // Заказы отсюда ушли: у поставщика это свой раздел внизу экрана, с тем же
+  // счётчиком. Держать их ещё и здесь — значит учить двум дорогам к одному
+  // месту, а «Операции» мы разбирали, чтобы в них осталось редкое.
   if (hasPharmacy) {
     operationsItems.push({ key: 'batches', weight: 'daily', group: 'stock', icon: 'batches', label: t('ops.batches'), badge: expiringBatchesCount, onClick: handleShowBatches });
   }
@@ -2780,7 +2783,7 @@ export default function App() {
     // Туда же, где смена начинается: у кафе это зал. Жёсткое 'sale' здесь
     // сводило на нет весь выбор первого экрана — смену открывают каждое утро,
     // и каждое утро официант оказывался на сетке товаров.
-    setView(homeViewFor(session?.modules ?? []));
+    setView(homeViewFor(session?.modules ?? [], session?.capabilities ?? null));
 
     // Attempted now and retried by the sync loop for as long as it takes. A
     // shift that never reaches the server takes its whole day's sales out of
@@ -2830,7 +2833,7 @@ export default function App() {
     saveShift(null);
     setShift(null);
     setCart([]);
-    setView(homeViewFor(session?.modules ?? []));
+    setView(homeViewFor(session?.modules ?? [], session?.capabilities ?? null));
 
     void flushShiftCloses();
   }
@@ -3450,7 +3453,6 @@ export default function App() {
           loading={ordersLoading}
           error={ordersError}
           busyOrder={busyOrder}
-          onBack={() => setView('operations')}
           onRefresh={loadOrders}
           onFulfill={handleFulfillOrder}
           onReject={handleRejectOrder}
@@ -3985,18 +3987,21 @@ export default function App() {
         />
       )}
 
-      {(view === 'sale' || view === 'products' || view === 'operations' || view === 'profile' || view === 'floorplan') && (
+      {(view === 'sale' || view === 'products' || view === 'operations' || view === 'profile' || view === 'floorplan' || view === 'orders') && (
         <TabBar
           active={activeTab}
           onChange={(tab) => {
             if (tab === 'products') handleShowProducts();
             else if (tab === 'profile') setView('profile');
             else if (tab === 'floor') handleShowFloorPlan();
+            else if (tab === 'orders') { setView('orders'); void loadOrders(); }
             else setView(tab);
           }}
           showProducts={canManageProducts}
           showOperations={operationsItems.length > 0}
           showFloor={hasRestaurant}
+          showOrders={hasSupply && may('moveStock')}
+          ordersBadge={pendingOrdersCount}
           operationsBadge={operationsBadge}
         />
       )}

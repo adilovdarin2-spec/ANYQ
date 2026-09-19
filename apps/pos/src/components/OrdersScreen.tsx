@@ -8,7 +8,6 @@ interface Props {
   loading: boolean;
   error: string | null;
   busyOrder: { id: string; action: 'fulfill' | 'reject' } | null;
-  onBack: () => void;
   onRefresh: () => void;
   onFulfill: (id: string) => void;
   onReject: (id: string) => void;
@@ -16,15 +15,16 @@ interface Props {
   onPick: (id: string) => void;
 }
 
-export function OrdersScreen({ orders, loading, error, busyOrder, onBack, onRefresh, onFulfill, onReject, onPick }: Props) {
+export function OrdersScreen({ orders, loading, error, busyOrder, onRefresh, onFulfill, onReject, onPick }: Props) {
   const { t } = useTranslation();
   const pending = orders.filter((o) => o.status === 'pending');
   const resolved = orders.filter((o) => o.status !== 'pending');
 
   return (
     <div className="screen">
+      {/* Без стрелки «назад»: заказы — свой раздел внизу экрана, и назад из
+          них некуда. */}
       <div className="screen-header">
-        <button className="icon-btn" onClick={onBack} aria-label={t('common.back')}>←</button>
         <span className="screen-title">{t('orders.title')}</span>
         <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
       </div>

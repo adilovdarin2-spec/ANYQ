@@ -121,6 +121,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
 
   // --- getting around -----------------------------------------------------
   'tab.floor': 'Үстелдер',
+  'tab.orders': 'Тапсырыстар',
   'tab.sale': 'Касса',
   'tab.products': 'Тауарлар',
   'tab.operations': 'Операциялар',

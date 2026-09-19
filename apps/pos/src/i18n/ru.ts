@@ -123,6 +123,7 @@ export const ru = {
 
   // --- getting around -----------------------------------------------------
   'tab.floor': 'Столики',
+  'tab.orders': 'Заказы',
   'tab.sale': 'Касса',
   'tab.products': 'Товары',
   'tab.operations': 'Операции',

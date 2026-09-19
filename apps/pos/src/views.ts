@@ -47,7 +47,7 @@ export type View =
 
 /** Экраны склада и закупок — всё, что открывается из «Операций». */
 const OPERATIONS_VIEWS = new Set<View>([
-  'orders', 'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'staff', 'price-list', 'delivery', 'settlements', 'production', 'kds', 'stock-history',
+  'batches', 'transfers', 'incoming', 'counts', 'returns', 'replenishment', 'fiscal', 'purchase-orders', 'write-offs', 'bins', 'bin-count', 'reconciliation', 'import', 'migrate', 'cabinet', 'staff', 'price-list', 'delivery', 'settlements', 'production', 'kds', 'stock-history',
 ]);
 
 /**
@@ -59,6 +59,15 @@ const OPERATIONS_VIEWS = new Set<View>([
  * официант проводит смену.
  */
 const FLOOR_VIEWS = new Set<View>(['floorplan', 'table-order']);
+
+/**
+ * Заказы с витрины — тоже свой раздел.
+ *
+ * У поставщика день состоит из них: пришёл заказ, собрали, отгрузили. Лежали
+ * они в «Операциях» — то есть работа, ради которой он и включил продукт,
+ * открывалась через список из двух десятков пунктов.
+ */
+const ORDERS_VIEWS = new Set<View>(['orders', 'pick-order']);
 
 const PROFILE_VIEWS = new Set<View>([
   'profile', 'reports', 'dashboard', 'audit', 'export', 'documents', 'devices',
@@ -78,6 +87,7 @@ const PRODUCT_VIEWS = new Set<View>(['products', 'product-edit']);
  */
 export function mainTabFor(view: View): MainTab {
   if (FLOOR_VIEWS.has(view)) return 'floor';
+  if (ORDERS_VIEWS.has(view)) return 'orders';
   if (PRODUCT_VIEWS.has(view)) return 'products';
   if (view === 'operations' || OPERATIONS_VIEWS.has(view)) return 'operations';
   if (PROFILE_VIEWS.has(view)) return 'profile';
@@ -92,6 +102,14 @@ export function mainTabFor(view: View): MainTab {
  * появляется в конце, и первым экраном ему нужен зал. Касса остаётся рядом —
  * навынос пробивают ею.
  */
-export function homeViewFor(modules: string[]): View {
-  return modules.includes('restaurant') ? 'floorplan' : 'sale';
+export function homeViewFor(modules: string[], capabilities: string[] | null = null): View {
+  if (modules.includes('restaurant')) return 'floorplan';
+  // Оптовику — заказы, но только тому, кто их выдаёт: выдача снимает товар со
+  // склада, и кассиру без этого права экран открывать незачем — нажать в нём
+  // будет нечего. Старая сессия списка прав не знает; тогда не прячем ничего.
+  const mayPick = capabilities === null || capabilities.includes('moveStock');
+  // `retail` — признак, что за прилавком всё-таки торгуют: у магазина с
+  // витриной день начинается с чека, а не с чужих заказов.
+  if (modules.includes('supply') && !modules.includes('retail') && mayPick) return 'orders';
+  return 'sale';
 }
