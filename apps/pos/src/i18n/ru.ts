@@ -811,6 +811,11 @@ export const ru = {
   'loyalty.redeem': 'Списать баллов',
   'loyalty.remove': 'убрать',
   'loyalty.attach': 'добавить',
+  'credit.owed': 'Долг {amount}',
+  'credit.left': 'в долг можно ещё {amount}',
+  'credit.over': 'корзина превышает лимит {limit} на {amount}',
+  'credit.noLimit': 'потолок долга не задан',
+  'credit.cashOnly': 'долг не разрешён — оплата сейчас',
 
   'discount.title': 'Скидка',
   'discount.percentPlaceholder': 'Напр. 10',

@@ -802,6 +802,11 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'loyalty.redeem': 'Ұпай есептен шығару',
   'loyalty.remove': 'алып тастау',
   'loyalty.attach': 'қосу',
+  'credit.owed': 'Қарыз {amount}',
+  'credit.left': 'қарызға тағы {amount} болады',
+  'credit.over': 'себет {limit} шегінен {amount} асып тұр',
+  'credit.noLimit': 'қарыз шегі қойылмаған',
+  'credit.cashOnly': 'қарызға рұқсат жоқ — қазір төлеу керек',
 
   'discount.title': 'Жеңілдік',
   'discount.percentPlaceholder': 'Мыс. 10',

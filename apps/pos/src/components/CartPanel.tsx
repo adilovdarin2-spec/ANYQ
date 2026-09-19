@@ -3,7 +3,7 @@ import type { CustomerLookupResult } from '../api';
 import { formatMoney, formatWeight } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import { DiscountEditor } from './DiscountEditor';
-import { LoyaltyEditor } from './LoyaltyEditor';
+import { CustomerRow } from './CustomerRow';
 
 interface Props {
   cart: CartLine[];
@@ -84,9 +84,17 @@ export function CartPanel({
             <>
               <div className="summary-row"><span>{t('cart.subtotal')}</span><span>{formatMoney(subtotal)}</span></div>
               <DiscountEditor discount={discount} discountAmount={discountAmount} onChange={onChangeDiscount} />
-              <LoyaltyEditor netAfterDiscount={netAfterDiscount} selection={loyalty} onChange={onChangeLoyalty} onLookup={onLookupCustomer} />
             </>
           )}
+          {/* Не под `hasRetail`: «кому продаём» — вопрос не розничный, а у
+              склада без этой строки нельзя было отпустить в долг вовсе. */}
+          <CustomerRow
+            netAfterDiscount={netAfterDiscount}
+            selection={loyalty}
+            onChange={onChangeLoyalty}
+            onLookup={onLookupCustomer}
+            showPoints={hasRetail}
+          />
           <div className="summary-row total"><span>{t('cart.total')}</span><span>{formatMoney(total)}</span></div>
           <button className="btn btn-primary btn-block" onClick={onCheckout}>
             {t('cart.checkout', { amount: formatMoney(total) })}

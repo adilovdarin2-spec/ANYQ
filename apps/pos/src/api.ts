@@ -338,6 +338,13 @@ export interface CustomerLookupResult {
   found: boolean;
   name: string | null;
   loyaltyPoints: number;
+  /** Разрешён ли этому клиенту долг. Разрешает владелец, не кассир. */
+  creditAllowed: boolean;
+  /** Сколько уже должен на эту секунду. */
+  owed: number;
+  /** Ноль — «потолок не задан», а не «долга нет». */
+  creditLimit: number;
+  creditAvailable: number;
 }
 
 export function fetchCustomerPoints(token: string, phone: string): Promise<CustomerLookupResult> {

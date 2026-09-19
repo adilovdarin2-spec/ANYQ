@@ -180,6 +180,12 @@ export interface LoyaltySelection {
   name: string;
   pointsAvailable: number;
   pointsToRedeem: number;
+  /* Долг и потолок едут вместе с именем, а не запрашиваются отдельно. Иначе
+     корзина растёт, а число, с которым её сравнивают, осталось от прошлого
+     запроса — и «можно ещё восемьдесят» будет сказано по вчерашнему долгу. */
+  creditAllowed: boolean;
+  creditLimit: number;
+  owed: number;
 }
 
 export interface Shift {

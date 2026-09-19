@@ -3186,7 +3186,10 @@ export default function App() {
       customerPhone: loyalty?.phone,
       customerName: loyalty?.name,
       pointsRedeemed: cartPointsRedeemed || undefined,
-      pointsEarned: loyalty ? Math.floor((cartTotal * 5) / 100) : undefined,
+      // Только с розницей: у склада баллов нет, и клиента там называют
+      // ради долга. Число, которое сервер всё равно отбросит, на чеке
+      // офлайн выглядит обещанием баллов, которых не будет.
+      pointsEarned: loyalty && hasRetail ? Math.floor((cartTotal * 5) / 100) : undefined,
       paymentMethod: method,
       payments,
       createdAt: new Date().toISOString(),

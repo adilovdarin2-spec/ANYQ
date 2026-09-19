@@ -247,6 +247,11 @@ button { cursor: pointer; }
 /* loyalty (retail tariff) */
 .loyalty-row button { color: var(--accent); background: none; border: none; font-size: 0.78rem; padding: 4px; margin-left: 8px; }
 .loyalty-editor { padding: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+/* Долг клиента под строкой с его именем. Мельче итога и без рамки: это не
+   ещё одна сумма к оплате, а то, что кладовщик скажет вслух до того, как
+   наберёт ящики. */
+.credit-line { font-size: 0.78rem; color: var(--ink-muted); }
+.credit-line.credit-over { color: var(--status-overdue); }
 .loyalty-found { font-size: 0.85rem; color: var(--ink-muted); }
 .loyalty-lookup-row { display: flex; align-items: center; gap: 8px; }
 .loyalty-lookup-row input {

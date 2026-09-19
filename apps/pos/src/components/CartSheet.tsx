@@ -3,7 +3,7 @@ import type { CustomerLookupResult } from '../api';
 import { formatMoney, formatWeight } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import { DiscountEditor } from './DiscountEditor';
-import { LoyaltyEditor } from './LoyaltyEditor';
+import { CustomerRow } from './CustomerRow';
 
 interface Props {
   cart: CartLine[];
@@ -88,9 +88,15 @@ export function CartSheet({
               <>
                 <div className="summary-row"><span>{t('cart.subtotal')}</span><span>{formatMoney(subtotal)}</span></div>
                 <DiscountEditor discount={discount} discountAmount={discountAmount} onChange={onChangeDiscount} />
-                <LoyaltyEditor netAfterDiscount={netAfterDiscount} selection={loyalty} onChange={onChangeLoyalty} onLookup={onLookupCustomer} />
               </>
             )}
+            <CustomerRow
+              netAfterDiscount={netAfterDiscount}
+              selection={loyalty}
+              onChange={onChangeLoyalty}
+              onLookup={onLookupCustomer}
+              showPoints={hasRetail}
+            />
             <div className="summary-row total"><span>{t('cart.total')}</span><span>{formatMoney(total)}</span></div>
           </>
         )}
