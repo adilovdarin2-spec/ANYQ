@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
 import { expiringSoonByProduct } from './expiry';
+import { readScannedMarking, sameMarkedCode } from './marking-scan';
 import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveLicenceConfirmedAt, saveSession, saveShift } from './storage';
 import { cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
@@ -2886,6 +2887,15 @@ export default function App() {
   }
 
   function addToCart(product: Product, modifier?: ProductModifierOption, explicitQty?: number, addQty = false) {
+    /* Маркированную пачку пальцем не положить.
+       Иначе защита добровольная: кассир жмёт плитку вместо того, чтобы поднести
+       сканер, чек уходит без кодов — а сервер такой чек отклонит уже после
+       того, как покупатель отдал деньги. Сказать надо здесь, до оплаты, и
+       сказать, что делать. */
+    if (product.marked) {
+      setSaleNotice(t('marking.scanRequired'));
+      return;
+    }
     const lineId = modifier ? `${product.id}:${modifier.id}` : product.id;
     const displayName = modifier ? `${product.name} (${modifier.name})` : product.name;
     const price = product.price + (modifier?.priceDelta ?? 0);
@@ -3047,8 +3057,72 @@ export default function App() {
     if (product) setWeightProduct(product);
   }
 
+  /**
+   * Пачка, поднесённая сканером, — одна штука и один код.
+   *
+   * Код маркировки заменяет штрихкод, а не добавляется к нему: просить кассира
+   * после Data Matrix найти на той же пачке обычный штрихкод значит удвоить
+   * работу на каждой пачке сигарет.
+   *
+   * Тот же код, поднесённый дважды, — это не две пачки. Кассир мог не понять,
+   * сработал ли сканер, и поднести ещё раз; принять это за вторую пачку значит
+   * пробить товар, которого на прилавке нет. Сервер такой чек всё равно
+   * отклонит, но узнать об этом кассир должен здесь, а не после оплаты.
+   */
+  function addMarkedToCart(product: Product, raw: string): void {
+    const already = cart.find((l) => l.id === product.id)?.markingCodes ?? [];
+    if (already.some((known) => sameMarkedCode(known, raw))) {
+      setSaleNotice(t('marking.alreadyScanned'));
+      return;
+    }
+    const next = [...already, raw];
+    if (next.length > product.stock) {
+      setSaleNotice(stockNotice(product));
+      return;
+    }
+    setSaleNotice(null);
+    setCart((prev) => {
+      const existing = prev.find((l) => l.id === product.id);
+      if (existing) {
+        return prev.map((l) =>
+          l.id === product.id ? { ...l, qty: next.length, markingCodes: next } : l,
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: product.id,
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          qty: 1,
+          saleUnit: product.saleUnit,
+          markingCodes: next,
+        },
+      ];
+    });
+  }
+
   function handleSearchEnter() {
     if (!session) return;
+
+    /* Сначала маркировка: строка со сканера может быть кодом, и тогда она сама
+       называет товар. Проверять её после обычного штрихкода нельзя — код
+       маркировки начинается с «01», и поиск по штрихкоду на нём просто ничего
+       не найдёт, а кассир получит «товар не найден» на совершенно годной
+       пачке. */
+    const marked = readScannedMarking(query, session.products);
+    if (marked) {
+      const product = marked.productId ? session.products.find((p) => p.id === marked.productId) : null;
+      if (!product) {
+        setSaleNotice(t('marking.unknownProduct'));
+        setQuery('');
+        return;
+      }
+      addMarkedToCart(product, query.trim());
+      setQuery('');
+      return;
+    }
     // A case barcode and a bottle barcode look the same to a scanner, so the
     // lookup answers both which product and how many of it. Scanning a case
     // adds the case, not one bottle out of it.

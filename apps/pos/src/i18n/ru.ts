@@ -270,6 +270,10 @@ export const ru = {
   'role.pharmacist': 'Фармацевт',
 
   // --- ranges, shared by the summary and the reports -----------------------
+  'marking.scanRequired': 'Эту пачку добавляют сканером — поднесите код с упаковки',
+  'marking.alreadyScanned': 'Эта пачка уже в чеке — поднесите следующую',
+  'marking.unknownProduct': 'Товар по коду не найден — проверьте, заведён ли он',
+  'marking.scanned': 'по коду',
   'queue.title': 'Что сделать сегодня',
   'queue.cashShortSingle': 'Пересчитать ящик: у {name} не сошлось',
   'queue.cashShortGroup': 'Пересчитать ящики: расхождений {count}',

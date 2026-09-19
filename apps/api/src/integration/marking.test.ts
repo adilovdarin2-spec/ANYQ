@@ -171,6 +171,59 @@ describe('коды маркировки', () => {
     expect(untouched.state).toBe('in_stock');
   });
 
+  it('маркированный товар без кода не продаётся вовсе', async () => {
+    // Это и делает защиту обязательной. Пока признака не было, кассир мог
+    // поднести сканер к штрихкоду вместо Data Matrix, чек уходил без кодов, и
+    // сервер его принимал — проверять было нечего, и вся маркировка держалась
+    // на добросовестности.
+    await prisma.product.update({ where: { id: fx.productId }, data: { marked: true } });
+    expect((await receive(['A1'], 'mark-required-receive')).status).toBe(201);
+
+    const sale = await api(
+      fx.token,
+      'POST',
+      '/pos/sales',
+      {
+        locationId: fx.locationId,
+        paymentMethod: 'cash',
+        items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+      },
+      { 'Idempotency-Key': 'mark-required-sale' },
+    );
+    expect(sale.status).toBe(400);
+    expect(sale.body.error).toContain('только по коду маркировки');
+    expect(await prisma.document.count({ where: { companyId: fx.companyId, type: 'sale' } })).toBe(0);
+  });
+
+  it('и половина пачек с кодом — тоже отказ', async () => {
+    // Две пачки, один код: вторую продали бы без кода, и по документам она
+    // осталась бы на полке навсегда.
+    await prisma.product.update({ where: { id: fx.productId }, data: { marked: true } });
+    expect((await receive(['A1', 'A2'], 'mark-half-receive')).status).toBe(201);
+
+    const sale = await sell(['A1'], 'mark-half-sale', 2);
+    expect(sale.status).toBe(400);
+    expect(await prisma.document.count({ where: { companyId: fx.companyId, type: 'sale' } })).toBe(0);
+  });
+
+  it('а немаркированный так и продаётся без кодов', async () => {
+    // Самопроверка: признак должен включать строгость ровно там, где он стоит.
+    // В магазине маркированного товара — несколько позиций из сотен.
+    expect((await receive(['A1'], 'mark-flag-off-receive')).status).toBe(201);
+    const sale = await api(
+      fx.token,
+      'POST',
+      '/pos/sales',
+      {
+        locationId: fx.locationId,
+        paymentMethod: 'cash',
+        items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+      },
+      { 'Idempotency-Key': 'mark-flag-off-sale' },
+    );
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+  });
+
   it('а товар без кодов продаётся как раньше', async () => {
     // Самопроверка: маркировка не должна мешать тому, что её не касается. В
     // магазине маркированного товара — несколько позиций из сотен.

@@ -290,7 +290,13 @@ export interface SubmitSalePayload {
   paymentMethod: PaymentMethod | 'mixed';
   /** One line per method. A sale settled one way is a split of one. */
   payments?: { method: PaymentMethod; amount: number }[];
-  items: { productId: string; quantity: number; price: number }[];
+  items: {
+    productId: string;
+    quantity: number;
+    price: number;
+    /** Коды маркировки, если товар маркированный. Сырыми — разбирает сервер. */
+    codes?: string[];
+  }[];
   discountType?: DiscountType;
   discountValue?: number;
   customerPhone?: string;

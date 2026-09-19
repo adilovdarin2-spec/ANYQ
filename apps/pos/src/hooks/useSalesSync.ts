@@ -76,7 +76,14 @@ export function useSalesSync(token: string | null, ensureShiftSynced: () => Prom
               // draining a morning of sales into either.
               paymentMethod: sale.paymentMethod,
               ...(sale.payments ? { payments: sale.payments } : {}),
-              items: sale.items.map((i) => ({ productId: i.productId, quantity: i.qty, price: i.price })),
+              items: sale.items.map((i) => ({
+                productId: i.productId,
+                quantity: i.qty,
+                price: i.price,
+                // Коды уходят вместе с чеком, а не отдельным запросом: чек без
+                // кодов сервер примет, и пачка останется в остатке навсегда.
+                ...(i.markingCodes?.length ? { codes: i.markingCodes } : {}),
+              })),
               ...(sale.discount ? { discountType: sale.discount.type, discountValue: sale.discount.value } : {}),
               ...(sale.customerPhone ? { customerPhone: sale.customerPhone, customerName: sale.customerName, pointsToRedeem: sale.pointsRedeemed } : {}),
             },

@@ -281,6 +281,10 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'role.pharmacist': 'Фармацевт',
 
   // --- ranges, shared by the summary and the reports -----------------------
+  'marking.scanRequired': 'Бұл қаптама сканермен қосылады — қаптамадағы кодты жақындатыңыз',
+  'marking.alreadyScanned': 'Бұл қаптама чекте бар — келесісін жақындатыңыз',
+  'marking.unknownProduct': 'Код бойынша тауар табылмады — ол енгізілген бе, тексеріңіз',
+  'marking.scanned': 'код бойынша',
   'queue.title': 'Бүгін не істеу керек',
   'queue.cashShortSingle': 'Кассаны қайта санау: {name} сәйкес келмеді',
   'queue.cashShortGroup': 'Кассаларды санау: сәйкессіздік {count}',

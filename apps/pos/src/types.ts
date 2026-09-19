@@ -44,6 +44,13 @@ export interface Product {
   modifiers: ProductModifierOption[];
   packagings: Packaging[];
   variants: ProductVariantOption[];
+  /**
+   * Продаётся только по коду маркировки.
+   *
+   * Касса без этого признака не знает, что пачку нельзя пробить штрихкодом, и
+   * вся маркировка остаётся добровольной: сканер к штрихкоду — чек без кодов.
+   */
+  marked?: boolean;
 }
 
 export interface CompanyLocation {
@@ -60,6 +67,14 @@ export interface CartLine {
   price: number;
   qty: number;
   saleUnit?: SaleUnit;
+  /**
+   * Коды маркировки — по одному на пачку в этой строке.
+   *
+   * Сырыми строками, как их прислал сканер: решение по ним принимает сервер, и
+   * присылать ему разобранное значит принимать решение за него. Касса разбирает
+   * код только чтобы понять, какой товар класть в корзину.
+   */
+  markingCodes?: string[];
 }
 
 // 'credit' is not a way of paying — it is a way of not paying yet, and the

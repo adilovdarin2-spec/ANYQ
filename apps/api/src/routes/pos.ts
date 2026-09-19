@@ -492,6 +492,9 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
     // non-retail companies always see 'piece' regardless of what's stored,
     // same gating pattern used for variant grouping just below.
     saleUnit: modules.includes('retail') ? p.saleUnit : 'piece',
+    // Без этого касса не знает, что пачку нельзя пробить штрихкодом, и вся
+    // маркировка остаётся добровольной.
+    marked: p.marked,
     modifiers: modifiersByProduct.get(p.id) ?? [],
     packagings: packagingsByProduct.get(p.id) ?? [],
     parentProductId: p.parentProductId,
@@ -705,7 +708,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
      требуют разных действий, а из транзакции наружу вышло бы одно невнятное
      «повторите продажу». Гонку двух касс ловит защищённое обновление ниже —
      здесь ловится всё остальное, и ловится по-человечески. */
-  const soldCodes: { id: string; gtin: string; serial: string }[] = [];
+  const soldCodes: { id: string; productId: string; gtin: string; serial: string }[] = [];
   if (Array.isArray(b.items)) {
     const wanted = new Map<string, number>();
     for (const line of items) wanted.set(line.productId, (wanted.get(line.productId) ?? 0) + line.quantity);
@@ -749,7 +752,34 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           res.status(409).json({ error: markingRefusalMessage({ kind: 'elsewhere', code }) });
           return;
         }
-        soldCodes.push({ id: known.id, gtin: code.gtin, serial: code.serial });
+        soldCodes.push({ id: known.id, productId, gtin: code.gtin, serial: code.serial });
+      }
+    }
+  }
+
+  /* Маркированный товар без кода не продаётся.
+     Это и делает защиту обязательной: пока признака не было, кассир мог
+     поднести сканер к штрихкоду вместо Data Matrix, чек уходил без кодов, и
+     сервер его принимал — проверять было нечего, и вся маркировка держалась на
+     добросовестности. */
+  const markedProducts = await prisma.product.findMany({
+    where: { companyId: req.posCompanyId, id: { in: items.map((it) => it.productId) }, marked: true },
+    select: { id: true, name: true },
+  });
+  if (markedProducts.length > 0) {
+    const codesByProduct = new Map<string, number>();
+    for (const code of soldCodes) codesByProduct.set(code.productId, (codesByProduct.get(code.productId) ?? 0) + 1);
+    const wanted = new Map<string, number>();
+    for (const line of items) wanted.set(line.productId, (wanted.get(line.productId) ?? 0) + line.quantity);
+
+    for (const product of markedProducts) {
+      const have = codesByProduct.get(product.id) ?? 0;
+      const need = wanted.get(product.id) ?? 0;
+      if (have !== need) {
+        res.status(400).json({
+          error: `«${product.name}» продаётся только по коду маркировки — отсканируйте каждую упаковку`,
+        });
+        return;
       }
     }
   }
