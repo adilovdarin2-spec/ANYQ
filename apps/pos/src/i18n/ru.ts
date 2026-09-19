@@ -899,6 +899,8 @@ export const ru = {
   'table.cooking': 'Готовится',
   'table.ready': 'Готово',
   'table.title': 'Заказ (кухня)',
+  'table.scanPlaceholder': 'Поднесите сканер к коду на упаковке',
+  'table.notAMarking': 'Это не код маркировки — блюда добавляются с плиток ниже',
   'table.addDishes': 'Добавить блюда',
   'table.toPay': 'К оплате',
   'table.sending': 'Отправляем…',

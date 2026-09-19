@@ -644,6 +644,86 @@ describe('коды маркировки', () => {
     expect(await prisma.markedCode.count({ where: { state: 'written_off' } })).toBe(0);
   });
 
+  describe('вторая дверь: заказ за столом', () => {
+    /**
+     * Кафе продаёт сигареты не чеком, а столом.
+     *
+     * Пока правило маркировки жило только в маршруте чека, бар отпускал пачку
+     * со стола мимо всей защиты: кода не спрашивали, признак «только по коду»
+     * не проверяли, товар списывался, и остаток при этом сходился. Увидеть это
+     * было негде — только на сверке с государственной системой.
+     */
+    async function restaurantTable() {
+      await prisma.tariff.update({
+        where: { companyId: fx.companyId },
+        data: { modules: JSON.stringify(['retail', 'stock', 'warehouse', 'restaurant']) },
+      });
+      return prisma.table.create({
+        data: { companyId: fx.companyId, locationId: fx.locationId, name: 'Стол 1', seats: 2 },
+      });
+    }
+
+    it('маркированный товар за столом без кода не отпускается', async () => {
+      await prisma.product.update({ where: { id: fx.productId }, data: { marked: true } });
+      expect((await receive(['A1'], 'tbl-need-receive')).status).toBe(201);
+      const table = await restaurantTable();
+
+      const order = await api(fx.token, 'POST', `/pos/tables/${table.id}/order`, {
+        items: [{ productId: fx.productId, quantity: 1, price: 200 }],
+      });
+      expect(order.status).toBe(400);
+      expect(order.body.error).toContain('только по коду маркировки');
+      expect(await prisma.documentItem.count({ where: { document: { tableId: table.id } } })).toBe(0);
+    });
+
+    it('а с кодом — отпускается, и код гасится', async () => {
+      expect((await receive(['A1'], 'tbl-ok-receive')).status).toBe(201);
+      const table = await restaurantTable();
+
+      const order = await api(fx.token, 'POST', `/pos/tables/${table.id}/order`, {
+        items: [{ productId: fx.productId, quantity: 1, price: 200, codes: [code('A1')] }],
+      });
+      expect(order.status, JSON.stringify(order.body)).toBe(201);
+
+      const sold = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } });
+      expect(sold.state).toBe('sold');
+      expect(sold.saleDocumentId).toBe(order.body.id);
+    });
+
+    it('и второй раз тот же код за столом не пройдёт', async () => {
+      expect((await receive(['A1'], 'tbl-twice-receive')).status).toBe(201);
+      const table = await restaurantTable();
+      expect((await api(fx.token, 'POST', `/pos/tables/${table.id}/order`, {
+        items: [{ productId: fx.productId, quantity: 1, price: 200, codes: [code('A1')] }],
+      })).status).toBe(201);
+
+      const again = await api(fx.token, 'POST', `/pos/tables/${table.id}/order`, {
+        items: [{ productId: fx.productId, quantity: 1, price: 200, codes: [code('A1')] }],
+      });
+      expect(again.status).toBe(409);
+      expect(again.body.error).toContain('уже продан');
+    });
+
+    it('а блюда за столом идут как раньше', async () => {
+      // Самопроверка: маркировка не должна мешать тому, чего не касается. В
+      // кафе маркированных позиций — сигареты и пиво из сотни строк меню.
+      const plain = await api(
+        fx.token,
+        'POST',
+        '/pos/receipts',
+        { locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 5, price: 100 }] },
+        { 'Idempotency-Key': 'tbl-plain-receive' },
+      );
+      expect(plain.status).toBe(201);
+      const table = await restaurantTable();
+
+      const order = await api(fx.token, 'POST', `/pos/tables/${table.id}/order`, {
+        items: [{ productId: fx.productId, quantity: 2, price: 200 }],
+      });
+      expect(order.status, JSON.stringify(order.body)).toBe(201);
+    });
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.

@@ -82,6 +82,31 @@ import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
 import { markedCodeKey } from '../marking';
 import { pickCodes, returnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
+import { resolveSaleCodes } from '../marking-sale';
+
+/**
+ * База для правила маркировки, в том виде, в каком правилу она нужна.
+ *
+ * Компания зашита здесь, а не передаётся правилу: код соседней компании не
+ * должен находиться даже для того, чтобы получить отказ, — по отказу видно,
+ * что такая пачка где-то существует.
+ */
+function markedCodeLookup(companyId: string) {
+  return {
+    async findCode(gtin: string, serial: string) {
+      return prisma.markedCode.findUnique({
+        where: { companyId_gtin_serial: { companyId, gtin, serial } },
+        select: { id: true, productId: true, locationId: true, state: true },
+      });
+    },
+    async markedProducts(productIds: string[]) {
+      return prisma.product.findMany({
+        where: { companyId, id: { in: productIds }, marked: true },
+        select: { id: true, name: true },
+      });
+    },
+  };
+}
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { catalogXml, offersXml } from '../commerceml';
@@ -704,98 +729,22 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   }
 
   /* Коды маркировки — до записи чека.
-     Кассир подносит сканер к каждой пачке сигарет. Проверяем здесь, а не в
-     транзакции, ровно ради слов: «этого кода нет в приёмке» и «код уже продан»
-     требуют разных действий, а из транзакции наружу вышло бы одно невнятное
-     «повторите продажу». Гонку двух касс ловит защищённое обновление ниже —
-     здесь ловится всё остальное, и ловится по-человечески. */
-  const soldCodes: { id: string; productId: string; gtin: string; serial: string }[] = [];
-  if (Array.isArray(b.items)) {
-    const wanted = new Map<string, number>();
-    for (const line of items) wanted.set(line.productId, (wanted.get(line.productId) ?? 0) + line.quantity);
-
-    const byProduct = new Map<string, string[]>();
-    for (const line of b.items as { productId?: unknown; codes?: unknown }[]) {
-      if (!Array.isArray(line?.codes) || line.codes.length === 0) continue;
-      const productId = String(line.productId);
-      byProduct.set(productId, [...(byProduct.get(productId) ?? []), ...line.codes.map(String)]);
-    }
-
-    for (const [productId, codes] of byProduct) {
-      const read = readLineCodes({ productId, codes }, wanted.get(productId) ?? 0);
-      if (!read.ok) {
-        res.status(400).json({ error: markingRefusalMessage(read.refusal) });
-        return;
-      }
-      const duplicate = findDuplicate(read.value);
-      if (duplicate) {
-        res.status(400).json({ error: 'Один и тот же код поднесён дважды — проверьте пачки' });
-        return;
-      }
-
-      for (const code of read.value) {
-        const known = await prisma.markedCode.findUnique({
-          where: { companyId_gtin_serial: { companyId: req.posCompanyId!, gtin: code.gtin, serial: code.serial } },
-        });
-        if (!known) {
-          res.status(409).json({ error: markingRefusalMessage({ kind: 'unknown', code }) });
-          return;
-        }
-        /* Любое состояние, кроме «лежит», — отказ, и у каждого свои слова.
-           Раньше проверялось только «продан», и код, уехавший на другую точку,
-           проходил: состояние не `sold`, точка у него ещё отправляющая — то
-           есть отправитель мог продать пачку, которая едет в фургоне. */
-        if (known.state === 'sold') {
-          res.status(409).json({ error: markingRefusalMessage({ kind: 'alreadySold', code }) });
-          return;
-        }
-        if (known.state === 'in_transit') {
-          res.status(409).json({ error: markingRefusalMessage({ kind: 'inTransit', code }) });
-          return;
-        }
-        if (known.state !== 'in_stock') {
-          res.status(409).json({ error: markingRefusalMessage({ kind: 'writtenOff', code }) });
-          return;
-        }
-        if (known.productId !== productId) {
-          res.status(409).json({ error: markingRefusalMessage({ kind: 'wrongProduct', code }) });
-          return;
-        }
-        if (known.locationId !== locationId) {
-          res.status(409).json({ error: markingRefusalMessage({ kind: 'elsewhere', code }) });
-          return;
-        }
-        soldCodes.push({ id: known.id, productId, gtin: code.gtin, serial: code.serial });
-      }
-    }
-  }
-
-  /* Маркированный товар без кода не продаётся.
-     Это и делает защиту обязательной: пока признака не было, кассир мог
-     поднести сканер к штрихкоду вместо Data Matrix, чек уходил без кодов, и
-     сервер его принимал — проверять было нечего, и вся маркировка держалась на
-     добросовестности. */
-  const markedProducts = await prisma.product.findMany({
-    where: { companyId: req.posCompanyId, id: { in: items.map((it) => it.productId) }, marked: true },
-    select: { id: true, name: true },
+     Правило общее с заказом за столом: дверей продажи две, и пока оно жило
+     только здесь, бар продавал сигареты со стола мимо всей маркировки. */
+  const codesResult = await resolveSaleCodes(markedCodeLookup(req.posCompanyId!), {
+    locationId,
+    items: items.map((it) => ({ productId: it.productId, quantity: it.quantity })),
+    scanned: Array.isArray(b.items)
+      ? (b.items as { productId?: unknown; codes?: unknown }[])
+          .filter((line) => Array.isArray(line?.codes) && line.codes.length > 0)
+          .map((line) => ({ productId: String(line.productId), codes: (line.codes as unknown[]).map(String) }))
+      : [],
   });
-  if (markedProducts.length > 0) {
-    const codesByProduct = new Map<string, number>();
-    for (const code of soldCodes) codesByProduct.set(code.productId, (codesByProduct.get(code.productId) ?? 0) + 1);
-    const wanted = new Map<string, number>();
-    for (const line of items) wanted.set(line.productId, (wanted.get(line.productId) ?? 0) + line.quantity);
-
-    for (const product of markedProducts) {
-      const have = codesByProduct.get(product.id) ?? 0;
-      const need = wanted.get(product.id) ?? 0;
-      if (have !== need) {
-        res.status(400).json({
-          error: `«${product.name}» продаётся только по коду маркировки — отсканируйте каждую упаковку`,
-        });
-        return;
-      }
-    }
+  if (!codesResult.ok) {
+    res.status(codesResult.status).json({ error: codesResult.message });
+    return;
   }
+  const soldCodes = codesResult.codes;
 
   const onCredit = b.paymentMethod === 'credit' || creditLines.length > 0;
   if (onCredit) {
@@ -9354,6 +9303,22 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
     return;
   }
 
+  /* Заказ за столом — вторая дверь продажи, и правило у неё то же.
+     Пока оно жило только в маршруте чека, бар продавал сигареты со стола мимо
+     всей маркировки: код не спрашивали, признак «только по коду» не
+     проверяли, товар уходил, и остаток при этом сходился. */
+  const tableCodes = await resolveSaleCodes(markedCodeLookup(req.posCompanyId!), {
+    locationId,
+    items: items.map((it) => ({ productId: it.productId, quantity: it.quantity })),
+    scanned: (b.items as { productId?: unknown; codes?: unknown }[])
+      .filter((line) => Array.isArray(line?.codes) && line.codes.length > 0)
+      .map((line) => ({ productId: String(line.productId), codes: (line.codes as unknown[]).map(String) })),
+  });
+  if (!tableCodes.ok) {
+    res.status(tableCodes.status).json({ error: tableCodes.message });
+    return;
+  }
+
   try {
     const document = await prisma.$transaction(async (tx) => {
       // Dishes (recipe-tracked products) consume ingredients; everything else
@@ -9452,6 +9417,16 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
       }
       await Promise.all(updates);
 
+      for (const code of tableCodes.codes) {
+        // Защищённое обновление, как и в чеке: между проверкой и записью
+        // помещается официант за соседним столом с той же пачкой в руке.
+        const { count } = await tx.markedCode.updateMany({
+          where: { id: code.id, state: 'in_stock' },
+          data: { state: 'sold', soldAt: new Date(), saleDocumentId: openDocument.id },
+        });
+        if (count !== 1) throw new MarkedCodeRaceError(markedCodeKey(code));
+      }
+
       return tx.document.findUniqueOrThrow({ where: { id: openDocument.id }, include: { items: { include: { product: true } } } });
     }, { timeout: 15000 });
 
@@ -9470,6 +9445,10 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
   } catch (err) {
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
+      return;
+    }
+    if (err instanceof MarkedCodeRaceError) {
+      res.status(409).json({ error: 'Код продали за другим столом — отсканируйте упаковку заново' });
       return;
     }
     throw err;

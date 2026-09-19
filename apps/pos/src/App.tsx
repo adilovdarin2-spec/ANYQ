@@ -2670,7 +2670,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, session?.token, selectedTable?.id]);
 
-  async function handleSendToKitchen(items: { productId: string; quantity: number; price: number }[]) {
+  async function handleSendToKitchen(items: { productId: string; quantity: number; price: number; codes?: string[] }[]) {
     if (!session || !selectedTable) return;
     setTableSubmitting(true);
     setTablesError(null);

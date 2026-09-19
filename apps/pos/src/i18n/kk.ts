@@ -885,6 +885,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'table.cooking': 'Дайындалуда',
   'table.ready': 'Дайын',
   'table.title': 'Тапсырыс (ас үй)',
+  'table.scanPlaceholder': 'Сканерді қаптамадағы кодқа тигізіңіз',
+  'table.notAMarking': 'Бұл таңбалау коды емес — тағамдар төмендегі тақтайшалардан қосылады',
   'table.addDishes': 'Тағам қосу',
   'table.toPay': 'Төлеуге',
   'table.sending': 'Жіберіп жатырмыз…',

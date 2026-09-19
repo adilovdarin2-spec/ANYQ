@@ -251,6 +251,14 @@ button { cursor: pointer; }
    ещё одна сумма к оплате, а то, что кладовщик скажет вслух до того, как
    наберёт ящики. */
 .credit-line { font-size: 0.78rem; color: var(--ink-muted); }
+/* Поле для сканера за столом. Во всю ширину и в тот же кегль, что поля ввода
+   на остальных экранах: официант подносит сканер не глядя, а промахнуться
+   мимо узкой строки на планшете легко. */
+.table-scan {
+  width: 100%; box-sizing: border-box; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  font-size: 1rem; background: var(--surface); color: var(--ink);
+}
 .credit-line.credit-over { color: var(--status-overdue); }
 .loyalty-found { font-size: 0.85rem; color: var(--ink-muted); }
 .loyalty-lookup-row { display: flex; align-items: center; gap: 8px; }

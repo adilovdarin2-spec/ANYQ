@@ -610,7 +610,8 @@ export function fetchTableOrder(token: string, tableId: string): Promise<TableOr
 }
 
 export interface SendToKitchenPayload {
-  items: { productId: string; quantity: number; price: number }[];
+  /** `codes` — коды упаковок для маркированного товара: одна пачка, один код. */
+  items: { productId: string; quantity: number; price: number; codes?: string[] }[];
 }
 
 export function sendToKitchen(token: string, tableId: string, payload: SendToKitchenPayload): Promise<TableOrder & { id: string }> {

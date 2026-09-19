@@ -3,12 +3,15 @@ import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 import type { KitchenStatus, PaymentMethod, Product, RestaurantTable, TableOrder } from '../types';
 import { formatMoney } from '../utils';
+import { readScannedMarking, sameMarkedCode } from '../marking-scan';
 
 interface DraftItem {
   productId: string;
   name: string;
   price: number;
   qty: number;
+  /** Коды упаковок, если товар маркированный: одна пачка — один код. */
+  codes: string[];
 }
 
 interface Props {
@@ -19,7 +22,7 @@ interface Props {
   error: string | null;
   submitting: boolean;
   onBack: () => void;
-  onSendToKitchen: (items: { productId: string; quantity: number; price: number }[]) => void;
+  onSendToKitchen: (items: { productId: string; quantity: number; price: number; codes?: string[] }[]) => void;
   onPay: (method: PaymentMethod) => void;
 }
 
@@ -34,12 +37,51 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
   const { t } = useTranslation();
   const [draft, setDraft] = useState<DraftItem[]>([]);
   const [paying, setPaying] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
 
   function addProduct(p: Product) {
+    // Сигареты за столом — такая же продажа, как за кассой: пачку добавляют
+    // сканером, иначе гасить нечего и вся маркировка держится на честном слове.
+    if (p.marked) {
+      setScanNote(t('marking.scanRequired'));
+      return;
+    }
+    setScanNote(null);
     setDraft((prev) => {
       const existing = prev.find((d) => d.productId === p.id);
       if (existing) return prev.map((d) => (d.productId === p.id ? { ...d, qty: d.qty + 1 } : d));
-      return [...prev, { productId: p.id, name: p.name, price: p.price, qty: 1 }];
+      return [...prev, { productId: p.id, name: p.name, price: p.price, qty: 1, codes: [] }];
+    });
+  }
+
+  /** Сканер работает как клавиатура: строка приходит целиком и заканчивается Enter. */
+  function addScanned(raw: string) {
+    const scan = readScannedMarking(raw, products.map((p) => ({ id: p.id, barcode: p.barcode ?? '' })));
+    if (!scan) {
+      setScanNote(t('table.notAMarking'));
+      return;
+    }
+    const product = scan.productId ? products.find((p) => p.id === scan.productId) : undefined;
+    if (!product) {
+      setScanNote(t('marking.unknownProduct'));
+      return;
+    }
+    // Ту же пачку могли поднести дважды: официант не понял, сработал ли
+    // сканер. Строки при этом разные — один код приходит то со скобками, то с
+    // криптохвостом, — а пачка одна.
+    if (draft.some((d) => d.codes.some((seen) => sameMarkedCode(seen, raw)))) {
+      setScanNote(t('marking.alreadyScanned'));
+      return;
+    }
+    setScanNote(t('marking.scanned', { name: product.name }));
+    setDraft((prev) => {
+      const existing = prev.find((d) => d.productId === product.id);
+      if (existing) {
+        return prev.map((d) =>
+          d.productId === product.id ? { ...d, qty: d.qty + 1, codes: [...d.codes, raw] } : d,
+        );
+      }
+      return [...prev, { productId: product.id, name: product.name, price: product.price, qty: 1, codes: [raw] }];
     });
   }
 
@@ -47,8 +89,16 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
 
   function handleSend() {
     if (draft.length === 0) return;
-    onSendToKitchen(draft.map((d) => ({ productId: d.productId, quantity: d.qty, price: d.price })));
+    onSendToKitchen(
+      draft.map((d) => ({
+        productId: d.productId,
+        quantity: d.qty,
+        price: d.price,
+        ...(d.codes.length ? { codes: d.codes } : {}),
+      })),
+    );
     setDraft([]);
+    setScanNote(null);
   }
 
   const orderable = products.filter((p) => !p.stopListed);
@@ -83,6 +133,20 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
             )}
 
             <div className="orders-section-title">{t('table.addDishes')}</div>
+            {/* Поле для сканера, а не для поиска: у официанта в руке пачка, и
+                добавить её иначе нельзя. Одно касание — товар и код сразу. */}
+            <input
+              className="table-scan"
+              type="text"
+              placeholder={t('table.scanPlaceholder')}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                const field = e.currentTarget;
+                if (field.value.trim()) addScanned(field.value.trim());
+                field.value = '';
+              }}
+            />
+            {scanNote && <div className="field-hint">{scanNote}</div>}
             {orderable.length === 0 && <div className="empty-state">{t('grid.nothingFound')}</div>}
             <div className="product-grid">
               {orderable.map((p) => {
