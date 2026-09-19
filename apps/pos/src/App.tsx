@@ -2368,7 +2368,7 @@ export default function App() {
     saleId: string;
     reason: string;
     paymentMethod: PaymentMethod;
-    items: { documentItemId: string; quantity: number }[];
+    items: { documentItemId: string; quantity: number; codes?: string[] }[];
   }) {
     if (!session) return false;
     setReturnSubmitting(true);

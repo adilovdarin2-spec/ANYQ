@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseMarkedCode } from '../marking';
+import { sameMarkedCode } from '../marking-scan';
 import type { PaymentMethod, ReturnRecord, ReturnableSale } from '../types';
 import { PAYMENT_PHRASES } from '../types';
 import type { PhraseKey } from '../i18n';
@@ -17,7 +19,7 @@ interface Props {
     saleId: string;
     reason: string;
     paymentMethod: PaymentMethod;
-    items: { documentItemId: string; quantity: number }[];
+    items: { documentItemId: string; quantity: number; codes?: string[] }[];
   }) => Promise<boolean>;
 }
 
@@ -32,6 +34,12 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
   const [view, setView] = useState<'list' | 'pick-sale' | 'compose'>('list');
   const [sale, setSale] = useState<ReturnableSale | null>(null);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  /* Коды возвращаемых пачек, по строке чека.
+     Маркированную пачку нельзя вернуть «вообще»: если из трёх проданных несут
+     одну, а какую — неизвестно, то на полку запишется не та, и продать
+     принесённую потом будет нельзя. */
+  const [codes, setCodes] = useState<Record<string, string[]>>({});
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
 
@@ -58,6 +66,8 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
   function startReturn(picked: ReturnableSale) {
     setSale(picked);
     setQuantities({});
+    setCodes({});
+    setCodeError(null);
     setReason('');
     // Только то, что есть в списке ниже. Чек, разбитый на части, помечен
     // как `mixed`, а долг — как `credit`; ни того, ни другого в выборе нет,
@@ -74,10 +84,44 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
     setView('compose');
   }
 
+  function scanReturnCode(line: ReturnableSale['items'][number], raw: string) {
+    const want = Number(quantities[line.id] ?? '');
+    const already = codes[line.id] ?? [];
+    if (!parseMarkedCode(raw).ok) {
+      setCodeError(t('return.codeUnreadable'));
+      return;
+    }
+    if (already.some((seen) => sameMarkedCode(seen, raw))) {
+      setCodeError(t('return.codeDuplicate'));
+      return;
+    }
+    if (Number.isFinite(want) && want > 0 && already.length >= want) {
+      setCodeError(t('return.codeExtra'));
+      return;
+    }
+    setCodeError(null);
+    setCodes((prev) => ({ ...prev, [line.id]: [...already, raw] }));
+  }
+
   const chosenItems = sale
     ? sale.items
-        .map((line) => ({ documentItemId: line.id, quantity: Number(quantities[line.id] ?? '') }))
+        .map((line) => ({
+          documentItemId: line.id,
+          quantity: Number(quantities[line.id] ?? ''),
+          ...(codes[line.id]?.length ? { codes: codes[line.id] } : {}),
+        }))
         .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0)
+    : [];
+
+  /* Строки, где кодов ещё не хватает. Пока такие есть, кнопку жать незачем:
+     сервер откажет теми же словами, только после того, как кассир объяснит
+     покупателю, что сейчас всё получится. */
+  const missingCodes = sale
+    ? sale.items.filter((line) => {
+        const want = Number(quantities[line.id] ?? '');
+        if (!line.marked || !Number.isFinite(want) || want <= 0) return false;
+        return (codes[line.id]?.length ?? 0) !== want;
+      })
     : [];
 
   const refundEstimate =
@@ -202,6 +246,34 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
               );
             })}
 
+            {/* Скан по строке, а не один на весь возврат: код называет товар
+                сам, но кассиру надо видеть, к какой строке относится то, что
+                он уже поднёс. */}
+            {sale.items
+              .filter((line) => line.marked && Number(quantities[line.id] ?? '') > 0)
+              .map((line) => {
+                const want = Number(quantities[line.id] ?? '');
+                const done = codes[line.id]?.length ?? 0;
+                return (
+                  <div key={`codes-${line.id}`} className="form-field">
+                    <label htmlFor={`return-scan-${line.id}`}>{t('return.scanCodes', { name: line.name })}</label>
+                    <input
+                      id={`return-scan-${line.id}`}
+                      type="text"
+                      placeholder={t('return.scanPlaceholder')}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        const field = e.currentTarget;
+                        scanReturnCode(line, field.value);
+                        field.value = '';
+                      }}
+                    />
+                    <span className="field-hint">{t('return.scanned', { done, need: want })}</span>
+                  </div>
+                );
+              })}
+            {codeError && <div className="login-error">{codeError}</div>}
+
             {/* Required, and deliberately not a dropdown of tidy options: the
                 reason is the part an owner actually reads when a register
                 starts giving too much back. */}
@@ -241,7 +313,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
           <div className="screen-footer">
             <button
               className="btn btn-primary btn-block"
-              disabled={chosenItems.length === 0 || reason.trim() === '' || submitting}
+              disabled={chosenItems.length === 0 || reason.trim() === '' || missingCodes.length > 0 || submitting}
               onClick={handleSubmit}
             >
               {submitting ? t('return.submitting') : t('return.submit')}

@@ -518,6 +518,8 @@ export interface ReturnableSaleItem {
   quantity: number;
   price: number;
   returnedQuantity: number;
+  /** Эту строку продали по кодам маркировки — значит и вернуть надо по ним. */
+  marked: boolean;
 }
 
 export interface ReturnableSale {

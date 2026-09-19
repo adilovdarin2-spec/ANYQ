@@ -711,7 +711,8 @@ export interface CreateReturnPayload {
   saleId: string;
   reason: string;
   paymentMethod: string;
-  items: { documentItemId: string; quantity: number }[];
+  /** `codes` — коды возвращаемых упаковок, если товар продавался по маркировке. */
+  items: { documentItemId: string; quantity: number; codes?: string[] }[];
 }
 
 export interface ShiftCash {

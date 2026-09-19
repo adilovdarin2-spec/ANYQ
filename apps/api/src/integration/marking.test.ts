@@ -330,6 +330,133 @@ describe('коды маркировки', () => {
     expect(sale.status, JSON.stringify(sale.body)).toBe(201);
   });
 
+  it('возврат кладёт код обратно на полку', async () => {
+    // Без этого возврат портит две вещи разом: пачка ложится на полку, а её
+    // код остаётся «продан» навсегда. Товар есть, по бумагам он есть, продать
+    // его нельзя — и понять почему можно только заглянув в базу.
+    expect((await receive(['A1'], 'ret-receive')).status).toBe(201);
+    const sale = await sell(['A1'], 'ret-sale', 1);
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+
+    const line = await prisma.documentItem.findFirstOrThrow({ where: { documentId: sale.body.id } });
+    const back = await api(
+      fx.token,
+      'POST',
+      '/pos/returns',
+      { saleId: sale.body.id, reason: 'не подошло', items: [{ documentItemId: line.id, quantity: 1 }] },
+      { 'Idempotency-Key': 'ret-return' },
+    );
+    expect(back.status, JSON.stringify(back.body)).toBe(201);
+
+    const code = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } });
+    expect(code.state).toBe('in_stock');
+    expect(code.saleDocumentId).toBeNull();
+    expect(code.soldAt).toBeNull();
+  });
+
+  it('и вернувшуюся пачку можно продать снова', async () => {
+    // То, ради чего всё: до этой починки возвращённая пачка оставалась в
+    // магазине навсегда — её нельзя было ни продать, ни списать без вопросов.
+    expect((await receive(['A1'], 'resell-receive')).status).toBe(201);
+    const sale = await sell(['A1'], 'resell-sale', 1);
+    const line = await prisma.documentItem.findFirstOrThrow({ where: { documentId: sale.body.id } });
+    expect((await api(
+      fx.token,
+      'POST',
+      '/pos/returns',
+      { saleId: sale.body.id, reason: 'не подошло', items: [{ documentItemId: line.id, quantity: 1 }] },
+      { 'Idempotency-Key': 'resell-return' },
+    )).status).toBe(201);
+
+    const again = await sell(['A1'], 'resell-again', 1);
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+  });
+
+  it('а часть пачек без скана вернуть нельзя', async () => {
+    // Из трёх проданных несут одну. Погасив «любую из трёх», мы записали бы на
+    // полку пачку A, тогда как принесли B, — и продать B потом было бы нельзя.
+    expect((await receive(['A1', 'A2', 'A3'], 'part-receive')).status).toBe(201);
+    const sale = await sell(['A1', 'A2', 'A3'], 'part-sale', 3);
+    const line = await prisma.documentItem.findFirstOrThrow({ where: { documentId: sale.body.id } });
+
+    const back = await api(
+      fx.token,
+      'POST',
+      '/pos/returns',
+      { saleId: sale.body.id, reason: 'одну вернули', items: [{ documentItemId: line.id, quantity: 1 }] },
+      { 'Idempotency-Key': 'part-return' },
+    );
+    expect(back.status).toBe(400);
+    expect(back.body.error).toContain('Отсканируйте код');
+    expect(await prisma.document.count({ where: { companyId: fx.companyId, type: 'return' } })).toBe(0);
+  });
+
+  it('а со сканом — возвращается ровно та, которую принесли', async () => {
+    expect((await receive(['A1', 'A2', 'A3'], 'scan-receive')).status).toBe(201);
+    const sale = await sell(['A1', 'A2', 'A3'], 'scan-sale', 3);
+    const line = await prisma.documentItem.findFirstOrThrow({ where: { documentId: sale.body.id } });
+
+    const back = await api(
+      fx.token,
+      'POST',
+      '/pos/returns',
+      { saleId: sale.body.id, reason: 'вернули вторую', items: [{ documentItemId: line.id, quantity: 1, codes: [code('A2')] }] },
+      { 'Idempotency-Key': 'scan-return' },
+    );
+    expect(back.status, JSON.stringify(back.body)).toBe(201);
+
+    const states = await prisma.markedCode.findMany({ where: { companyId: fx.companyId }, orderBy: { serial: 'asc' } });
+    expect(states.map((c) => `${c.serial}:${c.state}`)).toEqual(['A1:sold', 'A2:in_stock', 'A3:sold']);
+  });
+
+  it('и чужой код при возврате не принимается', async () => {
+    // Принесли пачку, купленную по другому чеку: погасив её здесь, мы сделали
+    // бы возврат товара, которого этот чек не продавал.
+    expect((await receive(['A1', 'A2'], 'alien-receive')).status).toBe(201);
+    const sale = await sell(['A1', 'A2'], 'alien-sale', 2);
+    const line = await prisma.documentItem.findFirstOrThrow({ where: { documentId: sale.body.id } });
+
+    const back = await api(
+      fx.token,
+      'POST',
+      '/pos/returns',
+      { saleId: sale.body.id, reason: 'не наша', items: [{ documentItemId: line.id, quantity: 1, codes: [code('ЧУЖОЙ')] }] },
+      { 'Idempotency-Key': 'alien-return' },
+    );
+    expect(back.status).toBe(400);
+    expect(back.body.error).toContain('не по этому чеку');
+  });
+
+  it('а возврат немаркированного товара идёт как раньше', async () => {
+    // Самопроверка: маркировка не должна мешать тому, чего не касается.
+    const plain = await api(
+      fx.token,
+      'POST',
+      '/pos/receipts',
+      { locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 5, price: 100 }] },
+      { 'Idempotency-Key': 'plain-ret-receive' },
+    );
+    expect(plain.status).toBe(201);
+    const sale = await api(
+      fx.token,
+      'POST',
+      '/pos/sales',
+      { locationId: fx.locationId, paymentMethod: 'cash', items: [{ productId: fx.productId, quantity: 3, price: 200 }] },
+      { 'Idempotency-Key': 'plain-ret-sale' },
+    );
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+    const line = await prisma.documentItem.findFirstOrThrow({ where: { documentId: sale.body.id } });
+
+    const back = await api(
+      fx.token,
+      'POST',
+      '/pos/returns',
+      { saleId: sale.body.id, reason: 'передумали', items: [{ documentItemId: line.id, quantity: 1 }] },
+      { 'Idempotency-Key': 'plain-ret-return' },
+    );
+    expect(back.status, JSON.stringify(back.body)).toBe(201);
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.

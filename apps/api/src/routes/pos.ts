@@ -81,6 +81,7 @@ import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
 import { markedCodeKey } from '../marking';
+import { planReturnedCodes, returnCodesRefusalMessage } from '../marking-return';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { catalogXml, offersXml } from '../commerceml';
@@ -1188,6 +1189,19 @@ posRouter.get('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     take: 50,
   });
 
+  // Какие строки этих чеков продавались по коду. Кассе это нужно до того, как
+  // она отправит возврат: часть маркированных пачек вернуть без скана нельзя,
+  // и узнать об этом отказом сервера — значит узнать, когда покупатель уже
+  // стоит у прилавка с пачкой в руке.
+  const codedProducts = new Set(
+    (
+      await prisma.markedCode.findMany({
+        where: { saleDocumentId: { in: sales.map((s) => s.id) } },
+        select: { saleDocumentId: true, productId: true },
+      })
+    ).map((c) => `${c.saleDocumentId}:${c.productId}`),
+  );
+
   res.json(
     sales.map((sale) => {
       const returnedByItemId = new Map<string, number>();
@@ -1215,6 +1229,7 @@ posRouter.get('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           // What is still returnable on this line, so the client never offers
           // more than the server would accept.
           returnedQuantity: returnedByItemId.get(it.id) ?? 0,
+          marked: codedProducts.has(`${sale.id}:${it.productId}`),
         })),
       };
     }),
@@ -1266,7 +1281,7 @@ posRouter.get('/returns', requirePosAuth, async (req: PosAuthedRequest, res) => 
 posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const b = req.body ?? {};
   const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
-  const requested: { documentItemId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  const requested: { documentItemId: string; quantity: number; codes?: string[] }[] = Array.isArray(b.items) ? b.items : [];
   if (!b.saleId || !reason) {
     res.status(400).json({ error: 'Укажите чек и причину возврата' });
     return;
@@ -1353,6 +1368,41 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
     return;
   }
   const { lines, refund } = resolution;
+
+  /* Коды возвращаются вместе с товаром.
+     Без этого пачка ложится на полку, а её код остаётся «продан» навсегда:
+     остаток есть, а продать нельзя — касса потребует код, сервер ответит
+     «уже продан», и понять почему можно только заглянув в базу.
+
+     По товару, а не по строке чека: `MarkedCode` знает документ и товар, но не
+     строку, и в чеке с двумя строками одного товара разделить коды между ними
+     всё равно не по чему. */
+  const outstandingCodes = await prisma.markedCode.findMany({
+    where: { saleDocumentId: sale.id, state: 'sold' },
+    select: { id: true, productId: true, gtin: true, serial: true },
+  });
+  const returningByProduct = new Map<string, { quantity: number; scanned: string[] }>();
+  for (const line of lines) {
+    const asked = requested.find((it) => it.documentItemId === line.documentItemId);
+    const entry = returningByProduct.get(line.productId) ?? { quantity: 0, scanned: [] };
+    entry.quantity += line.quantity;
+    if (Array.isArray(asked?.codes)) entry.scanned.push(...asked.codes.map((c: unknown) => String(c)));
+    returningByProduct.set(line.productId, entry);
+  }
+
+  const codeIdsToRestore: string[] = [];
+  for (const [productId, entry] of returningByProduct) {
+    const plan = planReturnedCodes({
+      quantity: entry.quantity,
+      outstanding: outstandingCodes.filter((c) => c.productId === productId),
+      scanned: entry.scanned,
+    });
+    if (!plan.ok) {
+      res.status(400).json({ error: returnCodesRefusalMessage(plan.refusal) });
+      return;
+    }
+    codeIdsToRestore.push(...plan.codeIds);
+  }
 
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
   if (keyResult.status === 'invalid') {
@@ -1455,6 +1505,18 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
         }
       }
 
+      if (codeIdsToRestore.length > 0) {
+        // Условием по состоянию, как и при продаже: между проверкой и записью
+        // помещается второй возврат того же чека с другой кассы. Разошлось —
+        // значит кто-то успел, и правильный ответ «повторите», а не тихо
+        // возвращённые дважды коды.
+        const { count } = await tx.markedCode.updateMany({
+          where: { id: { in: codeIdsToRestore }, state: 'sold' },
+          data: { state: 'in_stock', soldAt: null, saleDocumentId: null },
+        });
+        if (count !== codeIdsToRestore.length) throw new MarkedCodeRaceError('return');
+      }
+
       if (sale.counterpartyId) {
         // Relative, and floored, for the same reason every other balance write
         // is: the customer may have spent points elsewhere since.
@@ -1487,6 +1549,10 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
   } catch (err) {
     if (err instanceof IdempotencyConflictError) {
       res.status(409).json({ error: 'Этот номер операции уже использован для другого возврата' });
+      return;
+    }
+    if (err instanceof MarkedCodeRaceError) {
+      res.status(409).json({ error: 'Этот возврат уже провели на другой кассе — обновите список чеков' });
       return;
     }
     throw err;
