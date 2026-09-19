@@ -1,15 +1,19 @@
 import { useState } from 'react';
-import type { Order } from '../types';
+import type { Order, Product } from '../types';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseMarkedCode } from '../marking';
+import { sameMarkedCode } from '../marking-scan';
 
 interface Props {
   order: Order;
   submitting: boolean;
   error: string | null;
   onBack: () => void;
+  /** Каталог — чтобы знать, какие строки заказа продаются только по коду. */
+  products: Product[];
   onSavePick: (items: { productId: string; quantity: number }[]) => Promise<boolean>;
-  onShip: () => Promise<boolean>;
+  onShip: (codes?: { productId: string; codes: string[] }[]) => Promise<boolean>;
 }
 
 /**
@@ -22,7 +26,7 @@ interface Props {
  * and making a picker retype twenty quantities to say "yes, all of it" is how
  * they start skipping the screen.
  */
-export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, onShip }: Props) {
+export function PickOrderScreen({ order, products, submitting, error, onBack, onSavePick, onShip }: Props) {
   const { t } = useTranslation();
   const [picked, setPicked] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -40,6 +44,36 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
 
   const shortfall = lines.reduce((sum, line) => sum + line.shortfall, 0);
   const foundTotal = lines.reduce((sum, line) => sum + line.found, 0);
+
+  /* Коды собранных упаковок.
+     Маркированную пачку нельзя выдать «вообще»: из десяти на полке в коробку
+     кладут три, и какие именно — знает только тот, кто их туда положил. */
+  const [codes, setCodes] = useState<Record<string, string[]>>({});
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  const isMarked = (productId: string) => products.find((p) => p.id === productId)?.marked === true;
+
+  function scanPicked(productId: string, want: number, raw: string) {
+    const already = codes[productId] ?? [];
+    if (!parseMarkedCode(raw).ok) {
+      setCodeError(t('pick.codeUnreadable'));
+      return;
+    }
+    if (already.some((seen) => sameMarkedCode(seen, raw))) {
+      setCodeError(t('pick.codeDuplicate'));
+      return;
+    }
+    if (already.length >= want) {
+      setCodeError(t('pick.codeExtra'));
+      return;
+    }
+    setCodeError(null);
+    setCodes((prev) => ({ ...prev, [productId]: [...already, raw] }));
+  }
+
+  const missingCodes = lines.filter(
+    (line) => isMarked(line.productId) && line.found > 0 && (codes[line.productId]?.length ?? 0) !== line.found,
+  );
 
   async function save() {
     await onSavePick(lines.map((line) => ({ productId: line.productId, quantity: line.found })));
@@ -88,6 +122,31 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
           </div>
         ))}
 
+        {/* Скан по строке: пачку кладут в коробку и подносят сканер — так же,
+            как её потом примут у покупателя. */}
+        {lines
+          .filter((line) => isMarked(line.productId) && line.found > 0)
+          .map((line) => (
+            <div key={`scan-${line.productId}`} className="form-field">
+              <label htmlFor={`pick-scan-${line.productId}`}>{t('pick.scanCodes', { name: line.name })}</label>
+              <input
+                id={`pick-scan-${line.productId}`}
+                type="text"
+                placeholder={t('pick.scanPlaceholder')}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  const field = e.currentTarget;
+                  scanPicked(line.productId, line.found, field.value);
+                  field.value = '';
+                }}
+              />
+              <span className="field-hint">
+                {t('pick.scanned', { done: codes[line.productId]?.length ?? 0, need: line.found })}
+              </span>
+            </div>
+          ))}
+        {codeError && <div className="login-error">{codeError}</div>}
+
         <div className={shortfall === 0 ? 'report-row' : 'report-row low'}>
           <span>{shortfall === 0 ? t('pick.complete') : t('pick.missing', { count: shortfall })}</span>
           <span>{foundTotal}</span>
@@ -104,8 +163,14 @@ export function PickOrderScreen({ order, submitting, error, onBack, onSavePick, 
         </button>
         <button
           className="btn btn-primary btn-block"
-          disabled={submitting || foundTotal === 0}
-          onClick={onShip}
+          disabled={submitting || foundTotal === 0 || missingCodes.length > 0}
+          onClick={() =>
+            onShip(
+              Object.entries(codes)
+                .filter(([, list]) => list.length > 0)
+                .map(([productId, list]) => ({ productId, codes: list })),
+            )
+          }
         >
           {foundTotal === 0
             ? t('pick.nothing')

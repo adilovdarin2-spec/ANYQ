@@ -2208,12 +2208,12 @@ export default function App() {
     }
   }
 
-  async function handleShipOrder() {
+  async function handleShipOrder(codes?: { productId: string; codes: string[] }[]) {
     if (!session || !pickingOrderId) return false;
     setPickSubmitting(true);
     setPickError(null);
     try {
-      await shipOrder(session.token, pickingOrderId);
+      await shipOrder(session.token, pickingOrderId, codes);
       await loadOrders();
       // Goods left the shelf, so the register's cached grid has to hear about it.
       await refreshCatalogAfterStockChange();
@@ -3742,6 +3742,7 @@ export default function App() {
           submitting={pickSubmitting}
           error={pickError}
           onBack={() => setView('orders')}
+          products={session.products}
           onSavePick={handleSavePick}
           onShip={handleShipOrder}
         />

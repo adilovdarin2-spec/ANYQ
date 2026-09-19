@@ -724,6 +724,127 @@ describe('коды маркировки', () => {
     });
   });
 
+  describe('третья дверь: выдача заказа', () => {
+    /**
+     * Выдача заказа — это передача товара покупателю, просто не через кассу.
+     *
+     * Пока коды при ней не гасились, отгруженная пачка навсегда оставалась
+     * «лежит»: по кодам она в магазине, физически — у клиента. Оптовик,
+     * у которого весь оборот идёт заказами, копил бы такие каждый день.
+     */
+    async function orderFor(quantity: number) {
+      const order = await prisma.document.create({
+        data: {
+          companyId: fx.companyId,
+          locationId: fx.locationId,
+          type: 'order',
+          status: 'pending',
+          createdBy: fx.userId,
+          items: { create: [{ productId: fx.productId, quantity, price: 200 }] },
+        },
+      });
+      const row = await prisma.stock.findFirst({ where: { productId: fx.productId, locationId: fx.locationId } });
+      await prisma.stock.update({ where: { id: row!.id }, data: { reserved: quantity } });
+      return order;
+    }
+
+    it('гасит коды выданных упаковок', async () => {
+      expect((await receive(['A1', 'A2'], 'ord-receive')).status).toBe(201);
+      const order = await orderFor(2);
+
+      const out = await api(fx.token, 'POST', `/pos/orders/${order.id}/fulfill`, {});
+      expect(out.status, JSON.stringify(out.body)).toBe(200);
+
+      const codes = await prisma.markedCode.findMany({ where: { companyId: fx.companyId } });
+      expect(codes.every((c) => c.state === 'sold'), 'пачки у клиента, а по кодам лежат на полке').toBe(true);
+      expect(codes.every((c) => c.saleDocumentId === order.id)).toBe(true);
+    });
+
+    it('и выданную пачку продать на кассе уже нельзя', async () => {
+      expect((await receive(['A1'], 'ord-sell-receive')).status).toBe(201);
+      const order = await orderFor(1);
+      expect((await api(fx.token, 'POST', `/pos/orders/${order.id}/fulfill`, {})).status).toBe(200);
+
+      const sale = await sell(['A1'], 'ord-sell-sale', 1);
+      expect(sale.status).toBe(409);
+      expect(sale.body.error).toContain('уже продан');
+    });
+
+    it('а часть упаковок одним нажатием не выдать', async () => {
+      // Из трёх на полке заказаны две. Какие именно уехали — знает только тот,
+      // кто клал их в коробку, и отказ отправляет его собирать заказ.
+      expect((await receive(['A1', 'A2', 'A3'], 'ord-part-receive')).status).toBe(201);
+      const order = await orderFor(2);
+
+      const out = await api(fx.token, 'POST', `/pos/orders/${order.id}/fulfill`, {});
+      expect(out.status).toBe(400);
+      expect(out.body.error).toContain('соберите заказ');
+      expect(await prisma.markedCode.count({ where: { state: 'sold' } })).toBe(0);
+    });
+
+    it('а со сканом при отгрузке уезжают ровно те, что собрали', async () => {
+      expect((await receive(['A1', 'A2', 'A3'], 'ord-scan-receive')).status).toBe(201);
+      const order = await orderFor(2);
+
+      const out = await api(fx.token, 'POST', `/pos/orders/${order.id}/ship`, {
+        items: [{ productId: fx.productId, codes: [code('A1'), code('A3')] }],
+      });
+      expect(out.status, JSON.stringify(out.body)).toBe(200);
+
+      const states = await prisma.markedCode.findMany({ where: { companyId: fx.companyId }, orderBy: { serial: 'asc' } });
+      expect(states.map((c) => `${c.serial}:${c.state}`)).toEqual(['A1:sold', 'A2:in_stock', 'A3:sold']);
+    });
+  });
+
+  describe('четвёртая дверь: возврат поставщику', () => {
+    it('уводит коды вместе с упаковками', async () => {
+      // Пачка уехала обратно к поставщику: списанием это называть неверно —
+      // за неё вернули деньги, — но товаром этого магазина она быть перестала.
+      const got = await receive(['A1'], 'sup-receive');
+      expect(got.status).toBe(201);
+
+      const back = await api(
+        fx.token,
+        'POST',
+        '/pos/supplier-returns',
+        {
+          locationId: fx.locationId,
+          receiptId: got.body.id,
+          reasonCode: 'quality',
+          note: 'брак партии',
+          items: [{ productId: fx.productId, quantity: 1 }],
+        },
+        { 'Idempotency-Key': 'sup-back' },
+      );
+      expect(back.status, JSON.stringify(back.body)).toBe(201);
+
+      const codeRow = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } });
+      expect(codeRow.state).toBe('returned');
+      expect(codeRow.retiredDocumentId).toBe(back.body.id);
+    });
+
+    it('и продать её после этого нельзя', async () => {
+      const got = await receive(['A1', 'A2'], 'sup-sell-receive');
+      expect((await api(
+        fx.token,
+        'POST',
+        '/pos/supplier-returns',
+        {
+          locationId: fx.locationId,
+          receiptId: got.body.id,
+          reasonCode: 'quality',
+          note: 'брак',
+          items: [{ productId: fx.productId, quantity: 1, codes: [code('A1')] }],
+        },
+        { 'Idempotency-Key': 'sup-sell-back' },
+      )).status).toBe(201);
+
+      const sale = await sell(['A1'], 'sup-sell-sale', 1);
+      expect(sale.status).toBe(409);
+      expect(sale.body.error).toContain('вернули поставщику');
+    });
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.

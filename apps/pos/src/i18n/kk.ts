@@ -225,6 +225,12 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'supplierReturn.delivery': 'Жеткізілім',
   'supplierReturn.why': 'Ақау мен шатасқан тауар жеткізушіге қайтарылады, есептен шығарылмайды: оның алдындағы қарыз қайтарылғанның құнына кемиді.',
 
+  'pick.scanCodes': 'Жиналған қаптамалардың кодтары: {name}',
+  'pick.scanPlaceholder': 'Сканерді қаптамадағы кодқа тигізіңіз',
+  'pick.scanned': '{need} қаптамадан {done} сканерленді',
+  'pick.codeUnreadable': 'Код оқылмайды — сканерді тағы бір рет тигізіңіз',
+  'pick.codeDuplicate': 'Бұл қаптама сканерленіп қойған',
+  'pick.codeExtra': 'Жиналғаннан көп қаптама сканерленді',
   'pick.title': 'Тапсырысты жинау',
   'pick.ordered': 'тапсырыс берілген: {count}',
   'pick.missing': '{count} жетпейді',

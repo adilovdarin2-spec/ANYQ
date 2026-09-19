@@ -32,6 +32,27 @@ export interface SoldCode {
   serial: string;
 }
 
+/**
+ * Те же отказы, но словами выдачи заказа.
+ *
+ * Выдача — это передача товара покупателю, просто не через кассу: у клиента
+ * заказ, у кладовщика коробка, и вопрос тот же — какие пачки в неё кладут.
+ */
+export function orderCodesRefusalMessage(refusal: ReturnCodesRefusal): string {
+  switch (refusal.kind) {
+    case 'needScan':
+      return 'Отсканируйте коды выдаваемых упаковок — соберите заказ, чтобы это сделать';
+    case 'unreadable':
+      return 'Код не читается — поднесите сканер к квадратному коду на упаковке ещё раз';
+    case 'notInSale':
+      return 'Этой упаковки нет в остатке этой точки — проверьте, ту ли взяли';
+    case 'duplicate':
+      return 'Один и тот же код поднесён дважды — каждая упаковка сканируется один раз';
+    case 'countMismatch':
+      return `Кодов ${refusal.codes}, а упаковок ${refusal.quantity} — их должно быть поровну`;
+  }
+}
+
 export type ReturnCodesRefusal =
   /** Часть пачек без скана: какая именно вернулась — неизвестно. */
   | { kind: 'needScan'; returning: number; outstanding: number }
@@ -148,4 +169,62 @@ export function writeOffCodesRefusalMessage(refusal: ReturnCodesRefusal): string
     case 'countMismatch':
       return `Кодов ${refusal.codes}, а упаковок ${refusal.quantity} — их должно быть поровну`;
   }
+}
+
+/**
+ * Те же отказы, но словами возврата поставщику.
+ *
+ * Здесь собирают коробку обратно в машину поставщика, и вопрос у человека
+ * ровно один: какие пачки в неё кладут.
+ */
+export function supplierReturnCodesRefusalMessage(refusal: ReturnCodesRefusal): string {
+  switch (refusal.kind) {
+    case 'needScan':
+      return 'Отсканируйте коды возвращаемых поставщику упаковок — иначе уедет не та';
+    case 'unreadable':
+      return 'Код не читается — поднесите сканер к квадратному коду на упаковке ещё раз';
+    case 'notInSale':
+      return 'Этой упаковки нет в остатке этой точки — проверьте, ту ли взяли';
+    case 'duplicate':
+      return 'Один и тот же код поднесён дважды — каждая упаковка сканируется один раз';
+    case 'countMismatch':
+      return `Кодов ${refusal.codes}, а упаковок ${refusal.quantity} — их должно быть поровну`;
+  }
+}
+
+/**
+ * То же решение, но сразу по всем строкам документа.
+ *
+ * Один и тот же цикл — «сгруппировать по товару, спросить `pickCodes`, собрать
+ * идентификаторы» — писался в каждом маршруте заново: возврат, перемещение,
+ * списание, возврат поставщику, выдача заказа. Пятая копия и была поводом
+ * вынести его сюда: расходятся такие копии молча и по одной.
+ */
+export function planDocumentCodes(input: {
+  /** Коды этой точки, доступные к выбытию, по всем товарам документа. */
+  outstanding: (SoldCode & { productId: string })[];
+  /** Строки документа: что и сколько уходит, и что при этом отсканировали. */
+  lines: { productId: string; quantity: number; codes?: string[] }[];
+}): { ok: true; codeIds: string[] } | { ok: false; refusal: ReturnCodesRefusal } {
+  if (input.outstanding.length === 0) return { ok: true, codeIds: [] };
+
+  const byProduct = new Map<string, { quantity: number; scanned: string[] }>();
+  for (const line of input.lines) {
+    const entry = byProduct.get(line.productId) ?? { quantity: 0, scanned: [] };
+    entry.quantity += line.quantity;
+    if (line.codes) entry.scanned.push(...line.codes);
+    byProduct.set(line.productId, entry);
+  }
+
+  const codeIds: string[] = [];
+  for (const [productId, entry] of byProduct) {
+    const plan = pickCodes({
+      quantity: entry.quantity,
+      outstanding: input.outstanding.filter((c) => c.productId === productId),
+      scanned: entry.scanned,
+    });
+    if (!plan.ok) return plan;
+    codeIds.push(...plan.codeIds);
+  }
+  return { ok: true, codeIds };
 }

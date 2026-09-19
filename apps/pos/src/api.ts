@@ -1251,8 +1251,14 @@ export function pickOrder(
 export function shipOrder(
   token: string,
   orderId: string,
+  /** Коды выдаваемых упаковок для маркированного товара. */
+  items?: { productId: string; codes: string[] }[],
 ): Promise<{ id: string; shipped: number; released: number; partial: boolean }> {
-  return request(`/pos/orders/${orderId}/ship`, { method: 'POST' }, token);
+  return request(
+    `/pos/orders/${orderId}/ship`,
+    { method: 'POST', body: JSON.stringify(items?.length ? { items } : {}) },
+    token,
+  );
 }
 
 /**

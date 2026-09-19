@@ -81,7 +81,7 @@ import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
 import { markedCodeKey } from '../marking';
-import { pickCodes, returnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
+import { orderCodesRefusalMessage, pickCodes, planDocumentCodes, returnCodesRefusalMessage, supplierReturnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
 import { resolveSaleCodes } from '../marking-sale';
 
 /**
@@ -91,6 +91,60 @@ import { resolveSaleCodes } from '../marking-sale';
  * должен находиться даже для того, чтобы получить отказ, — по отказу видно,
  * что такая пачка где-то существует.
  */
+/**
+ * Какие коды уходят с заказом — и можно ли его отгружать.
+ *
+ * Отдельной функцией, потому что дверей выдачи две: «собрать и отгрузить» и
+ * «выдать целиком». Правило у них одно, и расходиться им незачем.
+ */
+async function planOrderCodes(
+  req: PosAuthedRequest,
+  locationId: string,
+  lines: { productId: string; quantity: number }[],
+  requestItems: unknown,
+): Promise<{ ok: true; codeIds: string[] } | { ok: false; message: string }> {
+  const outstanding = await prisma.markedCode.findMany({
+    where: {
+      companyId: req.posCompanyId!,
+      locationId,
+      state: 'in_stock',
+      productId: { in: lines.map((l) => l.productId) },
+    },
+    select: { id: true, productId: true, gtin: true, serial: true },
+  });
+  if (outstanding.length === 0) return { ok: true, codeIds: [] };
+
+  const scannedByProduct = new Map<string, string[]>();
+  if (Array.isArray(requestItems)) {
+    for (const item of requestItems as { productId?: unknown; codes?: unknown }[]) {
+      if (!Array.isArray(item?.codes)) continue;
+      const productId = String(item.productId);
+      scannedByProduct.set(productId, [
+        ...(scannedByProduct.get(productId) ?? []),
+        ...(item.codes as unknown[]).map(String),
+      ]);
+    }
+  }
+
+  const plan = planDocumentCodes({
+    outstanding,
+    lines: lines.map((line) => ({ ...line, codes: scannedByProduct.get(line.productId) })),
+  });
+  return plan.ok ? plan : { ok: false, message: orderCodesRefusalMessage(plan.refusal) };
+}
+
+/** Погасить коды выдачи внутри той же транзакции, что и само списание. */
+async function spendOrderCodes(tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0], codeIds: string[], documentId: string) {
+  if (codeIds.length === 0) return;
+  // Условием по состоянию: между проверкой и записью помещается продажа этой
+  // же пачки на кассе того же склада.
+  const { count } = await tx.markedCode.updateMany({
+    where: { id: { in: codeIds }, state: 'in_stock' },
+    data: { state: 'sold', soldAt: new Date(), saleDocumentId: documentId },
+  });
+  if (count !== codeIds.length) throw new MarkedCodeRaceError('order');
+}
+
 function markedCodeLookup(companyId: string) {
   return {
     async findCode(gtin: string, serial: string) {
@@ -2966,7 +3020,7 @@ posRouter.get('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest,
 posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await allow(req, res, 'writeOff'))) return;
   const b = req.body ?? {};
-  const requested: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  const requested: { productId: string; quantity: number; codes?: string[] }[] = Array.isArray(b.items) ? b.items : [];
 
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
@@ -3037,6 +3091,43 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
   });
   const stockByProduct = groupStockByProduct(stockRows);
 
+  /* Коды уезжают обратно вместе с упаковками.
+     Иначе код остаётся «лежит» при том, что пачка уже у поставщика: по кодам
+     товара больше, чем на полке, и продать «эту» пачку никто не сможет, потому
+     что её нет. */
+  const stockCodes = await prisma.markedCode.findMany({
+    where: {
+      companyId: req.posCompanyId!,
+      locationId,
+      state: 'in_stock',
+      productId: { in: resolution.lines.map((l) => l.productId) },
+    },
+    select: { id: true, productId: true, gtin: true, serial: true },
+  });
+  const returningCodeIds: string[] = [];
+  if (stockCodes.length > 0) {
+    const byProduct = new Map<string, { quantity: number; scanned: string[] }>();
+    for (const line of resolution.lines) {
+      const asked = requested.find((it) => it.productId === line.productId);
+      const entry = byProduct.get(line.productId) ?? { quantity: 0, scanned: [] };
+      entry.quantity += line.quantity;
+      if (Array.isArray(asked?.codes)) entry.scanned.push(...asked.codes.map((c: unknown) => String(c)));
+      byProduct.set(line.productId, entry);
+    }
+    for (const [productId, entry] of byProduct) {
+      const plan = pickCodes({
+        quantity: entry.quantity,
+        outstanding: stockCodes.filter((c) => c.productId === productId),
+        scanned: entry.scanned,
+      });
+      if (!plan.ok) {
+        res.status(400).json({ error: supplierReturnCodesRefusalMessage(plan.refusal) });
+        return;
+      }
+      returningCodeIds.push(...plan.codeIds);
+    }
+  }
+
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
   if (keyResult.status === 'invalid') {
     res.status(400).json({ error: 'Некорректный номер операции' });
@@ -3089,6 +3180,17 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
           }),
         ),
       );
+
+      if (returningCodeIds.length > 0) {
+        // Уехавшая обратно упаковка перестала быть товаром этого магазина —
+        // и её код тоже. Списанием это называть неверно: за неё вернули
+        // деньги, и на сверке эти два случая спрашивают по-разному.
+        const { count } = await tx.markedCode.updateMany({
+          where: { id: { in: returningCodeIds }, state: 'in_stock' },
+          data: { state: 'returned', retiredDocumentId: created.id },
+        });
+        if (count !== returningCodeIds.length) throw new MarkedCodeRaceError('supplier-return');
+      }
 
       // Уехавшее обратно уезжает и из партий.
       //
@@ -7538,6 +7640,18 @@ posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest,
     return;
   }
 
+  /* Выдача — это передача товара покупателю, просто не через кассу, и коды
+     гасятся так же. Иначе отгруженная пачка навсегда остаётся «лежит»: по
+     кодам она в магазине, физически — у клиента. */
+  const shippedCodes = await planOrderCodes(req, order.locationId, shipment.lines.map((line) => ({
+    productId: line.productId,
+    quantity: line.picked,
+  })), req.body?.items);
+  if (!shippedCodes.ok) {
+    res.status(400).json({ error: shippedCodes.message });
+    return;
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.document.updateMany({
@@ -7598,6 +7712,7 @@ posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest,
           createdBy: req.posUserId,
         });
       }
+      await spendOrderCodes(tx, shippedCodes.codeIds, order.id);
       await removeFromBatches(
         tx,
         order.locationId,
@@ -7616,6 +7731,10 @@ posRouter.post('/orders/:id/ship', requirePosAuth, async (req: PosAuthedRequest,
       partial: shipment.released > 0,
     });
   } catch (err) {
+    if (err instanceof MarkedCodeRaceError) {
+      res.status(409).json({ error: 'Одну из упаковок успели продать — обновите и повторите' });
+      return;
+    }
     if (err instanceof OrderAlreadyHandledError) {
       res.status(409).json({ error: 'Заказ уже обработан' });
       return;
@@ -7640,6 +7759,22 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
   }
   if (order.status !== 'pending') {
     res.status(409).json({ error: 'Заказ уже обработан' });
+    return;
+  }
+
+  /* То же правило, что и на отгрузке: выдача передаёт товар покупателю.
+     Сканировать здесь нечем — этот маршрут выдаёт заказ целиком, одним
+     нажатием, — поэтому проходит только случай без вопросов: когда по этому
+     товару уезжает весь оставшийся код. Иначе отказ отправляет собирать
+     заказ, а собирают его на экране, где сканер есть. */
+  const fulfilledCodes = await planOrderCodes(
+    req,
+    order.locationId,
+    order.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+    req.body?.items,
+  );
+  if (!fulfilledCodes.ok) {
+    res.status(400).json({ error: fulfilledCodes.message });
     return;
   }
 
@@ -7708,6 +7843,7 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
           createdBy: req.posUserId,
         });
       }
+      await spendOrderCodes(tx, fulfilledCodes.codeIds, order.id);
       await removeFromBatches(
         tx,
         order.locationId,
@@ -7720,6 +7856,10 @@ posRouter.post('/orders/:id/fulfill', requirePosAuth, async (req: PosAuthedReque
 
     res.json({ id: order.id, status: 'confirmed' });
   } catch (err) {
+    if (err instanceof MarkedCodeRaceError) {
+      res.status(409).json({ error: 'Одну из упаковок успели продать — обновите и повторите' });
+      return;
+    }
     if (err instanceof OrderAlreadyHandledError) {
       res.status(409).json({ error: 'Заказ уже обработан' });
       return;

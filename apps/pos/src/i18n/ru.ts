@@ -214,6 +214,12 @@ export const ru = {
   'supplierReturn.delivery': 'Поставка',
   'supplierReturn.why': 'Брак и пересорт возвращаются поставщику, а не списываются: долг перед ним уменьшается на стоимость возвращённого.',
 
+  'pick.scanCodes': 'Коды собранных упаковок: {name}',
+  'pick.scanPlaceholder': 'Поднесите сканер к коду на упаковке',
+  'pick.scanned': 'Отсканировано {done} из {need}',
+  'pick.codeUnreadable': 'Код не читается — поднесите сканер ещё раз',
+  'pick.codeDuplicate': 'Эту упаковку уже отсканировали',
+  'pick.codeExtra': 'Упаковок отсканировали больше, чем собрали',
   'pick.title': 'Сборка заказа',
   'pick.ordered': 'заказано: {count}',
   'pick.missing': 'не хватает {count}',
