@@ -641,6 +641,8 @@ export interface ManagedProduct {
   purchasePrice: number;
   salePrice: number;
   sellable: boolean;
+  /** Sold only by its Data Matrix code: cigarettes, medicines, shoes, water. */
+  marked: boolean;
   stopListed: boolean;
   isIngredient: boolean;
 }
@@ -655,6 +657,7 @@ export interface ManagedProductPayload {
   purchasePrice: number;
   salePrice: number;
   sellable: boolean;
+  marked: boolean;
 }
 
 export function fetchManagedProducts(token: string): Promise<ManagedProduct[]> {

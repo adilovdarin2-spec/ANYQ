@@ -42,6 +42,7 @@ export function ProductEditScreen({
   const [purchasePrice, setPurchasePrice] = useState(product ? String(product.purchasePrice) : '');
   const [salePrice, setSalePrice] = useState(product ? String(product.salePrice) : '');
   const [sellable, setSellable] = useState(product?.sellable ?? true);
+  const [marked, setMarked] = useState(product?.marked ?? false);
 
   const purchase = Number(purchasePrice);
   const sale = Number(salePrice);
@@ -77,6 +78,7 @@ export function ProductEditScreen({
       purchasePrice: purchase,
       salePrice: sale,
       sellable,
+      marked,
     });
   }
 
@@ -134,6 +136,14 @@ export function ProductEditScreen({
             {t('product.ingredientWhy')}
           </p>
         )}
+        {/* Shown on a new product too, unlike the one below it: a shop enters
+            cigarettes once and sells them the same day, and a flag that only
+            appears after saving is a flag nobody finds. */}
+        <label className="checkbox-row">
+          <input type="checkbox" checked={marked} onChange={(e) => setMarked(e.target.checked)} />
+          {t('product.marked')}
+        </label>
+        <span className="field-hint">{t('product.markedWhy')}</span>
         {product && (
           <label className="checkbox-row">
             <input type="checkbox" checked={sellable} onChange={(e) => setSellable(e.target.checked)} />

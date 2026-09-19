@@ -251,6 +251,85 @@ describe('коды маркировки', () => {
     expect(await prisma.markedCode.count({ where: { companyId: fx.companyId } })).toBe(0);
   });
 
+  it('а сам признак включается из карточки товара и сразу действует', async () => {
+    // Иначе получается защита, которую нельзя включить: признак работал и на
+    // кассе, и на сервере, а выставить его владелец мог только через базу
+    // руками. Здесь проверяется не колонка, а дорога: завели товар в карточке —
+    // касса увидела признак — продажа без кода отказана.
+    const created = await api(fx.token, 'POST', '/pos/products', {
+      name: 'Сигареты',
+      unit: 'шт',
+      barcode: '4607177999999',
+      purchasePrice: 400,
+      salePrice: 750,
+      marked: true,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    expect(created.body.marked, 'карточка вернула товар без признака').toBe(true);
+
+    const catalog = await api(fx.token, 'GET', `/pos/catalog?locationId=${fx.locationId}`);
+    const tile = catalog.body.products.find((p: { id: string }) => p.id === created.body.id);
+    expect(tile?.marked, 'касса не узнала, что пачку нельзя пробить штрихкодом').toBe(true);
+
+    await prisma.stock.create({
+      data: { productId: created.body.id, locationId: fx.locationId, binLocation: '', quantity: 5 },
+    });
+    const sale = await api(
+      fx.token,
+      'POST',
+      '/pos/sales',
+      {
+        locationId: fx.locationId,
+        paymentMethod: 'cash',
+        items: [{ productId: created.body.id, quantity: 1, price: 750 }],
+      },
+      { 'Idempotency-Key': 'mark-from-card-sale' },
+    );
+    expect(sale.status).toBe(400);
+    expect(sale.body.error).toContain('только по коду маркировки');
+  });
+
+  it('и выключается там же — признак не ловушка в один конец', async () => {
+    // Товар выводят из-под маркировки, ошибаются при заведении, меняют
+    // поставщика. Признак, который можно только поставить, превращает первую же
+    // опечатку в товар, который больше никогда не продать.
+    const created = await api(fx.token, 'POST', '/pos/products', {
+      name: 'Вода',
+      unit: 'шт',
+      purchasePrice: 100,
+      salePrice: 150,
+      marked: true,
+    });
+    expect(created.status).toBe(201);
+
+    const off = await api(fx.token, 'PATCH', `/pos/products/${created.body.id}`, {
+      name: 'Вода',
+      unit: 'шт',
+      purchasePrice: 100,
+      salePrice: 150,
+      sellable: true,
+      marked: false,
+    });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    expect(off.body.marked).toBe(false);
+
+    await prisma.stock.create({
+      data: { productId: created.body.id, locationId: fx.locationId, binLocation: '', quantity: 5 },
+    });
+    const sale = await api(
+      fx.token,
+      'POST',
+      '/pos/sales',
+      {
+        locationId: fx.locationId,
+        paymentMethod: 'cash',
+        items: [{ productId: created.body.id, quantity: 1, price: 150 }],
+      },
+      { 'Idempotency-Key': 'mark-off-sale' },
+    );
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.

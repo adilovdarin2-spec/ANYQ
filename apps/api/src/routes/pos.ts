@@ -2345,6 +2345,7 @@ function serializePosProduct(
     purchasePrice: number;
     salePrice: number;
     sellable: boolean;
+    marked?: boolean;
     stopListed: boolean;
   },
   isIngredient = false,
@@ -2360,6 +2361,7 @@ function serializePosProduct(
     purchasePrice: p.purchasePrice,
     salePrice: p.salePrice,
     sellable: p.sellable,
+    marked: p.marked ?? false,
     stopListed: p.stopListed,
     isIngredient,
   };
@@ -2439,6 +2441,10 @@ posRouter.post('/products', requirePosAuth, async (req: PosAuthedRequest, res) =
       purchasePrice,
       salePrice,
       sellable: b.sellable !== false,
+      // Cigarettes, medicines, shoes, water. The flag is what makes the till
+      // and the server refuse a sale without a code; without a way to set it
+      // here, the whole of marking would rest on the cashier's goodwill.
+      marked: b.marked === true,
     },
   });
   res.status(201).json(serializePosProduct(product));
@@ -2488,6 +2494,7 @@ posRouter.patch('/products/:id', requirePosAuth, async (req: PosAuthedRequest, r
         purchasePrice,
         salePrice,
         sellable: !!b.sellable,
+        marked: !!b.marked,
       },
     });
     await recordChanges(tx, actor, {
