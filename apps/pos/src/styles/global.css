@@ -784,9 +784,17 @@ button { cursor: pointer; }
 }
 .tab-bar-inner { display: flex; width: 100%; max-width: 520px; }
 .tab-bar-item {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  /* `min-width: 0` — не косметика: без него вкладка не может стать уже своей
+     подписи, и ряд перестаёт делиться поровну. Разделов стало пять, у кафе с
+     доставкой шесть, а по-казахски «Тапсырыстар» вдвое длиннее «Кассы» —
+     последняя вкладка уезжала за край экрана, и нажать на неё было нельзя. */
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   padding: 0 4px; background: none; border: none; color: var(--ink-muted); font-size: 0.68rem; font-weight: 600;
 }
+/* Значок называет раздел и без подписи, поэтому обрезать подпись безопаснее,
+   чем переносить: две строки поднимают ряд и сдвигают весь экран. */
+.tab-bar-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-bar-item.active { color: var(--accent); }
 /* Значок теперь рисованный и наследует цвет: активная вкладка целиком зелёная,
    а не «зелёная подпись под разноцветным эмодзи». */
