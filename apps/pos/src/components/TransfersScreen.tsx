@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseMarkedCode } from '../marking';
+import { sameMarkedCode } from '../marking-scan';
 import type { PhraseKey } from '../i18n';
 import type { CompanyLocation, Product, Transfer } from '../types';
 import { formatDateTime } from '../utils';
@@ -20,7 +22,7 @@ interface Props {
   submitting: boolean;
   onBack: () => void;
   onRefresh: () => void;
-  onSubmit: (payload: { toLocationId: string; items: { productId: string; quantity: number }[] }) => Promise<boolean>;
+  onSubmit: (payload: { toLocationId: string; items: { productId: string; quantity: number; codes?: string[] }[] }) => Promise<boolean>;
   onReceive: (transferId: string, items: { productId: string; receivedQuantity: number }[]) => Promise<boolean>;
   onCancel: (transferId: string) => Promise<boolean>;
 }
@@ -55,6 +57,12 @@ export function TransfersScreen({
   const [lines, setLines] = useState<TransferLine[]>([]);
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [quantity, setQuantity] = useState('');
+  /* Коды отправляемых упаковок, по товару.
+     Увезли пачку B, записали A — и продать B на новой точке будет нельзя:
+     сервер скажет «код на другой точке», а кладовщик будет уверен, что всё
+     отправил. */
+  const [codes, setCodes] = useState<Record<string, string[]>>({});
+  const [codeError, setCodeError] = useState<string | null>(null);
   // The transfer being counted, and the count so far. Every line starts at the
   // quantity that was sent, so "everything arrived" is one tap and only a
   // discrepancy costs any typing.
@@ -78,12 +86,52 @@ export function TransfersScreen({
 
   function removeLine(id: string) {
     setLines((prev) => prev.filter((l) => l.productId !== id));
+    setCodes((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }
 
+  function isMarked(productId: string): boolean {
+    return products.find((p) => p.id === productId)?.marked === true;
+  }
+
+  function scanTransferCode(line: TransferLine, raw: string) {
+    const already = codes[line.productId] ?? [];
+    if (!parseMarkedCode(raw).ok) {
+      setCodeError(t('transfer.codeUnreadable'));
+      return;
+    }
+    if (already.some((seen) => sameMarkedCode(seen, raw))) {
+      setCodeError(t('transfer.codeDuplicate'));
+      return;
+    }
+    if (already.length >= line.quantity) {
+      setCodeError(t('transfer.codeExtra'));
+      return;
+    }
+    setCodeError(null);
+    setCodes((prev) => ({ ...prev, [line.productId]: [...already, raw] }));
+  }
+
+  /* Строки, где кодов ещё не хватает. Пока такие есть, отправлять нечего:
+     сервер откажет теми же словами, но уже после того, как коробку заклеили. */
+  const missingCodes = lines.filter((l) => isMarked(l.productId) && (codes[l.productId]?.length ?? 0) !== l.quantity);
+
   async function handleSubmit() {
-    const success = await onSubmit({ toLocationId, items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity })) });
+    const success = await onSubmit({
+      toLocationId,
+      items: lines.map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        ...(codes[l.productId]?.length ? { codes: codes[l.productId] } : {}),
+      })),
+    });
     if (success) {
       setLines([]);
+      setCodes({});
+      setCodeError(null);
       setView('list');
     }
   }
@@ -223,11 +271,35 @@ export function TransfersScreen({
                 <>
                   {lines.length === 0 && <div className="empty-state">{t('transfer.addAtLeastOne')}</div>}
                   {lines.map((l) => (
-                    <div key={l.productId} className="report-row">
-                      <span>{l.name} × {l.quantity}</span>
-                      <button className="li-remove" onClick={() => removeLine(l.productId)}>{t('common.delete')}</button>
+                    <div key={l.productId}>
+                      <div className="report-row">
+                        <span>{l.name} × {l.quantity}</span>
+                        <button className="li-remove" onClick={() => removeLine(l.productId)}>{t('common.delete')}</button>
+                      </div>
+                      {/* Маркированный товар уезжает поштучно: код едет вместе
+                          с пачкой, и какая именно уехала — не угадывается. */}
+                      {isMarked(l.productId) && (
+                        <div className="form-field">
+                          <label htmlFor={`transfer-scan-${l.productId}`}>{t('transfer.scanCodes')}</label>
+                          <input
+                            id={`transfer-scan-${l.productId}`}
+                            type="text"
+                            placeholder={t('transfer.scanPlaceholder')}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'Enter') return;
+                              const field = e.currentTarget;
+                              scanTransferCode(l, field.value);
+                              field.value = '';
+                            }}
+                          />
+                          <span className="field-hint">
+                            {t('transfer.scanned', { done: codes[l.productId]?.length ?? 0, need: l.quantity })}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ))}
+                  {codeError && <div className="login-error">{codeError}</div>}
 
                   <div className="transfer-add-row">
                     <select value={productId} onChange={(e) => setProductId(e.target.value)}>
@@ -249,7 +321,7 @@ export function TransfersScreen({
 
       {view === 'create' && otherLocations.length > 0 && (
         <div className="screen-footer">
-          <button className="btn btn-primary btn-block" disabled={lines.length === 0 || !toLocationId || submitting} onClick={handleSubmit}>
+          <button className="btn btn-primary btn-block" disabled={lines.length === 0 || !toLocationId || missingCodes.length > 0 || submitting} onClick={handleSubmit}>
             {submitting ? t('transfer.sending') : t('transfer.send')}
           </button>
         </div>

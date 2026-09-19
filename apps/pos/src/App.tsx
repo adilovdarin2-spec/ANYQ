@@ -1098,7 +1098,7 @@ export default function App() {
     }
   }
 
-  async function handleCreateTransfer(payload: { toLocationId: string; items: { productId: string; quantity: number }[] }) {
+  async function handleCreateTransfer(payload: { toLocationId: string; items: { productId: string; quantity: number; codes?: string[] }[] }) {
     if (!session || !currentLocationId) return false;
     setTransferSubmitting(true);
     setTransfersError(null);

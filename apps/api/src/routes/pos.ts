@@ -81,7 +81,7 @@ import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
 import { markedCodeKey } from '../marking';
-import { planReturnedCodes, returnCodesRefusalMessage } from '../marking-return';
+import { pickCodes, returnCodesRefusalMessage, transferCodesRefusalMessage } from '../marking-pick';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { catalogXml, offersXml } from '../commerceml';
@@ -741,8 +741,20 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           res.status(409).json({ error: markingRefusalMessage({ kind: 'unknown', code }) });
           return;
         }
+        /* Любое состояние, кроме «лежит», — отказ, и у каждого свои слова.
+           Раньше проверялось только «продан», и код, уехавший на другую точку,
+           проходил: состояние не `sold`, точка у него ещё отправляющая — то
+           есть отправитель мог продать пачку, которая едет в фургоне. */
         if (known.state === 'sold') {
           res.status(409).json({ error: markingRefusalMessage({ kind: 'alreadySold', code }) });
+          return;
+        }
+        if (known.state === 'in_transit') {
+          res.status(409).json({ error: markingRefusalMessage({ kind: 'inTransit', code }) });
+          return;
+        }
+        if (known.state !== 'in_stock') {
+          res.status(409).json({ error: markingRefusalMessage({ kind: 'writtenOff', code }) });
           return;
         }
         if (known.productId !== productId) {
@@ -1392,7 +1404,7 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
 
   const codeIdsToRestore: string[] = [];
   for (const [productId, entry] of returningByProduct) {
-    const plan = planReturnedCodes({
+    const plan = pickCodes({
       quantity: entry.quantity,
       outstanding: outstandingCodes.filter((c) => c.productId === productId),
       scanned: entry.scanned,
@@ -7816,7 +7828,7 @@ posRouter.get('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) =
 posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await allow(req, res, 'moveStock'))) return;
   const b = req.body ?? {};
-  const items: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  const items: { productId: string; quantity: number; codes?: string[] }[] = Array.isArray(b.items) ? b.items : [];
   if (items.length === 0 || hasInvalidQuantity(items)) {
     res.status(400).json({ error: 'Некорректные данные перемещения' });
     return;
@@ -7846,6 +7858,46 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
     return;
   }
   const { fromLocationId, toLocationId } = transfer;
+
+  /* Коды уезжают вместе с товаром.
+     Пока они оставались на отправителе, привезённую пачку получатель продать
+     не мог («этот код в другой точке»), а отправитель не мог — товара нет.
+     Пачка становилась непродаваемой с обеих сторон, и понять почему можно было
+     только заглянув в базу.
+
+     Какие именно уехали — не угадывается по тем же причинам, что у возврата:
+     увезли пачку B, записали A, и продать B на новой точке будет нельзя. */
+  const sourceCodes = await prisma.markedCode.findMany({
+    where: {
+      companyId: req.posCompanyId!,
+      locationId: fromLocationId,
+      state: 'in_stock',
+      productId: { in: items.map((it) => it.productId) },
+    },
+    select: { id: true, productId: true, gtin: true, serial: true },
+  });
+  const travellingCodeIds: string[] = [];
+  if (sourceCodes.length > 0) {
+    const wantByProduct = new Map<string, { quantity: number; scanned: string[] }>();
+    for (const line of items) {
+      const entry = wantByProduct.get(line.productId) ?? { quantity: 0, scanned: [] };
+      entry.quantity += line.quantity;
+      if (Array.isArray(line.codes)) entry.scanned.push(...line.codes.map((c: unknown) => String(c)));
+      wantByProduct.set(line.productId, entry);
+    }
+    for (const [productId, entry] of wantByProduct) {
+      const plan = pickCodes({
+        quantity: entry.quantity,
+        outstanding: sourceCodes.filter((c) => c.productId === productId),
+        scanned: entry.scanned,
+      });
+      if (!plan.ok) {
+        res.status(400).json({ error: transferCodesRefusalMessage(plan.refusal) });
+        return;
+      }
+      travellingCodeIds.push(...plan.codeIds);
+    }
+  }
 
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
   if (keyResult.status === 'invalid') {
@@ -7968,6 +8020,16 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
         });
       }
 
+      if (travellingCodeIds.length > 0) {
+        // Условием по состоянию, как везде: между проверкой и записью
+        // помещается продажа этой же пачки на кассе отправителя.
+        const { count } = await tx.markedCode.updateMany({
+          where: { id: { in: travellingCodeIds }, state: 'in_stock' },
+          data: { state: 'in_transit', transferDocumentId: document.id },
+        });
+        if (count !== travellingCodeIds.length) throw new MarkedCodeRaceError('transfer');
+      }
+
       return { id: document.id, createdAt: document.createdAt.toISOString(), status: 'in_transit' };
     });
 
@@ -7979,6 +8041,10 @@ posRouter.post('/transfers', requirePosAuth, async (req: PosAuthedRequest, res) 
     }
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
+      return;
+    }
+    if (err instanceof MarkedCodeRaceError) {
+      res.status(409).json({ error: 'Одну из упаковок успели продать — соберите отправку заново' });
       return;
     }
     throw err;
@@ -8160,6 +8226,30 @@ posRouter.post('/transfers/:id/receive', requirePosAuth, async (req: PosAuthedRe
           });
         }
       }
+
+      /* Коды доехавших упаковок встают на получателя.
+         Приехало столько же, сколько уехало, — вопроса нет. Приехало меньше:
+         какие именно пачки пропали в пути, известно только принимающему, и
+         угадывать нельзя. Недоехавшие остаются `in_transit` с номером этого
+         перемещения — это и есть след пропажи, по которому можно спросить. */
+      const travelling = await tx.markedCode.findMany({
+        where: { transferDocumentId: transferDoc.id, state: 'in_transit' },
+        select: { id: true, productId: true },
+      });
+      if (travelling.length > 0) {
+        const arrivedByProduct = new Map(receipt.lines.map((l) => [l.productId, l.received]));
+        const landing: string[] = [];
+        for (const [productId, received] of arrivedByProduct) {
+          const mine = travelling.filter((c) => c.productId === productId);
+          landing.push(...mine.slice(0, Math.max(received, 0)).map((c) => c.id));
+        }
+        if (landing.length > 0) {
+          await tx.markedCode.updateMany({
+            where: { id: { in: landing }, state: 'in_transit' },
+            data: { state: 'in_stock', locationId: toLocationId, transferDocumentId: null },
+          });
+        }
+      }
     }, { timeout: 15000 });
   } catch (err) {
     if (err instanceof TransferClosedError) {
@@ -8244,6 +8334,14 @@ posRouter.post('/transfers/:id/cancel', requirePosAuth, async (req: PosAuthedReq
           });
         }
       }
+
+      // Коды возвращаются туда же, откуда уехали. Товар не покинул двор, и
+      // оставить его коды «в пути» значило бы запретить продавать пачки,
+      // которые всё это время лежали на своей полке.
+      await tx.markedCode.updateMany({
+        where: { transferDocumentId: transferDoc.id, state: 'in_transit' },
+        data: { state: 'in_stock', locationId: fromLocationId, transferDocumentId: null },
+      });
     }, { timeout: 15000 });
   } catch (err) {
     if (err instanceof TransferClosedError) {

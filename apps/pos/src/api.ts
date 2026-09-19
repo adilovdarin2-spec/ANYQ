@@ -467,7 +467,8 @@ export function fetchTransfers(token: string): Promise<Transfer[]> {
 export interface CreateTransferPayload {
   fromLocationId: string;
   toLocationId: string;
-  items: { productId: string; quantity: number }[];
+  /** `codes` — коды отправляемых упаковок для маркированного товара. */
+  items: { productId: string; quantity: number; codes?: string[] }[];
 }
 
 export function createTransfer(

@@ -39,6 +39,10 @@ export type MarkingRefusal =
   | { kind: 'alreadySold'; code: MarkedCode }
   | { kind: 'wrongProduct'; code: MarkedCode }
   | { kind: 'elsewhere'; code: MarkedCode }
+  /** Уехал на другую точку и ещё не принят — пачки здесь физически нет. */
+  | { kind: 'inTransit'; code: MarkedCode }
+  /** Списан: по документам этой пачки в магазине уже нет. */
+  | { kind: 'writtenOff'; code: MarkedCode }
   | { kind: 'countMismatch'; productId: string; codes: number; quantity: number };
 
 export type MarkingOutcome<T> = { ok: true; value: T } | { ok: false; refusal: MarkingRefusal };
@@ -62,6 +66,10 @@ export function markingRefusalMessage(refusal: MarkingRefusal): string {
       return 'Код от другого товара — проверьте, что пробито';
     case 'elsewhere':
       return 'Код принят на другой точке — сюда его не перемещали';
+    case 'inTransit':
+      return 'Эта упаковка отправлена на другую точку — она уже не наша';
+    case 'writtenOff':
+      return 'Эту упаковку списали — продавать её нельзя, позовите владельца';
     case 'countMismatch':
       return `Кодов ${refusal.codes}, а товара ${refusal.quantity} — их должно быть поровну`;
   }

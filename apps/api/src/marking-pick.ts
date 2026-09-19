@@ -1,7 +1,15 @@
 import { markedCodeKey, parseMarkedCode } from './marking';
 
 /**
- * Возврат маркированной пачки возвращает и её код.
+ * Какие именно коды уходят вместе с товаром.
+ *
+ * Один и тот же вопрос задают три операции: возврат, перемещение на другую
+ * точку и списание. Товар двигают — коды обязаны двинуться следом, иначе
+ * остаток и коды начинают жить порознь, и первым это замечает покупатель, чью
+ * пачку касса отказывается пробить.
+ *
+ * Дальше — про возврат, с которого всё началось.
+ *
  *
  * Без этого возврат тихо портит две вещи сразу. Пачка ложится обратно на полку
  * — остаток растёт, — а её код остаётся «продан» навсегда, и продать эту пачку
@@ -59,7 +67,7 @@ export function returnCodesRefusalMessage(refusal: ReturnCodesRefusal): string {
  * Пусто — товар немаркированный, и возвращать нечего.
  * @param scanned то, что поднесли сканером; пусто или не задано — не сканировали.
  */
-export function planReturnedCodes(input: {
+export function pickCodes(input: {
   quantity: number;
   outstanding: SoldCode[];
   scanned?: string[];
@@ -97,4 +105,26 @@ export function planReturnedCodes(input: {
   }
 
   return { ok: false, refusal: { kind: 'needScan', returning: quantity, outstanding: outstanding.length } };
+}
+
+/**
+ * Те же отказы, но словами перемещения.
+ *
+ * Отдельно от возврата, потому что человек другой и делает он другое. «Найдите
+ * чек, по которому купили» кладовщику, собирающему фургон, не говорит ничего:
+ * у него нет чека, у него есть накладная и полка.
+ */
+export function transferCodesRefusalMessage(refusal: ReturnCodesRefusal): string {
+  switch (refusal.kind) {
+    case 'needScan':
+      return 'Отсканируйте коды отправляемых упаковок — иначе неизвестно, какие именно уехали';
+    case 'unreadable':
+      return 'Код не читается — поднесите сканер к квадратному коду на упаковке ещё раз';
+    case 'notInSale':
+      return 'Этой упаковки нет на отправляющей точке — проверьте, ту ли коробку взяли';
+    case 'duplicate':
+      return 'Один и тот же код поднесён дважды — каждая упаковка сканируется один раз';
+    case 'countMismatch':
+      return `Кодов ${refusal.codes}, а упаковок ${refusal.quantity} — их должно быть поровну`;
+  }
 }

@@ -457,6 +457,125 @@ describe('коды маркировки', () => {
     expect(back.status, JSON.stringify(back.body)).toBe(201);
   });
 
+  it('перемещение увозит код вместе с товаром', async () => {
+    // Пока коды оставались на отправителе, привезённую пачку получатель продать
+    // не мог («этот код в другой точке»), а отправитель не мог — товара нет.
+    // Пачка становилась непродаваемой с обеих сторон.
+    expect((await receive(['A1', 'A2'], 'move-receive')).status).toBe(201);
+
+    const sent = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 2 }],
+    });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+
+    const travelling = await prisma.markedCode.findMany({ where: { companyId: fx.companyId } });
+    expect(travelling.every((c) => c.state === 'in_transit'), 'в фургоне — значит ни у кого').toBe(true);
+    expect(travelling.every((c) => c.transferDocumentId === sent.body.id)).toBe(true);
+
+    const got = await api(fx.token, 'POST', `/pos/transfers/${sent.body.id}/receive`, {
+      locationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, receivedQuantity: 2 }],
+    });
+    expect(got.status, JSON.stringify(got.body)).toBe(200);
+
+    const arrived = await prisma.markedCode.findMany({ where: { companyId: fx.companyId } });
+    expect(arrived.every((c) => c.state === 'in_stock')).toBe(true);
+    expect(arrived.every((c) => c.locationId === fx.otherLocationId), 'код должен доехать').toBe(true);
+    expect(arrived.every((c) => c.transferDocumentId === null)).toBe(true);
+  });
+
+  it('и пока пачка в пути, продать её нельзя ни на той точке, ни на этой', async () => {
+    // Самая дорогая половина: отправитель физически отдал товар, но код до
+    // этой починки оставался у него «в остатке» — и касса пробила бы пачку,
+    // которая едет в фургоне.
+    expect((await receive(['A1'], 'transit-receive')).status).toBe(201);
+    const sent = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 1 }],
+    });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+
+    const sale = await sell(['A1'], 'transit-sale', 1);
+    expect(sale.status).toBe(409);
+    expect(sale.body.error).toContain('отправлена на другую точку');
+  });
+
+  it('а отменённое перемещение возвращает код на свою полку', async () => {
+    // Товар не покинул двор. Оставить коды «в пути» значило бы запретить
+    // продавать пачки, которые всё это время лежали на месте.
+    expect((await receive(['A1'], 'cancel-receive')).status).toBe(201);
+    const sent = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 1 }],
+    });
+    expect((await api(fx.token, 'POST', `/pos/transfers/${sent.body.id}/cancel`, {})).status).toBe(200);
+
+    const back = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } });
+    expect(back.state).toBe('in_stock');
+    expect(back.locationId).toBe(fx.locationId);
+    expect(back.transferDocumentId).toBeNull();
+  });
+
+  it('и часть пачек без скана не уезжает', async () => {
+    // Увезли пачку B, записали A — и продать B на новой точке будет нельзя.
+    expect((await receive(['A1', 'A2', 'A3'], 'part-move-receive')).status).toBe(201);
+    const sent = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 1 }],
+    });
+    expect(sent.status).toBe(400);
+    expect(sent.body.error).toContain('Отсканируйте коды');
+    expect(await prisma.markedCode.count({ where: { state: 'in_transit' } })).toBe(0);
+  });
+
+  it('а со сканом уезжает ровно та, которую положили в коробку', async () => {
+    expect((await receive(['A1', 'A2', 'A3'], 'scan-move-receive')).status).toBe(201);
+    const sent = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 1, codes: [code('A2')] }],
+    });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+
+    const states = await prisma.markedCode.findMany({ where: { companyId: fx.companyId }, orderBy: { serial: 'asc' } });
+    expect(states.map((c) => `${c.serial}:${c.state}`)).toEqual(['A1:in_stock', 'A2:in_transit', 'A3:in_stock']);
+  });
+
+  it('и приехавшую пачку можно продать на новой точке', async () => {
+    // То, ради чего всё: до этой починки сеть магазинов не могла продать ни
+    // одной привезённой со склада пачки сигарет.
+    expect((await receive(['A1'], 'arrive-receive')).status).toBe(201);
+    const sent = await api(fx.token, 'POST', '/pos/transfers', {
+      fromLocationId: fx.locationId,
+      toLocationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, quantity: 1 }],
+    });
+    expect((await api(fx.token, 'POST', `/pos/transfers/${sent.body.id}/receive`, {
+      locationId: fx.otherLocationId,
+      items: [{ productId: fx.productId, receivedQuantity: 1 }],
+    })).status).toBe(200);
+
+    const shift = await api(fx.token, 'POST', '/pos/shifts', { locationId: fx.otherLocationId, openingCash: 0 });
+    expect([201, 409]).toContain(shift.status);
+    const sale = await api(
+      fx.token,
+      'POST',
+      '/pos/sales',
+      {
+        locationId: fx.otherLocationId,
+        paymentMethod: 'cash',
+        items: [{ productId: fx.productId, quantity: 1, price: 200, codes: [code('A1')] }],
+      },
+      { 'Idempotency-Key': 'arrive-sale' },
+    );
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.
