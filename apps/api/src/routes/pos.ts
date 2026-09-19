@@ -79,6 +79,8 @@ import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, bi
 import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy } from '../payments';
 import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
+import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
+import { markedCodeKey } from '../marking';
 import { describeChange, isSensitive, findPriceRoundTrips } from '../audit';
 import { csvFile, csvFilename } from '../csv';
 import { catalogXml, offersXml } from '../commerceml';
@@ -697,6 +699,61 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     return;
   }
 
+  /* Коды маркировки — до записи чека.
+     Кассир подносит сканер к каждой пачке сигарет. Проверяем здесь, а не в
+     транзакции, ровно ради слов: «этого кода нет в приёмке» и «код уже продан»
+     требуют разных действий, а из транзакции наружу вышло бы одно невнятное
+     «повторите продажу». Гонку двух касс ловит защищённое обновление ниже —
+     здесь ловится всё остальное, и ловится по-человечески. */
+  const soldCodes: { id: string; gtin: string; serial: string }[] = [];
+  if (Array.isArray(b.items)) {
+    const wanted = new Map<string, number>();
+    for (const line of items) wanted.set(line.productId, (wanted.get(line.productId) ?? 0) + line.quantity);
+
+    const byProduct = new Map<string, string[]>();
+    for (const line of b.items as { productId?: unknown; codes?: unknown }[]) {
+      if (!Array.isArray(line?.codes) || line.codes.length === 0) continue;
+      const productId = String(line.productId);
+      byProduct.set(productId, [...(byProduct.get(productId) ?? []), ...line.codes.map(String)]);
+    }
+
+    for (const [productId, codes] of byProduct) {
+      const read = readLineCodes({ productId, codes }, wanted.get(productId) ?? 0);
+      if (!read.ok) {
+        res.status(400).json({ error: markingRefusalMessage(read.refusal) });
+        return;
+      }
+      const duplicate = findDuplicate(read.value);
+      if (duplicate) {
+        res.status(400).json({ error: 'Один и тот же код поднесён дважды — проверьте пачки' });
+        return;
+      }
+
+      for (const code of read.value) {
+        const known = await prisma.markedCode.findUnique({
+          where: { companyId_gtin_serial: { companyId: req.posCompanyId!, gtin: code.gtin, serial: code.serial } },
+        });
+        if (!known) {
+          res.status(409).json({ error: markingRefusalMessage({ kind: 'unknown', code }) });
+          return;
+        }
+        if (known.state === 'sold') {
+          res.status(409).json({ error: markingRefusalMessage({ kind: 'alreadySold', code }) });
+          return;
+        }
+        if (known.productId !== productId) {
+          res.status(409).json({ error: markingRefusalMessage({ kind: 'wrongProduct', code }) });
+          return;
+        }
+        if (known.locationId !== locationId) {
+          res.status(409).json({ error: markingRefusalMessage({ kind: 'elsewhere', code }) });
+          return;
+        }
+        soldCodes.push({ id: known.id, gtin: code.gtin, serial: code.serial });
+      }
+    }
+  }
+
   const onCredit = b.paymentMethod === 'credit' || creditLines.length > 0;
   if (onCredit) {
     const account = customerPhone
@@ -986,6 +1043,18 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         });
       }
 
+      /* Погасить коды — защищённым обновлением, в той же транзакции.
+         Условие `state: 'in_stock'` и есть защита: если между проверкой выше и
+         этой строкой код успели продать на соседней кассе, обновится ноль
+         строк, и чек не запишется целиком, а не наполовину. */
+      for (const code of soldCodes) {
+        const { count } = await tx.markedCode.updateMany({
+          where: { id: code.id, state: 'in_stock' },
+          data: { state: 'sold', soldAt: document.createdAt, saleDocumentId: document.id },
+        });
+        if (count !== 1) throw new MarkedCodeRaceError(markedCodeKey(code));
+      }
+
       const stockMovements: Promise<unknown>[] = [...otherUpdates];
       // Across bins, because one product sits on as many shelves as it likes
       // and a sale takes from real ones.
@@ -1050,6 +1119,10 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     }
     if (err instanceof LoyaltyPointsError) {
       res.status(409).json({ error: 'Баллы клиента изменились — повторите продажу' });
+      return;
+    }
+    if (err instanceof MarkedCodeRaceError) {
+      res.status(409).json({ error: 'Код продали на другой кассе — повторите продажу' });
       return;
     }
     if (err instanceof IdempotencyConflictError) {
@@ -8124,12 +8197,32 @@ posRouter.get('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =>
 posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) => {
   if (!(await allow(req, res, 'receive'))) return;
   const b = req.body ?? {};
-  const rawItems: { productId: string; quantity: number; price: number; packagingId?: string | null }[] = Array.isArray(b.items)
+  const rawItems: { productId: string; quantity: number; price: number; packagingId?: string | null; codes?: string[] }[] = Array.isArray(b.items)
     ? b.items
     : [];
   if (rawItems.length === 0 || hasInvalidQuantity(rawItems)) {
     res.status(400).json({ error: 'Некорректные данные приёмки' });
     return;
+  }
+
+  /* Коды маркировки — до всякой записи.
+     Кладовщик подносит сканер к каждой пачке, и если один код не прочитался
+     или их оказалось меньше, чем товара, приёмку нельзя записать наполовину:
+     пачка без кода по документам останется на полке навсегда. */
+  const markedByProduct = new Map<string, { gtin: string; serial: string }[]>();
+  for (const line of rawItems) {
+    if (!Array.isArray(line.codes) || line.codes.length === 0) continue;
+    const read = readLineCodes({ productId: line.productId, codes: line.codes }, Number(line.quantity));
+    if (!read.ok) {
+      res.status(400).json({ error: markingRefusalMessage(read.refusal) });
+      return;
+    }
+    const duplicate = findDuplicate(read.value);
+    if (duplicate) {
+      res.status(400).json({ error: 'Один и тот же код поднесён дважды — проверьте пачки' });
+      return;
+    }
+    markedByProduct.set(line.productId, read.value);
   }
 
   const company = await prisma.company.findUnique({
@@ -8269,6 +8362,28 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
       },
       include: { items: true },
     });
+
+    /* Коды — в ту же транзакцию, что и документ.
+       Отдельной записью они однажды не запишутся: товар примут, коды нет, и
+       продать его будет нельзя — приёмка есть, а кодов нет. Уникальность
+       держит база: два кладовщика, принимающие одну коробку с разных касс,
+       оба пройдут проверку «нет такого кода» и оба запишут. */
+    if (markedByProduct.size > 0) {
+      await tx.markedCode.createMany({
+        data: [...markedByProduct].flatMap(([productId, codes]) =>
+          codes.map((code) => ({
+            companyId: req.posCompanyId!,
+            locationId,
+            productId,
+            gtin: code.gtin,
+            serial: code.serial,
+            state: 'in_stock',
+            receivedAt,
+            receiptDocumentId: document.id,
+          })),
+        ),
+      });
+    }
 
     if (purchaseOrder) {
       const receivedByLine = new Map<string, number>();
@@ -9248,6 +9363,16 @@ class TransferClosedError extends Error {
 
 // The customer's balance no longer covers the redemption this sale was
 // priced against — points were spent at another register in between.
+/**
+ * Код успели продать на другой кассе, пока этот чек собирался.
+ *
+ * Проверка перед транзакцией видит код свободным, а к моменту записи его уже
+ * погасили — две кассы в одной точке ANYQ умеет, и эта секунда между
+ * проверкой и записью существует. Ловится защищённым обновлением, а не
+ * повторным чтением: повторное чтение — это та же гонка, только длиннее.
+ */
+class MarkedCodeRaceError extends Error {}
+
 class LoyaltyPointsError extends Error {
   constructor() {
     super('Loyalty balance changed');

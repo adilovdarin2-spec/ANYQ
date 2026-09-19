@@ -105,6 +105,7 @@ model Company {
   supportAccess     SupportAccess[]
 
   @@map("companies")
+  markedCodes MarkedCode[]
 }
 
 /// The owner's own way in — a secret link and a password he sets himself.
@@ -159,6 +160,51 @@ model OwnerCabinet {
   createdAt   DateTime  @default(now())
 
   @@map("owner_cabinets")
+}
+
+/// Код маркировки — одна пачка, один код, один раз.
+///
+/// На пачке сигарет, коробке обуви и упаковке лекарства напечатан Data Matrix.
+/// Государство считает такой код проданным ровно один раз; продать его дважды
+/// — нарушение, а продать тот, которого магазин не принимал, — недостача,
+/// которую никто не заметит до проверки.
+///
+/// Здесь хранится наша половина: что принято, что продано и когда. Настоящую
+/// проверку подлинности делает ИС МПТ, и пока к ней нет доступа, продукт об
+/// этом честно молчит. Но «дважды не продать» и «не принимали — не продашь»
+/// работают целиком локально, и это то, что стоит денег каждый день.
+model MarkedCode {
+  id         String   @id @default(cuid())
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  String
+  location   Location @relation(fields: [locationId], references: [id])
+  locationId String
+  product    Product  @relation(fields: [productId], references: [id])
+  productId  String
+  /// Партия, если товар партионный: у лекарства код и срок годности — про одну
+  /// и ту же упаковку.
+  batch      ProductBatch? @relation(fields: [batchId], references: [id])
+  batchId    String?
+
+  /// Что за товар — четырнадцать цифр из кода.
+  gtin   String
+  /// Какая именно единица. Вместе с GTIN образует ключ.
+  serial String
+
+  /// `in_stock` — принят и лежит. `sold` — продан. `written_off` — списан.
+  state      String    @default("in_stock")
+  receivedAt DateTime  @default(now())
+  soldAt     DateTime?
+  /// Чем принят и чем продан — чтобы по коду можно было дойти до документа.
+  receiptDocumentId String?
+  saleDocumentId    String?
+
+  /// Один код в одной компании существует ровно один раз. Уникальность держит
+  /// база, а не проверка перед записью: проверка — это гонка, которую две
+  /// кассы выигрывают обе.
+  @@unique([companyId, gtin, serial])
+  @@index([companyId, locationId, state])
+  @@map("marked_codes")
 }
 
 /// Одноразовый код на случай потерянного телефона. Хранится хешем: показать
@@ -252,6 +298,7 @@ model Location {
   settlements      Settlement[]
 
   @@map("locations")
+  markedCodes MarkedCode[]
 }
 
 // Restaurant Pack: floor plan + KDS. A table's occupied/free state is derived
@@ -441,6 +488,7 @@ model Product {
   stockPolicies  StockPolicy[]
 
   @@map("products")
+  markedCodes    MarkedCode[]
 }
 
 // The registered cash register a point sells through. One per location,
@@ -727,6 +775,7 @@ model ProductBatch {
 
   @@index([productId, locationId])
   @@map("product_batches")
+  markedCodes MarkedCode[]
 }
 
 model Document {
