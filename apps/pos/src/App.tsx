@@ -2595,23 +2595,17 @@ export default function App() {
         : await createManagedProduct(session.token, payload);
       await loadManagedProducts();
 
-      // Best-effort sync into the live sale grid so an edit to a product
-      // already visible in Касса shows up without re-logging in. A brand
-      // new product (no stock yet) or one being un-hidden only appears
-      // after the next PIN login, when the server rebuilds the full
-      // catalog with stock.
-      if (session.products.some((p) => p.id === saved.id)) {
-        const updatedSession: PosSession = {
-          ...session,
-          products: saved.sellable
-            ? session.products.map((p) =>
-                p.id === saved.id ? { ...p, name: saved.name, category: saved.category, price: saved.salePrice, barcode: saved.barcode } : p,
-              )
-            : session.products.filter((p) => p.id !== saved.id),
-        };
-        saveSession(updatedSession);
-        setSession(updatedSession);
-      }
+      /* Каталог кассы перечитывается у сервера целиком.
+         Раньше здесь правился кэш по месту, и правка доставала только те
+         товары, которые в нём уже были: новый товар не появлялся ни в сетке
+         продажи, ни в приёмке — до следующего входа по PIN. В первый день это
+         и есть вся работа владельца: он заводит товары и идёт их принимать, а
+         касса отвечает «товаров пока нет» и «сначала добавьте товары». Ничего
+         не сломано, но выглядит именно так.
+
+         Тем же способом, что и после движения остатка: сервер собирает
+         каталог с остатками, и собрать его на кассе всё равно не из чего. */
+      await refreshCatalogAfterStockChange();
 
       setView('products');
     } catch (err) {
