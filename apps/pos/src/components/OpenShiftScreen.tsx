@@ -20,6 +20,26 @@ interface Props {
    * Запрещать нельзя — вторая касса обязана торговать; сказать нужно.
    */
   openShifts?: OpenShiftInfo[];
+  /**
+   * Может ли этот человек закрывать чужие смены.
+   *
+   * Сервер разрешает это владельцу и менеджеру. Кассиру предлагать кнопку,
+   * которая ответит отказом, хуже, чем не предлагать ничего: отказ он прочтёт
+   * как поломку, а не как правило.
+   */
+  canCloseOthers?: boolean;
+  /**
+   * Закрыть смену, которую это устройство не открывало.
+   *
+   * Без этого строчка выше — «если это ваша прошлая смена, закройте её» —
+   * была советом, которому неоткуда последовать: смена живёт в памяти того
+   * планшета, на котором её открыли, и с нового её не видно нигде. Кассир
+   * менял планшет, увольнялся, уходил на другую точку — а смена оставалась
+   * открытой навсегда и каждое утро стояла первой строкой у владельца в
+   * «что сделать сегодня». Тревога, которую нельзя снять, обесценивает
+   * весь список под собой, а там настоящие недостачи.
+   */
+  onCloseForgotten?: (shift: OpenShiftInfo) => void;
 }
 
 export function OpenShiftScreen({
@@ -30,11 +50,16 @@ export function OpenShiftScreen({
   onSwitchLocation,
   onOpen,
   openShifts,
+  canCloseOthers = false,
+  onCloseForgotten,
 }: Props) {
   const { t } = useTranslation();
   const [cash, setCash] = useState('0');
   const value = Number(cash);
   const valid = Number.isFinite(value) && value >= 0 && !!currentLocationId && !switchingLocation;
+
+  const canClose = (shift: OpenShiftInfo) => shift.mine || canCloseOthers;
+  const { shown, hidden } = visibleOpenShifts(openShifts ?? [], canClose);
 
   return (
     <div className="pos-shell">
@@ -71,16 +96,32 @@ export function OpenShiftScreen({
             {/* Первые две и счёт остальных. Магазин, в котором смены не
                 закрывают месяцами, — это как раз тот магазин, ради которого
                 предупреждение и написано, и девять одинаковых строк вытолкнули
-                бы с экрана саму форму открытия. */}
-            {openShifts.slice(0, 2).map((shift) => (
-              <p key={shift.id}>
-                {t('shift.open.alreadyOpen', {
-                  cashier: shift.cashierName,
-                  time: formatDateTime(shift.openedAt),
-                })}
-              </p>
+                бы с экрана саму форму открытия.
+
+                Но смену, которую этот человек вправе закрыть, срез прятать не
+                должен: у неё есть кнопка, и спрятать кнопку за словами «и ещё
+                семь» значит вернуть ровно ту беспомощность, ради которой она
+                и появилась. Поэтому такие показываются все. */}
+            {shown.map((shift) => (
+              <div key={shift.id}>
+                <p>
+                  {t('shift.open.alreadyOpen', {
+                    cashier: shift.cashierName,
+                    time: formatDateTime(shift.openedAt),
+                  })}
+                </p>
+                {canClose(shift) && onCloseForgotten && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => onCloseForgotten(shift)}
+                  >
+                    {shift.mine ? t('shift.open.closeMine') : t('shift.open.closeOther')}
+                  </button>
+                )}
+              </div>
             ))}
-            {openShifts.length > 2 && <p>{t('shift.open.alreadyOpenMore', { count: openShifts.length - 2 })}</p>}
+            {hidden > 0 && <p>{t('shift.open.alreadyOpenMore', { count: hidden })}</p>}
             <p>{t('shift.open.alreadyOpenWhy')}</p>
           </div>
         )}
@@ -105,4 +146,21 @@ export function OpenShiftScreen({
       </div>
     </div>
   );
+}
+
+/**
+ * Какие из открытых смен показать.
+ *
+ * Две первые по времени — предупреждение; плюс все, которые этот человек может
+ * закрыть, даже если они позже. Порядок остаётся временным: «открыта вчера в
+ * 19:40» читают как хронологию, и перетасовать её ради кнопок значило бы
+ * сделать непонятным само предупреждение.
+ */
+export function visibleOpenShifts(
+  shifts: OpenShiftInfo[],
+  canClose: (shift: OpenShiftInfo) => boolean,
+): { shown: OpenShiftInfo[]; hidden: number } {
+  const keep = new Set(shifts.slice(0, 2).map((shift) => shift.id));
+  for (const shift of shifts) if (canClose(shift)) keep.add(shift.id);
+  return { shown: shifts.filter((shift) => keep.has(shift.id)), hidden: shifts.length - keep.size };
 }

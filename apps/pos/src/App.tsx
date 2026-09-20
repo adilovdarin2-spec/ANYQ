@@ -129,6 +129,7 @@ import { homeViewFor, mainTabFor } from './views';
 import type { View } from './views';
 import { OpenShiftScreen } from './components/OpenShiftScreen';
 import { CloseShiftScreen } from './components/CloseShiftScreen';
+import { CloseForgottenShiftScreen } from './components/CloseForgottenShiftScreen';
 import { SearchBar } from './components/SearchBar';
 import { ProductGrid } from './components/ProductGrid';
 import { CartBar } from './components/CartBar';
@@ -570,6 +571,18 @@ export default function App() {
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   /** Смены, уже открытые на выбранной точке. Спрашиваются перед открытием своей. */
   const [openShiftsHere, setOpenShiftsHere] = useState<OpenShiftInfo[]>([]);
+  /** Счётчик, чтобы перечитать этот список после закрытия забытой смены. */
+  const [openShiftsVersion, setOpenShiftsVersion] = useState(0);
+  /**
+   * Забытая смена, которую сейчас закрывают, и что о ней знает сервер.
+   *
+   * Своей у этого устройства нет — иначе экрана открытия бы не было вовсе, —
+   * поэтому числа только серверные, и закрывать, не дождавшись их, нельзя.
+   */
+  const [forgottenShift, setForgottenShift] = useState<OpenShiftInfo | null>(null);
+  const [forgottenCash, setForgottenCash] = useState<ShiftCash | null>(null);
+  const [forgottenError, setForgottenError] = useState<string | null>(null);
+  const [forgottenBusy, setForgottenBusy] = useState(false);
   /**
    * Счётчик изменений в долгах по закрытию смен.
    *
@@ -2810,7 +2823,45 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [shift, session?.token, currentLocationId]);
+  }, [shift, session?.token, currentLocationId, openShiftsVersion]);
+
+  /**
+   * Открыть закрытие забытой смены.
+   *
+   * Сначала спрашиваем сервер, сколько он ждёт в этом ящике: закрыть смену,
+   * не зная ожидаемой суммы, — это записать пересчёт, которому не с чем
+   * сравниться, и владелец увидит сверку без расхождения там, где расхождения
+   * просто никто не считал.
+   */
+  async function beginCloseForgotten(target: OpenShiftInfo) {
+    if (!session) return;
+    setForgottenShift(target);
+    setForgottenCash(null);
+    setForgottenError(null);
+    try {
+      setForgottenCash(await fetchShiftCash(session.token, target.id));
+    } catch {
+      setForgottenError(t('shift.forgotten.cashFailed'));
+    }
+  }
+
+  async function confirmCloseForgotten(closingCashCounted: number) {
+    if (!session || !forgottenShift) return;
+    setForgottenBusy(true);
+    setForgottenError(null);
+    try {
+      await closeRemoteShift(session.token, forgottenShift.id, closingCashCounted);
+      setForgottenShift(null);
+      setForgottenCash(null);
+      // Список открытых смен перечитываем у сервера, а не правим по месту:
+      // за то время, пока здесь считали ящик, её мог закрыть и кто-то другой.
+      setOpenShiftsVersion((version) => version + 1);
+    } catch (e) {
+      setForgottenError(e instanceof Error && e.message ? e.message : t('shift.forgotten.failed'));
+    } finally {
+      setForgottenBusy(false);
+    }
+  }
 
   async function openShift(openingCash: number) {
     // The register's own id, kept whatever happens next. Replacing it with the
@@ -3326,6 +3377,23 @@ export default function App() {
         ? session.products.filter((p) => p.category === effectiveCategoryFilter)
         : session.products;
 
+  if (!shift && forgottenShift) {
+    return (
+      <CloseForgottenShiftScreen
+        shift={forgottenShift}
+        cash={forgottenCash}
+        error={forgottenError}
+        busy={forgottenBusy}
+        onCancel={() => {
+          setForgottenShift(null);
+          setForgottenCash(null);
+          setForgottenError(null);
+        }}
+        onConfirm={confirmCloseForgotten}
+      />
+    );
+  }
+
   if (!shift) {
     return (
       <>
@@ -3342,6 +3410,8 @@ export default function App() {
           onSwitchLocation={handleSwitchLocation}
           onOpen={openShift}
           openShifts={openShiftsHere}
+          canCloseOthers={isOwnerOrManager}
+          onCloseForgotten={(target) => void beginCloseForgotten(target)}
         />
       </>
     );
