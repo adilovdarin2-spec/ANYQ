@@ -40,8 +40,17 @@ export function CreateCompanyDrawer({ onClose, onCreate }: Props) {
   // это через неделю словами «а я и не заходил ни разу».
   const [ownerPin, setOwnerPin] = useState('');
 
-  // Розница, а не «Магазин»: последний не включает ничего — см. OFFERABLE_MODULES.
-  const [modules, setModules] = useState<ModuleKey[]>(['retail']);
+  /* Умолчание — самый дешёвый проданный тариф, «Точка», а не половина от него.
+     Умолчанием пользуются: подключают клиента, соглашаются с тем, что
+     предложено, и идут дальше. Поэтому оно обязано совпадать с тем, что клиент
+     купил, — а стояла здесь одна розница, то есть набор, которого нет ни в
+     одном тарифе. «Точка» на странице цен обещает «приёмку, инвентаризацию,
+     списание», и все три живут в модуле «Товар и остатки»: магазин,
+     подключённый по умолчанию, не нашёл бы приёмку, за которую заплатил.
+
+     Розница, а не «Магазин»: последний не включает ничего — см.
+     OFFERABLE_MODULES. */
+  const [modules, setModules] = useState<ModuleKey[]>(['retail', 'stock']);
   const [locationLimit, setLocationLimit] = useState('');
   const [userLimit, setUserLimit] = useState('');
   const [skuLimit, setSkuLimit] = useState('');
