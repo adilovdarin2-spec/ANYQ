@@ -1,4 +1,5 @@
 import type { CatalogProduct } from '../types';
+import { capNote } from '../cap-note';
 import { formatMoney } from '../utils';
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 export function ProductRow({ product, qty, onAdd, onChangeQty, onSetQty }: Props) {
   const out = product.stock <= 0;
   const low = !out && product.stock <= 5;
+  const atMax = qty > 0 && qty >= product.stock;
 
   return (
     <div className="product-row">
@@ -39,21 +41,24 @@ export function ProductRow({ product, qty, onAdd, onChangeQty, onSetQty }: Props
           Добавить
         </button>
       ) : (
-        <div className="qty-stepper">
-          <button onClick={() => onChangeQty(-1)} aria-label="Меньше">–</button>
-          {/* Поле, а не подпись: заказывают мешками, и двенадцать нажатий на
-              «+» — это причина закрыть вкладку и позвонить по телефону. */}
-          <input
-            className="qty-field"
-            type="number"
-            min={0}
-            max={product.stock}
-            inputMode="numeric"
-            value={qty}
-            aria-label={`Сколько ${product.unit}`}
-            onChange={(e) => onSetQty(Math.floor(Number(e.target.value) || 0))}
-          />
-          <button onClick={() => onChangeQty(1)} disabled={qty >= product.stock} aria-label="Больше">+</button>
+        <div className="qty-col">
+          <div className="qty-stepper">
+            <button onClick={() => onChangeQty(-1)} aria-label="Меньше">–</button>
+            {/* Поле, а не подпись: заказывают мешками, и двенадцать нажатий на
+                «+» — это причина закрыть вкладку и позвонить по телефону. */}
+            <input
+              className="qty-field"
+              type="number"
+              min={0}
+              max={product.stock}
+              inputMode="numeric"
+              value={qty}
+              aria-label={`Сколько ${product.unit}`}
+              onChange={(e) => onSetQty(Math.floor(Number(e.target.value) || 0))}
+            />
+            <button onClick={() => onChangeQty(1)} disabled={qty >= product.stock} aria-label="Больше">+</button>
+          </div>
+          {atMax && <div className="qty-capped">{capNote(product.stock, product.unit)}</div>}
         </div>
       )}
     </div>

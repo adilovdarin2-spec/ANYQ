@@ -97,6 +97,10 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
 .qty-stepper button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 1.05rem; font-weight: 700; color: var(--ink); }
 .qty-stepper button:disabled { opacity: 0.4; }
 .qty-stepper span { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
+/* Столбик под счётчиком: «это весь остаток» встаёт под ним, а не растягивает
+   карточку вбок — вбок на телефоне растягиваться уже некуда. */
+.qty-col { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.qty-capped { font-size: 0.75rem; line-height: 1.3; color: var(--ink-muted); text-align: right; max-width: 150px; }
 /* 44 в высоту, а не 34. По этой кнопке закупщик бьёт десятки раз подряд,
    собирая заказ, часто стоя и одной рукой; лишние десять пикселей здесь стоят
    дешевле, чем один промах мимо товара. */
@@ -346,7 +350,9 @@ button, .product-row, .tier-card, .category-chip, .install-banner, .feature-card
   .product-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; height: 100%; }
   .product-row-info { flex: none; }
   .product-row .add-btn { width: 100%; padding: 10px; }
+  .product-row .qty-col { width: 100%; }
   .product-row .qty-stepper { width: 100%; justify-content: space-between; }
+  .product-row .qty-capped { max-width: none; }
 
   .screen-header { padding: 20px 24px; }
   .screen-body { max-width: 900px; padding: 32px; }

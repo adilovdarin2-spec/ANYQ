@@ -1,4 +1,5 @@
 import type { CartLine } from '../types';
+import { capNote } from '../cap-note';
 import { formatMoney } from '../utils';
 
 interface Props {
@@ -29,23 +30,28 @@ export function CartSidebar({ cart, total, onChangeQty, onSetQty, onCheckout }: 
                     {line.qty} {line.unit} × {formatMoney(line.price)}
                   </div>
                 </div>
-                <div className="qty-stepper">
-                  <button onClick={() => onChangeQty(line.productId, -1)} aria-label="Меньше">
-                    –
-                  </button>
-                  <input
-                    className="qty-field"
-                    type="number"
-                    min={0}
-                    max={line.maxStock}
-                    inputMode="numeric"
-                    value={line.qty}
-                    aria-label={`Сколько ${line.unit}`}
-                    onChange={(e) => onSetQty(line.productId, Math.floor(Number(e.target.value) || 0))}
-                  />
-                  <button onClick={() => onChangeQty(line.productId, 1)} disabled={line.qty >= line.maxStock} aria-label="Больше">
-                    +
-                  </button>
+                <div className="qty-col">
+                  <div className="qty-stepper">
+                    <button onClick={() => onChangeQty(line.productId, -1)} aria-label="Меньше">
+                      –
+                    </button>
+                    <input
+                      className="qty-field"
+                      type="number"
+                      min={0}
+                      max={line.maxStock}
+                      inputMode="numeric"
+                      value={line.qty}
+                      aria-label={`Сколько ${line.unit}`}
+                      onChange={(e) => onSetQty(line.productId, Math.floor(Number(e.target.value) || 0))}
+                    />
+                    <button onClick={() => onChangeQty(line.productId, 1)} disabled={line.qty >= line.maxStock} aria-label="Больше">
+                      +
+                    </button>
+                  </div>
+                  {line.qty >= line.maxStock && (
+                    <div className="qty-capped">{capNote(line.maxStock, line.unit)}</div>
+                  )}
                 </div>
               </div>
             ))}
