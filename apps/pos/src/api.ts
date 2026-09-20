@@ -692,6 +692,24 @@ export function fetchManagedProducts(token: string): Promise<ManagedProduct[]> {
   return request('/pos/products', { method: 'GET' }, token);
 }
 
+/**
+ * Промаркировать то, что уже лежит на полке.
+ *
+ * Сколько ещё можно, считает сервер: он знает остаток и то, сколько упаковок
+ * уже с кодом. Касса присылает отсканированное и показывает его ответ.
+ */
+export function markExistingStock(
+  token: string,
+  payload: { locationId: string; productId: string; codes: string[] },
+  idempotencyKey: string,
+): Promise<{ productId: string; registered: number }> {
+  return request(
+    '/pos/marked-codes/stock',
+    { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } },
+    token,
+  );
+}
+
 export function createManagedProduct(token: string, payload: ManagedProductPayload): Promise<ManagedProduct> {
   return request('/pos/products', { method: 'POST', body: JSON.stringify(payload) }, token);
 }

@@ -29,6 +29,7 @@ import {
   createBin,
   createCount,
   createManagedProduct,
+  markExistingStock,
   createPackaging,
   createProduction,
   createPurchaseOrder,
@@ -1238,6 +1239,30 @@ export default function App() {
       return false;
     } finally {
       setPackagingBusy(false);
+    }
+  }
+
+  /**
+   * Промаркировать то, что уже лежит на полке.
+   *
+   * Ответ сервера передаётся карточке как есть: сколько ещё упаковок можно
+   * промаркировать, знает он — у него остаток и уже заведённые коды. Касса,
+   * которая попробует посчитать это сама, однажды посчитает не так.
+   */
+  async function handleMarkStock(codes: string[]): Promise<{ registered: number } | { error: string }> {
+    if (!session || !currentLocationId || !editingProduct) {
+      return { error: t('fail.saveProduct') };
+    }
+    try {
+      const done = await markExistingStock(
+        session.token,
+        { locationId: currentLocationId, productId: editingProduct.id, codes },
+        genId('markstock'),
+      );
+      await refreshCatalogAfterStockChange();
+      return { registered: done.registered };
+    } catch (err) {
+      return { error: err instanceof ApiError ? err.message : t('fail.saveProduct') };
     }
   }
 
@@ -3928,6 +3953,7 @@ export default function App() {
           onSave={handleSaveProduct}
           onAddPackaging={handleAddPackaging}
           onDeletePackaging={handleDeletePackaging}
+          onMarkStock={handleMarkStock}
         />
       )}
 

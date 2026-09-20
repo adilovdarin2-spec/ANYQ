@@ -80,10 +80,11 @@ import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy
 import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
-import { markedCodeKey } from '../marking';
+import { markedCodeKey, parseMarkedCode } from '../marking';
 import { orderCodesRefusalMessage, pickCodes, planDocumentCodes, returnCodesRefusalMessage, supplierReturnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
 import { resolveSaleCodes } from '../marking-sale';
 import { resolveIncomingCodes } from '../marking-incoming';
+import { resolveStockCodes } from '../marking-stock';
 
 /**
  * База для правила маркировки, в том виде, в каком правилу она нужна.
@@ -7390,6 +7391,116 @@ posRouter.get('/batches/uncovered', requirePosAuth, async (req: PosAuthedRequest
     .sort((a, b) => b.quantity - a.quantity);
 
   res.json({ locationId, rows });
+});
+
+/**
+ * Промаркировать то, что уже лежит на полке.
+ *
+ * Выход из положения, в которое магазин попадает в первый же день перехода на
+ * маркировку: владелец ставит товару признак «продаётся только по коду», и
+ * сорок пачек, купленных на прошлой неделе, перестают продаваться — касса
+ * требует код, а кодов у них нет. По закону остатки и маркируют: берут коробку,
+ * сканируют каждую пачку и заявляют, что вот они и лежат здесь.
+ *
+ * Право то же, что у приёмки: заявить, что товар есть и вот его коды, — это то
+ * же самое действие, только без поставки.
+ */
+posRouter.post('/marked-codes/stock', requirePosAuth, async (req: PosAuthedRequest, res) => {
+  if (!(await allow(req, res, 'receive'))) return;
+  const b = req.body ?? {};
+  const codes: string[] = Array.isArray(b.codes) ? b.codes.map(String) : [];
+
+  const company = await prisma.company.findUnique({
+    where: { id: req.posCompanyId },
+    include: { tariff: true, locations: true },
+  });
+  const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
+  if (!locationId) return;
+
+  const product = await prisma.product.findFirst({
+    where: { id: b.productId, companyId: req.posCompanyId },
+    select: { id: true, name: true },
+  });
+  if (!product) {
+    res.status(404).json({ error: 'Товар не найден' });
+    return;
+  }
+
+  const [stockRows, alreadyCoded] = await Promise.all([
+    prisma.stock.findMany({ where: { productId: product.id, locationId }, select: { quantity: true } }),
+    prisma.markedCode.count({
+      where: { companyId: req.posCompanyId, productId: product.id, locationId, state: 'in_stock' },
+    }),
+  ]);
+  const onHand = stockRows.reduce((sum, row) => sum + row.quantity, 0);
+
+  // Что из поднесённого уже известно компании — спрашивается до записи, чтобы
+  // сказать по-человечески. База и так не даст завести второй такой код, но
+  // скажет об этом нарушением уникальности, а не словами.
+  const parsedSerials = codes
+    .map((rawCode) => parseMarkedCode(rawCode))
+    .filter((parsed): parsed is Extract<typeof parsed, { ok: true }> => parsed.ok)
+    .map((parsed) => parsed.code);
+  const known = parsedSerials.length
+    ? await prisma.markedCode.findMany({
+        where: {
+          companyId: req.posCompanyId,
+          OR: parsedSerials.map((code) => ({ gtin: code.gtin, serial: code.serial })),
+        },
+        select: { serial: true },
+      })
+    : [];
+
+  const resolution = resolveStockCodes({
+    productId: product.id,
+    codes,
+    onHand,
+    alreadyCoded,
+    knownSerials: known.map((row) => row.serial),
+  });
+  if (!resolution.ok) {
+    res.status(400).json({ error: resolution.message });
+    return;
+  }
+
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
+  try {
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/marked-codes/stock',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+    }, async (tx) => {
+      await tx.markedCode.createMany({
+        data: resolution.codes.map((code) => ({
+          companyId: req.posCompanyId!,
+          locationId,
+          productId: product.id,
+          gtin: code.gtin,
+          serial: code.serial,
+          state: 'in_stock',
+          // Документа здесь нет и быть не может: товар никуда не двигался.
+          // Основание — имя того, кто заявил.
+          registeredBy: req.posUserId,
+        })),
+      });
+      return { productId: product.id, registered: resolution.codes.length };
+    });
+
+    res.status(outcome.statusCode).json(outcome.result);
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другой маркировки' });
+      return;
+    }
+    throw err;
+  }
 });
 
 posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) => {

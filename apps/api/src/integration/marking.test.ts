@@ -1032,6 +1032,119 @@ describe('коды маркировки', () => {
     });
   });
 
+  describe('маркировка остатка', () => {
+    /**
+     * Первый день перехода на маркировку.
+     *
+     * Владелец ставит признак «продаётся только по коду» — и товар, купленный
+     * на прошлой неделе, перестаёт продаваться: касса требует код, а кодов у
+     * этих пачек нет. Выход из этого и проверяется здесь.
+     */
+    async function putOnShelf(quantity: number) {
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/receipts',
+        { locationId: fx.locationId, items: [{ productId: fx.productId, quantity, price: 100 }] },
+        { 'Idempotency-Key': `shelf-${quantity}` },
+      );
+      expect(got.status, JSON.stringify(got.body)).toBe(201);
+    }
+
+    it('лежавший до маркировки товар можно промаркировать и продать', async () => {
+      // То, ради чего всё: до этого у сорока пачек не было выхода вовсе.
+      await putOnShelf(3);
+      await prisma.product.update({ where: { id: fx.productId }, data: { marked: true } });
+
+      // Сначала — подтверждение, что дыра настоящая.
+      const stuck = await sell([], 'stock-stuck', 1);
+      expect(stuck.status).toBe(400);
+      expect(stuck.body.error).toContain('только по коду маркировки');
+
+      const marked = await api(
+        fx.token,
+        'POST',
+        '/pos/marked-codes/stock',
+        { locationId: fx.locationId, productId: fx.productId, codes: [code('A1'), code('A2')] },
+        { 'Idempotency-Key': 'stock-mark' },
+      );
+      expect(marked.status, JSON.stringify(marked.body)).toBe(201);
+      expect(marked.body.registered).toBe(2);
+
+      const sale = await sell(['A1'], 'stock-sell', 1);
+      expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+    });
+
+    it('и заявленный код помнит, кто его заявил', async () => {
+      // Документа здесь нет: товар никуда не двигался. Основание — имя.
+      await putOnShelf(2);
+      expect((await api(
+        fx.token,
+        'POST',
+        '/pos/marked-codes/stock',
+        { locationId: fx.locationId, productId: fx.productId, codes: [code('A1')] },
+        { 'Idempotency-Key': 'stock-who' },
+      )).status).toBe(201);
+
+      const row = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } });
+      expect(row.registeredBy).toBe(fx.userId);
+      expect(row.receiptDocumentId, 'приёмки не было').toBeNull();
+    });
+
+    it('но больше, чем лежит на полке, промаркировать нельзя', async () => {
+      // Иначе это способ завести коды из воздуха, и продавать будут по ним.
+      await putOnShelf(2);
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/marked-codes/stock',
+        { locationId: fx.locationId, productId: fx.productId, codes: [code('A1'), code('A2'), code('A3')] },
+        { 'Idempotency-Key': 'stock-too-many' },
+      );
+      expect(got.status).toBe(400);
+      expect(got.body.error).toContain('не больше 2');
+      expect(await prisma.markedCode.count({ where: { companyId: fx.companyId } })).toBe(0);
+    });
+
+    it('и уже принятый код второй раз не заводится', async () => {
+      await putOnShelf(5);
+      expect((await receive(['A1'], 'stock-known-receive')).status).toBe(201);
+
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/marked-codes/stock',
+        { locationId: fx.locationId, productId: fx.productId, codes: [code('A1')] },
+        { 'Idempotency-Key': 'stock-known' },
+      );
+      expect(got.status).toBe(400);
+      expect(got.body.error).toContain('уже заведён');
+    });
+
+    it('а второй заход считает уже промаркированное', async () => {
+      // Остаток маркируют коробка за коробкой, и вторая не должна перекрывать
+      // первую.
+      await putOnShelf(2);
+      expect((await api(
+        fx.token,
+        'POST',
+        '/pos/marked-codes/stock',
+        { locationId: fx.locationId, productId: fx.productId, codes: [code('A1')] },
+        { 'Idempotency-Key': 'stock-first' },
+      )).status).toBe(201);
+
+      const second = await api(
+        fx.token,
+        'POST',
+        '/pos/marked-codes/stock',
+        { locationId: fx.locationId, productId: fx.productId, codes: [code('A2'), code('A3')] },
+        { 'Idempotency-Key': 'stock-second' },
+      );
+      expect(second.status).toBe(400);
+      expect(second.body.error).toContain('не больше 1');
+    });
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.

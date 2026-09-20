@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseMarkedCode } from '../marking';
+import { sameMarkedCode } from '../marking-scan';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from '../api';
 import type { Packaging } from '../types';
 
@@ -15,6 +17,17 @@ interface Props {
   onSave: (payload: ManagedProductPayload) => void;
   onAddPackaging: (payload: PackagingPayload) => Promise<boolean>;
   onDeletePackaging: (packagingId: string) => void;
+  /**
+   * Промаркировать то, что уже лежит на полке.
+   *
+   * Лекарство от ловушки, которую создаёт галочка выше: у товара, купленного
+   * до маркировки, кодов нет, и с этого мгновения он не продаётся. Поэтому
+   * лекарство стоит здесь же — под той галочкой, которая эту беду и приносит.
+   *
+   * Возвращает, сколько упаковок промаркировано, или отказ словами сервера:
+   * считать, сколько ещё можно, должен тот, кто знает остаток.
+   */
+  onMarkStock: (codes: string[]) => Promise<{ registered: number } | { error: string }>;
 }
 
 export function ProductEditScreen({
@@ -28,6 +41,7 @@ export function ProductEditScreen({
   onSave,
   onAddPackaging,
   onDeletePackaging,
+  onMarkStock,
 }: Props) {
   const { t } = useTranslation();
   const [packName, setPackName] = useState('');
@@ -43,6 +57,35 @@ export function ProductEditScreen({
   const [salePrice, setSalePrice] = useState(product ? String(product.salePrice) : '');
   const [sellable, setSellable] = useState(product?.sellable ?? true);
   const [marked, setMarked] = useState(product?.marked ?? false);
+  const [stockCodes, setStockCodes] = useState<string[]>([]);
+  const [stockNote, setStockNote] = useState<string | null>(null);
+  const [stockBusy, setStockBusy] = useState(false);
+
+  function scanStockCode(raw: string) {
+    if (!parseMarkedCode(raw).ok) {
+      setStockNote(t('product.markStockUnreadable'));
+      return;
+    }
+    if (stockCodes.some((seen) => sameMarkedCode(seen, raw))) {
+      setStockNote(t('product.markStockDuplicate'));
+      return;
+    }
+    setStockNote(null);
+    setStockCodes((prev) => [...prev, raw]);
+  }
+
+  async function submitStockCodes() {
+    if (stockCodes.length === 0) return;
+    setStockBusy(true);
+    const outcome = await onMarkStock(stockCodes);
+    setStockBusy(false);
+    if ('error' in outcome) {
+      setStockNote(outcome.error);
+      return;
+    }
+    setStockCodes([]);
+    setStockNote(t('product.markStockDone', { count: outcome.registered }));
+  }
 
   const purchase = Number(purchasePrice);
   const sale = Number(salePrice);
@@ -144,6 +187,35 @@ export function ProductEditScreen({
           {t('product.marked')}
         </label>
         <span className="field-hint">{t('product.markedWhy')}</span>
+        {/* Товар, купленный до маркировки, кодов не имеет — и с той минуты, как
+            галочка выше поставлена, не продаётся. Поэтому выход стоит здесь же:
+            отсканировать то, что лежит, и заявить его коды. */}
+        {product?.marked && (
+          <div className="form-field">
+            <label htmlFor="mark-stock">{t('product.markStock')}</label>
+            <span className="field-hint">{t('product.markStockWhy')}</span>
+            <input
+              id="mark-stock"
+              type="text"
+              placeholder={t('product.markStockPlaceholder')}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                const field = e.currentTarget;
+                if (field.value.trim()) scanStockCode(field.value.trim());
+                field.value = '';
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={stockCodes.length === 0 || stockBusy}
+              onClick={submitStockCodes}
+            >
+              {t('product.markStockSubmit', { count: stockCodes.length })}
+            </button>
+            {stockNote && <span className="field-hint">{stockNote}</span>}
+          </div>
+        )}
         {product && (
           <label className="checkbox-row">
             <input type="checkbox" checked={sellable} onChange={(e) => setSellable(e.target.checked)} />
