@@ -202,3 +202,50 @@ export function reconcileHolds(rows: HoldRow[]): StuckHold[] {
     .filter((row) => row.excess > 0)
     .sort((a, b) => b.excess - a.excess);
 }
+
+export interface CodeTotal {
+  productId: string;
+  /** Сколько кодов этого товара числится лежащими на этой точке. */
+  coded: number;
+}
+
+export interface CodeExcess {
+  productId: string;
+  coded: number;
+  stock: number;
+  /** Насколько кодов больше, чем упаковок. Всегда положительное. */
+  excess: number;
+}
+
+/**
+ * Где кодов маркировки больше, чем упаковок.
+ *
+ * Восьмая книга, и устроена она как книга партий, потому что беда та же:
+ * товар ушёл, а запись о нём осталась. Разница в том, что запись эта —
+ * государственная. Партию, которой больше остатка, магазин объясняет себе сам;
+ * лишний код на сверке с системой маркировки — это упаковка, которая по
+ * документам у него, а на полке её нет, и спросят за неё с него.
+ *
+ * Уводить коды умеют все восемь дверей, и семь из них это делают. Восьмая —
+ * недостача по инвентаризации — не делает сознательно: пропали три пачки, а
+ * какие именно, не знает никто, и гасить наугад значит объявить проданной ту,
+ * что лежит на полке. Расхождение поэтому неизбежно, и единственный честный
+ * ответ на него — показать его владельцу, а не молчать.
+ *
+ * Проверяется неравенство, как и у партий. Кодов законно меньше: товар,
+ * купленный до маркировки, лежит без них, пока остаток не промаркируют.
+ * Больше упаковок их быть не может никогда.
+ */
+export function reconcileCodes(codes: CodeTotal[], stock: StockTotal[]): CodeExcess[] {
+  const onHand = new Map(stock.map((row) => [row.productId, row.quantity]));
+
+  return codes
+    .map((row) => ({
+      productId: row.productId,
+      coded: row.coded,
+      stock: onHand.get(row.productId) ?? 0,
+    }))
+    .filter((row) => row.coded > row.stock)
+    .map((row) => ({ ...row, excess: row.coded - row.stock }))
+    .sort((a, b) => b.excess - a.excess);
+}

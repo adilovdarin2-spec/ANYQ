@@ -894,6 +894,25 @@ export interface ReconciliationReport {
   batchExcess: BatchExcessRow[];
   /** Пусто, пока удержания не пережили товар. */
   stuckHolds: StuckHoldRow[];
+  /** Пусто у всех, кто маркированным не торгует. */
+  codeExcess: CodeExcessRow[];
+}
+
+/**
+ * Кодов маркировки больше, чем упаковок на полке.
+ *
+ * Беда та же, что у партий, но запись государственная: за лишний код спросят
+ * на сверке с системой маркировки, и объяснять придётся магазину.
+ */
+export interface CodeExcessRow {
+  productId: string;
+  name: string;
+  unit: string;
+  coded: number;
+  stock: number;
+  /** На сколько кодов больше, чем упаковок. */
+  excess: number;
+  explanation: string;
 }
 
 export interface ImportProblem {

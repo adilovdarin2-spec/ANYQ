@@ -735,6 +735,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'recon.mismatchLine': '{bin} · журнал {ledger}, қалдық {cached}',
   'recon.holdsTitle': 'Жатқаннан көп бөлінген',
   'recon.holdsLine': 'сөреде {quantity} {unit}, бөлінген {held} {unit}',
+  'recon.codesTitle': 'Таңбалау кодтары',
+  'recon.codesLine': 'кодтар {coded}, ал сөреде {stock} {unit}',
   'recon.batchTitle': 'Партиялар қалдықпен сәйкес келмейді',
   'recon.batchLine': 'сериялар бойынша {batched} {unit}, қалдықта {stock} {unit}',
   'recon.unplaced': 'орналастырылмаған',

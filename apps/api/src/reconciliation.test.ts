@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches, reconcileHolds } from './reconciliation';
+import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches, reconcileCodes, reconcileHolds } from './reconciliation';
 import type { CachedQuantity, LedgerTotal, HoldRow } from './reconciliation';
 
 const ledger: LedgerTotal[] = [
@@ -190,6 +190,54 @@ describe('reconcileHolds', () => {
       row({ productId: 'a', quantity: 0, blocked: 2 }),
       row({ productId: 'b', quantity: 0, blocked: 9 }),
     ]);
+    expect(out.map((r) => r.productId)).toEqual(['b', 'a']);
+  });
+});
+
+describe('reconcileCodes', () => {
+  /**
+   * Восьмая книга: коды маркировки против полки.
+   *
+   * Беда та же, что у партий — товар ушёл, запись осталась, — но запись эта
+   * государственная: лишний код на сверке значит упаковку, которая по
+   * документам у магазина, а на полке её нет.
+   */
+  it('молчит, когда кодов столько же, сколько упаковок', () => {
+    expect(reconcileCodes([{ productId: 'cig', coded: 20 }], [{ productId: 'cig', quantity: 20 }])).toEqual([]);
+  });
+
+  it('и когда кодов меньше — тоже', () => {
+    // Товар, купленный до маркировки, лежит без кодов, пока остаток не
+    // промаркируют. Это законное состояние, а не расхождение.
+    expect(reconcileCodes([{ productId: 'cig', coded: 5 }], [{ productId: 'cig', quantity: 40 }])).toEqual([]);
+  });
+
+  it('но говорит, когда кодов больше', () => {
+    expect(reconcileCodes([{ productId: 'cig', coded: 7 }], [{ productId: 'cig', quantity: 4 }])).toEqual([
+      { productId: 'cig', coded: 7, stock: 4, excess: 3 },
+    ]);
+  });
+
+  it('и товар, которого на полке нет вовсе, — это весь его код', () => {
+    // Полка пуста, а коды остались: ровно то, что оставляет за собой недостача
+    // по инвентаризации.
+    expect(reconcileCodes([{ productId: 'cig', coded: 2 }], [])).toEqual([
+      { productId: 'cig', coded: 2, stock: 0, excess: 2 },
+    ]);
+  });
+
+  it('и худшее расхождение идёт первым', () => {
+    // Владелец читает сверху и до тех пор, пока не надоест.
+    const out = reconcileCodes(
+      [
+        { productId: 'a', coded: 3 },
+        { productId: 'b', coded: 30 },
+      ],
+      [
+        { productId: 'a', quantity: 1 },
+        { productId: 'b', quantity: 1 },
+      ],
+    );
     expect(out.map((r) => r.productId)).toEqual(['b', 'a']);
   });
 });

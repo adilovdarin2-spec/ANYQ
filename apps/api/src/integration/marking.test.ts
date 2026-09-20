@@ -1145,6 +1145,64 @@ describe('коды маркировки', () => {
     });
   });
 
+  describe('восьмая книга: коды против полки', () => {
+    /**
+     * Единственное расхождение, которое продукт оставляет сознательно.
+     *
+     * Недостача по инвентаризации коды не гасит: пропали три пачки, а какие
+     * именно — не знает никто, и гасить наугад значит объявить проданной ту,
+     * что лежит на полке. Показать владельцу — единственный честный ответ.
+     */
+    const check = () => api(fx.token, 'GET', `/pos/reconciliation?locationId=${fx.locationId}`);
+
+    it('молчит, когда кодов столько же, сколько упаковок', async () => {
+      expect((await receive(['A1', 'A2'], 'book-quiet')).status).toBe(201);
+      const got = await check();
+      expect(got.status, JSON.stringify(got.body)).toBe(200);
+      expect(got.body.codeExcess).toEqual([]);
+    });
+
+    it('и когда кодов меньше — тоже', async () => {
+      // Товар, купленный до маркировки, лежит без кодов. Это законно.
+      const plain = await api(
+        fx.token,
+        'POST',
+        '/pos/receipts',
+        { locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 10, price: 100 }] },
+        { 'Idempotency-Key': 'book-fewer' },
+      );
+      expect(plain.status).toBe(201);
+      expect((await receive(['A1'], 'book-fewer-codes')).status).toBe(201);
+
+      expect((await check()).body.codeExcess).toEqual([]);
+    });
+
+    it('но показывает пачки, пропавшие по пересчёту', async () => {
+      // Три приняли, одну не нашли при инвентаризации: остаток уменьшился,
+      // а кодов осталось три.
+      expect((await receive(['A1', 'A2', 'A3'], 'book-loss')).status).toBe(201);
+      const row = await prisma.stock.findFirstOrThrow({ where: { productId: fx.productId, locationId: fx.locationId } });
+      await prisma.stock.update({ where: { id: row.id }, data: { quantity: row.quantity - 1 } });
+
+      const got = await check();
+      const [excess] = got.body.codeExcess;
+      expect(excess, JSON.stringify(got.body.codeExcess)).toBeDefined();
+      expect(excess.coded).toBe(3);
+      expect(excess.stock).toBe(2);
+      expect(excess.excess).toBe(1);
+      expect(excess.explanation).toContain('сверке с государством');
+    });
+
+    it('и проданные пачки в расхождение не попадают', async () => {
+      // Самопроверка: продажа уводит и остаток, и код, и книга должна молчать.
+      // Иначе она закричит на каждом втором чеке, и её перестанут читать.
+      expect((await receive(['A1', 'A2'], 'book-sold')).status).toBe(201);
+      expect((await sell(['A1'], 'book-sold-sale', 1)).status).toBe(201);
+
+      expect((await check()).body.codeExcess).toEqual([]);
+    });
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.

@@ -62,7 +62,7 @@ import { isWriteOffReason, resolveWriteOff, writeOffErrorMessage, resolveQuarant
 import type { QuarantineAction } from '../writeoffs';
 import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErrorMessage } from '../bins';
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
-import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches, reconcileHolds } from '../reconciliation';
+import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches, reconcileCodes, reconcileHolds } from '../reconciliation';
 import { buildImportPlan } from '../import';
 import { ensureCabinet, resetCabinet } from '../cabinet';
 import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
@@ -6598,6 +6598,30 @@ async function findStuckHolds(locationId: string) {
   );
 }
 
+/**
+ * Коды маркировки, которых больше, чем упаковок, — на одной точке.
+ *
+ * Восьмая книга. Семь дверей из восьми коды уводят; восьмая — недостача по
+ * инвентаризации — не уводит сознательно: пропали три пачки, а какие именно,
+ * не знает никто. Расхождение поэтому неизбежно, и показать его владельцу —
+ * единственный честный ответ.
+ */
+async function findCodeExcess(companyId: string, locationId: string) {
+  const [codeRows, stockRows] = await Promise.all([
+    prisma.markedCode.groupBy({
+      by: ['productId'],
+      where: { companyId, locationId, state: 'in_stock' },
+      _count: { _all: true },
+    }),
+    prisma.stock.groupBy({ by: ['productId'], where: { locationId }, _sum: { quantity: true } }),
+  ]);
+
+  return reconcileCodes(
+    codeRows.map((row) => ({ productId: row.productId, coded: row._count._all })),
+    stockRows.map((row) => ({ productId: row.productId, quantity: row._sum.quantity ?? 0 })),
+  );
+}
+
 async function findBatchExcess(locationId: string) {
   const [batchRows, stockRows] = await Promise.all([
     prisma.productBatch.groupBy({ by: ['productId'], where: { locationId }, _sum: { quantity: true } }),
@@ -6629,13 +6653,16 @@ posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, r
   const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
   if (!locationId) return;
 
-  const [{ ledgerTotals, mismatches }, batchExcess, stuckHolds] = await Promise.all([
+  const [{ ledgerTotals, mismatches }, batchExcess, stuckHolds, codeExcess] = await Promise.all([
     findLedgerMismatches(req.posCompanyId!, locationId),
     findBatchExcess(locationId),
     findStuckHolds(locationId),
+    findCodeExcess(req.posCompanyId!, locationId),
   ]);
   const products = await prisma.product.findMany({
-    where: { id: { in: [...new Set([...mismatches, ...batchExcess, ...stuckHolds].map((m) => m.productId))] } },
+    where: {
+      id: { in: [...new Set([...mismatches, ...batchExcess, ...stuckHolds, ...codeExcess].map((m) => m.productId))] },
+    },
     select: { id: true, name: true, unit: true },
   });
   const productById = new Map(products.map((product) => [product.id, product]));
@@ -6667,6 +6694,17 @@ posRouter.get('/reconciliation', requirePosAuth, async (req: PosAuthedRequest, r
       blocked: row.blocked,
       excess: row.excess,
       explanation: 'Занято под заказ или карантин больше, чем лежит на полке — товар не продаётся',
+    })),
+    // Четвёртый список: коды маркировки. Пустой у всех, кто маркированным не
+    // торгует, и это правильный ответ, а не умолчание.
+    codeExcess: codeExcess.slice(0, 100).map((row) => ({
+      productId: row.productId,
+      name: productById.get(row.productId)?.name ?? '—',
+      unit: productById.get(row.productId)?.unit ?? '',
+      coded: row.coded,
+      stock: row.stock,
+      excess: row.excess,
+      explanation: 'Кодов маркировки больше, чем упаковок на полке — за лишние спросят на сверке с государством',
     })),
     mismatches: mismatches.slice(0, 100).map((mismatch) => ({
       productId: mismatch.productId,
