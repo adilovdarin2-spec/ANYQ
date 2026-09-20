@@ -438,6 +438,8 @@ export interface ReceiveBatchPayload {
   batchNumber: string;
   expiryDate: string;
   quantity: number;
+  /** Коды упаковок: у лекарства код и срок годности — про одну и ту же пачку. */
+  codes?: string[];
 }
 
 /**

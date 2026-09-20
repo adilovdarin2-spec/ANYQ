@@ -1002,7 +1002,7 @@ export default function App() {
     void loadBatches();
   }
 
-  async function handleReceiveBatch(payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number }) {
+  async function handleReceiveBatch(payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number; codes?: string[] }) {
     if (!session || !currentLocationId) return false;
     setBatchSubmitting(true);
     setBatchesError(null);

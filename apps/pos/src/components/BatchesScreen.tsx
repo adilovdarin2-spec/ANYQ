@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseMarkedCode } from '../marking';
+import { sameMarkedCode } from '../marking-scan';
 import type { PhraseKey } from '../i18n';
 import type { Batch, ExpiryStatus, Product } from '../types';
 import type { UncoveredStockRow } from '../api';
@@ -37,7 +39,7 @@ interface Props {
   submitting: boolean;
   onBack: () => void;
   onRefresh: () => void;
-  onReceive: (payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number }) => Promise<boolean>;
+  onReceive: (payload: { productId: string; batchNumber: string; expiryDate: string; quantity: number; codes?: string[] }) => Promise<boolean>;
 }
 
 export function BatchesScreen({ batches, uncovered, canReceive, products, loading, error, submitting, onBack, onRefresh, onReceive }: Props) {
@@ -47,19 +49,54 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
   const [batchNumber, setBatchNumber] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [quantity, setQuantity] = useState('');
+  /* Коды принимаемых упаковок.
+     У лекарства код и срок годности — про одну и ту же упаковку, и заводить
+     партию без кодов значит принять товар, который потом нельзя продать:
+     касса потребует код, а его нет. */
+  const [codes, setCodes] = useState<string[]>([]);
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  const marked = products.find((p) => p.id === productId)?.marked === true;
+
+  function scanBatchCode(raw: string) {
+    const want = Number(quantity);
+    if (!parseMarkedCode(raw).ok) {
+      setCodeError(t('batch.codeUnreadable'));
+      return;
+    }
+    if (codes.some((seen) => sameMarkedCode(seen, raw))) {
+      setCodeError(t('batch.codeDuplicate'));
+      return;
+    }
+    if (Number.isFinite(want) && want > 0 && codes.length >= want) {
+      setCodeError(t('batch.codeExtra'));
+      return;
+    }
+    setCodeError(null);
+    setCodes((prev) => [...prev, raw]);
+  }
 
   const expired = batches.filter((b) => b.status === 'expired');
   const soon = batches.filter((b) => b.status === 'expiring_soon');
   const ok = batches.filter((b) => b.status === 'ok');
 
-  const formValid = productId !== '' && batchNumber.trim() !== '' && expiryDate !== '' && Number(quantity) > 0;
+  const codesReady = !marked || codes.length === Number(quantity);
+  const formValid = productId !== '' && batchNumber.trim() !== '' && expiryDate !== '' && Number(quantity) > 0 && codesReady;
 
   async function handleSubmit() {
-    const success = await onReceive({ productId, batchNumber: batchNumber.trim(), expiryDate, quantity: Number(quantity) });
+    const success = await onReceive({
+      productId,
+      batchNumber: batchNumber.trim(),
+      expiryDate,
+      quantity: Number(quantity),
+      ...(codes.length ? { codes } : {}),
+    });
     if (success) {
       setBatchNumber('');
       setExpiryDate('');
       setQuantity('');
+      setCodes([]);
+      setCodeError(null);
       setView('list');
     }
   }
@@ -156,6 +193,26 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
                 <label htmlFor="batch-qty">{t('common.quantity')}</label>
                 <input id="batch-qty" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
               </div>
+              {/* Только для маркированного: в аптеке таких позиций много, но
+                  не все — бинты и шприцы приходят партией без кодов. */}
+              {marked && Number(quantity) > 0 && (
+                <div className="form-field">
+                  <label htmlFor="batch-scan">{t('batch.scanCodes')}</label>
+                  <input
+                    id="batch-scan"
+                    type="text"
+                    placeholder={t('batch.scanPlaceholder')}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      const field = e.currentTarget;
+                      if (field.value.trim()) scanBatchCode(field.value.trim());
+                      field.value = '';
+                    }}
+                  />
+                  <span className="field-hint">{t('batch.scanned', { done: codes.length, need: Number(quantity) })}</span>
+                  {codeError && <div className="login-error">{codeError}</div>}
+                </div>
+              )}
             </>
           )}
           {error && <div className="login-error">{error}</div>}

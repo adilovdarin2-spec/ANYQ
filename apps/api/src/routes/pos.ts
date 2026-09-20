@@ -83,6 +83,7 @@ import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-
 import { markedCodeKey } from '../marking';
 import { orderCodesRefusalMessage, pickCodes, planDocumentCodes, returnCodesRefusalMessage, supplierReturnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
 import { resolveSaleCodes } from '../marking-sale';
+import { resolveIncomingCodes } from '../marking-incoming';
 
 /**
  * База для правила маркировки, в том виде, в каком правилу она нужна.
@@ -7431,6 +7432,21 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
+  /* Коды партии — то же правило, что и у обычной приёмки.
+     Кодов этот маршрут не принимал вовсе, и это било по аптеке сильнее всего:
+     маркированное лекарство, принятое партией, продать было нельзя никогда —
+     касса требует код, сервер отвечает «этого кода нет в приёмке», и упаковка
+     остаётся на полке навсегда. */
+  const batchIncoming = resolveIncomingCodes(
+    [{ productId: product.id, quantity, codes: Array.isArray(b.codes) ? b.codes.map(String) : undefined }],
+    product.marked ? [{ id: product.id, name: product.name }] : [],
+  );
+  if (!batchIncoming.ok) {
+    res.status(400).json({ error: batchIncoming.message });
+    return;
+  }
+  const batchCodes = batchIncoming.byProduct.get(product.id) ?? [];
+
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
   if (keyResult.status === 'invalid') {
     res.status(400).json({ error: 'Некорректный номер операции' });
@@ -7463,6 +7479,24 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
         await applyStockDelta(tx, stock, quantity, 'batch_receipt', { createdBy: req.posUserId });
       } else {
         await createStockWithMovement(tx, { productId: product.id, locationId, quantity, reason: 'batch_receipt', createdBy: req.posUserId });
+      }
+
+      if (batchCodes.length > 0) {
+        // В ту же транзакцию, что и партия, и со ссылкой на неё: у лекарства
+        // код и срок годности — про одну и ту же упаковку, и разводить их по
+        // разным записям значит однажды не суметь ответить, что именно
+        // просрочилось.
+        await tx.markedCode.createMany({
+          data: batchCodes.map((code) => ({
+            companyId: req.posCompanyId!,
+            locationId,
+            productId: product.id,
+            batchId: created.id,
+            gtin: code.gtin,
+            serial: code.serial,
+            state: 'in_stock',
+          })),
+        });
       }
 
       return { id: created.id, createdAt: created.createdAt.toISOString() };
@@ -8549,22 +8583,26 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
   /* Коды маркировки — до всякой записи.
      Кладовщик подносит сканер к каждой пачке, и если один код не прочитался
      или их оказалось меньше, чем товара, приёмку нельзя записать наполовину:
-     пачка без кода по документам останется на полке навсегда. */
-  const markedByProduct = new Map<string, { gtin: string; serial: string }[]>();
-  for (const line of rawItems) {
-    if (!Array.isArray(line.codes) || line.codes.length === 0) continue;
-    const read = readLineCodes({ productId: line.productId, codes: line.codes }, Number(line.quantity));
-    if (!read.ok) {
-      res.status(400).json({ error: markingRefusalMessage(read.refusal) });
-      return;
-    }
-    const duplicate = findDuplicate(read.value);
-    if (duplicate) {
-      res.status(400).json({ error: 'Один и тот же код поднесён дважды — проверьте пачки' });
-      return;
-    }
-    markedByProduct.set(line.productId, read.value);
+     пачка без кода по документам останется на полке навсегда.
+
+     Правило общее с приходом партии: обе двери входа поднимают остаток, и обе
+     обязаны завести коды. Требование к маркированному товару стоит именно
+     здесь — принять его без кодов значит завести в магазин упаковку, которую
+     нельзя продать, и узнать об этом на первом покупателе, а не сейчас, пока
+     кладовщик ещё стоит у коробки со сканером. */
+  const incomingMarked = await prisma.product.findMany({
+    where: { companyId: req.posCompanyId, id: { in: rawItems.map((it) => it.productId) }, marked: true },
+    select: { id: true, name: true },
+  });
+  const incoming = resolveIncomingCodes(
+    rawItems.map((line) => ({ productId: line.productId, quantity: Number(line.quantity), codes: line.codes })),
+    incomingMarked,
+  );
+  if (!incoming.ok) {
+    res.status(400).json({ error: incoming.message });
+    return;
   }
+  const markedByProduct = incoming.byProduct;
 
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },

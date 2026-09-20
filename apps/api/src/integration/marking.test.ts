@@ -845,6 +845,159 @@ describe('коды маркировки', () => {
     });
   });
 
+  describe('вход: маркированный товар не попадает в магазин безымянным', () => {
+    /**
+     * Обратная сторона той же задачи.
+     *
+     * Принять маркированный товар без кодов значит завести в магазин упаковку,
+     * которую нельзя продать: касса требует код, сервер отвечает «этого кода
+     * нет в приёмке». Узнать об этом на первом покупателе — поздно; сказать
+     * кладовщику, пока он стоит у коробки со сканером, — вовремя.
+     */
+    it('приёмка маркированного товара без кодов отказана', async () => {
+      await prisma.product.update({ where: { id: fx.productId }, data: { marked: true } });
+
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/receipts',
+        { locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 3, price: 100 }] },
+        { 'Idempotency-Key': 'in-need-codes' },
+      );
+      expect(got.status).toBe(400);
+      expect(got.body.error).toContain('только по коду маркировки');
+      expect(await prisma.document.count({ where: { companyId: fx.companyId, type: 'receipt' } })).toBe(0);
+    });
+
+    it('и один код в двух строках одной поставки — тоже', async () => {
+      // Построчная проверка это пропускала: в каждой строке код один.
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/receipts',
+        {
+          locationId: fx.locationId,
+          items: [
+            { productId: fx.productId, quantity: 1, price: 100, codes: [code('A1')] },
+            { productId: fx.productId, quantity: 1, price: 120, codes: [code('A1')] },
+          ],
+        },
+        { 'Idempotency-Key': 'in-dup-lines' },
+      );
+      expect(got.status).toBe(400);
+      expect(got.body.error).toContain('дважды');
+      expect(await prisma.markedCode.count({ where: { companyId: fx.companyId } })).toBe(0);
+    });
+
+    it('а приход партии заводит коды и привязывает их к партии', async () => {
+      // Аптека: код и срок годности — про одну и ту же упаковку. Кодов этот
+      // маршрут не принимал вовсе, и принятое партией лекарство продать было
+      // нельзя никогда.
+      await prisma.tariff.update({
+        where: { companyId: fx.companyId },
+        data: { modules: JSON.stringify(['retail', 'stock', 'warehouse', 'pharmacy']) },
+      });
+
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/batches',
+        {
+          locationId: fx.locationId,
+          productId: fx.productId,
+          batchNumber: 'Б-1',
+          expiryDate: '2027-01-31',
+          quantity: 2,
+          codes: [code('A1'), code('A2')],
+        },
+        { 'Idempotency-Key': 'batch-codes' },
+      );
+      expect(got.status, JSON.stringify(got.body)).toBe(201);
+
+      const codes = await prisma.markedCode.findMany({ where: { companyId: fx.companyId }, orderBy: { serial: 'asc' } });
+      expect(codes.map((c) => c.serial)).toEqual(['A1', 'A2']);
+      expect(codes.every((c) => c.batchId === got.body.id), 'код должен знать свою партию').toBe(true);
+      expect(codes.every((c) => c.state === 'in_stock')).toBe(true);
+    });
+
+    it('и принятое партией лекарство продаётся по коду', async () => {
+      // То, ради чего всё: до этой починки аптека не могла продать ни одной
+      // принятой партией упаковки маркированного лекарства.
+      await prisma.tariff.update({
+        where: { companyId: fx.companyId },
+        data: { modules: JSON.stringify(['retail', 'stock', 'warehouse', 'pharmacy']) },
+      });
+      await prisma.product.update({ where: { id: fx.productId }, data: { marked: true } });
+
+      expect((await api(
+        fx.token,
+        'POST',
+        '/pos/batches',
+        {
+          locationId: fx.locationId,
+          productId: fx.productId,
+          batchNumber: 'Б-2',
+          expiryDate: '2027-01-31',
+          quantity: 1,
+          codes: [code('A1')],
+        },
+        { 'Idempotency-Key': 'batch-sell' },
+      )).status).toBe(201);
+
+      const sale = await sell(['A1'], 'batch-sell-sale', 1);
+      expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+    });
+
+    it('а партия маркированного товара без кодов не принимается', async () => {
+      await prisma.tariff.update({
+        where: { companyId: fx.companyId },
+        data: { modules: JSON.stringify(['retail', 'stock', 'warehouse', 'pharmacy']) },
+      });
+      await prisma.product.update({ where: { id: fx.productId }, data: { marked: true } });
+
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/batches',
+        {
+          locationId: fx.locationId,
+          productId: fx.productId,
+          batchNumber: 'Б-3',
+          expiryDate: '2027-01-31',
+          quantity: 2,
+        },
+        { 'Idempotency-Key': 'batch-no-codes' },
+      );
+      expect(got.status).toBe(400);
+      expect(got.body.error).toContain('только по коду маркировки');
+      expect(await prisma.productBatch.count({ where: { productId: fx.productId } })).toBe(0);
+    });
+
+    it('а немаркированная партия принимается как раньше', async () => {
+      // Самопроверка: бинты и шприцы приходят партией без всяких кодов.
+      await prisma.tariff.update({
+        where: { companyId: fx.companyId },
+        data: { modules: JSON.stringify(['retail', 'stock', 'warehouse', 'pharmacy']) },
+      });
+
+      const got = await api(
+        fx.token,
+        'POST',
+        '/pos/batches',
+        {
+          locationId: fx.locationId,
+          productId: fx.productId,
+          batchNumber: 'Б-4',
+          expiryDate: '2027-01-31',
+          quantity: 5,
+        },
+        { 'Idempotency-Key': 'batch-plain' },
+      );
+      expect(got.status, JSON.stringify(got.body)).toBe(201);
+      expect(await prisma.markedCode.count({ where: { companyId: fx.companyId } })).toBe(0);
+    });
+  });
+
   it('и приёмка с нечитаемым кодом не проходит целиком', async () => {
     // Принять два из трёх значит записать поставку, в которой одна пачка
     // осталась без кода, — и продать её потом будет нельзя.
