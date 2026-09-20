@@ -799,6 +799,7 @@ export const ru = {
   'orders.issue': 'Выдать',
   'orders.history': 'История',
   'orders.issued': 'Выдан',
+  'orders.shippedShort': 'Недовоз на {amount} — собрали не всё',
   'orders.rejected': 'Отклонён',
 
   // --- supplier returns, the rest ------------------------------------------

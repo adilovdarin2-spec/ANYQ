@@ -790,6 +790,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'orders.issue': 'Беру',
   'orders.history': 'Тарих',
   'orders.issued': 'Берілді',
+  'orders.shippedShort': '{amount} жеткізілмеді — бәрі жиналмады',
   'orders.rejected': 'Қабылданбады',
 
   // --- supplier returns, the rest ------------------------------------------

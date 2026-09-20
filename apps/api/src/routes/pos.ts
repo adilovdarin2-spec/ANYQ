@@ -7695,6 +7695,11 @@ posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
           price: it.price,
         })),
         total: o.items.reduce((sum, it) => sum + it.price * it.quantity, 0),
+        /* Сколько уехало в деньгах — по собранному, а не по заказанному.
+           Это число оптовик выставляет в счёт, и до сих пор в списке выданных
+           заказов стояло заказанное: собрали двадцать пять из тридцати, а
+           строка говорила «Выдан» и полную сумму. */
+        shippedTotal: o.items.reduce((sum, it) => sum + it.price * (it.pickedQuantity ?? it.quantity), 0),
         // What the customer is short, if the pick has started.
         shortfall: o.items.reduce(
           (sum, it) => sum + Math.max(it.quantity - (it.pickedQuantity ?? it.quantity), 0),

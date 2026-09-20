@@ -15,6 +15,18 @@ interface Props {
   onPick: (id: string) => void;
 }
 
+/**
+ * Сколько уехало — с откатом на заказанное.
+ *
+ * Сервер старше собранной кассы поля не отдаёт, и без отката экран заказов
+ * падал целиком. Откат возвращает ровно прежнее поведение: показать заказанное
+ * — неточно, но это то, что здесь стояло годами, а белый экран не показывает
+ * ничего.
+ */
+export function shipped(order: Order): number {
+  return order.shippedTotal ?? order.total;
+}
+
 export function OrdersScreen({ orders, loading, error, busyOrder, onRefresh, onFulfill, onReject, onPick }: Props) {
   const { t } = useTranslation();
   const pending = orders.filter((o) => o.status === 'pending');
@@ -93,8 +105,24 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onRefresh, onF
                     <div className="order-customer">{o.customerName}</div>
                     <div className="order-meta">{o.customerPhone} · {formatTime(o.createdAt)}</div>
                   </div>
-                  <div className="order-total">{formatMoney(o.total)}</div>
+                  {/* Выданный заказ показывается по отгруженному, а не по
+                      заказанному: это число оптовик выставляет в счёт. Здесь
+                      стояла сумма заказа — собрали двадцать пять из тридцати,
+                      а строка говорила «Выдан» и полную сумму, и недовоз
+                      всплывал уже в разговоре с покупателем.
+
+                      У отклонённого заказа не уехало ничего, и заказанная
+                      сумма — единственное, что о нём можно сказать: от чего
+                      отказались. */}
+                  <div className="order-total">
+                    {formatMoney(o.status === 'confirmed' ? shipped(o) : o.total)}
+                  </div>
                 </div>
+                {o.status === 'confirmed' && shipped(o) < o.total && (
+                  <div className="order-shortfall">
+                    {t('orders.shippedShort', { amount: formatMoney(o.total - shipped(o)) })}
+                  </div>
+                )}
                 <span className={`chip-status ${o.status}`}>{o.status === 'confirmed' ? t('orders.issued') : t('orders.rejected')}</span>
               </div>
             ))}

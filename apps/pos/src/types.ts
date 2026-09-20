@@ -249,6 +249,16 @@ export interface Order {
   deliveryAddress: string;
   items: OrderItem[];
   total: number;
+  /**
+   * Сколько уехало в деньгах: по собранному, а не по заказанному.
+   *
+   * Необязательное намеренно. Касса и сервер выкатываются порознь, и в окне
+   * между выкатками собранное приложение живёт против сервера, который поля
+   * ещё не отдаёт. Проверено этим же полем: `formatMoney(undefined)` уронил
+   * экран заказов в «что-то пошло не так» — то есть вывел кассу из строя из-за
+   * строчки, без которой она прекрасно работала вчера.
+   */
+  shippedTotal?: number;
   stage: OrderStage;
   stageLabel: string;
   /// How much the customer is short, once the pick has started.

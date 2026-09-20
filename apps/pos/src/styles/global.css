@@ -432,6 +432,9 @@ button { cursor: pointer; }
 .order-customer { font-weight: 700; font-size: 0.92rem; }
 .order-meta { font-size: 0.76rem; color: var(--ink-muted); margin-top: 2px; }
 .order-total { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Недовоз под суммой выданного заказа: сумма отвечает «сколько уехало»,
+   строка — «почему меньше, чем заказывали». */
+.order-shortfall { margin-top: 4px; font-size: 0.8rem; color: var(--status-overdue); }
 .order-items { margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--border); }
 .order-item-row { display: flex; justify-content: space-between; font-size: 0.84rem; padding: 3px 0; color: var(--ink-muted); }
 /* Two or three buttons sitting side by side inside a card — a blocked shelf's
