@@ -23,6 +23,17 @@ interface Props {
    * читать ту одну, ради которой всё и затевалось. См. `expiry.ts`.
    */
   expiringSoon?: Map<string, SoonExpiring>;
+  /**
+   * Пуст ли каталог магазина целиком — а не только то, что нашлось.
+   *
+   * Сетка видит отфильтрованный список и без этого не отличает «в магазине
+   * нет товаров» от «поиск ничего не нашёл». В первый день магазин пуст
+   * всегда, и «Ничего не найдено» на пустой кассе читается как поломка: никто
+   * ничего не искал.
+   */
+  catalogueEmpty: boolean;
+  /** Может ли этот человек завести товар — от этого зависит, что советовать. */
+  canAddProducts: boolean;
 }
 
 /**
@@ -43,9 +54,28 @@ interface Props {
  */
 export const GRID_LIMIT = 150;
 
-export function ProductGrid({ products, cartQtyByProduct, onPick, canManageStopList, onToggleStopList, expiringSoon }: Props) {
+export function ProductGrid({
+  products,
+  cartQtyByProduct,
+  onPick,
+  canManageStopList,
+  onToggleStopList,
+  expiringSoon,
+  catalogueEmpty,
+  canAddProducts,
+}: Props) {
   const { t } = useTranslation();
   if (products.length === 0) {
+    // Пустой магазин и пустой поиск — разные новости, и совет у них разный.
+    // Кассиру советовать «заведите товар» бессмысленно: вкладки «Товары» у
+    // него нет, и сделать он этого не может.
+    if (catalogueEmpty) {
+      return (
+        <div className="empty-state">
+          {canAddProducts ? t('grid.catalogueEmptyOwner') : t('grid.catalogueEmptyCashier')}
+        </div>
+      );
+    }
     return <div className="empty-state">{t('grid.nothingFound')}</div>;
   }
 

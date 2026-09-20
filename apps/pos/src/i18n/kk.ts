@@ -299,6 +299,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'marking.alreadyScanned': 'Бұл қаптама чекте бар — келесісін жақындатыңыз',
   'marking.unknownProduct': 'Код бойынша тауар табылмады — ол енгізілген бе, тексеріңіз',
   'marking.scanned': 'код бойынша',
+  'queue.emptyCatalogue': 'Тауарларды енгізу — олар жоқ болса, дүкен сата алмайды',
   'queue.title': 'Бүгін не істеу керек',
   'queue.cashShortSingle': 'Кассаны қайта санау: {name} сәйкес келмеді',
   'queue.cashShortGroup': 'Кассаларды санау: сәйкессіздік {count}',
@@ -853,6 +854,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'discount.percentPlaceholder': 'Мыс. 10',
   'discount.fixedPlaceholder': 'Мыс. 500',
 
+  'grid.catalogueEmptyOwner': 'Тауарлар әзірге жоқ. Біріншісін «Тауарлар» бетінде енгізіңіз — немесе «Операцияларда» бұрынғы бағдарламадан каталогты көшіріңіз.',
+  'grid.catalogueEmptyCashier': 'Тауарлар әзірге жоқ — оларды иесі енгізеді.',
   'grid.nothingFound': 'Ештеңе табылмады',
   'grid.perKg': '/кг',
   'unit.kg': 'кг',

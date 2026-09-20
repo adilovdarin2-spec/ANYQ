@@ -45,7 +45,17 @@ export type OwnerTaskKind =
   | 'count_shortfall'
   | 'transfer_gap'
   | 'staff_flag'
-  | 'dead_stock';
+  | 'dead_stock'
+  /**
+   * В магазине нет ни одного товара.
+   *
+   * Первый день. Очередь дел отвечала «Ничего не требует вашего решения,
+   * хороший день» магазину, который вообще не может торговать: продавать
+   * нечего, и всё остальное — недостачи, сроки, долги — по нулям именно
+   * поэтому. Ответ формально верный и по сути неверный, а читает его человек,
+   * который в эту минуту решает, работает продукт или нет.
+   */
+  | 'empty_catalogue';
 
 export type OwnerTaskUrgency = 'now' | 'soon' | 'watch';
 
@@ -122,8 +132,21 @@ function collapse(raw: Raw[]): OwnerTask[] {
   return [...byKind.values()];
 }
 
-export function ownerQueue(dashboard: OwnerDashboard, now: number = Date.now()): OwnerTask[] {
+export function ownerQueue(
+  dashboard: OwnerDashboard,
+  now: number = Date.now(),
+  /** Сколько товаров заведено. Не из сводки: сводка считает торговлю, а это про настройку. */
+  catalogueSize?: number,
+): OwnerTask[] {
   const raw: Raw[] = [];
+
+  /* Пустой каталог — единственное дело, которое старше всех прочих.
+     Пока товаров нет, ни одно другое дело возникнуть не может, и «хороший
+     день» в ответ на ненастроенный магазин — это всё, что владелец успеет
+     подумать о продукте. */
+  if (catalogueSize === 0) {
+    return [{ kind: 'empty_catalogue', urgency: 'now', money: null, count: 1 }];
+  }
 
   // --- Сегодня теряем -------------------------------------------------------
 

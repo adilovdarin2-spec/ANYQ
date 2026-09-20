@@ -289,6 +289,7 @@ export const ru = {
   'marking.unknownProduct': 'Товар по коду не найден — проверьте, заведён ли он',
   'marking.scanned': 'по коду',
   'queue.title': 'Что сделать сегодня',
+  'queue.emptyCatalogue': 'Завести товары — пока их нет, магазин не может продавать',
   'queue.cashShortSingle': 'Пересчитать ящик: у {name} не сошлось',
   'queue.cashShortGroup': 'Пересчитать ящики: расхождений {count}',
   'queue.shiftOpenSingle': 'Закрыть смену {name} — открыта {hours} ч',
@@ -862,6 +863,8 @@ export const ru = {
   'discount.percentPlaceholder': 'Напр. 10',
   'discount.fixedPlaceholder': 'Напр. 500',
 
+  'grid.catalogueEmptyOwner': 'Товаров пока нет. Заведите первый на вкладке «Товары» — или перенесите каталог из прежней программы в «Операциях».',
+  'grid.catalogueEmptyCashier': 'Товаров пока нет — их заводит владелец.',
   'grid.nothingFound': 'Ничего не найдено',
   'grid.perKg': '/кг',
   'unit.kg': 'кг',

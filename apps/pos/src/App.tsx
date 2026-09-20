@@ -3381,6 +3381,8 @@ export default function App() {
               canManageStopList={hasRestaurant}
               onToggleStopList={handleToggleStopList}
               expiringSoon={expiringSoonByProductId}
+              catalogueEmpty={(session?.products.length ?? 0) === 0}
+              canAddProducts={canManageProducts}
             />
           </div>
           <CartPanel
@@ -3421,7 +3423,9 @@ export default function App() {
             onPick={handleProductClick}
             canManageStopList={hasRestaurant}
             onToggleStopList={handleToggleStopList}
-              expiringSoon={expiringSoonByProductId}
+            expiringSoon={expiringSoonByProductId}
+            catalogueEmpty={(session?.products.length ?? 0) === 0}
+            canAddProducts={canManageProducts}
           />
           {cartCount > 0 && <CartBar count={cartCount} total={cartTotal} onOpen={() => setView('cart')} />}
         </>
@@ -3822,6 +3826,7 @@ export default function App() {
       {view === 'dashboard' && (
         <OwnerDashboardScreen
           dashboard={dashboard}
+          catalogueSize={session?.products.length}
           days={dashboardDays}
           loading={dashboardLoading}
           error={dashboardError}

@@ -34,9 +34,18 @@ function money(task: OwnerTask): string | null {
   return task.money === null ? null : formatMoney(task.money);
 }
 
-export function OwnerQueue({ dashboard, onOpen }: { dashboard: OwnerDashboard; onOpen?: (task: OwnerTask) => void }) {
+export function OwnerQueue({
+  dashboard,
+  onOpen,
+  /** Сколько товаров заведено — чтобы очередь знала про ненастроенный магазин. */
+  catalogueSize,
+}: {
+  dashboard: OwnerDashboard;
+  onOpen?: (task: OwnerTask) => void;
+  catalogueSize?: number;
+}) {
   const { t } = useTranslation();
-  const tasks = ownerQueue(dashboard);
+  const tasks = ownerQueue(dashboard, Date.now(), catalogueSize);
   if (tasks.length === 0) return null;
 
   const shown = tasks.slice(0, SHOWN);
@@ -111,6 +120,8 @@ function label(task: OwnerTask, t: (key: never, values?: Record<string, string |
       return tr(pluralPhrase(task.count, 'queue.deadStockOne', 'queue.deadStockFew', 'queue.deadStockMany'), v);
     case 'overdue_debt':
       return tr('queue.overdueDebt', v);
+    case 'empty_catalogue':
+      return tr('queue.emptyCatalogue', v);
   }
 }
 

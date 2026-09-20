@@ -8,6 +8,8 @@ import { pluralPhrase } from '../i18n';
 
 interface Props {
   dashboard: OwnerDashboard | null;
+  /** Сколько товаров в магазине — очередь дел должна знать про ненастроенный. */
+  catalogueSize?: number;
   days: number;
   loading: boolean;
   error: string | null;
@@ -37,6 +39,7 @@ function formatQuantity(value: number): string {
 
 export function OwnerDashboardScreen({
   dashboard,
+  catalogueSize,
   days,
   loading,
   error,
@@ -80,7 +83,7 @@ export function OwnerDashboardScreen({
                 утром между поставкой и очередью, спрашивает «с чего начать».
                 Поэтому очередь выше: она говорит, что делать, разделы — почему
                 так вышло. */}
-            <OwnerQueue dashboard={dashboard} />
+            <OwnerQueue dashboard={dashboard} catalogueSize={catalogueSize} />
 
             {/* 1. Где деньги */}
             <div className="orders-section-title">{t('owner.money')}</div>
