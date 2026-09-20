@@ -9497,8 +9497,27 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
     return;
   }
 
+  const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
+  if (keyResult.status === 'invalid') {
+    res.status(400).json({ error: 'Некорректный номер операции' });
+    return;
+  }
+
   try {
-    const document = await prisma.$transaction(async (tx) => {
+    /* Ключ операции — как у всякого другого маршрута, двигающего остаток.
+       Этому его не досталось, и он остался единственным таким. Планшет
+       официанта не отличает запрос, который не дошёл до сервера, от запроса,
+       ответ на который потерялся, — а в зале с плохим вайфаем это не редкость,
+       а обычный вечер. Повтор дописывал блюда в тот же открытый заказ второй
+       раз: продукты списывались дважды, и гостю выходил двойной счёт. */
+    const outcome = await runIdempotent({
+      companyId: req.posCompanyId!,
+      key: keyResult.status === 'ok' ? keyResult.key : null,
+      endpoint: 'POST /pos/tables/order',
+      requestHash: hashRequestBody(b),
+      statusCode: 201,
+      timeoutMs: 15000,
+    }, async (tx) => {
       // Dishes (recipe-tracked products) consume ingredients; everything else
       // consumes its own stock — same split as /pos/sales, minus FEFO/batch
       // handling, which restaurant menus don't use.
@@ -9605,22 +9624,30 @@ posRouter.post('/tables/:id/order', requirePosAuth, async (req: PosAuthedRequest
         if (count !== 1) throw new MarkedCodeRaceError(markedCodeKey(code));
       }
 
-      return tx.document.findUniqueOrThrow({ where: { id: openDocument.id }, include: { items: { include: { product: true } } } });
-    }, { timeout: 15000 });
-
-    res.status(201).json({
-      id: document.id,
-      items: document.items.map((it) => ({
-        id: it.id,
-        productId: it.productId,
-        name: it.product.name,
-        quantity: it.quantity,
-        price: it.price,
-        kitchenStatus: it.kitchenStatus,
-      })),
-      total: document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
+      const saved = await tx.document.findUniqueOrThrow({
+        where: { id: openDocument.id },
+        include: { items: { include: { product: true } } },
+      });
+      return {
+        id: saved.id,
+        items: saved.items.map((it) => ({
+          id: it.id,
+          productId: it.productId,
+          name: it.product.name,
+          quantity: it.quantity,
+          price: it.price,
+          kitchenStatus: it.kitchenStatus,
+        })),
+        total: saved.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
+      };
     });
+
+    res.status(outcome.statusCode).json(outcome.result);
   } catch (err) {
+    if (err instanceof IdempotencyConflictError) {
+      res.status(409).json({ error: 'Этот номер операции уже использован для другого заказа' });
+      return;
+    }
     if (err instanceof StockError) {
       res.status(409).json({ error: 'Недостаточно товара на складе', shortages: err.shortages });
       return;

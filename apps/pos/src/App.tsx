@@ -2675,7 +2675,9 @@ export default function App() {
     setTableSubmitting(true);
     setTablesError(null);
     try {
-      const order = await sendToKitchen(session.token, selectedTable.id, { items });
+      // Новый ключ на каждую отправку, неизменный внутри неё: повторы внутри
+      // одной попытки — это та же отправка, а не вторая.
+      const order = await sendToKitchen(session.token, selectedTable.id, { items }, genId('table'));
       setTableOrder(order);
     } catch (err) {
       setTablesError(err instanceof ApiError ? err.message : t('fail.sendToKitchen'));

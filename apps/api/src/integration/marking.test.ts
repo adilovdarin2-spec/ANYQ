@@ -704,6 +704,40 @@ describe('коды маркировки', () => {
       expect(again.body.error).toContain('уже продан');
     });
 
+    it('и повтор отправки не списывает продукты дважды', async () => {
+      /* Планшет официанта не отличает запрос, не дошедший до сервера, от
+         запроса, ответ на который потерялся. Повтор дописывал блюда в тот же
+         открытый заказ второй раз: продукты списывались дважды, и гостю
+         выходил двойной счёт. */
+      const plain = await api(
+        fx.token,
+        'POST',
+        '/pos/receipts',
+        { locationId: fx.locationId, items: [{ productId: fx.productId, quantity: 10, price: 100 }] },
+        { 'Idempotency-Key': 'tbl-replay-receive' },
+      );
+      expect(plain.status).toBe(201);
+      const table = await restaurantTable();
+
+      const payload = { items: [{ productId: fx.productId, quantity: 2, price: 200 }] };
+      const first = await api(fx.token, 'POST', `/pos/tables/${table.id}/order`, payload, {
+        'Idempotency-Key': 'tbl-replay',
+      });
+      expect(first.status, JSON.stringify(first.body)).toBe(201);
+
+      const again = await api(fx.token, 'POST', `/pos/tables/${table.id}/order`, payload, {
+        'Idempotency-Key': 'tbl-replay',
+      });
+      expect(again.status, JSON.stringify(again.body)).toBe(201);
+      expect(again.body.total, 'повтор должен вернуть тот же заказ, а не удвоенный').toBe(first.body.total);
+
+      const lines = await prisma.documentItem.count({ where: { document: { tableId: table.id } } });
+      expect(lines, 'блюда дописались второй раз').toBe(1);
+
+      const stock = await prisma.stock.findFirstOrThrow({ where: { productId: fx.productId, locationId: fx.locationId } });
+      expect(stock.quantity, 'списали дважды').toBe(8);
+    });
+
     it('а блюда за столом идут как раньше', async () => {
       // Самопроверка: маркировка не должна мешать тому, чего не касается. В
       // кафе маркированных позиций — сигареты и пиво из сотни строк меню.

@@ -616,8 +616,25 @@ export interface SendToKitchenPayload {
   items: { productId: string; quantity: number; price: number; codes?: string[] }[];
 }
 
-export function sendToKitchen(token: string, tableId: string, payload: SendToKitchenPayload): Promise<TableOrder & { id: string }> {
-  return request(`/pos/tables/${tableId}/order`, { method: 'POST', body: JSON.stringify(payload) }, token);
+/**
+ * Отправка на кухню — с ключом операции, как и всякая другая запись остатка.
+ *
+ * Ключ неизменен на все попытки одной отправки: планшет официанта не отличает
+ * запрос, не дошедший до сервера, от запроса, ответ на который потерялся, и
+ * повтор дописывал блюда в тот же заказ второй раз — продукты списывались
+ * дважды, гостю выходил двойной счёт.
+ */
+export function sendToKitchen(
+  token: string,
+  tableId: string,
+  payload: SendToKitchenPayload,
+  idempotencyKey: string,
+): Promise<TableOrder & { id: string }> {
+  return request(
+    `/pos/tables/${tableId}/order`,
+    { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } },
+    token,
+  );
 }
 
 export function payTable(
