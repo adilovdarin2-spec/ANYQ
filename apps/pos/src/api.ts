@@ -1,5 +1,6 @@
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord, StaffMember, StaffPayload } from './types';
 import { getDeviceKey } from './storage';
+import { noteServerAnswered, noteServerUnreachable } from './reachable';
 import { translate } from './i18n';
 import { translateServerMessage } from './i18n/server';
 import { getLanguage } from './i18n/useLanguage';
@@ -82,8 +83,14 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   } catch {
+    // Запоминается здесь, в единственном месте, где это вообще known: полоска
+    // в шапке спрашивала `navigator.onLine` и говорила «Онлайн», пока продажи
+    // копились неотправленными.
+    noteServerUnreachable();
     throw new ApiError(say('net.offline'), 0);
   }
+  // Ответил — значит на связи, даже если ответил отказом.
+  noteServerAnswered();
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message = serverSaid(data.error) || say('net.requestFailed');

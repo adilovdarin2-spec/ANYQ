@@ -10,6 +10,7 @@ import { refusalIsAboutThisRequest } from './refusal';
 import type { RefreshTrigger } from './catalog-refresh';
 import { formatWeight, genId, looksLikeBarcode, resolveScannedBarcode } from './utils';
 import { useSalesSync } from './hooks/useSalesSync';
+import { useServerReachable } from './hooks/useOnlineStatus';
 import { useOutboxSync } from './hooks/useOutboxSync';
 import { getOutbox, outcomeOf, queueCommand } from './outbox';
 import { useTranslation } from './i18n/useLanguage';
@@ -525,7 +526,12 @@ export default function App() {
     fallback: session?.tariff,
     onRefused: handleUnauthorized,
   });
-  const { online, pendingCount, stuckSales, stuckCount, retryStuck, retryAllStuck, refreshPendingCount, sync } = useSalesSync(
+  /* Полоска в шапке спрашивает не то же, что цикл досылки.
+     Циклу нужна сеть — пока она есть, пробовать стоит. Кассиру нужна правда:
+     уходят ли его продажи. Полоска говорила «Онлайн», пока рядом копилось
+     «не отправлено», потому что спрашивала про сетевую карту. */
+  const serverAnswering = useServerReachable();
+  const { pendingCount, stuckSales, stuckCount, retryStuck, retryAllStuck, refreshPendingCount, sync } = useSalesSync(
     session?.token ?? null,
     ensureShiftSyncedStable,
   );
@@ -3348,7 +3354,7 @@ export default function App() {
         cashierName={session.user.name}
         locationName={session.locations.length > 1 ? currentLocation?.name ?? null : null}
         registerNumber={session.register?.number ?? null}
-        online={online}
+        online={serverAnswering}
         pendingCount={pendingCount}
         // Продажи, которые не приняли, и смены, которые не дали закрыть, — в
         // шапке это одно и то же: «есть что разобрать, откройте профиль».
@@ -3997,7 +4003,7 @@ export default function App() {
           cashierName={session.user.name}
           role={session.user.role}
           shift={shift}
-          online={online}
+          online={serverAnswering}
           offlineReadiness={offlineReadiness}
           pendingCount={pendingCount}
           stuckSales={stuckSales}
