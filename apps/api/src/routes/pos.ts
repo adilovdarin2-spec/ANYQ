@@ -6347,7 +6347,12 @@ posRouter.get('/counts/sheet', requirePosAuth, async (req: PosAuthedRequest, res
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   if (!modules.includes('warehouse')) {
-    res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
+    /* Отказ называет то, чего нет, а нет здесь ячеек.
+       Стояла «Инвентаризация недоступна» — и её читал магазин, который
+       инвентаризацию делает каждую неделю: она у него есть, на тарифе `stock`,
+       и эти же слова он видел, ткнув в пересчёт по ячейкам. Получалось «у вас
+       отключили то, чем вы только что пользовались». */
+    res.status(403).json({ error: 'Адресное хранение недоступно на вашем тарифе' });
     return;
   }
   const state = tariffState(company?.tariff ?? null);
@@ -6413,7 +6418,12 @@ posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, r
   });
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   if (!modules.includes('warehouse')) {
-    res.status(403).json({ error: 'Инвентаризация недоступна на вашем тарифе' });
+    /* Отказ называет то, чего нет, а нет здесь ячеек.
+       Стояла «Инвентаризация недоступна» — и её читал магазин, который
+       инвентаризацию делает каждую неделю: она у него есть, на тарифе `stock`,
+       и эти же слова он видел, ткнув в пересчёт по ячейкам. Получалось «у вас
+       отключили то, чем вы только что пользовались». */
+    res.status(403).json({ error: 'Адресное хранение недоступно на вашем тарифе' });
     return;
   }
   const state = tariffState(company?.tariff ?? null);
