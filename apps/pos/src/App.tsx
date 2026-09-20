@@ -932,6 +932,10 @@ export default function App() {
     try {
       await fulfillOrder(session.token, id);
       await loadOrders();
+      // Товар сдвинулся — сетка продажи держит его копию с остатками, и без
+      // перечитывания она показывает вчерашнее: принятое нельзя продать, а
+      // уехавшее касса продолжает предлагать.
+      await refreshCatalogAfterStockChange();
     } catch (err) {
       setOrdersError(err instanceof ApiError ? err.message : t('fail.issueOrder'));
     } finally {
@@ -1079,6 +1083,10 @@ export default function App() {
     try {
       await receiveTransfer(session.token, transferId, { locationId: currentLocationId, items });
       await loadTransfers();
+      // Товар сдвинулся — сетка продажи держит его копию с остатками, и без
+      // перечитывания она показывает вчерашнее: принятое нельзя продать, а
+      // уехавшее касса продолжает предлагать.
+      await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
       setTransfersError(err instanceof ApiError ? err.message : t('fail.receiveTransfer'));
@@ -1092,6 +1100,10 @@ export default function App() {
     try {
       await cancelTransfer(session.token, transferId);
       await loadTransfers();
+      // Товар сдвинулся — сетка продажи держит его копию с остатками, и без
+      // перечитывания она показывает вчерашнее: принятое нельзя продать, а
+      // уехавшее касса продолжает предлагать.
+      await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
       setTransfersError(err instanceof ApiError ? err.message : t('fail.cancelTransfer'));
@@ -1106,6 +1118,10 @@ export default function App() {
     try {
       await createTransfer(session.token, { ...payload, fromLocationId: currentLocationId });
       await loadTransfers();
+      // Товар сдвинулся — сетка продажи держит его копию с остатками, и без
+      // перечитывания она показывает вчерашнее: принятое нельзя продать, а
+      // уехавшее касса продолжает предлагать.
+      await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
       setTransfersError(err instanceof ApiError ? err.message : t('fail.sendTransfer'));
@@ -1177,6 +1193,10 @@ export default function App() {
       // A delivery against an order changes that order's status, so the list
       // the receipt screen offers has to stop offering what is now complete.
       if (payload.purchaseOrderId) await loadPurchaseOrders();
+      // Товар сдвинулся — сетка продажи держит его копию с остатками, и без
+      // перечитывания она показывает вчерашнее: принятое нельзя продать, а
+      // уехавшее касса продолжает предлагать.
+      await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
       setReceiptsError(err instanceof ApiError ? err.message : t('fail.receiveGoods'));
@@ -2421,6 +2441,10 @@ export default function App() {
         });
       }
       await loadReturns();
+      // Товар сдвинулся — сетка продажи держит его копию с остатками, и без
+      // перечитывания она показывает вчерашнее: принятое нельзя продать, а
+      // уехавшее касса продолжает предлагать.
+      await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
       setReturnsError(err instanceof ApiError ? err.message : t('fail.createReturn'));
