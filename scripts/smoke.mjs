@@ -57,6 +57,26 @@ async function call(method, path, body, headers = {}) {
   return { status: res.status, data };
 }
 
+/**
+ * Короткая выжимка значения для строки отчёта.
+ *
+ * `JSON.stringify(undefined)` возвращает `undefined`, а не строку, и `.slice`
+ * на нём бросает. Ловится это только тогда, когда поля действительно нет, —
+ * то есть ровно в тот заход, ради которого дымовой тест и запускают: шаг
+ * отказал, поля в ответе нет, и вместо строчки «FAIL ... — {"error":...}» и
+ * сводки оператор получает стек-трейс. Перед запуском магазина это худшее из
+ * того, что скрипт может сделать.
+ */
+function brief(value, max = 300) {
+  let text;
+  try {
+    text = typeof value === 'string' ? value : JSON.stringify(value);
+  } catch {
+    text = String(value);
+  }
+  return String(text ?? value).slice(0, max);
+}
+
 function check(name, condition, detail) {
   if (condition) {
     console.log(`  OK   ${name}`);
@@ -74,6 +94,19 @@ function note(text) {
 function skip(name, why) {
   skipped.push(name);
   console.log(`  SKIP ${name} — ${why}`);
+}
+
+/**
+ * Отказ по тарифу — это не поломка, а отсутствующий модуль.
+ *
+ * Партии скрипт так и разбирал, а ячейки и закупки показывал красным FAIL: та
+ * же ситуация, два разных исхода. Оператор, прогоняющий проверку перед
+ * запуском магазина на тарифе «розница и склад», получал шесть «поломок» у
+ * функций, которых этот магазин не покупал, — и либо звонил, либо переставал
+ * верить красному вообще, включая настоящие отказы ниже.
+ */
+function refusedByTariff(res) {
+  return res.status === 403 && /тариф/i.test(String(res.data?.error ?? ''));
 }
 
 /**
@@ -118,7 +151,7 @@ const run = async () => {
   // лишнего пользователя ради проверки.
   const pin = process.env.ANYQ_SMOKE_PIN || '4444';
   const login = await call('POST', '/pos/login', { pin });
-  check('POS login', login.status === 200, JSON.stringify(login.data).slice(0, 200));
+  check('POS login', login.status === 200, brief(login.data, 200));
   if (login.status !== 200) return;
   token = login.data.token;
   const locations = login.data.locations;
@@ -154,7 +187,7 @@ const run = async () => {
   const other = locations.find((l) => l.id !== locationId);
   if (other) {
     const cat = await call('GET', `/pos/catalog?locationId=${other.id}`);
-    check('catalog loads for a second location', cat.status === 200, JSON.stringify(cat.data).slice(0, 200));
+    check('catalog loads for a second location', cat.status === 200, brief(cat.data, 200));
   } else {
     note('single-location company — nothing to switch to');
   }
@@ -171,7 +204,7 @@ const run = async () => {
     clientCommandId: `smoke_shift_${Date.now()}`,
     openedAt,
   });
-  check('open shift', shift.status === 201, JSON.stringify(shift.data).slice(0, 200));
+  check('open shift', shift.status === 201, brief(shift.data, 200));
   check('the shift opened at the hour the register says', shift.data?.openedAt === openedAt,
     `sent=${openedAt} stored=${shift.data?.openedAt}`);
 
@@ -183,7 +216,7 @@ const run = async () => {
   };
   const key = `smoke_${Date.now()}`;
   const first = await call('POST', '/pos/sales', saleBody, { 'Idempotency-Key': key });
-  check('sale accepted', first.status === 201, JSON.stringify(first.data).slice(0, 300));
+  check('sale accepted', first.status === 201, brief(first.data, 300));
   const replay = await call('POST', '/pos/sales', saleBody, { 'Idempotency-Key': key });
   check('replay returns the same receipt, not a second sale',
     replay.status === 201 && replay.data?.id === first.data?.id,
@@ -206,7 +239,7 @@ const run = async () => {
       { productId: sellable.id, quantity: 1, price: sellable.price },
     ],
   }, { 'Idempotency-Key': dupKey });
-  check('two lines of one product accepted', dup.status === 201, JSON.stringify(dup.data).slice(0, 200));
+  check('two lines of one product accepted', dup.status === 201, brief(dup.data, 200));
   const afterDup = await call('GET', `/pos/catalog?locationId=${locationId}`);
   const dupProduct = afterDup.data?.products?.find((p) => p.id === sellable.id);
   check('both lines were deducted, not one',
@@ -224,7 +257,7 @@ const run = async () => {
 
   console.log('\n== returns ==');
   const sales = await call('GET', `/pos/sales?locationId=${locationId}`);
-  check('sales list loads', sales.status === 200, JSON.stringify(sales.data).slice(0, 200));
+  check('sales list loads', sales.status === 200, brief(sales.data, 200));
   const target = Array.isArray(sales.data) ? sales.data.find((s) => s.id === first.data?.id) : null;
   if (target) {
     const ret = await call('POST', '/pos/returns', {
@@ -233,8 +266,8 @@ const run = async () => {
       paymentMethod: 'cash',
       items: [{ documentItemId: target.items[0].id, quantity: 1 }],
     }, { 'Idempotency-Key': `smoke_ret_${Date.now()}` });
-    check('return accepted', ret.status === 201, JSON.stringify(ret.data).slice(0, 300));
-    check('refund is a number', typeof ret.data?.refundAmount === 'number', JSON.stringify(ret.data).slice(0, 200));
+    check('return accepted', ret.status === 201, brief(ret.data, 300));
+    check('refund is a number', typeof ret.data?.refundAmount === 'number', brief(ret.data, 200));
   } else {
     check('the sale appears in the returnable list', false, 'not found');
   }
@@ -246,7 +279,7 @@ const run = async () => {
     supplierPhone: '',
     items: [{ productId: sellable.id, quantity: 10, price: 100, packagingId: null }],
   });
-  check('receipt accepted', receipt.status === 201, JSON.stringify(receipt.data).slice(0, 300));
+  check('receipt accepted', receipt.status === 201, brief(receipt.data, 300));
 
   console.log('\n== transfer in transit ==');
   if (other) {
@@ -255,7 +288,7 @@ const run = async () => {
       toLocationId: other.id,
       items: [{ productId: sellable.id, quantity: 3 }],
     });
-    check('transfer created', transfer.status === 201, JSON.stringify(transfer.data).slice(0, 300));
+    check('transfer created', transfer.status === 201, brief(transfer.data, 300));
     check('transfer starts in transit', transfer.data?.status === 'in_transit', `status=${transfer.data?.status}`);
 
     const destBefore = await call('GET', `/pos/catalog?locationId=${other.id}`);
@@ -266,8 +299,8 @@ const run = async () => {
       locationId: other.id,
       items: [{ productId: sellable.id, receivedQuantity: 2 }],
     });
-    check('receiving a short delivery is accepted', receive.status === 200, JSON.stringify(receive.data).slice(0, 300));
-    check('the shortfall is reported', receive.data?.hasShortfall === true, JSON.stringify(receive.data).slice(0, 200));
+    check('receiving a short delivery is accepted', receive.status === 200, brief(receive.data, 300));
+    check('the shortfall is reported', receive.data?.hasShortfall === true, brief(receive.data, 200));
   } else {
     note('single location — transfers not exercised');
   }
@@ -275,7 +308,7 @@ const run = async () => {
   console.log('\n== bins ==');
   const binCode = `Z-${String(Date.now()).slice(-4)}`;
   const bin = await call('POST', '/pos/bins', { locationId, zone: 'Z', rack: String(Date.now()).slice(-4), shelf: '', bin: '' });
-  check('bin created', bin.status === 201, JSON.stringify(bin.data).slice(0, 200));
+  check('bin created', bin.status === 201, brief(bin.data, 200));
   if (bin.status === 201) {
     // Товар для раскладки принимаем здесь же. Раньше шаг брал то, что лежало
     // в безымянной ячейке от прошлых шагов, и на втором прогоне подряд падал
@@ -288,7 +321,7 @@ const run = async () => {
       supplierPhone: '',
       items: [{ productId: sellable.id, quantity: 2, price: 100, packagingId: null }],
     });
-    check('goods to put away are received', forPutaway.status === 201, JSON.stringify(forPutaway.data).slice(0, 200));
+    check('goods to put away are received', forPutaway.status === 201, brief(forPutaway.data, 200));
 
     const putaway = await call('POST', '/pos/bins/putaway', {
       locationId,
@@ -297,18 +330,22 @@ const run = async () => {
       fromBin: '',
       toBin: bin.data.code,
     });
-    check('putaway moves goods to the shelf', putaway.status === 200, JSON.stringify(putaway.data).slice(0, 300));
+    if (refusedByTariff(putaway)) {
+      skip('ячейки', `${putaway.data.error} — тариф без адресного хранения`);
+    } else {
+      check('putaway moves goods to the shelf', putaway.status === 200, brief(putaway.data, 300));
 
-    const sheet = await call('GET', `/pos/counts/sheet?locationId=${locationId}&bin=${encodeURIComponent(bin.data.code)}`);
-    check('count sheet lists the shelf', sheet.status === 200 && sheet.data?.lines?.length > 0, JSON.stringify(sheet.data).slice(0, 200));
+      const sheet = await call('GET', `/pos/counts/sheet?locationId=${locationId}&bin=${encodeURIComponent(bin.data.code)}`);
+      check('count sheet lists the shelf', sheet.status === 200 && sheet.data?.lines?.length > 0, brief(sheet.data, 200));
 
-    const binCount = await call('POST', '/pos/counts/by-bin', {
-      locationId,
-      bins: [bin.data.code],
-      items: [{ productId: sellable.id, binLocation: bin.data.code, countedQuantity: 1 }],
-    });
-    check('bin count accepted', binCount.status === 201, JSON.stringify(binCount.data).slice(0, 300));
-    check('the missing unit is found', binCount.data?.adjustments?.some((a) => a.delta === -1), JSON.stringify(binCount.data?.adjustments).slice(0, 200));
+      const binCount = await call('POST', '/pos/counts/by-bin', {
+        locationId,
+        bins: [bin.data.code],
+        items: [{ productId: sellable.id, binLocation: bin.data.code, countedQuantity: 1 }],
+      });
+      check('bin count accepted', binCount.status === 201, brief(binCount.data, 300));
+      check('the missing unit is found', binCount.data?.adjustments?.some((a) => a.delta === -1), brief(binCount.data?.adjustments, 200));
+    }
   }
 
   console.log('\n== write-off and quarantine ==');
@@ -318,45 +355,49 @@ const run = async () => {
     note: 'дымовой тест',
     items: [{ productId: sellable.id, quantity: 1 }],
   });
-  check('write-off accepted', writeOff.status === 201, JSON.stringify(writeOff.data).slice(0, 300));
+  check('write-off accepted', writeOff.status === 201, brief(writeOff.data, 300));
 
   console.log('\n== replenishment and purchase orders ==');
   const repl = await call('GET', `/pos/replenishment?locationId=${locationId}`);
-  check('replenishment computes', repl.status === 200, JSON.stringify(repl.data).slice(0, 200));
-  note(`items to order: ${repl.data?.items?.length ?? '-'}`);
+  if (refusedByTariff(repl)) {
+    skip('закупки', `${repl.data.error} — тариф без заказов поставщикам`);
+  } else {
+    check('replenishment computes', repl.status === 200, brief(repl.data, 200));
+    note(`items to order: ${repl.data?.items?.length ?? '-'}`);
 
-  const po = await call('POST', '/pos/purchase-orders', {
-    locationId,
-    supplierId: null,
-    note: 'дымовой тест',
-    items: [{ productId: sellable.id, quantity: 5, price: 100, packagingId: null }],
-  });
-  check('purchase order created as a draft', po.status === 201 && po.data?.status === 'draft', JSON.stringify(po.data).slice(0, 200));
-  if (po.status === 201) {
-    const badReceive = await call('POST', '/pos/receipts', {
+    const po = await call('POST', '/pos/purchase-orders', {
       locationId,
-      purchaseOrderId: po.data.id,
-      supplierName: '',
-      supplierPhone: '',
-      items: [{ productId: sellable.id, quantity: 1, price: 100, packagingId: null }],
+      supplierId: null,
+      note: 'дымовой тест',
+      items: [{ productId: sellable.id, quantity: 5, price: 100, packagingId: null }],
     });
-    check('a draft order cannot be delivered against', badReceive.status === 409, `status=${badReceive.status}`);
+    check('purchase order created as a draft', po.status === 201 && po.data?.status === 'draft', brief(po.data, 200));
+    if (po.status === 201) {
+      const badReceive = await call('POST', '/pos/receipts', {
+        locationId,
+        purchaseOrderId: po.data.id,
+        supplierName: '',
+        supplierPhone: '',
+        items: [{ productId: sellable.id, quantity: 1, price: 100, packagingId: null }],
+      });
+      check('a draft order cannot be delivered against', badReceive.status === 409, `status=${badReceive.status}`);
 
-    const approve = await call('POST', `/pos/purchase-orders/${po.data.id}/approve`);
-    const send = await call('POST', `/pos/purchase-orders/${po.data.id}/send`);
-    check('order approved and sent', approve.status === 200 && send.status === 200, `${approve.status}/${send.status}`);
+      const approve = await call('POST', `/pos/purchase-orders/${po.data.id}/approve`);
+      const send = await call('POST', `/pos/purchase-orders/${po.data.id}/send`);
+      check('order approved and sent', approve.status === 200 && send.status === 200, `${approve.status}/${send.status}`);
 
-    const partial = await call('POST', '/pos/receipts', {
-      locationId,
-      purchaseOrderId: po.data.id,
-      supplierName: '',
-      supplierPhone: '',
-      items: [{ productId: sellable.id, quantity: 2, price: 100, packagingId: null }],
-    });
-    check('partial delivery accepted', partial.status === 201, JSON.stringify(partial.data).slice(0, 200));
-    const orders = await call('GET', `/pos/purchase-orders?locationId=${locationId}`);
-    const reloaded = Array.isArray(orders.data) ? orders.data.find((o) => o.id === po.data.id) : null;
-    check('order is now partly received', reloaded?.status === 'partially_received', `status=${reloaded?.status}`);
+      const partial = await call('POST', '/pos/receipts', {
+        locationId,
+        purchaseOrderId: po.data.id,
+        supplierName: '',
+        supplierPhone: '',
+        items: [{ productId: sellable.id, quantity: 2, price: 100, packagingId: null }],
+      });
+      check('partial delivery accepted', partial.status === 201, brief(partial.data, 200));
+      const orders = await call('GET', `/pos/purchase-orders?locationId=${locationId}`);
+      const reloaded = Array.isArray(orders.data) ? orders.data.find((o) => o.id === po.data.id) : null;
+      check('order is now partly received', reloaded?.status === 'partially_received', `status=${reloaded?.status}`);
+    }
   }
 
   // Аптечный модуль — единственный, который этот прогон не проходил вовсе, а
@@ -381,7 +422,7 @@ const run = async () => {
   if (gotBatch.status === 403) {
     skip('партии', `${gotBatch.data?.error ?? 'модуль недоступен'} — тариф без «Партий и сроков»`);
   } else {
-    check('batch receipt accepted', gotBatch.status === 201, JSON.stringify(gotBatch.data).slice(0, 200));
+    check('batch receipt accepted', gotBatch.status === 201, brief(gotBatch.data, 200));
 
     const batchesOf = async () => {
       const list = await call('GET', `/pos/batches?locationId=${locationId}`);
@@ -406,7 +447,7 @@ const run = async () => {
       note: 'дымовой прогон: проверка партий',
       items: [{ productId: sellable.id, quantity: 1 }],
     });
-    check('write-off accepted', wroteOff.status === 201, JSON.stringify(wroteOff.data).slice(0, 200));
+    check('write-off accepted', wroteOff.status === 201, brief(wroteOff.data, 200));
     check('a write-off takes the unit off the batch too', (await batchesOf()) === 4, `quantity=${await batchesOf()}`);
   }
 
@@ -422,7 +463,7 @@ const run = async () => {
       closingCashCounted: 24000,
       closedAt,
     });
-    check('shift closes', closed.status === 200, JSON.stringify(closed.data).slice(0, 200));
+    check('shift closes', closed.status === 200, brief(closed.data, 200));
     check('closed at the hour the register says, not the hour the server heard',
       closed.data?.closedAt === closedAt,
       `sent=${closedAt} stored=${closed.data?.closedAt}`);
@@ -433,14 +474,14 @@ const run = async () => {
 
   console.log('\n== owner dashboard ==');
   const dash = await call('GET', `/pos/dashboard?locationId=${locationId}&days=7`);
-  check('dashboard renders', dash.status === 200, JSON.stringify(dash.data).slice(0, 300));
+  check('dashboard renders', dash.status === 200, brief(dash.data, 300));
   if (dash.status === 200) {
     note(`revenue=${dash.data.money.netRevenue} margin=${dash.data.money.grossMargin} flags=${dash.data.flags.length}`);
   }
 
   console.log('\n== the invariant ==');
   const rec = await call('GET', `/pos/reconciliation?locationId=${locationId}`);
-  check('reconciliation runs', rec.status === 200, JSON.stringify(rec.data).slice(0, 300));
+  check('reconciliation runs', rec.status === 200, brief(rec.data, 300));
   check('stock equals the ledger, everywhere',
     rec.data?.mismatched === 0,
     `checked=${rec.data?.checked} mismatched=${rec.data?.mismatched} drift=${rec.data?.totalDrift} first=${JSON.stringify(rec.data?.mismatches?.[0] ?? null)}`);
