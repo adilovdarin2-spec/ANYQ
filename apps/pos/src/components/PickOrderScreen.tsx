@@ -75,8 +75,41 @@ export function PickOrderScreen({ order, products, submitting, error, onBack, on
     (line) => isMarked(line.productId) && line.found > 0 && (codes[line.productId]?.length ?? 0) !== line.found,
   );
 
+  function pickedLines() {
+    return lines.map((line) => ({ productId: line.productId, quantity: line.found }));
+  }
+
   async function save() {
-    await onSavePick(lines.map((line) => ({ productId: line.productId, quantity: line.found })));
+    await onSavePick(pickedLines());
+  }
+
+  /**
+   * Отгрузить ровно то, что стоит на экране.
+   *
+   * Числа сборщика жила только кнопка «Сохранить сборку»: сама отгрузка
+   * отправляла одни коды маркировки, а сервер брал количества из того, что
+   * было сохранено раньше, — и не собранная строка уезжала целиком. Это верно
+   * для магазина, который не собирает вовсе, и это же превращало экран во
+   * враньё для того, кто собирает: сборщик вписывал 25 из 30, кнопка по этим
+   * же цифрам называлась «Отгрузить неполностью» — и со склада списывалось
+   * тридцать.
+   *
+   * Стоило это в обе стороны сразу. Пять пачек, никуда не уехавших, исчезали
+   * из остатка — их не продаст касса и не найдёт инвентаризация, пока не
+   * пересчитают полку. А покупателю уходила накладная на тридцать.
+   *
+   * Кнопки остаются двумя: сборщик обходит стеллажи и сохраняет по дороге, а
+   * отгрузка — шаг необратимый, и случаться от того, что на экране нажали
+   * единственную кнопку, она не должна. Но нажатая отгрузка теперь записывает
+   * то, что сборщик видит перед собой.
+   */
+  async function ship() {
+    if (!(await onSavePick(pickedLines()))) return;
+    await onShip(
+      Object.entries(codes)
+        .filter(([, list]) => list.length > 0)
+        .map(([productId, list]) => ({ productId, codes: list })),
+    );
   }
 
   return (
@@ -164,13 +197,7 @@ export function PickOrderScreen({ order, products, submitting, error, onBack, on
         <button
           className="btn btn-primary btn-block"
           disabled={submitting || foundTotal === 0 || missingCodes.length > 0}
-          onClick={() =>
-            onShip(
-              Object.entries(codes)
-                .filter(([, list]) => list.length > 0)
-                .map(([productId, list]) => ({ productId, codes: list })),
-            )
-          }
+          onClick={ship}
         >
           {foundTotal === 0
             ? t('pick.nothing')
