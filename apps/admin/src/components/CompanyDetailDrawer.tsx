@@ -7,11 +7,40 @@ import type { DurationPreset } from '../utils';
 import type { ShiftSummary, TariffPayload, LocationPayload } from '../api';
 import { ORDERS_BASE } from '../api';
 
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
+/**
+ * Как назвать способ оплаты в сводке по сменам.
+ *
+ * Здесь не было «в долг», и строка выглядела так: «Наличные: 4 400 ₸, credit:
+ * 16 500 ₸» — английский код посреди русского текста, на экране, который
+ * владелец открыл нам по отдельному разрешению и ради которого читает наши
+ * слова внимательнее обычного.
+ *
+ * Тип перечисляет способы поимённо, а не `Record<string, string>`: с общим
+ * ключом новый способ оплаты добавляется молча и вылезает своим кодом, как
+ * вылез этот. Теперь он не соберётся, пока его не назовут.
+ */
+type PaymentMethodKey = 'cash' | 'kaspi' | 'card' | 'credit' | 'mixed';
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethodKey, string> = {
   cash: 'Наличные',
   kaspi: 'Kaspi QR',
   card: 'Карта',
+  credit: 'В долг',
+  // Чек, разбитый между картой и наличными: у документа способ один, и он такой.
+  mixed: 'Смешанная',
 };
+
+/**
+ * Запасной вариант остаётся, но теперь он недостижим для известных способов.
+ *
+ * Сервер отдаёт ключи строками, и подпись всё равно приходится искать по
+ * строке. Разница в том, что известный набор закрыт типом выше: молча
+ * провалиться сюда может только способ, которого в системе нет вовсе, — и
+ * тогда лучше показать его код, чем пустое место.
+ */
+export function paymentMethodLabel(method: string): string {
+  return method in PAYMENT_METHOD_LABELS ? PAYMENT_METHOD_LABELS[method as PaymentMethodKey] : method;
+}
 
 interface Props {
   company: Company;
@@ -471,7 +500,7 @@ export function CompanyDetailDrawer({
                   {Object.keys(s.totalsByMethod).length > 0 &&
                     ' · ' +
                       Object.entries(s.totalsByMethod)
-                        .map(([method, sum]) => `${PAYMENT_METHOD_LABELS[method] ?? method}: ${formatMoney(sum)}`)
+                        .map(([method, sum]) => `${paymentMethodLabel(method)}: ${formatMoney(sum)}`)
                         .join(', ')}
                 </div>
                 {diff !== null && (

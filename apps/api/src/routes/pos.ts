@@ -1796,7 +1796,30 @@ async function shiftCashFor(shift: {
   // а часы у планшета бывают сбиты. Отсюда «или ссылка, или окно», а не
   // «окно».
   const inThisShift = { OR: [{ shiftId: shift.id }, { createdAt: { gte: shift.openedAt, lte: until } }] };
-  const [salesDocs, returnDocs, cashSettlements] = await Promise.all([
+
+  // Соседние смены — не ради них самих, а ради записей без ссылки на смену.
+  //
+  // Отнести такую запись можно, только сравнив всех, кто на неё претендует.
+  // Сводка владельца держит перед собой все смены точки и потому неоднозначность
+  // видит; этот запрос держал одну и не видел ничего — и то же самое число,
+  // посчитанное здесь и там, разошлось бы. Расхождение в паре чисел про один
+  // ящик всегда читается как чья-то недостача, и разбирать её будут не там, где
+  // она возникла.
+  //
+  // Берутся смены той же точки, чьё окно пересекается с окном этой: только они
+  // могут претендовать на запись внутри него. Тот же набор — с точностью до
+  // записей, которые здесь и не считаются, — сводка собирает своим запросом.
+  const candidateShifts = prisma.shift.findMany({
+    where: {
+      companyId,
+      locationId,
+      openedAt: { lte: until },
+      OR: [{ closedAt: null }, { closedAt: { gte: shift.openedAt } }],
+    },
+    select: { id: true, userId: true, openedAt: true, closedAt: true },
+  });
+
+  const [salesDocs, returnDocs, cashSettlements, siblings] = await Promise.all([
     prisma.document.findMany({
       where: { companyId, locationId, type: 'sale', status: 'confirmed', ...inThisShift },
       include: { items: true, payments: true },
@@ -1808,10 +1831,77 @@ async function shiftCashFor(shift: {
       where: { companyId, locationId, paymentMethod: 'cash', ...inThisShift },
       select: { direction: true, amount: true, createdAt: true, createdBy: true, shiftId: true },
     }),
+    candidateShifts,
   ]);
 
-  const [result] = reconcileShiftCash(shiftCashFrom([shift], salesDocs, returnDocs, cashSettlements, now));
+  const [result] = reconcileShiftCash(shiftCashFrom([shift], siblings, salesDocs, returnDocs, cashSettlements, now));
   return result;
+}
+
+/**
+ * Кому достаётся запись, которая смены не называет.
+ *
+ * Правило одно на все три источника — чеки, возвраты, расчёты, — и считается
+ * один раз для всего набора, а не заново для каждой смены. Это не бережливость,
+ * а единственный способ вообще увидеть неоднозначность: предикат, которому
+ * показали одну смену, не может заметить, что на ту же запись претендует
+ * соседняя. Пока он так и работал, восемь чеков на 8 800 ₸ числились в трёх
+ * ящиках сразу, и каждый следующий кассир закрывался с недостачей на деньги,
+ * которых у него никогда не было.
+ *
+ * Претендент — смена той же точки, чьё окно накрывает время записи и чей
+ * кассир её провёл. У смены без userId автор не проверяется: поля тогда не
+ * существовало, и сверять его не с чем. Из претендентов запись достаётся
+ * открытой последней.
+ *
+ * Почему последней, а не никому, как у возврата в POST /pos/returns. Там
+ * выбирают между ящиками *разных людей*, и, угадав, кладут деньги одного
+ * кассира в книгу другого — выдуманная недостача у живого человека, «угадывать
+ * не по чему». Здесь все претенденты принадлежат одному: автор записи совпал с
+ * кассиром смены, иначе она не претендент. Ошибка переносит деньги между двумя
+ * сменами одного и того же человека, и он же её и разберёт. А порядок открытия
+ * — не догадка: смена, открытая последней до этого чека, и есть тот планшет, за
+ * которым человек стоял; предыдущую он забыл закрыть, уходя, — ровно тот
+ * случай, ради которого две открытые смены на точке и разрешены.
+ *
+ * «Никому» тоже лучше сегодняшнего: посчитанные дважды деньги хуже
+ * непосчитанных — недостачу кассир оплачивает, излишек нет. Но оно оставляет
+ * человека с излишком на всю выручку смены, и закрывать её становится нечем.
+ */
+function resolveUnlinkedShift(
+  candidates: { id: string; userId: string | null; openedAt: Date; closedAt: Date | null }[],
+  now: Date,
+): (row: { createdBy: string | null; createdAt: Date }) => string | null {
+  // Открытая последней стоит первой, поэтому ответ — первое же совпадение.
+  // При равном времени открытия берётся меньший id: не «правильнее», а
+  // одинаково у обоих вызовов — разошедшийся выбор и дал бы ту самую пару
+  // чисел про один ящик, которую никто не сможет объяснить.
+  const windows = candidates
+    .map((shift) => ({
+      id: shift.id,
+      userId: shift.userId,
+      openedAt: shift.openedAt,
+      until: shift.closedAt ?? now,
+    }))
+    .sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime() || a.id.localeCompare(b.id));
+
+  // Решение принимается один раз на запись и дальше только повторяется: иначе
+  // оно зависело бы от того, про какую смену спросили, — а это и есть разница
+  // между «ящик» и «ящики».
+  const decided = new Map<object, string | null>();
+  return (row) => {
+    const already = decided.get(row);
+    if (already !== undefined) return already;
+    const winner = windows.find(
+      (shift) =>
+        row.createdAt >= shift.openedAt &&
+        row.createdAt <= shift.until &&
+        (!shift.userId || row.createdBy === shift.userId),
+    );
+    const shiftId = winner ? winner.id : null;
+    decided.set(row, shiftId);
+    return shiftId;
+  };
 }
 
 /**
@@ -1824,30 +1914,30 @@ async function shiftCashFor(shift: {
  */
 function shiftCashFrom(
   shifts: { id: string; cashierName: string; userId: string | null; openedAt: Date; closedAt: Date | null; openingCash: number; closingCashCounted: number | null }[],
+  // Все смены, которые могут претендовать на запись без ссылки, — а не только
+  // те, про которые спросили. Сводка владельца отдаёт сюда окно шире своего
+  // отчёта, запрос кассы — соседей своей смены, и обе за счёт этого отвечают
+  // про один и тот же чек одно и то же.
+  candidateShifts: { id: string; userId: string | null; openedAt: Date; closedAt: Date | null }[],
   salesDocs: { createdBy: string | null; createdAt: Date; shiftId: string | null; paymentMethod: string | null; discountType: string | null; discountValue: number | null; pointsRedeemed: number | null; items: { price: number; quantity: number }[]; payments: { method: string; amount: number }[] }[],
   returnDocs: { createdBy: string | null; createdAt: Date; shiftId: string | null; paymentMethod: string | null; refundAmount: number | null }[],
   cashSettlements: { direction: string; amount: number; createdAt: Date; createdBy: string | null; shiftId: string | null }[],
   now: Date,
 ): ShiftCash[] {
+  const unlinkedTo = resolveUnlinkedShift(candidateShifts, now);
   return shifts.map<ShiftCash>((shift) => {
-    const until = shift.closedAt ?? now;
-    // A sale that says which shift it belongs to is believed. Only the ones
-    // written before that link existed fall back to the time window, and that
-    // fallback is the reason this used to be wrong: an offline sale uploaded
-    // at midnight is stamped midnight, and lands in whichever shift happened
-    // to be open then.
+    // A sale that says which shift it belongs to is believed. Everything else
+    // — a return filed while two shifts were open, a row written before the
+    // field existed — goes to resolveUnlinkedShift, which weighs every shift
+    // that could claim it and names exactly one. Exactly one is the whole
+    // point: while each shift answered for itself, a sale with no link
+    // answered "yes" to all of them, and one set of takings was expected in
+    // three drawers at once.
     const belongsToShift = (doc: {
       createdBy: string | null;
       createdAt: Date;
       shiftId: string | null;
-    }) => {
-      if (doc.shiftId) return doc.shiftId === shift.id;
-      return (
-        doc.createdAt >= shift.openedAt &&
-        doc.createdAt <= until &&
-        (!shift.userId || doc.createdBy === shift.userId)
-      );
-    };
+    }) => (doc.shiftId ? doc.shiftId === shift.id : unlinkedTo(doc) === shift.id);
     const matches = (doc: {
       createdBy: string | null;
       paymentMethod: string | null;
@@ -1877,15 +1967,12 @@ function shiftCashFrom(
     // было: излишек на закрытии, которого никто не делал.
     //
     // Старым строкам ссылку задним числом не приписывали — кто в каком ящике
-    // был полгода назад, уже не установить, — поэтому для них остаётся прежнее
-    // правило. Оно же работает и для записи, которую не к чему было привязать:
-    // когда на точке открыто несколько смен, ящик не угадывается.
+    // был полгода назад, уже не установить, — поэтому они идут тем же путём,
+    // что и чек без ссылки: через общий разбор претендентов. Своего правила им
+    // хватало ровно до тех пор, пока у кассира не оказывалось двух открытых
+    // смен; дальше расчёт удваивался так же, как удваивался чек.
     const mineSettlement = (row: { createdAt: Date; createdBy: string | null; shiftId: string | null }) =>
-      row.shiftId
-        ? row.shiftId === shift.id
-        : row.createdAt >= shift.openedAt &&
-          row.createdAt <= until &&
-          (!shift.userId || row.createdBy === shift.userId);
+      row.shiftId ? row.shiftId === shift.id : unlinkedTo(row) === shift.id;
     // Врозь, а не одним числом: на закрытии это две разные строки — «принято по
     // долгам» и «выдано поставщику», — и свернув их в сальдо, мы отдали бы
     // кассиру число, по которому нельзя понять, что произошло.
@@ -4202,7 +4289,19 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
         include: { product: true },
         orderBy: { expiryDate: 'asc' },
       }),
-      prisma.shift.findMany({ where: { companyId: companyId, locationId, openedAt: { gte: from } }, orderBy: { openedAt: 'desc' } }),
+      // Шире, чем окно отчёта, и намеренно. Смена, открытая до `from` и всё
+      // ещё открытая, в отчёт не попадёт, но на чек внутри окна претендует
+      // наравне с теми, кто попал. Не спросив о ней, сводка отдала бы этот чек
+      // кому-то ещё, а запрос кассы — ей, и одно число разошлось бы с самим
+      // собой. Отчётные отбираются из этого набора ниже.
+      prisma.shift.findMany({
+        where: {
+          companyId: companyId,
+          locationId,
+          OR: [{ closedAt: null }, { closedAt: { gte: from } }],
+        },
+        orderBy: { openedAt: 'desc' },
+      }),
       // Наличные, прошедшие мимо чека: клиент погасил долг, поставщику
       // заплатили из ящика. Это те же деньги в том же ящике, и до сих пор их
       // не считала ни одна из двух сверок — ни серверная, ни кассовая. Для
@@ -4245,7 +4344,8 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
   //
   // Той же функцией, что отвечает кассе на закрытии смены: два способа
   // посчитать один ящик разошлись бы в тот день, когда поправят один из них.
-  const cashByShift = shiftCashFrom(shifts, salesDocs, returnDocs, cashSettlements, now);
+  const reportedShifts = shifts.filter((shift) => shift.openedAt >= from);
+  const cashByShift = shiftCashFrom(reportedShifts, shifts, salesDocs, returnDocs, cashSettlements, now);
   const reconciled = reconcileShiftCash(cashByShift);
 
   // --- Who is an outlier ------------------------------------------------
@@ -9860,8 +9960,34 @@ posRouter.post('/tables/:id/pay', requirePosAuth, async (req: PosAuthedRequest, 
 
   const total = document.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
 
+  // В чей ящик легли эти деньги.
+  //
+  // У заказа за столом время и автор значат не то, что у чека: `createdAt` —
+  // это когда гость сделал заказ, а `createdBy` — официант, который его принял.
+  // Деньги появляются здесь, часом позже и, как правило, у другого человека.
+  // Пока ссылки на смену документ не писал, сверка относила его по этим двум
+  // полям — то есть по обеду в зале, а не по кассе, — и в вечер, когда у
+  // человека осталась незакрытая утренняя смена, счёт стола попадал в обе.
+  //
+  // Правило то же, что у возврата: сначала своя открытая смена, потом
+  // единственная открытая на точке. Только «своя» берётся последняя открытая, а
+  // не любая: незакрытая утренняя — тоже своя, и выбор между ними нельзя
+  // оставлять порядку строк в ответе базы. Не нашлось ни одной — ссылка
+  // остаётся пустой, и запись разбирает `resolveUnlinkedShift`.
+  const openHere = await prisma.shift.findMany({
+    where: { companyId: req.posCompanyId, locationId: document.locationId, closedAt: null },
+    orderBy: { openedAt: 'desc' },
+    select: { id: true, userId: true },
+  });
+  const paidIntoShiftId =
+    openHere.find((shift) => shift.userId === req.posUserId)?.id ??
+    (openHere.length === 1 ? openHere[0].id : null);
+
   await prisma.$transaction([
-    prisma.document.update({ where: { id: document.id }, data: { status: 'confirmed', paymentMethod: b.paymentMethod } }),
+    prisma.document.update({
+      where: { id: document.id },
+      data: { status: 'confirmed', paymentMethod: b.paymentMethod, shiftId: paidIntoShiftId },
+    }),
     prisma.table.update({ where: { id: table.id }, data: { status: 'free' } }),
   ]);
 
