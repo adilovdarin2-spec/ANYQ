@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 import type { KitchenStatus, PaymentMethod, Product, RestaurantTable, TableOrder } from '../types';
-import { formatMoney } from '../utils';
+import { formatMoney, genId } from '../utils';
 import { readScannedMarking, sameMarkedCode } from '../marking-scan';
 
 interface DraftItem {
@@ -22,7 +22,16 @@ interface Props {
   error: string | null;
   submitting: boolean;
   onBack: () => void;
-  onSendToKitchen: (items: { productId: string; quantity: number; price: number; codes?: string[] }[]) => void;
+  /**
+   * Отправить набранное на кухню. `true` — сервер принял.
+   *
+   * Ответ нужен экрану, а не только для вида: пока он не пришёл, выбрасывать
+   * набранное нельзя. Ключ отправки приходит отсюда же — см. `sendKey`.
+   */
+  onSendToKitchen: (
+    items: { productId: string; quantity: number; price: number; codes?: string[] }[],
+    idempotencyKey: string,
+  ) => Promise<boolean>;
   onPay: (method: PaymentMethod) => void;
 }
 
@@ -38,6 +47,24 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
   const [draft, setDraft] = useState<DraftItem[]>([]);
   const [paying, setPaying] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
+  /**
+   * Ключ этой отправки. Живёт, пока черновик не изменился.
+   *
+   * Ключ создавался заново на каждое нажатие, и это правильно ровно для того
+   * случая, ради которого так и сделано: официант отправил горячее, потом
+   * десерт — это два заказа, а не повтор одного. Но нажатие после видимой
+   * ошибки — не второй заказ, а та же отправка ещё раз, и с новым ключом
+   * запрос, который на самом деле доехал и потерял ответ, лёг бы гостю в счёт
+   * второй раз. Здесь ключ переживает неудачу и умирает вместе с черновиком:
+   * добавили блюдо — это уже другая отправка.
+   */
+  const [sendKey, setSendKey] = useState<string | null>(null);
+
+  /** Всякая правка черновика делает отправку другой. */
+  function editDraft(next: (prev: DraftItem[]) => DraftItem[]) {
+    setDraft(next);
+    setSendKey(null);
+  }
 
   function addProduct(p: Product) {
     // Сигареты за столом — такая же продажа, как за кассой: пачку добавляют
@@ -47,7 +74,7 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
       return;
     }
     setScanNote(null);
-    setDraft((prev) => {
+    editDraft((prev) => {
       const existing = prev.find((d) => d.productId === p.id);
       if (existing) return prev.map((d) => (d.productId === p.id ? { ...d, qty: d.qty + 1 } : d));
       return [...prev, { productId: p.id, name: p.name, price: p.price, qty: 1, codes: [] }];
@@ -74,7 +101,7 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
       return;
     }
     setScanNote(t('marking.scanned', { name: product.name }));
-    setDraft((prev) => {
+    editDraft((prev) => {
       const existing = prev.find((d) => d.productId === product.id);
       if (existing) {
         return prev.map((d) =>
@@ -87,17 +114,31 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
 
   const draftTotal = draft.reduce((sum, d) => sum + d.price * d.qty, 0);
 
-  function handleSend() {
+  /**
+   * Отправить набранное — и не выбрасывать его, пока сервер не ответил.
+   *
+   * Черновик очищался сразу, синхронно, до ответа. Кухня не приняла — упало
+   * вайфаем, стоп-листом, отказом маркировки, — официант видел ошибку и пустой
+   * экран: шесть позиций набирать заново, маркированные пачки просить у гостей
+   * и сканировать ещё раз. Соседние экраны так не делают: пересчёт и сборка
+   * заказа чистятся только после успеха, и оплата стола — тоже.
+   */
+  async function handleSend() {
     if (draft.length === 0) return;
-    onSendToKitchen(
+    const key = sendKey ?? genId('table');
+    setSendKey(key);
+    const sent = await onSendToKitchen(
       draft.map((d) => ({
         productId: d.productId,
         quantity: d.qty,
         price: d.price,
         ...(d.codes.length ? { codes: d.codes } : {}),
       })),
+      key,
     );
+    if (!sent) return;
     setDraft([]);
+    setSendKey(null);
     setScanNote(null);
   }
 
@@ -186,7 +227,7 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
       {!paying && (
         <div className="screen-footer">
           {draft.length > 0 ? (
-            <button className="btn btn-primary btn-block" disabled={submitting} onClick={handleSend}>
+            <button className="btn btn-primary btn-block" disabled={submitting} onClick={() => void handleSend()}>
               {submitting ? t('table.sending') : `${t('table.sendToKitchen')} · ${formatMoney(draftTotal)}`}
             </button>
           ) : order.items.length > 0 ? (

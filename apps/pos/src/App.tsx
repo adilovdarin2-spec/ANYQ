@@ -2732,17 +2732,28 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, session?.token, selectedTable?.id]);
 
-  async function handleSendToKitchen(items: { productId: string; quantity: number; price: number; codes?: string[] }[]) {
-    if (!session || !selectedTable) return;
+  /**
+   * Отправка на кухню. Возвращает, приняли ли её.
+   *
+   * Ответ нужен экрану: пока отправка не удалась, набранное официантом
+   * выбрасывать нельзя. Ключ отправки приходит с экрана — он один на черновик
+   * и переживает повтор, чтобы запрос, потерявший ответ, не лёг гостю в счёт
+   * второй раз.
+   */
+  async function handleSendToKitchen(
+    items: { productId: string; quantity: number; price: number; codes?: string[] }[],
+    idempotencyKey: string,
+  ): Promise<boolean> {
+    if (!session || !selectedTable) return false;
     setTableSubmitting(true);
     setTablesError(null);
     try {
-      // Новый ключ на каждую отправку, неизменный внутри неё: повторы внутри
-      // одной попытки — это та же отправка, а не вторая.
-      const order = await sendToKitchen(session.token, selectedTable.id, { items }, genId('table'));
+      const order = await sendToKitchen(session.token, selectedTable.id, { items }, idempotencyKey);
       setTableOrder(order);
+      return true;
     } catch (err) {
       setTablesError(err instanceof ApiError ? err.message : t('fail.sendToKitchen'));
+      return false;
     } finally {
       setTableSubmitting(false);
     }
