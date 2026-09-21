@@ -11,7 +11,8 @@ interface Props {
   submitting: boolean;
   onRefresh: () => void;
   onSelectTable: (table: RestaurantTable) => void;
-  onCreateTable: (name: string, seats: number) => void;
+  /** Завести стол. `true` — сервер принял; иначе форму закрывать нельзя. */
+  onCreateTable: (name: string, seats: number) => Promise<boolean>;
 }
 
 export function FloorPlanScreen({ tables, loading, error, submitting, onRefresh, onSelectTable, onCreateTable }: Props) {
@@ -23,9 +24,14 @@ export function FloorPlanScreen({ tables, loading, error, submitting, onRefresh,
   const seatsNum = Number(seats);
   const createValid = name.trim() !== '' && Number.isFinite(seatsNum) && seatsNum > 0;
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!createValid) return;
-    onCreateTable(name.trim(), seatsNum);
+    /* Форма закрывалась сразу, до ответа. Не прошло — имя занято, сеть
+       моргнула, тариф без залов, — и владелец видел ошибку вместо формы,
+       которой больше нет: набирать заново, гадая, что он ввёл не так.
+       Происходит это в первый час, когда человек решает, работает продукт
+       или нет. */
+    if (!(await onCreateTable(name.trim(), seatsNum))) return;
     setName('');
     setSeats('2');
     setCreating(false);
@@ -74,7 +80,7 @@ export function FloorPlanScreen({ tables, loading, error, submitting, onRefresh,
             </div>
             <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary" onClick={() => setCreating(false)}>{t('common.cancel')}</button>
-              <button className="btn btn-primary" disabled={!createValid || submitting} onClick={handleCreate}>
+              <button className="btn btn-primary" disabled={!createValid || submitting} onClick={() => void handleCreate()}>
                 {submitting ? t('common.saving') : t('common.add')}
               </button>
             </div>

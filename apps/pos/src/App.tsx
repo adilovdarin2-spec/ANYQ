@@ -2688,15 +2688,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, session?.token]);
 
-  async function handleCreateTable(name: string, seats: number) {
-    if (!session || !currentLocationId) return;
+  async function handleCreateTable(name: string, seats: number): Promise<boolean> {
+    if (!session || !currentLocationId) return false;
     setTableSubmitting(true);
     setTablesError(null);
     try {
       await createTable(session.token, { locationId: currentLocationId, name, seats });
       await loadTables();
+      return true;
     } catch (err) {
       setTablesError(err instanceof ApiError ? err.message : t('fail.addTable'));
+      return false;
     } finally {
       setTableSubmitting(false);
     }
