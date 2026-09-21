@@ -644,6 +644,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'settle.days8to30': '8–30 күн',
   'settle.days31to60': '31–60 күн',
   'settle.over60': '60 күннен көп',
+  'settle.unapplied': 'Алдын ала қабылданған, әлі бөлінбеген',
   'settle.takePayment': 'Төлемді қабылдау',
   'settle.payySupplier': 'Жеткізушіге төлеу',
   'settle.oldestFirst': 'Төлем ең ескі құжаттарды жабады. Қалдық шотта қалады.',

@@ -814,6 +814,13 @@ export interface SettlementAccount {
   balance: number;
   openCount: number;
   aging: AgingBuckets;
+  /**
+   * Принято, но пока не на что разнести.
+   *
+   * Необязательное: касса и сервер выкатываются порознь, и сервер на версию
+   * старше этого поля не отдаёт. Строка тогда не рисуется — ровно как до неё.
+   */
+  unapplied?: number;
 }
 
 /** A line on the sheet somebody walks the shelf with. */

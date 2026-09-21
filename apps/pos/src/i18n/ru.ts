@@ -635,6 +635,7 @@ export const ru = {
   'settle.days8to30': '8–30 дней',
   'settle.days31to60': '31–60 дней',
   'settle.over60': 'Больше 60 дней',
+  'settle.unapplied': 'Принято вперёд, ещё не разнесено',
   'settle.takePayment': 'Принять оплату',
   'settle.payySupplier': 'Оплатить поставщику',
   'settle.oldestFirst': 'Платёж закроет самые старые документы. Остаток останется на счёте.',

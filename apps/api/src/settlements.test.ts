@@ -21,7 +21,7 @@ const charges: Charge[] = [
 describe('computeBalance', () => {
   it('is what was charged less what has been settled', () => {
     const result = computeBalance([{ ...charges[0], settled: 4000 }, charges[1]]);
-    expect(result).toEqual({ charged: 15000, paid: 4000, balance: 11000, openCount: 2 });
+    expect(result).toEqual({ charged: 15000, paid: 4000, balance: 11000, openCount: 2, unapplied: 0 });
   });
 
   it('counts money paid on account but not yet applied to anything', () => {
@@ -157,5 +157,67 @@ describe('resolveCreditSale', () => {
     expect(creditSaleErrorMessage({ status: 'notAllowed' })).toBe(
       'Этому клиенту долг не разрешён — обратитесь к владельцу',
     );
+  });
+});
+
+/**
+ * Итог в шапке сходится с разбивкой под ним.
+ *
+ * На экране расчётов стоят два числа, посчитанные порознь: сальдо вычитает
+ * деньги, принятые вперёд, а разбивка по срокам их не видит — она перечисляет
+ * неоплаченные документы, а такой платёж не лежит ни на одном. Клиент платит
+ * восемь тысяч по долгу в пять с половиной, через неделю берёт ещё на
+ * одиннадцать — и владелец читает «Долг 8 500 ₸», а строкой ниже «До недели
+ * 11 000 ₸».
+ *
+ * Денег это не теряет. Но расхождение на денежном экране читается как ошибка в
+ * числах, и ищут её там, где её нет, — на том самом экране, по которому решают,
+ * кому звонить.
+ *
+ * Разносить предоплату задним числом было бы хуже: она не лежит ни на одном
+ * документе, и приписать её к какому-нибудь значило бы сказать за владельца то,
+ * чего он не говорил. Поэтому она названа строкой, и разность стала видимой.
+ */
+describe('сальдо и сроки', () => {
+  const charge = (amount: number, settled: number, daysAgo: number): Charge => ({
+    documentId: `d${amount}_${daysAgo}`,
+    amount,
+    settled,
+    at: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
+  });
+
+  it('называет принятое вперёд отдельным числом', () => {
+    expect(computeBalance([charge(5500, 5500, 10)], 2500).unapplied).toBe(2500);
+    expect(computeBalance([charge(5500, 0, 10)]).unapplied, 'без предоплаты — ноль').toBe(0);
+  });
+
+  it('и разбивка минус предоплата даёт сальдо', () => {
+    const charges = [charge(11000, 0, 1), charge(5500, 5500, 10)];
+    const { balance, unapplied } = computeBalance(charges, 2500);
+    const aging = buildAging(charges, new Date());
+    const сумма = aging.current + aging.days8to30 + aging.days31to60 + aging.over60;
+    expect(сумма).toBe(11000);
+    expect(balance).toBe(8500);
+    expect(сумма - unapplied, 'шапка и разбивка обязаны сходиться').toBe(balance);
+  });
+
+  it('и сходится на любом наборе, а не на одном примере', () => {
+    /* Свойство, а не случай: пока разнесение не пишет `settled` больше
+       `amount`, разность держится сама. Если однажды перестанет — значит
+       изменилось разнесение, и экран надо смотреть заново. */
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const n = (seed * 7919) % 5;
+      const charges: Charge[] = [];
+      for (let i = 0; i <= n; i += 1) {
+        const amount = ((seed * (i + 3) * 37) % 50000) + 100;
+        const settled = ((seed * (i + 5) * 13) % (amount + 1));
+        charges.push(charge(amount, settled, (seed * (i + 1)) % 90));
+      }
+      const unapplied = (seed * 311) % 9000;
+      const { balance, unapplied: reported } = computeBalance(charges, unapplied);
+      const aging = buildAging(charges, new Date());
+      const сумма = aging.current + aging.days8to30 + aging.days31to60 + aging.over60;
+      expect(сумма - reported, `набор ${seed}`).toBe(balance);
+    }
   });
 });

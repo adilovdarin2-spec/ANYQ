@@ -146,6 +146,17 @@ export function SettlementsScreen({
                     <span>{formatMoney(account.aging.over60)}</span>
                   </div>
                 )}
+                {/* Деньги, принятые вперёд. Без этой строки итог в шапке не
+                    сходился с разбивкой под ним: сальдо предоплату вычитает, а
+                    сроки перечисляют неоплаченные документы, на которых её
+                    нет. Расхождение владелец читает как ошибку в числах — на
+                    том самом экране, по которому решает, кому звонить. */}
+                {(account.unapplied ?? 0) > 0 && (
+                  <div className="order-item-row">
+                    <span>{t('settle.unapplied')}</span>
+                    <span>−{formatMoney(account.unapplied ?? 0)}</span>
+                  </div>
+                )}
               </div>
 
               {!paying && (

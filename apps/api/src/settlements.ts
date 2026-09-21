@@ -14,6 +14,20 @@ export interface BalanceSummary {
   balance: number;
   /** How much of the balance is on documents that are not yet fully settled. */
   openCount: number;
+  /**
+   * Деньги, которые приняли, но пока не на что разнести.
+   *
+   * Сальдо их вычитает, а разбивка по срокам — нет: она перечисляет неоплаченные
+   * документы, а этот платёж не лежит ни на одном. Экран показывал оба числа
+   * рядом, и они не сходились: «Долг 8 500 ₸», а под ним «До 7 дней: 11 000 ₸»
+   * — ровно на предоплату, которую клиент уже отдал. Денег это не теряет, но
+   * заставляет владельца искать ошибку там, где её нет, на том самом экране, по
+   * которому он решает, кому звонить.
+   *
+   * Поэтому число называется и отдаётся: пусть стоит строкой, а не прячется
+   * внутри разности.
+   */
+  unapplied: number;
 }
 
 export function computeBalance(charges: Charge[], unappliedPayments = 0): BalanceSummary {
@@ -24,6 +38,7 @@ export function computeBalance(charges: Charge[], unappliedPayments = 0): Balanc
     paid: settled + unappliedPayments,
     balance: charged - settled - unappliedPayments,
     openCount: charges.filter((charge) => charge.settled < charge.amount).length,
+    unapplied: unappliedPayments,
   };
 }
 
