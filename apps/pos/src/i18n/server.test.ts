@@ -180,7 +180,7 @@ const NOT_A_MESSAGE = new Set<string>([
   'PIN-код', 'Контрагент', 'Сотрудник', 'Касса', 'в продаже', 'закупочная цена', 'код НКТ',
   'лимит долга', 'разрешён долг', 'режим НДС', 'роль', 'стоп-лист', 'устройство', 'цена продажи',
   // Composed by the register from the parts, not shown as the server wrote it.
-  '7: 7 изменён', '7: 7 — задано «7»', '7: 7 — снято (было «7»)',
+  '7: 7 — задано «7»', '7: 7 — снято (было «7»)',
   // Never rendered: a corrupt secret is a server fault, not something a cashier
   // can act on, and the note beside a queued receipt is read in the log.
   'Недопустимый символ в ключе: 7', 'попытка 7, повторим', 'попыток исчерпано (7)',

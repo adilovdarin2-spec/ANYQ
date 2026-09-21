@@ -43,6 +43,20 @@ describe('describeAuditEntry', () => {
     expect(describeAuditEntry(say('kk'), pin)).not.toContain('null');
   });
 
+  it('и про переезд кассы на другое устройство — тоже на языке кассира', () => {
+    /* Этой записи касса не знала: в её списке не было ни сущности «касса», ни
+       поля `deviceKey`, и строка откатывалась на русское предложение сервера.
+       На экране у казахоязычного владельца стояло «устройство изменён» — и
+       по-русски, и в мужском роде при среднем существительном.
+
+       Запись нужная: если касса переезжает трижды в неделю, это либо сломанный
+       планшет, либо кто-то забирает её себе. */
+    const moved: AuditEntry = { ...base, entity: 'device', entityName: 'Касса №2', field: 'deviceKey', before: null, after: null };
+    expect(describeAuditEntry(say('ru'), moved)).toBe('Касса «Касса №2»: устройство изменено');
+    expect(describeAuditEntry(say('kk'), moved)).toBe('«Касса №2» кассасы: құрылғысы ауыстырылды');
+    expect(describeAuditEntry(say('kk'), moved), 'ключ в журнал не попадает').not.toMatch(/[a-f0-9]{8}/i);
+  });
+
   it('translates a value that crossed the wire as a Russian word', () => {
     // Booleans are stored as "да"/"нет" so the log stays readable years later.
     // That readability is in Russian, so the register has to read it back.

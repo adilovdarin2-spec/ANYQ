@@ -26,8 +26,20 @@ export interface FieldChange {
   after: string | null;
 }
 
-/** A field whose value is never written down, only the fact that it moved. */
-const SECRET_FIELDS = new Set(['posPin', 'deviceKey']);
+/**
+ * A field whose value is never written down, only the fact that it moved.
+ *
+ * Фраза хранится целиком, а не собирается из подписи и слова «изменён»: подписи
+ * разного рода, и на общей заготовке выходило «устройство изменён». Строка на
+ * поле стоит дешевле согласования по родам в коде и заставляет автора третьего
+ * секретного поля написать фразу, а не получить её кое-как.
+ */
+const SECRET_FIELD_PHRASES: Record<string, string> = {
+  posPin: 'PIN-код изменён',
+  deviceKey: 'устройство изменено',
+};
+
+const SECRET_FIELDS = new Set(Object.keys(SECRET_FIELD_PHRASES));
 
 function normalise(value: unknown): string | null {
   if (value === null || value === undefined || value === '') return null;
@@ -116,7 +128,8 @@ export function entityLabel(entity: string): string {
  */
 export function describeChange(entity: string, entityName: string, change: FieldChange): string {
   const what = `${entityLabel(entity)} «${entityName}»`;
-  if (SECRET_FIELDS.has(change.field)) return `${what}: ${fieldLabel(change.field)} изменён`;
+  const secret = SECRET_FIELD_PHRASES[change.field];
+  if (secret) return `${what}: ${secret}`;
   if (change.before === null) return `${what}: ${fieldLabel(change.field)} — задано «${change.after}»`;
   if (change.after === null) return `${what}: ${fieldLabel(change.field)} — снято (было «${change.before}»)`;
   return `${what}: ${fieldLabel(change.field)} — «${change.before}» → «${change.after}»`;

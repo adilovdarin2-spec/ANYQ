@@ -71,6 +71,25 @@ describe('describeChange', () => {
     const line = describeChange('user', 'Дана', { field: 'posPin', before: null, after: null });
     expect(line).toBe('Сотрудник «Дана»: PIN-код изменён');
   });
+
+  it('и не печатает ключ устройства — но согласует род', () => {
+    /* Фраза собиралась из подписи и общего слова «изменён», а подписи разного
+       рода: у PIN-кода мужской, у устройства средний. В журнале, который
+       владелец читает глазами, стояло «устройство изменён» — и стояло долго,
+       потому что тест был только на PIN. */
+    const line = describeChange('device', 'Касса №2', { field: 'deviceKey', before: null, after: null });
+    expect(line).toBe('Касса «Касса №2»: устройство изменено');
+    expect(line, 'ключ в журнал не попадает').not.toMatch(/[a-f0-9]{8}/i);
+  });
+
+  it('а у каждого секретного поля фраза написана, а не собрана', () => {
+    // Иначе третье такое поле молча получит чужой род.
+    for (const field of ['posPin', 'deviceKey']) {
+      const line = describeChange('user', 'X', { field, before: null, after: null });
+      expect(line, `${field}: нет своей фразы`).not.toContain('undefined');
+      expect(line, `${field}: фраза должна что-то утверждать`).toMatch(/изменён|изменено/);
+    }
+  });
 });
 
 describe('what an owner should be shown first', () => {

@@ -21,6 +21,7 @@ const ENTITY_PHRASES: Record<string, PhraseKey> = {
   product: 'audit.entity.product',
   user: 'audit.entity.user',
   counterparty: 'audit.entity.counterparty',
+  device: 'audit.entity.device',
 };
 
 const FIELD_PHRASES: Record<string, PhraseKey> = {
@@ -36,6 +37,20 @@ const FIELD_PHRASES: Record<string, PhraseKey> = {
   posPin: 'audit.field.posPin',
   creditAllowed: 'audit.field.creditAllowed',
   creditLimit: 'audit.field.creditLimit',
+  deviceKey: 'audit.field.deviceKey',
+};
+
+/**
+ * Секретное поле: фраза целиком, а не «подпись + изменён».
+ *
+ * По-русски подписи разного рода — «PIN-код» мужского, «устройство» среднего, —
+ * и на общей заготовке выходило «устройство изменён». По-казахски рода нет и
+ * заготовки хватило бы, но держать два разных устройства фразы ради этого
+ * дороже, чем написать обе строки.
+ */
+const SECRET_PHRASES: Record<string, PhraseKey> = {
+  posPin: 'audit.changed.posPin',
+  deviceKey: 'audit.changed.deviceKey',
 };
 
 /**
@@ -64,7 +79,8 @@ export function describeAuditEntry(t: Translator['t'], entry: AuditEntry): strin
   // A secret field arrives with both sides blank on purpose — the log records
   // that the PIN moved, never what it moved to.
   if (entry.before === null && entry.after === null) {
-    return t('audit.changed', { what, field: which });
+    const secret = SECRET_PHRASES[entry.field];
+    return secret ? t(secret, { what }) : t('audit.changed', { what, field: which });
   }
   if (entry.before === null) {
     return t('audit.set', { what, field: which, after: value(t, entry.after ?? '') });
