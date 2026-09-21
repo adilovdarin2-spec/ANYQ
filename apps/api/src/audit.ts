@@ -102,6 +102,9 @@ const FIELD_LABELS: Record<string, string> = {
   creditAllowed: 'разрешён долг',
   creditLimit: 'лимит долга',
   deviceKey: 'устройство',
+  // Имя, которое владелец дал кассе: «касса у входа». `name` занято товаром и
+  // сотрудником, но слово то же самое, а сущность названа в начале строки.
+  label: 'название',
 };
 
 const ENTITY_LABELS: Record<AuditEntity, string> = {

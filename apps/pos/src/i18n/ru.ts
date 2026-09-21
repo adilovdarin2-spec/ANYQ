@@ -1088,6 +1088,7 @@ export const ru = {
   'audit.changed.posPin': '{what}: PIN-код изменён',
   'audit.changed.deviceKey': '{what}: устройство изменено',
   'audit.field.deviceKey': 'устройство',
+  'audit.field.label': 'название',
   'audit.set': '{what}: {field} — задано «{after}»',
   'audit.cleared': '{what}: {field} — снято (было «{before}»)',
   'audit.moved': '{what}: {field} — «{before}» → «{after}»',

@@ -38,6 +38,7 @@ const FIELD_PHRASES: Record<string, PhraseKey> = {
   creditAllowed: 'audit.field.creditAllowed',
   creditLimit: 'audit.field.creditLimit',
   deviceKey: 'audit.field.deviceKey',
+  label: 'audit.field.label',
 };
 
 /**

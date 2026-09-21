@@ -1062,6 +1062,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'audit.changed.posPin': '{what}: PIN-коды өзгертілді',
   'audit.changed.deviceKey': '{what}: құрылғысы ауыстырылды',
   'audit.field.deviceKey': 'құрылғысы',
+  'audit.field.label': 'атауы',
   'audit.set': '{what}: {field} — «{after}» деп қойылды',
   'audit.cleared': '{what}: {field} — алынды (бұрын «{before}» еді)',
   'audit.moved': '{what}: {field} — «{before}» → «{after}»',
