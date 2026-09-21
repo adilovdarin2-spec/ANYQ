@@ -4061,6 +4061,23 @@ posRouter.patch('/devices/:id', requirePosAuth, async (req: PosAuthedRequest, re
 
   const label = cleanDeviceLabel((req.body ?? {}).label, device.label);
   const updated = await prisma.posDevice.update({ where: { id: device.id }, data: { label } });
+
+  /* Переименование записывается в журнал — `label` стоит в `WATCHED_FIELDS`, а
+     этот маршрут единственный, кто его меняет, и аудит не звал. То есть
+     наблюдение было объявлено и не велось.
+     Запись нужна не сама по себе: по имени кассу называют все остальные экраны
+     — сменный отчёт, журнал, список устройств. Переименовали — и прежние записи
+     начинают говорить о «Кассе №2», которой уже нет. Строка о смене имени —
+     единственное, по чему их потом можно связать. */
+  const actor = await resolveActor(req.posCompanyId!, req.posUserId);
+  await recordChanges(prisma, actor, {
+    entity: 'device',
+    entityId: updated.id,
+    entityName: updated.label,
+    before: { label: device.label },
+    after: { label: updated.label },
+  });
+
   res.json({ id: updated.id, label: updated.label });
 });
 

@@ -357,4 +357,47 @@ describe('registers', () => {
     expect(listed.status).toBe(200);
     expect(listed.body.truncated).toBe(true);
   });
+
+  /**
+   * Переименование кассы попадает в журнал изменений.
+   *
+   * `label` стоит в `WATCHED_FIELDS` — то есть наблюдение объявлено, — а
+   * единственный маршрут, который его меняет, аудит не звал. Объявление было, а
+   * записи не было, и заметить это по коду нельзя: список наблюдаемых полей
+   * лежит в одном файле, а маршрут в другом.
+   *
+   * Запись нужна не сама по себе. По имени кассу называют все остальные экраны:
+   * сменный отчёт, список устройств, тот же журнал. Переименовали — и прежние
+   * записи говорят о «Кассе №2», которой больше нет; строка о смене имени
+   * единственная, по чему их потом можно связать.
+   */
+  it('переименование кассы записывается в журнал', async () => {
+    const owner = await newRegister(TILL);
+    const list = await devices(owner.body.token);
+    const self = list.body.devices[0];
+
+    const renamed = await api(owner.body.token, 'PATCH', `/pos/devices/${self.id}`, { label: 'Касса у входа' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.label).toBe('Касса у входа');
+
+    const entries = await prisma.auditEntry.findMany({
+      where: { companyId: fx.companyId, entity: 'device', field: 'label' },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].after).toBe('Касса у входа');
+    expect(entries[0].before, 'прежнее имя — то, по чему ищут старые записи').not.toBeNull();
+  });
+
+  it('а сохранение того же имени журнал не засоряет', async () => {
+    // Большинство сохранений ничего не меняют, и строка «имя — «А» → «А»» в
+    // журнале стоит ровно столько же места, сколько настоящая.
+    const owner = await newRegister(TILL);
+    const self = (await devices(owner.body.token)).body.devices[0];
+    await api(owner.body.token, 'PATCH', `/pos/devices/${self.id}`, { label: self.label });
+
+    const entries = await prisma.auditEntry.findMany({
+      where: { companyId: fx.companyId, entity: 'device', field: 'label' },
+    });
+    expect(entries).toEqual([]);
+  });
 });
