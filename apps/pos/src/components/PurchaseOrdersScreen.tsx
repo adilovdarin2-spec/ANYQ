@@ -155,7 +155,10 @@ export function PurchaseOrdersScreen({
                       {order.approvedByName ? ` · ${t('po.approvedBy', { name: order.approvedByName })}` : ''}
                     </div>
                   </div>
-                  <span className={OPEN_STATUSES.includes(status) ? 'pill warn' : 'pill'}>{STATUS_LABELS[status]}</span>
+                  {/* Через `t`, а не ключом наружу: здесь стояло
+                      `{STATUS_LABELS[status]}`, и на экране заказов поставщику
+                      вместо «Черновик» висело `po.draft` — на обоих языках. */}
+                  <span className={OPEN_STATUSES.includes(status) ? 'pill warn' : 'pill'}>{t(STATUS_LABELS[status])}</span>
                 </div>
 
                 <div className="order-items">
