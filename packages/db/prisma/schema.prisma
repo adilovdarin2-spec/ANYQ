@@ -310,6 +310,7 @@ model Location {
   batches          ProductBatch[]
   documents        Document[] @relation("SourceLocation")
   transfersIn      Document[] @relation("DestinationLocation")
+  /// Не заполняется — см. комментарий у модели `Prescription`.
   prescriptions    Prescription[]
   shifts           Shift[]
   tables           Table[]
@@ -507,6 +508,8 @@ model Product {
   stocks         Stock[]
   batches        ProductBatch[]
   documentItems  DocumentItem[]
+  /// Обе не заполняются — см. комментарии у моделей `Prescription` и
+  /// `ControlledSubstanceLedger`.
   prescriptions  Prescription[]
   ledgerEntries  ControlledSubstanceLedger[]
   recipe         Recipe?             @relation("DishRecipe")
@@ -800,6 +803,7 @@ model ProductBatch {
   createdAt   DateTime @default(now())
 
   documentItems DocumentItem[]
+  /// Не заполняется — см. комментарий у модели `ControlledSubstanceLedger`.
   ledgerEntries ControlledSubstanceLedger[]
 
   @@index([productId, locationId])
@@ -1120,6 +1124,18 @@ model SupportAccess {
   @@map("support_access")
 }
 
+/// Задел под рецептурный учёт, которого в продукте нет. Эту таблицу не пишет
+/// и не читает ни одна строка кода: ни маршрута в API, ни экрана, ни сида, ни
+/// теста — только первая миграция, которая её и завела.
+///
+/// Модуль «Аптека» продаёт партии со сроками и списание по FEFO, и больше
+/// ничего. Подпись модуля в `apps/admin/src/types.ts` это уже говорит прямо —
+/// её переписали ровно потому, что она обещала рецептурный учёт и маркировку,
+/// которых нет. Схема осталась последним местом, где это обещание ещё читается.
+///
+/// В production таблица пуста. Миграции здесь аддитивные, поэтому модель
+/// остаётся на месте: удаление — отдельное решение владельца, а не побочный
+/// эффект уборки.
 model Prescription {
   id                 String   @id @default(cuid())
   location           Location @relation(fields: [locationId], references: [id])
@@ -1134,6 +1150,15 @@ model Prescription {
   @@map("prescriptions")
 }
 
+/// Задел под учёт контролируемых веществ, которого в продукте нет. Как и
+/// `Prescription` выше: ничего сюда не пишет, ничего отсюда не читает.
+///
+/// `movementType` — тот самый SubstanceMovementType из шапки файла, строка,
+/// которую полагалось бы проверять в API. Проверки нет и не будет, пока нет
+/// записи: проверять нечего.
+///
+/// В production таблица пуста, и по тем же аддитивным миграциям остаётся на
+/// месте до отдельного решения владельца.
 model ControlledSubstanceLedger {
   id           String       @id @default(cuid())
   product      Product      @relation(fields: [productId], references: [id])
