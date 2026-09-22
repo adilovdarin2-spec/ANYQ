@@ -5,7 +5,7 @@ import type { KitchenStatus, PaymentMethod, Product, RestaurantTable, TableOrder
 import { formatMoney, genId } from '../utils';
 import { readScannedMarking, sameMarkedCode } from '../marking-scan';
 
-interface DraftItem {
+export interface DraftItem {
   productId: string;
   name: string;
   price: number;
@@ -41,6 +41,32 @@ const PAYMENT_OPTIONS: { method: PaymentMethod; icon: string; phrase: PhraseKey 
   { method: 'kaspi', icon: '▦', phrase: 'payment.kaspi' },
   { method: 'card', icon: '💳', phrase: 'payment.card' },
 ];
+
+/**
+ * Убрать лишнее нажатие.
+ *
+ * Убрать было нечем: плитка только прибавляла, а «назад» стирало весь черновик
+ * целиком. Официант, нажавший чай третий раз вместо второго, выбирал между
+ * «отправить на кухню лишнюю чашку» и «набрать стол заново» — а за столом
+ * бывает пятнадцать позиций.
+ *
+ * У маркированной позиции количество — это ровно число поднесённых пачек.
+ * «Минус» снимает последний код вместе со штукой; прибавлять её так нельзя
+ * вовсе, и кнопки «плюс» у неё нет. Штука без кода — это пачка, которую нечем
+ * погасить, а весь учёт маркировки держится как раз на том, что такого не
+ * бывает.
+ *
+ * Дошло до нуля — строка уходит целиком: позиция с нулём в счёте гостя
+ * выглядит как что-то, за что он всё-таки платит.
+ */
+export function stepDraft(draft: DraftItem[], productId: string, delta: number): DraftItem[] {
+  return draft.flatMap((d) => {
+    if (d.productId !== productId) return [d];
+    const qty = d.qty + delta;
+    if (qty <= 0) return [];
+    return [{ ...d, qty, codes: d.codes.slice(0, qty) }];
+  });
+}
 
 export function TableOrderScreen({ table, order, products, loading, error, submitting, onBack, onSendToKitchen, onPay }: Props) {
   const { t } = useTranslation();
@@ -112,6 +138,11 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
     });
   }
 
+  function changeDraftQty(productId: string, delta: number) {
+    setScanNote(null);
+    editDraft((prev) => stepDraft(prev, productId, delta));
+  }
+
   const draftTotal = draft.reduce((sum, d) => sum + d.price * d.qty, 0);
 
   /**
@@ -168,6 +199,32 @@ export function TableOrderScreen({ table, order, products, loading, error, submi
                       </span>
                     </span>
                     <span>{formatMoney(it.price * it.quantity)}</span>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {draft.length > 0 && (
+              <>
+                {/* Отдельно от отправленного: на кухне уже готовят одно, а в
+                    руках у официанта — другое, и путать их нельзя. */}
+                <div className="orders-section-title">{t('table.draftTitle')}</div>
+                {draft.map((d) => (
+                  <div key={d.productId} className="line-item">
+                    <div style={{ flex: 1 }}>
+                      <div className="li-name">{d.name}</div>
+                      <div className="li-price">{formatMoney(d.price * d.qty)}</div>
+                      {d.codes.length > 0 && <div className="field-hint">{t('table.scannedPack')}</div>}
+                    </div>
+                    <div className="qty-stepper">
+                      <button onClick={() => changeDraftQty(d.productId, -1)} aria-label={t('cart.less')}>–</button>
+                      <span>{d.qty}</span>
+                      {/* Плюса у маркированной позиции нет: штуку добавляет пачка,
+                          а не палец. */}
+                      {d.codes.length === 0 && (
+                        <button onClick={() => changeDraftQty(d.productId, 1)} aria-label={t('cart.more')}>+</button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </>

@@ -940,6 +940,8 @@ export const ru = {
   'table.scanPlaceholder': 'Поднесите сканер к коду на упаковке',
   'table.notAMarking': 'Это не код маркировки — блюда добавляются с плиток ниже',
   'table.addDishes': 'Добавить блюда',
+  'table.draftTitle': 'Ещё не отправлено',
+  'table.scannedPack': 'Добавляется сканером — уберите лишнюю пачку «минусом»',
   'table.toPay': 'К оплате',
   'table.sending': 'Отправляем…',
   'table.sendToKitchen': 'Отправить на кухню',

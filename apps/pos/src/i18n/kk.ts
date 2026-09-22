@@ -926,6 +926,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'table.scanPlaceholder': 'Сканерді қаптамадағы кодқа тигізіңіз',
   'table.notAMarking': 'Бұл таңбалау коды емес — тағамдар төмендегі тақтайшалардан қосылады',
   'table.addDishes': 'Тағам қосу',
+  'table.draftTitle': 'Әлі жіберілмеген',
+  'table.scannedPack': 'Сканермен қосылады — артық қаптаманы «минуспен» алып тастаңыз',
   'table.toPay': 'Төлеуге',
   'table.sending': 'Жіберіп жатырмыз…',
   'table.sendToKitchen': 'Ас үйге жіберу',
