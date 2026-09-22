@@ -43,6 +43,10 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   : defaultOrigins;
 
 const app = express();
+// Express подписывается на каждом ответе: `X-Powered-By: Express`. Сама по
+// себе подпись ничего не открывает, но она сообщает, что именно искать, и
+// ничего не даёт взамен.
+app.disable('x-powered-by');
 // Railway terminates TLS and proxies every request through one internal hop,
 // so req.ip must trust exactly that one hop — otherwise express-rate-limit
 // (below) can't tell real clients apart and keys every login attempt off
@@ -127,9 +131,22 @@ app.use(metricsMiddleware);
  */
 app.use(compression());
 app.use(express.json());
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  /* Сюда ходят только по https, и пусть браузер это запомнит.
+
+     Railway отвечает на http редиректом, но редирект — это первый запрос,
+     который всё-таки ушёл открытым. Браузер, увидевший этот заголовок,
+     следующие полгода на http даже не постучится.
+
+     Ставится только если запрос и правда пришёл по https: на локальной
+     разработке такой заголовок запер бы разработчику его собственный http.
+     `preload` не ставим — это заявка в список браузеров, которую нельзя
+     быстро отозвать, а домен ещё поменяется. */
+  if (req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
   next();
 });
 

@@ -87,9 +87,27 @@ export function serveStatic({ name, rootDir, defaultPort, frameAncestors = 'DENY
     'Referrer-Policy': 'strict-origin-when-cross-origin',
   };
 
+  // Сказать браузеру, что сюда ходят только по https.
+  //
+  // Railway уже отвечает на http редиректом, но редирект — это первый запрос,
+  // который всё-таки ушёл открытым, и вместе с ним адрес кассы конкретного
+  // магазина. Браузер, увидевший этот заголовок, следующие полгода на http
+  // даже не постучится. На своём домене, куда магазины будут заходить с
+  // закладки и с бумажки, это окно шире, чем здесь.
+  //
+  // Только если запрос и правда пришёл по https: заголовок, поставленный на
+  // локальной разработке, запер бы разработчику его собственный http.
+  // `preload` не ставим — это заявка в список браузеров, которую нельзя
+  // быстро отозвать, а домен ещё поменяется.
+  function headersFor(req) {
+    return req.headers['x-forwarded-proto'] === 'https'
+      ? { ...securityHeaders, 'Strict-Transport-Security': 'max-age=15552000; includeSubDomains' }
+      : securityHeaders;
+  }
+
   const server = http.createServer(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, { Allow: 'GET, HEAD', ...securityHeaders });
+      res.writeHead(405, { Allow: 'GET, HEAD', ...headersFor(req) });
       res.end();
       return;
     }
@@ -100,7 +118,7 @@ export function serveStatic({ name, rootDir, defaultPort, frameAncestors = 'DENY
     // Compared with the separator appended: a bare `startsWith(DIST_DIR)` also
     // accepts a sibling directory whose name merely begins with it.
     if (filePath !== DIST_DIR && !filePath.startsWith(DIST_DIR + path.sep)) {
-      res.writeHead(403, securityHeaders);
+      res.writeHead(403, headersFor(req));
       res.end('Forbidden');
       return;
     }
@@ -112,7 +130,7 @@ export function serveStatic({ name, rootDir, defaultPort, frameAncestors = 'DENY
       if (!isNavigation(req, ext) && urlPath !== '/') {
         // A file that is not there is a 404, not the index page wearing its
         // content type.
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...securityHeaders });
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...headersFor(req) });
         res.end('Not found');
         return;
       }
@@ -120,7 +138,7 @@ export function serveStatic({ name, rootDir, defaultPort, frameAncestors = 'DENY
       ext = '.html';
       stats = await fsp.stat(filePath).catch(() => null);
       if (!stats?.isFile()) {
-        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', ...securityHeaders });
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', ...headersFor(req) });
         res.end('index.html is missing from the build');
         return;
       }
@@ -136,7 +154,7 @@ export function serveStatic({ name, rootDir, defaultPort, frameAncestors = 'DENY
       // plain copy must not hand it to a client that asked for gzip, or the
       // other way round.
       Vary: 'Accept-Encoding',
-      ...securityHeaders,
+      ...headersFor(req),
     };
     if (compress) headers['Content-Encoding'] = 'gzip';
     // Only when the length is actually known. A gzipped stream's length is not.
