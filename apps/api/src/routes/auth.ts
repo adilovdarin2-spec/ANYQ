@@ -40,7 +40,19 @@ async function spendRecoveryCode(adminUserId: string, typed: string): Promise<bo
 
 authRouter.post('/login', loginRateLimit, async (req, res) => {
   const { email, password, code } = req.body ?? {};
-  if (!email || !password) {
+  /* Оба поля — строки, и это проверяется до запроса.
+
+     Стояло `if (!email || !password)`, и объект оба условия проходит: `email`
+     уходил в `findUnique` как есть и ронял запрос пятисотой, а `password` —
+     в `bcrypt.compare`, который на нестроке бросает. Вход в админку открыт
+     наружу, и пятисотая на нём — это и шум в журнале, и подсказка тому, кто
+     пробует, что поле доходит до базы неразобранным.
+
+     Соседний вход в кассу тем же недосмотром пускал внутрь: там значение
+     уходило в `findFirst`, который читает объект как фильтр. Здесь этого не
+     случилось только потому, что `findUnique` строже. Полагаться на разницу
+     между двумя методами Prisma нельзя — проверяется тип. */
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
     res.status(400).json({ error: 'Введите email и пароль' });
     return;
   }
