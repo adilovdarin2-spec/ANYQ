@@ -72,7 +72,10 @@ async function sendTo(subscriptions: Subscription[], payload: PushPayload): Prom
       } catch (err) {
         if (subscriptionIsGone(err)) {
           await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+          return;
         }
+        const note = pushFailureNote(sub.endpoint, err);
+        if (note) console.warn(note);
       }
     }),
   );
@@ -96,6 +99,36 @@ async function sendTo(subscriptions: Subscription[], payload: PushPayload): Prom
 export function subscriptionIsGone(err: unknown): boolean {
   const statusCode = (err as { statusCode?: number } | null)?.statusCode;
   return statusCode === 404 || statusCode === 410;
+}
+
+/**
+ * Что сказать в лог о недоставленном уведомлении, и говорить ли вообще.
+ *
+ * До этого не говорилось ничего: отправка глотала любую ошибку, а вызывающий
+ * дописывал `.catch(() => {})`. Не ломать оформление заказа из-за неотправленного
+ * уведомления — правильно; молчать о том, что оно не отправлено, — нет. Ключи
+ * просрочены, служба отвечает пятисоткой, провайдер заблокирован — и владелец
+ * просто перестаёт получать заказы, решив, что их нет. Авария без единого следа.
+ *
+ * Выброшенная подписка следа не заслуживает: человек снёс приложение или отозвал
+ * разрешение, это обычная жизнь, и строка о ней в логе — шум.
+ *
+ * В строку идёт хост, а не весь адрес: полный endpoint — это ключ, по которому
+ * любой может слать уведомления на чужой телефон, и логам такого не доверяют.
+ */
+export function pushFailureNote(endpoint: string, err: unknown): string | null {
+  if (subscriptionIsGone(err)) return null;
+
+  let host = 'неизвестный адрес';
+  try {
+    host = new URL(endpoint).host;
+  } catch {
+    // Адрес, который не разбирается, — сам по себе новость.
+  }
+
+  const statusCode = (err as { statusCode?: number } | null)?.statusCode;
+  const reason = statusCode ?? (err instanceof Error ? err.message : String(err));
+  return `[push] не доставлено в ${host}: ${reason}`;
 }
 
 /** Всем устройствам компании. Годится для того, что касается всей смены. */
