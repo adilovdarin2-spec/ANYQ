@@ -145,7 +145,6 @@ export const ru = {
   'common.loading': 'Загрузка…',
 
   // --- the operations menu ------------------------------------------------
-  'ops.orders': 'Заказы с сайта',
   'ops.batches': 'Партии',
   'ops.transfers': 'Перемещения',
   'ops.incoming': 'Приёмка',
@@ -198,7 +197,6 @@ export const ru = {
   'count.system': 'система',
   'count.lastResult': 'Итог последнего пересчёта',
   'count.agreed': 'Расхождений нет — ячейка сошлась',
-  'count.submit': 'Сохранить пересчёт',
 
   'bins.title': 'Ячейки',
   'bins.zone': 'Зона {zone}',
@@ -247,7 +245,6 @@ export const ru = {
   'profile.sync': 'Синхронизация',
   'profile.syncPending': 'ждут отправки: {count}',
   'profile.needAttention': 'Требуют внимания',
-  'profile.stuck': '{count} — обратитесь к владельцу, продажа не проведена',
   'profile.stuckWhy': 'Эти продажи сервер не принял. Деньги взяты, в отчётах их нет — покажите владельцу.',
   'profile.stuckRetry': 'Отправить ещё раз',
   'profile.stuckRetryAll': 'Отправить все ({count})',
@@ -336,6 +333,7 @@ export const ru = {
   'queue.why.transfer_gap': 'Приняли не то, что отправили',
   'queue.why.staff_flag': 'Не обвинение — повод посмотреть',
   'queue.why.dead_stock': 'Не теряете, но деньги лежат мёртвыми',
+  'queue.why.empty_catalogue': 'Без товаров касса не пробьёт ни одного чека',
   'range.today': 'Сегодня',
   'range.week': 'Неделя',
   'range.month': 'Месяц',
@@ -458,7 +456,6 @@ export const ru = {
   'common.left': 'Осталось',
   'common.free': 'свободно',
   'common.whatHappened': 'Что произошло',
-  'common.perDay': 'день',
 
   // --- the import wizard ---------------------------------------------------
   'import.title': 'Импорт товаров',
@@ -785,7 +782,6 @@ export const ru = {
   'cycle.none': 'Пересчётов пока не было',
   'cycle.onlyCounted': 'Введите фактическое количество только для товаров, которые пересчитали — остальные останутся без изменений.',
   'cycle.oneInvalid': 'Одно значение не похоже на число — оно не сохранится.',
-  'cycle.manyInvalid': 'не похожи на числа — они не сохранятся.',
   'cycle.submit': 'Сохранить пересчёт ({count})',
 
   // --- orders from the storefront ------------------------------------------

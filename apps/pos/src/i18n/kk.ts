@@ -143,7 +143,6 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'common.loading': 'Жүктелуде…',
 
   // --- the operations menu ------------------------------------------------
-  'ops.orders': 'Сайттан тапсырыстар',
   'ops.batches': 'Партиялар',
   'ops.transfers': 'Ауыстырулар',
   'ops.incoming': 'Қабылдау',
@@ -209,7 +208,6 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'count.system': 'жүйеде',
   'count.lastResult': 'Соңғы санаудың қорытындысы',
   'count.agreed': 'Алшақтық жоқ — ұяшық сәйкес келді',
-  'count.submit': 'Санауды сақтау',
 
   'bins.title': 'Ұяшықтар',
   'bins.zone': '{zone} аймағы',
@@ -258,7 +256,6 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'profile.sync': 'Синхрондау',
   'profile.syncPending': 'жіберуді күтуде: {count}',
   'profile.needAttention': 'Назар аударуды қажет етеді',
-  'profile.stuck': '{count} — иесіне хабарласыңыз, сатылым өткізілмеген',
   'profile.stuckWhy': 'Бұл сатылымдарды сервер қабылдамады. Ақша алынған, есепте жоқ — иесіне көрсетіңіз.',
   'profile.stuckRetry': 'Қайта жіберу',
   'profile.stuckRetryAll': 'Барлығын жіберу ({count})',
@@ -347,6 +344,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'queue.why.transfer_gap': 'Жіберілгеннен басқасы қабылданды',
   'queue.why.staff_flag': 'Айып емес — қарауға себеп',
   'queue.why.dead_stock': 'Жоғалтпайсыз, бірақ ақша өлі жатыр',
+  'queue.why.empty_catalogue': 'Тауарсыз касса бірде-бір чек өткізе алмайды',
   'range.today': 'Бүгін',
   'range.week': 'Апта',
   'range.month': 'Ай',
@@ -469,7 +467,6 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'common.left': 'Қалды',
   'common.free': 'бос',
   'common.whatHappened': 'Не болды',
-  'common.perDay': 'күн',
 
   // --- the import wizard ---------------------------------------------------
   'import.title': 'Тауарларды импорттау',
@@ -776,7 +773,6 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'cycle.none': 'Санаулар әлі болған жоқ',
   'cycle.onlyCounted': 'Нақты санын тек қайта санаған тауарлар үшін енгізіңіз — қалғандары өзгеріссіз қалады.',
   'cycle.oneInvalid': 'Бір мән санға ұқсамайды — ол сақталмайды.',
-  'cycle.manyInvalid': 'санға ұқсамайды — олар сақталмайды.',
   'cycle.submit': 'Санауды сақтау ({count})',
 
   // --- orders from the storefront ------------------------------------------
