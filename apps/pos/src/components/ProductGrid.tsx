@@ -82,7 +82,7 @@ export function ProductGrid({
   const shown = products.slice(0, GRID_LIMIT);
 
   return (
-    <div className="product-grid">
+    <div className={`product-grid${canManageStopList && onToggleStopList ? ' with-stop-list' : ''}`}>
       {shown.map((p) => {
         const remaining = p.stock - (cartQtyByProduct[p.id] ?? 0);
         const out = remaining <= 0 || p.stopListed;
