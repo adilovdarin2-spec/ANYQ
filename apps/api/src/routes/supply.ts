@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '@anyq/db';
 import { tariffState, tariffDenialMessage } from '../tariff';
-import { availableQuantity, findStockShortages, aggregateRequestedQuantities, groupStockByProduct, reserveAcrossBins, ConcurrentStockChangeError } from '../stock';
+import { availableQuantity, findStockShortages, aggregateRequestedQuantities, groupStockByProduct, hasInvalidQuantity, reserveAcrossBins, ConcurrentStockChangeError } from '../stock';
 import { sellableQuantity, untrackedPolicy } from '../batches';
 import type { BatchStock } from '../batches';
 import { loginRateLimit } from '../rateLimit';
@@ -203,6 +203,28 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
     return;
   }
 
+  /* Строка заказа — это объект с товаром и числом, и проверяется это до
+     первого запроса к базе.
+
+     Количество здесь спрашивалось своим правилом, `it.quantity > 0`, а не
+     тем, которым живут все остальные маршруты, меняющие остаток. Разница
+     видна ровно на строке: `"2" > 0` в JavaScript истинно, и строка проходила
+     внутрь как количество. Складывать её потом нечем — `2 + "2"` даёт «22», —
+     и запрос падал пятисотым: покупатель на витрине видел «Внутренняя ошибка
+     сервера» вместо внятного отказа. Заказ не создавался, транзакция
+     откатывалась целиком, так что пропадал не заказ, а объяснение.
+
+     `items` при этом — что угодно из тела запроса: `[null]` роняло сервер
+     ещё раньше, на чтении `it.productId`. Поэтому сперва форма, потом
+     количество, и всё это — раньше, чем маршрут пойдёт в базу. */
+  const brokenLine = items.some(
+    (it) => !it || typeof it !== 'object' || typeof it.productId !== 'string' || !it.productId,
+  );
+  if (brokenLine || hasInvalidQuantity(items)) {
+    res.status(400).json({ error: 'Заказ собран неверно — обновите страницу и соберите его заново' });
+    return;
+  }
+
   const company = await findCompanyBySlugOrId(req.params.companyId);
   if (!company) {
     res.status(404).json({ error: 'Склад не найден' });
@@ -230,23 +252,18 @@ supplyRouter.post('/:companyId/orders', loginRateLimit, async (req, res) => {
     where: { companyId: company.id, sellable: true, id: { in: items.map((it) => it.productId) } },
   });
   const productById = new Map(products.map((p) => [p.id, p]));
-  const validItems = items.filter((it) => productById.has(it.productId) && it.quantity > 0);
+  const validItems = items.filter((it) => productById.has(it.productId));
 
   // Строку, которую нельзя выполнить, раньше просто выбрасывали: заказ уходил
   // без неё, а покупатель узнавал об этом при получении — если замечал вообще.
   // Отказ целиком честнее: пусть он уберёт её сам и увидит, что заказывает.
+  /* Осталась одна причина, по которой строка может не подойти: товар сняли с
+     продажи, пока страница была открыта. Форму и количество проверили выше, и
+     пустым список уже быть не может — заказ без строк отказан в самом начале.
+     Прежняя развилка на два сообщения говорила второе из них только в случае,
+     который сюда больше не доходит. */
   if (validItems.length !== items.length) {
-    const пропавшие = items.filter((it) => !productById.has(it.productId)).length;
-    res.status(409).json({
-      error: пропавшие > 0
-        ? 'Часть товаров больше не продаётся — обновите страницу и соберите заказ заново'
-        : 'Некорректный список товаров',
-    });
-    return;
-  }
-
-  if (validItems.length === 0) {
-    res.status(400).json({ error: 'Некорректный список товаров' });
+    res.status(409).json({ error: 'Часть товаров больше не продаётся — обновите страницу и соберите заказ заново' });
     return;
   }
 
