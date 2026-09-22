@@ -194,6 +194,25 @@ export const posRouter = Router();
 // A location the company doesn't own is a 404 rather than a 400: from the
 // caller's side it is a thing that isn't there, and answering "invalid" would
 // confirm that some other company's location id exists.
+/**
+ * Идентификатор из тела запроса — или ничего, что найдётся.
+ *
+ * В Prisma `where: { id: undefined }` не означает «id пуст»: условие просто
+ * исчезает, и `findFirst` отдаёт первую попавшуюся запись, подходящую под
+ * остальные условия. То есть поле, которое забыли прислать, превращало поиск
+ * конкретной записи в выбор произвольной — из своей компании, но не той,
+ * которую имели в виду.
+ *
+ * Объект в том же месте Prisma читает как набор операторов: `{"not":null}`
+ * означает «любой непустой», и это тот же выбор произвольной записи, только
+ * нарочно. Так был открыт вход в кассу — см. `login-takes-only-strings`.
+ *
+ * Пустая строка не совпадает ни с чем, и вызывающий получает свой обычный
+ * «не найдено» вместо чужой записи.
+ */
+function bodyId(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
 function resolveLocationOrRespond(locations: { id: string }[], requested: unknown, res: Response): string | null {
   const resolution = resolveLocationId(locations, requested);
   if (resolution.status !== 'ok') {
@@ -1327,7 +1346,7 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
   }
 
   const sale = await prisma.document.findFirst({
-    where: { id: b.saleId, companyId: req.posCompanyId, type: 'sale', status: 'confirmed' },
+    where: { id: bodyId(b.saleId), companyId: req.posCompanyId, type: 'sale', status: 'confirmed' },
     include: { items: true },
   });
   if (!sale) {
@@ -3144,7 +3163,7 @@ posRouter.post('/supplier-returns', requirePosAuth, async (req: PosAuthedRequest
   // Always against one delivery. A return standing on its own could send back
   // goods that were never delivered, which manufactures credit out of nothing.
   const receipt = await prisma.document.findFirst({
-    where: { id: b.receiptId, companyId: req.posCompanyId, type: 'receipt' },
+    where: { id: bodyId(b.receiptId), companyId: req.posCompanyId, type: 'receipt' },
     include: { items: true },
   });
   if (!receipt) {
@@ -5043,7 +5062,7 @@ posRouter.post('/purchase-orders', requirePosAuth, async (req: PosAuthedRequest,
   let counterpartyId: string | undefined;
   if (typeof b.supplierId === 'string' && b.supplierId) {
     const supplier = await prisma.counterparty.findFirst({
-      where: { id: b.supplierId, companyId: req.posCompanyId, type: 'supplier' },
+      where: { id: bodyId(b.supplierId), companyId: req.posCompanyId, type: 'supplier' },
     });
     if (!supplier) {
       res.status(404).json({ error: 'Поставщик не найден' });
@@ -5961,7 +5980,7 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
   }
 
   const source = await prisma.stock.findFirst({
-    where: { productId: b.productId, locationId, binLocation: fromBin },
+    where: { productId: bodyId(b.productId), locationId, binLocation: fromBin },
   });
   const validation = validatePutaway({
     quantity,
@@ -6002,7 +6021,7 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
       const movedAt = soldAtOrNow(b.occurredAt, null);
       await applyStockDelta(tx, source!, -quantity, 'adjustment', { createdBy: req.posUserId, occurredAt: movedAt });
 
-      const destinationRow = await tx.stock.findFirst({ where: { productId: b.productId, locationId, binLocation: toBin } });
+      const destinationRow = await tx.stock.findFirst({ where: { productId: bodyId(b.productId), locationId, binLocation: toBin } });
       if (destinationRow) {
         await applyStockDelta(tx, destinationRow, quantity, 'adjustment', { createdBy: req.posUserId, occurredAt: movedAt });
       } else {
@@ -6300,7 +6319,7 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
   if (!locationId) return;
 
   const counterparty = await prisma.counterparty.findFirst({
-    where: { id: b.counterpartyId, companyId: req.posCompanyId },
+    where: { id: bodyId(b.counterpartyId), companyId: req.posCompanyId },
   });
   if (!counterparty) {
     res.status(404).json({ error: 'Контрагент не найден' });
@@ -7595,7 +7614,7 @@ posRouter.post('/marked-codes/stock', requirePosAuth, async (req: PosAuthedReque
   if (!locationId) return;
 
   const product = await prisma.product.findFirst({
-    where: { id: b.productId, companyId: req.posCompanyId },
+    where: { id: bodyId(b.productId), companyId: req.posCompanyId },
     select: { id: true, name: true },
   });
   if (!product) {
@@ -7711,7 +7730,7 @@ posRouter.post('/batches', requirePosAuth, async (req: PosAuthedRequest, res) =>
     return;
   }
 
-  const product = await prisma.product.findFirst({ where: { id: b.productId, companyId: req.posCompanyId } });
+  const product = await prisma.product.findFirst({ where: { id: bodyId(b.productId), companyId: req.posCompanyId } });
   if (!product) {
     res.status(404).json({ error: 'Товар не найден' });
     return;
@@ -8936,7 +8955,7 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
   const purchaseOrder =
     typeof b.purchaseOrderId === 'string' && b.purchaseOrderId
       ? await prisma.document.findFirst({
-          where: { id: b.purchaseOrderId, companyId: req.posCompanyId, type: 'purchase_order' },
+          where: { id: bodyId(b.purchaseOrderId), companyId: req.posCompanyId, type: 'purchase_order' },
           include: { items: true },
         })
       : null;
@@ -9530,7 +9549,7 @@ posRouter.post('/production', requirePosAuth, async (req: PosAuthedRequest, res)
   if (!locationId) return;
 
   const recipe = await prisma.recipe.findFirst({
-    where: { productId: b.productId, product: { companyId: req.posCompanyId } },
+    where: { productId: bodyId(b.productId), product: { companyId: req.posCompanyId } },
     include: { ingredients: true },
   });
   if (!recipe) {
