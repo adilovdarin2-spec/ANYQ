@@ -139,7 +139,26 @@ button { cursor: pointer; }
 .stop-list-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .product-tile:active { background: var(--surface-2); }
 .product-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.product-tile .p-name { font-size: 0.88rem; font-weight: 600; line-height: 1.25; }
+/* Название — не больше трёх строк.
+
+   Каталог, выгруженный из 1С или Kaspi, приносит названия вроде «Набор
+   кондитерский подарочный «Восточная сказка» с орехами, сухофруктами и
+   восточными сладостями в жестяной банке, 2500 г». Без ограничения такая
+   плитка вырастала до 216 пикселей против 88 у соседних: ряд равнялся по ней,
+   цена уезжала вниз, и кассир искал цены на разной высоте в каждой строке.
+
+   Три строки — около девяноста знаков: хватает, чтобы отличить товар. Что не
+   поместилось, видно в корзине целиком — ошибку ловят там, до оплаты. */
+.product-tile .p-name {
+  font-size: 0.88rem; font-weight: 600; line-height: 1.25;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+/* Место под кнопку стоп-листа: она лежит поверх плитки в правом верхнем углу,
+   и без этого отступа садилась на первую строку названия — «Чай в термосе (1 л»
+   с кружком вместо закрывающей скобки. Отступ только там, где кнопка есть:
+   кассиру её не показывают, и у него название занимает всю ширину. */
+.product-grid.with-stop-list .product-tile .p-name { padding-right: 34px; }
 .product-tile .p-footer { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
 .product-tile .p-price { font-size: 0.92rem; font-weight: 700; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
 .product-tile .p-stock { font-size: 0.72rem; color: var(--ink-muted); white-space: nowrap; }
@@ -194,6 +213,24 @@ button { cursor: pointer; }
   padding-bottom: env(safe-area-inset-bottom);
 }
 .screen > * { width: 100%; max-width: 520px; }
+/* Корневой экран раздела заканчивается над нижней панелью, а не поверх неё.
+
+   `.screen` придуман для подэкранов: приёмка, экспорт, закрытие смены. Они
+   накрывают всё, и это правильно — у них есть стрелка «назад», ею и выходят.
+   Но тем же классом нарисованы два раздела, у которых стрелки нет нарочно:
+   зал и заказы. В их коде так и написано — «свой раздел внизу экрана, и назад
+   из него некуда», — только панель, на которую эта фраза ссылается, лежала
+   под ними: `inset: 0` против `z-index: 26`. Её не было видно и по ней
+   нельзя было попасть.
+
+   Оба этих раздела — ещё и первый экран смены: кафе открывается залом,
+   оптовику открываются заказы. То есть официант входил в кассу и оставался в
+   зале навсегда: ни назад, ни в кассу, ни в товары — только перезапуск
+   приложения. */
+.screen.screen--tab {
+  bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom));
+  padding-bottom: 0;
+}
 .screen-header {
   display: flex; align-items: center; gap: 12px;
   padding: 16px 14px; border-bottom: 1px solid var(--border); background: var(--surface);

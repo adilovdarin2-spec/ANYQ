@@ -38,10 +38,14 @@ export function FloorPlanScreen({ tables, loading, error, submitting, onRefresh,
   }
 
   return (
-    <div className="screen">
+    <div className="screen screen--tab">
       {/* Без стрелки «назад»: зал — свой раздел внизу экрана, и назад из него
           некуда. Стрелка, ведущая неизвестно откуда, — это вопрос «где я»,
-          заданный кассиру посреди смены. */}
+          заданный кассиру посреди смены.
+
+          Отсюда и `screen--tab`: раз выход только через нижнюю панель, накрывать
+          её нельзя. Обычный `.screen` её накрывал, а зал у кафе — ещё и первый
+          экран смены. */}
       <div className="screen-header">
         <span className="screen-title">{t('floor.title')}</span>
         <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>

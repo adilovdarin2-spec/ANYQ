@@ -33,9 +33,10 @@ export function OrdersScreen({ orders, loading, error, busyOrder, onRefresh, onF
   const resolved = orders.filter((o) => o.status !== 'pending');
 
   return (
-    <div className="screen">
+    <div className="screen screen--tab">
       {/* Без стрелки «назад»: заказы — свой раздел внизу экрана, и назад из
-          них некуда. */}
+          них некуда. Поэтому `screen--tab`: выход один, и закрывать его собой
+          этот экран не должен. У оптовика заказы открываются первыми. */}
       <div className="screen-header">
         <span className="screen-title">{t('orders.title')}</span>
         <button className="icon-btn" onClick={onRefresh} aria-label={t('common.refreshShort')} style={{ marginLeft: 'auto' }}>⟳</button>
