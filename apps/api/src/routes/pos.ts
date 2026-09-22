@@ -8942,9 +8942,46 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
 
   let counterpartyId: string | undefined;
   if (supplierName) {
+    /* Телефон опознаёт поставщика; нет телефона — опознаёт имя.
+       Раньше без телефона поиск не выполнялся вовсе, и каждая поставка заводила
+       нового контрагента. На экране приёмки телефон помечен необязательным, так
+       что магазин, принимающий от «ТОО Береке» каждую неделю без телефона,
+       получал по контрагенту на поставку — а в «Мы должны» долг рассыпался на
+       одинаковые строки без единого признака, по которому их различить. Заплатив
+       по одной, владелец закрывал бы одну поставку из четырёх.
+
+       Правило то же, что у импорта каталога: там товар опознаёт штрихкод, а без
+       штрихкода — имя. Два разных поставщика с одинаковым именем и без телефонов
+       при этом сольются в одного, и это меньшее из двух зол: один, распавшийся
+       на четверых, не чинится ничем, а двоих разводит телефон. */
     let counterparty = supplierPhone
       ? await prisma.counterparty.findFirst({ where: { companyId: req.posCompanyId, phone: supplierPhone, type: 'supplier' } })
       : null;
+
+    if (!counterparty) {
+      // По имени — только среди тех, у кого телефона нет. У кого он есть, тот
+      // уже сказал им, что он другой: одноимённые поставщики с разными
+      // телефонами — это два поставщика, и сливать их нельзя.
+      counterparty = await prisma.counterparty.findFirst({
+        where: {
+          companyId: req.posCompanyId,
+          type: 'supplier',
+          phone: null,
+          name: { equals: supplierName, mode: 'insensitive' },
+        },
+      });
+    }
+
+    if (counterparty && supplierPhone && !counterparty.phone) {
+      // Телефон назвали впервые. Записываем его тому же контрагенту, а не
+      // заводим второго: иначе долг раскалывается ровно в тот день, когда
+      // владелец начал записывать телефоны.
+      counterparty = await prisma.counterparty.update({
+        where: { id: counterparty.id },
+        data: { phone: supplierPhone },
+      });
+    }
+
     if (!counterparty) {
       counterparty = await prisma.counterparty.create({
         data: { companyId: req.posCompanyId!, name: supplierName, phone: supplierPhone || null, type: 'supplier' },

@@ -124,3 +124,77 @@ describe('цены поставщика', () => {
     expect(res.status).toBe(404);
   });
 });
+
+/**
+ * Один поставщик — один контрагент, даже когда телефон не записали.
+ *
+ * Телефон на экране приёмки помечен необязательным, и без него поиск не
+ * выполнялся вовсе: каждая поставка заводила нового контрагента. Магазин,
+ * принимающий от «ТОО Береке» каждую неделю, получал по строке на поставку, а
+ * в «Мы должны» долг рассыпался на одинаковые строки без единого признака,
+ * которым их различить. Заплатив по одной, владелец закрывал одну поставку из
+ * четырёх и считал, что рассчитался.
+ *
+ * Правило взято у импорта каталога, а не придумано: там товар опознаёт
+ * штрихкод, а без штрихкода — имя.
+ */
+describe('поставщик по имени, когда телефона нет', () => {
+  it('две приёмки без телефона — один контрагент', async () => {
+    await receive('ТОО Береке', '', 100);
+    await receive('ТОО Береке', '', 110);
+
+    const suppliers = await prisma.counterparty.findMany({
+      where: { companyId: fx.companyId, type: 'supplier' },
+    });
+    expect(suppliers).toHaveLength(1);
+    expect(suppliers[0].phone, 'телефона не было — и не появился').toBeNull();
+  });
+
+  it('и регистр в имени ничего не меняет', async () => {
+    // «ТОО Береке» и «ТОО БЕРЕКЕ» — один и тот же поставщик, набранный дважды.
+    await receive('ТОО Береке', '', 100);
+    await receive('ТОО БЕРЕКЕ', '', 110);
+    expect(await prisma.counterparty.count({ where: { companyId: fx.companyId, type: 'supplier' } })).toBe(1);
+  });
+
+  it('а долг при этом лежит одной строкой, а не четырьмя', async () => {
+    /* То, ради чего всё: экран «Мы должны» показывает счета, и четыре
+       неразличимые строки по 1 000 ₸ вместо одной на 4 000 ₸ — это не
+       неудобство, а неверная сумма у каждой. */
+    for (const price of [100, 110, 120, 130]) await receive('ТОО Береке', '', price);
+
+    const res = await api(fx.token, 'GET', `/pos/settlements?type=supplier&locationId=${fx.locationId}`);
+    expect(res.status).toBe(200);
+    const named = res.body.accounts.filter((a: { name: string }) => a.name === 'ТОО Береке');
+    expect(named).toHaveLength(1);
+  });
+
+  it('но телефон по-прежнему главнее имени', async () => {
+    // Один и тот же телефон под разными написаниями имени — один контрагент,
+    // и это правило было верным и раньше.
+    await receive('Береке', '+7 701 111 22 33', 100);
+    await receive('ТОО «Береке»', '+7 701 111 22 33', 110);
+    expect(await prisma.counterparty.count({ where: { companyId: fx.companyId, type: 'supplier' } })).toBe(1);
+  });
+
+  it('а телефон, названный позже, достаётся тому же поставщику', async () => {
+    /* Владелец принимал без телефона, потом начал его записывать. Завести на
+       этом месте второго контрагента значило бы расколоть долг ровно в тот
+       день, когда человек стал аккуратнее. */
+    await receive('ТОО Береке', '', 100);
+    await receive('ТОО Береке', '+7 701 111 22 33', 110);
+
+    const suppliers = await prisma.counterparty.findMany({
+      where: { companyId: fx.companyId, type: 'supplier' },
+    });
+    expect(suppliers).toHaveLength(1);
+    expect(suppliers[0].phone, 'телефон записался на него же').toBe('+77011112233');
+  });
+
+  it('и два разных телефона остаются двумя поставщиками', async () => {
+    // Одноимённые, но разные: телефон — то, чем их разводят.
+    await receive('Береке', '+7 701 111 22 33', 100);
+    await receive('Береке', '+7 702 444 55 66', 110);
+    expect(await prisma.counterparty.count({ where: { companyId: fx.companyId, type: 'supplier' } })).toBe(2);
+  });
+});
