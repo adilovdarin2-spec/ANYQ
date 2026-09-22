@@ -79,9 +79,15 @@ button { cursor: pointer; }
   padding: 12px 14px; font-size: 1rem; background: var(--surface); color: var(--ink);
 }
 .search-bar input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* Одной строкой и тихо: подсказка живёт на самом рабочем экране постоянно, и
-   две строки текста здесь стоят дороже, чем помогают. */
-.search-hint { font-size: 0.72rem; color: var(--ink-muted); margin: 6px 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Тихо и, где помещается, одной строкой: подсказка живёт на самом рабочем
+   экране постоянно, и лишняя строка текста здесь стоит дороже, чем помогает.
+
+   Но не обрывом. Было `nowrap` с многоточием, и на 320 пикселях обрывалась
+   уже сама подсказка, а на её месте стоят ещё и промахи скана: «Штрихкод
+   4870… не найден — найдите по названию или заведите товар» — по-казахски
+   семьдесят три знака. Резалось всё после тире, то есть ровно то, что говорит
+   кассиру, что делать дальше. На 375 и шире строка по-прежнему одна. */
+.search-hint { font-size: 0.72rem; color: var(--ink-muted); margin: 6px 2px 0; overflow-wrap: anywhere; }
 /* Промах скана стоит на месте подсказки: тем же размером, но так, чтобы
    глаз зацепился — кассир смотрит на сетку, а не на строку под полем. */
 .search-hint.miss { color: var(--status-overdue); font-weight: 600; }
