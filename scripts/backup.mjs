@@ -46,6 +46,7 @@ import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { copyFile, mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { createGunzip, createGzip } from 'node:zlib';
+import { brokenDumpMessage } from './lib/broken-dump.mjs';
 import { createReadStream, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -485,15 +486,12 @@ async function restore(file, into, { force = false } = {}) {
     );
   } catch (err) {
     // Порча файла — не исключение, а тот самый случай, ради которого всё это
-    // написано: копия, скачанная наполовину, выглядит как копия. zlib говорит
-    // «Z_DATA_ERROR» и показывает стек, в котором не сказано ни что за файл,
-    // ни что делать.
-    if (/Z_DATA_ERROR|incorrect header check|unexpected end of file/i.test(err.message)) {
-      throw new Error(
-        `Файл «${file}» не разворачивается: это не gzip или он скачан не полностью. ` +
-          'Возьмите другую копию — эту считать негодной.',
-      );
-    }
+    // написано: копия, скачанная наполовину, выглядит как копия. Разбор в
+    // `lib/broken-dump.mjs`: он смотрит на код ошибки, а не на её текст —
+    // текстов у zlib несколько, и здесь был список из трёх, мимо которого
+    // прошёл четвёртый.
+    const said = brokenDumpMessage(err, file);
+    if (said) throw new Error(said);
     throw err;
   }
 
