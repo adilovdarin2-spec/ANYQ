@@ -205,12 +205,22 @@ docker exec anyq-minio mkdir -p /data/anyq-backups && docker restart anyq-minio
 ANYQ_BACKUP_S3_ENDPOINT=http://127.0.0.1:9100 ANYQ_BACKUP_S3_BUCKET=anyq-backups ANYQ_BACKUP_S3_REGION=us-east-1 ANYQ_BACKUP_S3_KEY=anyqtest ANYQ_BACKUP_S3_SECRET=anyqtest12345 npm run backup
 ```
 
-## Копии по расписанию, без участия человека
+## Копии по расписанию, без участия человека — не заведено
 
-Копия, которую снимает человек, не снимается в тот день, когда человек забыл.
-Отдельная служба на Railway делает это сама.
+**Сейчас копии снимает человек.** Владелец решил так 15.09.2026, и решение
+записано в [LAUNCH_CHECKLIST](LAUNCH_CHECKLIST.md), пункт 7: копии локальные,
+`npm run backup` с зеркалом на второй диск, бакета нет. Службы `backup` на
+Railway в проекте не существует — проверено 23.09.2026: служб пять, и её среди
+них нет, расписания не задано ни у одной.
 
-Один раз:
+Раздел ниже был написан так, будто служба есть, и это опаснее пустого места:
+в день, когда копия понадобится, её будут искать там, где её нет.
+
+Цена решения названа своими словами: копия, которую снимает человек, не
+снимается в тот день, когда человек забыл. Это принято сознательно — но
+принято про копии вообще, а не про то, что этот раздел врёт.
+
+Если однажды служба понадобится, вот как она заводится. Один раз:
 
 ```bash
 railway add --service backup --repo <owner>/<repo> --branch main   --variables "DATABASE_URL=<тот же, что у api>"   --variables "NIXPACKS_PKGS=postgresql_16"   --variables "ANYQ_BACKUP_S3_ENDPOINT=..."   --variables "ANYQ_BACKUP_S3_BUCKET=..."   --variables "ANYQ_BACKUP_S3_KEY=..."   --variables "ANYQ_BACKUP_S3_SECRET=..."
