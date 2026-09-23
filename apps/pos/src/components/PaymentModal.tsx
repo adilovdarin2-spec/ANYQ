@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import type { PaymentLine, PaymentMethod } from '../types';
@@ -55,10 +55,43 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm, error }:
   const [given, setGiven] = useState('');
   const [splitting, setSplitting] = useState(false);
 
+  /**
+   * Одно нажатие — один чек.
+   *
+   * У кнопки не было ничего: ни `disabled`, ни признака отправки, — а она
+   * единственная на весь продукт, которая берёт деньги. Касса стоит на
+   * прилавке, палец бывает в перчатке, и второе нажатие по не успевшему
+   * перерисоваться экрану — это не редкость, а обычный вечер. Защищало только
+   * то, что React успевает закрыть окно между двумя щелчками; на планшете с
+   * большой корзиной это не гарантия, а надежда.
+   *
+   * Ключ операции здесь не спасает: `completeSale` выдаёт продаже новый
+   * идентификатор на каждый вызов, и для сервера это два разных чека. Значит
+   * гость платит дважды, товар списывается дважды, а кассир объясняет.
+   *
+   * `useRef`, а не состояние: состояние обновляется к следующей отрисовке, и
+   * второй щелчок в том же кадре прочитал бы старое значение — то есть ровно
+   * в том случае, ради которого всё это и написано.
+   */
+  const confirmed = useRef(false);
+
+  /* Не удалось — можно снова. Окно остаётся открытым только когда что-то
+     сорвалось (память кассы переполнена, например), и запертая кнопка тогда
+     означала бы, что деньги взяты, а пробить нечем. */
+  useEffect(() => {
+    if (error) confirmed.current = false;
+  }, [error]);
+
+  function confirmOnce(payments: PaymentLine[]) {
+    if (confirmed.current) return;
+    confirmed.current = true;
+    onConfirm(payments);
+  }
+
   if (splitting) {
     return (
       <div className="screen">
-        <SplitPaymentEditor total={total} onBack={() => setSplitting(false)} onConfirm={onConfirm} />
+        <SplitPaymentEditor total={total} onBack={() => setSplitting(false)} onConfirm={confirmOnce} />
         {error && <div className="login-error" style={{ margin: '12px 16px' }}>{error}</div>}
       </div>
     );
@@ -175,7 +208,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm, error }:
       </div>
       {selected !== null && (
         <div className="screen-footer">
-          <button className="btn btn-primary btn-block" onClick={() => onConfirm([{ method: selected, amount: total }])}>
+          <button className="btn btn-primary btn-block" onClick={() => confirmOnce([{ method: selected, amount: total }])}>
             {selected === 'kaspi'
               ? t('payment.received')
               : selected === 'credit'
