@@ -366,6 +366,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'owner.owedToUs': 'Бізге қарыз',
   'owner.overdue': '{amount} айдан асқан',
   'owner.weOwe': 'Біз қарызбыз',
+  'owner.owedToUsAll': 'Компания бойынша бізге қарыз',
+  'owner.weOweAll': 'Компания бойынша біз қарызбыз',
   'owner.refunds': 'Қайтарулар',
   'owner.discounts': 'Жеңілдіктер',
   'owner.shifts': 'Ауысымдар бойынша касса',

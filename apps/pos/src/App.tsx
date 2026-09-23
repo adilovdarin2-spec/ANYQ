@@ -3934,6 +3934,7 @@ export default function App() {
         <OwnerDashboardScreen
           dashboard={dashboard}
           catalogueSize={session?.products.length}
+          manyLocations={session.locations.length > 1}
           days={dashboardDays}
           loading={dashboardLoading}
           error={dashboardError}

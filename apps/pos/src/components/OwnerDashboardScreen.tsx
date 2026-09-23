@@ -21,6 +21,15 @@ interface Props {
   onShowShiftDocuments: (shiftId: string, cashierName: string) => void;
   /** Opens the returns and discounts behind a flagged cashier. */
   onShowUserDocuments: (userId: string, name: string) => void;
+  /**
+   * У компании больше одной точки.
+   *
+   * Долг принадлежит компании, а не точке: покупатель должен магазину, а не
+   * его полке на Абая. Вся остальная сводка — поточечная, и на экране одной
+   * точки «Должны нам» читается как долг этой точки. У компании с одной точкой
+   * разницы нет, и лишнее слово там только мешает.
+   */
+  manyLocations?: boolean;
 }
 
 const RANGES = [1, 7, 30];
@@ -49,6 +58,7 @@ export function OwnerDashboardScreen({
   onShowReplenishment,
   onShowShiftDocuments,
   onShowUserDocuments,
+  manyLocations,
 }: Props) {
   const { t } = useTranslation();
   return (
@@ -121,7 +131,7 @@ export function OwnerDashboardScreen({
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.debts.receivable.total)}</span>
                   <span className="label">
-                    {t('owner.owedToUs')}
+                    {t(manyLocations ? 'owner.owedToUsAll' : 'owner.owedToUs')}
                     {dashboard.debts.receivable.overdue > 0
                       ? ` · ${t('owner.overdue', { amount: formatMoney(dashboard.debts.receivable.overdue) })}`
                       : ''}
@@ -131,7 +141,7 @@ export function OwnerDashboardScreen({
               {dashboard.debts.payable.total > 0 && (
                 <div className="report-card">
                   <span className="value">{formatMoney(dashboard.debts.payable.total)}</span>
-                  <span className="label">{t('owner.weOwe')}</span>
+                  <span className="label">{t(manyLocations ? 'owner.weOweAll' : 'owner.weOwe')}</span>
                 </div>
               )}
               {dashboard.money.refunds > 0 && (
