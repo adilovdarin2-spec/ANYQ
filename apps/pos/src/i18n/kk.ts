@@ -32,6 +32,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'shift.open.alreadyOpenMore': 'Және тағы {count} — бұл нүктеде сонша ауысым жабылмаған.',
   'shift.open.alreadyOpenWhy': 'Бұл сіздің өткен ауысымыңыз болса — жабыңыз, әйтпесе бір жәшіктің ақшасы екі есепке бөлінеді. Екінші кассада басқа адам жұмыс істесе — өз ауысымыңызды ашыңыз.',
   'shift.open.cash': 'Ауысым басындағы кассадағы қолма-қол ақша',
+  'shift.open.whoIsHere': 'Кассада қазір {name}',
   'shift.open.submit': 'Ауысымды ашу',
   'shift.open.closeMine': 'Бұл менің ауысымым — жабу',
   'shift.open.closeOther': 'Бұл ауысымды жабу',

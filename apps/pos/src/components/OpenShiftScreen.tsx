@@ -12,6 +12,21 @@ interface Props {
   onSwitchLocation: (locationId: string) => void;
   onOpen: (openingCash: number) => void;
   /**
+   * Сменить кассира, не открывая смену.
+   *
+   * До этого выйти можно было только из профиля, а профиль виден только при
+   * открытой смене. То есть после закрытия смены касса оставалась на том, кто
+   * её закрыл, и вечерний кассир не мог начать свою, не зная PIN утреннего.
+   * Единственным выходом было передать кассу под открытой сменой — ровно то,
+   * чего делать нельзя: продажи и ящик достались бы не тому человеку.
+   *
+   * Здесь же и место для этой кнопки: это и есть та минута, когда касса
+   * переходит из рук в руки.
+   */
+  onSwitchCashier: () => void;
+  /** Кто сейчас за кассой — чтобы сменяющий видел, кого он меняет. */
+  cashierName: string;
+  /**
    * Смены, уже открытые на выбранной точке.
    *
    * Две открытые смены на одной точке — это не поломка: на точке может стоять
@@ -52,6 +67,8 @@ export function OpenShiftScreen({
   openShifts,
   canCloseOthers = false,
   onCloseForgotten,
+  onSwitchCashier,
+  cashierName,
 }: Props) {
   const { t } = useTranslation();
   const [cash, setCash] = useState('0');
@@ -142,6 +159,16 @@ export function OpenShiftScreen({
         </div>
         <button className="btn btn-primary btn-block" disabled={!valid} onClick={() => onOpen(value)}>
           {switchingLocation ? t('shift.open.loading') : t('shift.open.submit')}
+        </button>
+      </div>
+
+      {/* Ниже открытия смены и тише её: передача кассы бывает раз в день, а
+          открывают смену каждое утро. Но она здесь, потому что больше нигде
+          её быть не может — профиль виден только при открытой смене. */}
+      <div className="screen-body">
+        <p className="field-hint">{t('shift.open.whoIsHere', { name: cashierName })}</p>
+        <button className="btn btn-ghost btn-block" onClick={onSwitchCashier}>
+          {t('profile.switchCashier')}
         </button>
       </div>
     </div>

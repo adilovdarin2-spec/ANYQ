@@ -3422,6 +3422,8 @@ export default function App() {
           locationError={locationSwitchError}
           onSwitchLocation={handleSwitchLocation}
           onOpen={openShift}
+          onSwitchCashier={handleLogout}
+          cashierName={session.user.name}
           openShifts={openShiftsHere}
           canCloseOthers={isOwnerOrManager}
           onCloseForgotten={(target) => void beginCloseForgotten(target)}

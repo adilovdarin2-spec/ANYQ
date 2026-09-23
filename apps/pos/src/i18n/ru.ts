@@ -33,6 +33,7 @@ export const ru = {
   'shift.open.alreadyOpenMore': 'И ещё {count} — столько смен на этой точке никто не закрыл.',
   'shift.open.alreadyOpenWhy': 'Если это ваша прошлая смена — закройте её, иначе деньги одного ящика разойдутся по двум сверкам. Если за второй кассой работает другой человек — открывайте свою.',
   'shift.open.cash': 'Наличные в кассе на начало смены',
+  'shift.open.whoIsHere': 'За кассой сейчас {name}',
   'shift.open.submit': 'Открыть смену',
   'shift.open.closeMine': 'Это моя смена — закрыть',
   'shift.open.closeOther': 'Закрыть эту смену',
