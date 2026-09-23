@@ -16,7 +16,7 @@
  *    support call.
  */
 
-import { localDateTime } from './kz-time';
+import { localDateTime, localDay } from './kz-time';
 
 export const CSV_SEPARATOR = ';';
 
@@ -63,8 +63,12 @@ export function csvFile(header: string[], rows: unknown[][]): string {
  *
  * Dated, because an owner exports the same thing repeatedly and
  * `products (3).csv` tells them nothing about which is which.
+ *
+ * Дата — местная. Была UTC, и с полуночи до пяти утра по Алматы файл получал
+ * вчерашнее число: владелец, снимающий выгрузку после закрытия, искал бы её
+ * потом не за тот день. Ради этого имя и датируется.
  */
 export function csvFilename(dataset: string, now = new Date()): string {
-  const date = now.toISOString().slice(0, 10);
+  const date = localDay(now);
   return `anyq-${dataset}-${date}.csv`;
 }

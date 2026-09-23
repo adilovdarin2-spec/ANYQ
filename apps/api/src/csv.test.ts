@@ -90,4 +90,13 @@ describe('csvFilename', () => {
   it('carries the date, because an owner exports the same thing repeatedly', () => {
     expect(csvFilename('products', new Date('2026-09-08T10:00:00.000Z'))).toBe('anyq-products-2026-09-08.csv');
   });
+
+  it('и дата местная, а не UTC', () => {
+    /* Полночь с восьмого на девятое в магазине — это 19:00 UTC восьмого.
+       Владелец, снимающий выгрузку после закрытия, получал вчерашнее число и
+       искал бы файл потом не за тот день; ровно ради этого имя и датируется. */
+    expect(csvFilename('sales', new Date('2026-09-08T19:30:00.000Z'))).toBe('anyq-sales-2026-09-09.csv');
+    // И обратная сторона: до местной полуночи день ещё вчерашний.
+    expect(csvFilename('sales', new Date('2026-09-08T18:30:00.000Z'))).toBe('anyq-sales-2026-09-08.csv');
+  });
 });
