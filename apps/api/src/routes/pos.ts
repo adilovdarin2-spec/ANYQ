@@ -7852,12 +7852,24 @@ posRouter.get('/orders', requirePosAuth, async (req: PosAuthedRequest, res) => {
           pickedQuantity: it.pickedQuantity,
           price: it.price,
         })),
-        total: o.items.reduce((sum, it) => sum + it.price * it.quantity, 0),
+        /* Построчно и округляя — тем же правилом, каким считается долг.
+
+           Считалось без округления, и на целых штуках разницы не было. Но
+           витрина принимает дробное количество намеренно: весовой товар
+           заказывают килограммами. Два с половиной килограмма по 1399 давали
+           здесь 3 497,5 ₸, а в долге того же клиента — 3 498: журнал
+           контрагента округляет каждую строку. То есть на счёте, который
+           оптовик выставляет, стояло одно число, а в «должны нам» — другое.
+
+           Это та же беда, ради которой заведён `receiptTotal`: там долг
+           складывался по одним позициям, чек по другим, и заплативший по чеку
+           оставался должен. */
+        total: o.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0),
         /* Сколько уехало в деньгах — по собранному, а не по заказанному.
            Это число оптовик выставляет в счёт, и до сих пор в списке выданных
            заказов стояло заказанное: собрали двадцать пять из тридцати, а
            строка говорила «Выдан» и полную сумму. */
-        shippedTotal: o.items.reduce((sum, it) => sum + it.price * (it.pickedQuantity ?? it.quantity), 0),
+        shippedTotal: o.items.reduce((sum, it) => sum + Math.round(it.price * (it.pickedQuantity ?? it.quantity)), 0),
         // What the customer is short, if the pick has started.
         shortfall: o.items.reduce(
           (sum, it) => sum + Math.max(it.quantity - (it.pickedQuantity ?? it.quantity), 0),

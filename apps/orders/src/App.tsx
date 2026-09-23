@@ -215,7 +215,14 @@ export default function App() {
 
   const categories = ['Все', ...Array.from(new Set(catalog.products.map((p) => p.category || 'Без категории')))];
   const cartQtyByProduct = Object.fromEntries(cart.map((l) => [l.productId, l.qty]));
-  const cartTotal = cart.reduce((sum, l) => sum + l.price * l.qty, 0);
+  /* Построчно и округляя — тем же правилом, каким считает сервер.
+
+     Витрина принимает дробное количество намеренно: весовой товар заказывают
+     килограммами. Без округления два с половиной килограмма по 1399 дают
+     3 497,5 ₸ в корзине, тогда как заказ, долг и счёт у поставщика считаются
+     по округлённой строке. Покупатель нажимает «заказать» на одно число, а
+     получает счёт на другое — и прав будет он. */
+  const cartTotal = cart.reduce((sum, l) => sum + Math.round(l.price * l.qty), 0);
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
 
   return (

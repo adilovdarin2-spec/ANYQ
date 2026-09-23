@@ -59,7 +59,13 @@ describe('сколько уехало в деньгах', () => {
 describe('где это считается', () => {
   it('сервер считает по собранному, а не по заказанному', () => {
     const src = readFileSync(resolve(__dirname, '../../api/src/routes/pos.ts'), 'utf8').replace(/\r\n/g, '\n');
-    expect(src).toContain('shippedTotal: o.items.reduce((sum, it) => sum + it.price * (it.pickedQuantity ?? it.quantity), 0)');
+    /* Округление по строке добавлено 23.09.2026 и проверяется отдельно, в
+       `order-money-agrees`: витрина принимает дробное количество, и без него
+       счёт расходился с долгом на половину тиына. Здесь важно другое — что
+       считается собранное, а не заказанное. */
+    expect(src).toContain(
+      'shippedTotal: o.items.reduce((sum, it) => sum + Math.round(it.price * (it.pickedQuantity ?? it.quantity)), 0)',
+    );
   });
 
   it('а экран показывает недовоз только у выданного', () => {

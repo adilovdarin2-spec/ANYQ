@@ -74,7 +74,7 @@ export function CheckoutSheet({ cart, total, submitting, error, staleLines, onBa
                     {line.qty} {line.unit} × {formatMoney(line.price)}
                   </div>
                 </div>
-                <div className="checkout-line-total">{formatMoney(line.price * line.qty)}</div>
+                <div className="checkout-line-total">{formatMoney(Math.round(line.price * line.qty))}</div>
               </div>
             ))}
             <div className="summary-row total">
