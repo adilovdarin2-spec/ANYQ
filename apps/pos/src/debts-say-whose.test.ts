@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ru } from './i18n/ru';
 import { kk } from './i18n/kk';
+// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * У сети долг подписан как долг компании, а не точки.
@@ -26,7 +28,7 @@ const SCREEN = resolve(__dirname, 'components', 'OwnerDashboardScreen.tsx');
 const APP = resolve(__dirname, 'App.tsx');
 const CABINET = resolve(__dirname, '..', '..', 'orders', 'src', 'components', 'CabinetScreen.tsx');
 
-const read = (path: string) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+const read = (path: string) => withoutComments(readFileSync(path, 'utf8').replace(/\r\n/g, '\n'));
 
 describe('подпись долга', () => {
   it('в кассе выбирается по числу точек', () => {

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Из раздела всегда есть выход.
@@ -26,7 +28,7 @@ const CSS = resolve(__dirname, 'styles', 'global.css');
 const TAB_ROOT_SCREENS = ['FloorPlanScreen.tsx', 'OrdersScreen.tsx'];
 
 function read(file: string): string {
-  return readFileSync(resolve(COMPONENTS, file), 'utf8').replace(/\r\n/g, '\n');
+  return withoutComments(readFileSync(resolve(COMPONENTS, file), 'utf8').replace(/\r\n/g, '\n'));
 }
 
 /** Открывающий `div` экрана со всеми его классами. */
@@ -50,7 +52,7 @@ describe('корневой экран раздела не накрывает н�
   });
 
   it('а сама метка поднимает низ экрана ровно на высоту панели', () => {
-    const css = readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n');
+    const css = withoutComments(readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n'));
     const rule = /\.screen\.screen--tab \{([^}]*)\}/.exec(css);
     expect(rule, 'правило не найдено — метка ничего не делает').toBeTruthy();
     // Панель — это её высота плюс безопасная зона снизу; вычесть надо обе,
@@ -61,7 +63,7 @@ describe('корневой экран раздела не накрывает н�
   it('и высота панели в этом правиле — та же переменная, что у самой панели', () => {
     // Два разных числа разошлись бы при первой же правке, и щель между экраном
     // и панелью никто бы не связал с этим файлом.
-    const css = readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n');
+    const css = withoutComments(readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n'));
     const bar = /\.tab-bar \{([^}]*)\}/.exec(css);
     expect(bar, 'не разобралось правило панели').toBeTruthy();
     expect(bar![1]).toContain('height: var(--tab-bar-h)');

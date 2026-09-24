@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Что обещано на экране переноса, то и происходит.
@@ -29,8 +31,8 @@ export function phrase(dictionary: string, key: string): string | null {
 }
 
 describe('обещание на экране переноса', () => {
-  const ru = readFileSync(RU, 'utf8').replace(/\r\n/g, '\n');
-  const routes = readFileSync(ROUTES, 'utf8').replace(/\r\n/g, '\n');
+  const ru = withoutComments(readFileSync(RU, 'utf8').replace(/\r\n/g, '\n'));
+  const routes = withoutComments(readFileSync(ROUTES, 'utf8').replace(/\r\n/g, '\n'));
   const promise = phrase(ru, 'migrate.whatStays');
 
   it('фраза вообще нашлась', () => {

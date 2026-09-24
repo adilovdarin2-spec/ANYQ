@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Одна сумма заказа на всех трёх экранах, где её видно.
@@ -25,7 +27,7 @@ const POS_ROUTES = resolve(__dirname, 'routes', 'pos.ts');
 const STOREFRONT = resolve(__dirname, '..', '..', 'orders', 'src', 'App.tsx');
 const CHECKOUT = resolve(__dirname, '..', '..', 'orders', 'src', 'components', 'CheckoutSheet.tsx');
 
-const read = (path: string) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+const read = (path: string) => withoutComments(readFileSync(path, 'utf8').replace(/\r\n/g, '\n'));
 
 /** Умножения цены на количество, не обёрнутые в округление. */
 export function unroundedLines(source: string): string[] {

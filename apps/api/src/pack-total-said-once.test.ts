@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { lineTotal } from './packaging';
+// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Сколько стоила строка поставки — сказано в одном месте.
@@ -45,7 +47,7 @@ describe('сумма строки поставки', () => {
   it('а руками эта развилка больше нигде не написана', () => {
     /* Ради чего всё: две копии одной формулы расходятся в тот день, когда
        поправят одну. Появится третье место — пусть зовёт функцию. */
-    const routes = readFileSync(ROUTES, 'utf8').replace(/\r\n/g, '\n');
+    const routes = withoutComments(readFileSync(ROUTES, 'utf8').replace(/\r\n/g, '\n'));
     const копии = [...routes.matchAll(/Math\.round\(it\.packPrice \* it\.packQuantity\)/g)];
     expect(копии.map((m) => m[0]), 'развилка снова написана руками').toEqual([]);
     expect(routes, 'и функция должна зваться').toContain('lineTotal(it)');

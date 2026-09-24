@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pluralizeRu } from './utils';
+// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Строка про учёт говорит то, что проверено.
@@ -21,7 +23,7 @@ import { pluralizeRu } from './utils';
  */
 
 const SCREEN = resolve(__dirname, 'components', 'CabinetScreen.tsx');
-const read = () => readFileSync(SCREEN, 'utf8').replace(/\r\n/g, '\n');
+const read = () => withoutComments(readFileSync(SCREEN, 'utf8')).replace(/\r\n/g, '\n');
 
 describe('строка про учёт', () => {
   it('у нуля проверенных — свой ответ', () => {

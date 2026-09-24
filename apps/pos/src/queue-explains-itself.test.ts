@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ru } from './i18n/ru';
 import { kk } from './i18n/kk';
+// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * У каждого дела в очереди владельца есть строка «почему оно здесь».
@@ -32,8 +34,8 @@ export function taskKinds(source: string): string[] {
 }
 
 describe('очередь владельца объясняет каждое дело', () => {
-  const queue = readFileSync(QUEUE, 'utf8').replace(/\r\n/g, '\n');
-  const component = readFileSync(COMPONENT, 'utf8').replace(/\r\n/g, '\n');
+  const queue = withoutComments(readFileSync(QUEUE, 'utf8').replace(/\r\n/g, '\n'));
+  const component = withoutComments(readFileSync(COMPONENT, 'utf8').replace(/\r\n/g, '\n'));
   const kinds = taskKinds(queue);
 
   it('виды дел вообще разобрались', () => {
