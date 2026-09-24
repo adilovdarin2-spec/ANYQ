@@ -32,6 +32,17 @@ export interface SaleTotals {
   discountAmount: number;
   pointsRedeemed: number;
   pointsEarned: number;
+  /**
+   * What earlier returns against this same sale already handed back.
+   *
+   * Required rather than optional on purpose. The last return settles the
+   * remainder, and a caller that forgets to say what was already given would
+   * settle the whole sale a second time — which is precisely the bug these
+   * fields were added for.
+   */
+  alreadyRefunded: number;
+  pointsAlreadyRestored: number;
+  pointsAlreadyRevoked: number;
 }
 
 export interface RefundBreakdown {
@@ -114,12 +125,27 @@ export function resolveReturn(
 function buildRefund(returnedGross: number, totals: SaleTotals, isFullReturn: boolean): RefundBreakdown {
   const cashCollected = receiptTotal(totals.subtotal, totals.discountAmount, totals.pointsRedeemed);
 
-  // Settling the last of a sale hands back exactly what it took, rather than
-  // the sum of per-line roundings — otherwise a customer returning everything
-  // is a tenge or two short of what they paid, which is indefensible at the
-  // counter even though it is small.
+  // Settling the last of a sale hands back what is still owed on it, rather
+  // than the sum of per-line roundings — otherwise a customer returning
+  // everything is a tenge or two short of what they paid, which is
+  // indefensible at the counter even though it is small.
+  //
+  // What is *still owed*, not what the sale took: until 24.09.2026 this handed
+  // back the whole receipt again. A 1000₸ sale of two lines, returned one line
+  // at a time, paid out 500 and then 1000 — the second return counted itself
+  // the last one and settled a sale that was already half settled. Both
+  // receipts looked right; the shop was 500 short with nothing to point at.
+  //
+  // Clamped at zero because the subtraction must never turn a refund into a
+  // charge: a manually corrected return document could put more on the sale's
+  // history than the sale collected, and taking money off a customer at the
+  // counter is a worse failure than giving nothing back.
   if (isFullReturn) {
-    return { amount: cashCollected, pointsRestored: totals.pointsRedeemed, pointsRevoked: totals.pointsEarned };
+    return {
+      amount: Math.max(0, cashCollected - totals.alreadyRefunded),
+      pointsRestored: Math.max(0, totals.pointsRedeemed - totals.pointsAlreadyRestored),
+      pointsRevoked: Math.max(0, totals.pointsEarned - totals.pointsAlreadyRevoked),
+    };
   }
   if (totals.subtotal <= 0) {
     return { amount: 0, pointsRestored: 0, pointsRevoked: 0 };

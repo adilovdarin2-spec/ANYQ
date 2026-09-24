@@ -7,7 +7,7 @@ const sold: SoldLine[] = [
   { documentItemId: 'i1', productId: 'water', batchId: null, quantity: 2, price: 500, alreadyReturned: 0 },
   { documentItemId: 'i2', productId: 'bread', batchId: 'b7', quantity: 1, price: 300, alreadyReturned: 0 },
 ];
-const paidInFull: SaleTotals = { subtotal: 1300, discountAmount: 0, pointsRedeemed: 0, pointsEarned: 65 };
+const paidInFull: SaleTotals = { subtotal: 1300, discountAmount: 0, pointsRedeemed: 0, pointsEarned: 65, alreadyRefunded: 0, pointsAlreadyRestored: 0, pointsAlreadyRevoked: 0 };
 
 describe('resolveReturn', () => {
   it('refunds one line at the price it was sold at', () => {
@@ -31,7 +31,7 @@ describe('resolveReturn', () => {
     // 1300 list, 130 off, 1170 collected. Returning the 300 bread is 3/13 of
     // the sale, so 270 comes back — refunding 300 would turn the discount
     // into a small profit on every return.
-    const discounted: SaleTotals = { subtotal: 1300, discountAmount: 130, pointsRedeemed: 0, pointsEarned: 58 };
+    const discounted: SaleTotals = { subtotal: 1300, discountAmount: 130, pointsRedeemed: 0, pointsEarned: 58, alreadyRefunded: 0, pointsAlreadyRestored: 0, pointsAlreadyRevoked: 0 };
     const result = resolveReturn(sold, [{ documentItemId: 'i2', quantity: 1 }], discounted);
     expect(result.status === 'ok' && result.refund.amount).toBe(270);
   });
@@ -39,7 +39,7 @@ describe('resolveReturn', () => {
   it('gives back points as points and money as money', () => {
     // 1300 list, 300 of it settled in points, 1000 in cash. Returning 3/13
     // hands back 231 in cash and about 69 points, not 300 in cash.
-    const mixed: SaleTotals = { subtotal: 1300, discountAmount: 0, pointsRedeemed: 300, pointsEarned: 50 };
+    const mixed: SaleTotals = { subtotal: 1300, discountAmount: 0, pointsRedeemed: 300, pointsEarned: 50, alreadyRefunded: 0, pointsAlreadyRestored: 0, pointsAlreadyRevoked: 0 };
     const result = resolveReturn(sold, [{ documentItemId: 'i2', quantity: 1 }], mixed);
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') return;
@@ -55,7 +55,7 @@ describe('resolveReturn', () => {
   it('hands back exactly what a fully returned sale collected, not the sum of roundings', () => {
     // Per-line proportions would leave the customer a tenge or two short of
     // what they actually paid, which is indefensible at the counter.
-    const awkward: SaleTotals = { subtotal: 1300, discountAmount: 111, pointsRedeemed: 77, pointsEarned: 55 };
+    const awkward: SaleTotals = { subtotal: 1300, discountAmount: 111, pointsRedeemed: 77, pointsEarned: 55, alreadyRefunded: 0, pointsAlreadyRestored: 0, pointsAlreadyRevoked: 0 };
     const result = resolveReturn(
       sold,
       [
@@ -119,7 +119,7 @@ describe('resolveReturn', () => {
   });
 
   it('refunds nothing on a sale that collected nothing, instead of dividing by zero', () => {
-    const free: SaleTotals = { subtotal: 0, discountAmount: 0, pointsRedeemed: 0, pointsEarned: 0 };
+    const free: SaleTotals = { subtotal: 0, discountAmount: 0, pointsRedeemed: 0, pointsEarned: 0, alreadyRefunded: 0, pointsAlreadyRestored: 0, pointsAlreadyRevoked: 0 };
     const giveaway: SoldLine[] = [
       { documentItemId: 'i1', productId: 'water', batchId: null, quantity: 2, price: 0, alreadyReturned: 0 },
     ];

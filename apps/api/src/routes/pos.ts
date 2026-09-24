@@ -1424,6 +1424,22 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
     alreadyReturned: returnedByItemId.get(it.id) ?? 0,
   }));
 
+  // Что по этому чеку уже отдали раньше.
+  //
+  // Возврат, закрывающий чек, отдаёт остаток — а остаток не посчитать, не зная
+  // отданного. Считается по подтверждённым возвратам: черновик денег из ящика
+  // не вынимал. На возвратном документе `pointsRedeemed` — это восстановленные
+  // баллы, а `pointsEarned` — снятые; так их записывает этот же маршрут ниже.
+  const priorReturns = await prisma.document.aggregate({
+    where: {
+      companyId: req.posCompanyId,
+      type: 'return',
+      status: 'confirmed',
+      originalDocumentId: sale.id,
+    },
+    _sum: { refundAmount: true, pointsRedeemed: true, pointsEarned: true },
+  });
+
   const subtotal = sale.items.reduce((sum, it) => sum + Math.round(it.price * it.quantity), 0);
   const { discountAmount } = computeDiscount(subtotal, saleDiscount(sale));
   const resolution = resolveReturn(sold, requested, {
@@ -1431,6 +1447,9 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
     discountAmount,
     pointsRedeemed: sale.pointsRedeemed ?? 0,
     pointsEarned: sale.pointsEarned ?? 0,
+    alreadyRefunded: priorReturns._sum.refundAmount ?? 0,
+    pointsAlreadyRestored: priorReturns._sum.pointsRedeemed ?? 0,
+    pointsAlreadyRevoked: priorReturns._sum.pointsEarned ?? 0,
   });
   if (resolution.status !== 'ok') {
     res.status(resolution.status === 'unknown' ? 404 : 400).json({ error: returnErrorMessage(resolution) });
