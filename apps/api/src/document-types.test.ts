@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * У каждого документа, который пишет сервер, есть русское название.
@@ -50,14 +51,14 @@ function typesWrittenByRoutes(): string[] {
   const found = new Set<string>();
   for (const entry of readdirSync(ROUTES)) {
     if (!entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
-    const source = readFileSync(join(ROUTES, entry), 'utf8');
+    const source = withoutComments(readFileSync(join(ROUTES, entry), 'utf8'));
     for (const match of source.matchAll(/\btype: '([a-z_]+)'/g)) found.add(match[1]);
   }
   return [...found].filter((type) => !NOT_A_DOCUMENT.has(type)).sort();
 }
 
 function labelledTypes(): string[] {
-  const source = readFileSync(resolve(__dirname, 'routes/pos.ts'), 'utf8');
+  const source = withoutComments(readFileSync(resolve(__dirname, 'routes/pos.ts'), 'utf8'));
   const block = /const DOCUMENT_TYPE_LABELS: Record<string, string> = \{([\s\S]*?)\n\};/.exec(source)?.[1] ?? '';
   return [...block.matchAll(/^\s*'?([a-z_]+)'?:/gm)].map((m) => m[1]);
 }

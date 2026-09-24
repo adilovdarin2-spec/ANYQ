@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Хук не должен стоять после раннего возврата.
@@ -50,7 +51,7 @@ function componentFiles(): string[] {
 }
 
 function violations(file: string): Нарушение[] {
-  const lines = readFileSync(file, 'utf8').split('\n');
+  const lines = withoutComments(readFileSync(file, 'utf8')).split('\n');
   const name = file.split(/[\\/]/).pop()!;
   const found: Нарушение[] = [];
 
@@ -108,7 +109,7 @@ describe('порядок хуков', () => {
     expect(files.length).toBeGreaterThan(20);
     expect(files.some((f) => f.endsWith('App.tsx'))).toBe(true);
 
-    const app = readFileSync(files.find((f) => f.endsWith('App.tsx'))!, 'utf8');
+    const app = withoutComments(readFileSync(files.find((f) => f.endsWith('App.tsx'))!, 'utf8'));
     expect(app.split('\n').some((l) => COMPONENT_START.test(l))).toBe(true);
   });
 });

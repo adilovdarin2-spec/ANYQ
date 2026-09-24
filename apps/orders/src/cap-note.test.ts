@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { capNote } from './cap-note';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Витрина не меняет введённое число молча.
@@ -16,7 +17,7 @@ import { capNote } from './cap-note';
  * приходит не та машина.
  */
 
-const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n');
+const read = (rel: string) => withoutComments(readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n'));
 
 describe('подпись про остаток', () => {
   it('называет и сколько, и в чём', () => {

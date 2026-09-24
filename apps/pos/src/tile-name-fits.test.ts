@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Название на плитке читается целиком или обрывается честно — но не наполовину
@@ -30,8 +31,8 @@ export function rule(css: string, selector: string): string | null {
 }
 
 describe('плитка товара выдерживает длинное название', () => {
-  const css = readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n');
-  const grid = readFileSync(GRID, 'utf8').replace(/\r\n/g, '\n');
+  const css = withoutComments(readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n'), { lineComments: false });
+  const grid = withoutComments(readFileSync(GRID, 'utf8').replace(/\r\n/g, '\n'));
 
   it('правила вообще нашлись', () => {
     // Иначе первое, что докажет этот файл, — что он находит что угодно.

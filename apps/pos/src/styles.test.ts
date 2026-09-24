@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * У каждого класса в разметке есть правило в таблице стилей.
@@ -47,7 +48,7 @@ function cssClasses(app: string): Set<string> {
   const found = new Set<string>();
   for (const entry of readdirSync(dir)) {
     if (!entry.endsWith('.css')) continue;
-    const css = readFileSync(join(dir, entry), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = withoutComments(readFileSync(join(dir, entry), 'utf8'), { lineComments: false });
     for (const match of css.matchAll(/\.([a-z][\w-]*)/gi)) found.add(match[1]);
   }
   return found;
@@ -63,7 +64,7 @@ function cssClasses(app: string): Set<string> {
 function jsxClasses(app: string): Map<string, string> {
   const where = new Map<string, string>();
   for (const file of walk(resolve(ROOT, `apps/${app}/src`))) {
-    const src = readFileSync(file, 'utf8');
+    const src = withoutComments(readFileSync(file, 'utf8'));
     for (const match of src.matchAll(/className=(?:"([^"]*)"|\{([\s\S]*?)\})/g)) {
       const literal = match[1];
       const expression = match[2];
@@ -139,9 +140,10 @@ describe('нижние вкладки делятся поровну', () => {
   // Без комментариев: правило объясняет себя словами, и в объяснении названо
   // то же свойство. Первая версия этой охраны прошла проверку на поломку
   // именно так — прочитала `min-width: 0` в комментарии к удалённой строке.
-  const css = readFileSync(resolve(__dirname, 'styles', 'global.css'), 'utf8')
-    .replace(/\r\n/g, '\n')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const css = withoutComments(
+    readFileSync(resolve(__dirname, 'styles', 'global.css'), 'utf8').replace(/\r\n/g, '\n'),
+    { lineComments: false },
+  );
 
   // С начала строки: `.tab-bar-item {` встречается и внутри `.pos-shell
   // .tab-bar-item {` в медиазапросе, и без этого тест читал бы правило

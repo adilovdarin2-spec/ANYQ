@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { kk } from './kk';
 import { ru } from './ru';
+import { withoutComments } from '../../../../scripts/lib/source-text.mjs';
 
 /**
  * Список строк на проверку носителю не должен врать.
@@ -43,7 +44,7 @@ function quotes(cited: string, actual: string): boolean {
 }
 
 describe('список для проверки носителем', () => {
-  const markdown = readFileSync(CHECKLIST, 'utf8').replace(/\r\n/g, '\n');
+  const markdown = withoutComments(readFileSync(CHECKLIST, 'utf8')).replace(/\r\n/g, '\n');
   const rows = reviewRows(markdown);
 
   it('таблица вообще нашлась', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Отгружается то, что сборщик видит на экране.
@@ -21,7 +22,7 @@ import { resolve } from 'node:path';
  * в журнал.
  */
 
-const src = readFileSync(resolve(__dirname, 'components/PickOrderScreen.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const src = withoutComments(readFileSync(resolve(__dirname, 'components/PickOrderScreen.tsx'), 'utf8').replace(/\r\n/g, '\n'));
 
 /** Тело функции по её началу — со счётом фигурных скобок. */
 function functionBody(source: string, signature: string): string {

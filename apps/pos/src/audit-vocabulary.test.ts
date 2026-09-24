@@ -5,6 +5,7 @@ import { describeAuditEntry } from './audit';
 import { format, translate } from './i18n';
 import type { Language, PhraseKey } from './i18n';
 import type { AuditEntry } from './types';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /** Переводчик, который экраны получают из хука, — без хука. */
 const say = (language: Language) => (key: PhraseKey, vars?: Record<string, string | number>) => {
@@ -54,8 +55,8 @@ export function knownKeys(source: string, mapName: string): string[] {
 }
 
 describe('словарь журнала изменений', () => {
-  const api = readFileSync(API_AUDIT, 'utf8').replace(/\r\n/g, '\n');
-  const pos = readFileSync(POS_AUDIT, 'utf8').replace(/\r\n/g, '\n');
+  const api = withoutComments(readFileSync(API_AUDIT, 'utf8')).replace(/\r\n/g, '\n');
+  const pos = withoutComments(readFileSync(POS_AUDIT, 'utf8')).replace(/\r\n/g, '\n');
   const watched = watchedFields(api);
   const fields = knownKeys(pos, 'FIELD_PHRASES');
   const entities = knownKeys(pos, 'ENTITY_PHRASES');

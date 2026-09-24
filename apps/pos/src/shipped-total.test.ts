@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { shipped } from './components/OrdersScreen';
 import type { Order } from './types';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Выданный заказ показывается по тому, что уехало.
@@ -58,7 +59,7 @@ describe('сколько уехало в деньгах', () => {
 
 describe('где это считается', () => {
   it('сервер считает по собранному, а не по заказанному', () => {
-    const src = readFileSync(resolve(__dirname, '../../api/src/routes/pos.ts'), 'utf8').replace(/\r\n/g, '\n');
+    const src = withoutComments(readFileSync(resolve(__dirname, '../../api/src/routes/pos.ts'), 'utf8').replace(/\r\n/g, '\n'));
     /* Округление по строке добавлено 23.09.2026 и проверяется отдельно, в
        `order-money-agrees`: витрина принимает дробное количество, и без него
        счёт расходился с долгом на половину тиына. Здесь важно другое — что
@@ -71,7 +72,7 @@ describe('где это считается', () => {
   it('а экран показывает недовоз только у выданного', () => {
     /* У отклонённого заказа не уехало ничего, и заказанная сумма — единственное,
        что о нём можно сказать: от чего отказались. */
-    const src = readFileSync(resolve(__dirname, 'components/OrdersScreen.tsx'), 'utf8').replace(/\r\n/g, '\n');
+    const src = withoutComments(readFileSync(resolve(__dirname, 'components/OrdersScreen.tsx'), 'utf8').replace(/\r\n/g, '\n'));
     expect(src).toContain("o.status === 'confirmed' ? shipped(o) : o.total");
     expect(src).toContain("o.status === 'confirmed' && shipped(o) < o.total");
   });

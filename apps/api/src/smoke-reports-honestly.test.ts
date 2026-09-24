@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Дымовой тест обязан доходить до конца и не красить в красное чужой тариф.
@@ -22,7 +23,7 @@ import { resolve } from 'node:path';
  * хуже отсутствия цвета: рядом стоят настоящие отказы.
  */
 
-const smoke = readFileSync(resolve(__dirname, '../../../scripts/smoke.mjs'), 'utf8').replace(/\r\n/g, '\n');
+const smoke = withoutComments(readFileSync(resolve(__dirname, '../../../scripts/smoke.mjs'), 'utf8').replace(/\r\n/g, '\n'));
 
 describe('дымовой тест доходит до конца', () => {
   it('выжимка значения не бросает на отсутствующем поле', () => {

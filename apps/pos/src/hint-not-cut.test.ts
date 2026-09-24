@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ru } from './i18n/ru';
 import { kk } from './i18n/kk';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Подсказка под строкой поиска не обрывается на полуслове.
@@ -34,8 +35,8 @@ export function noticeKeys(app: string): string[] {
 }
 
 describe('подсказка под поиском', () => {
-  const css = readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n');
-  const app = readFileSync(APP, 'utf8').replace(/\r\n/g, '\n');
+  const css = withoutComments(readFileSync(CSS, 'utf8').replace(/\r\n/g, '\n'), { lineComments: false });
+  const app = withoutComments(readFileSync(APP, 'utf8').replace(/\r\n/g, '\n'));
   const hint = rule(css, '.search-hint');
 
   it('правило вообще нашлось', () => {

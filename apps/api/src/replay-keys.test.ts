@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Маршрут, двигающий остаток, обязан переживать повтор.
@@ -20,7 +21,7 @@ import { resolve } from 'node:path';
  * Не годится только третье: ничего. Поэтому список здесь перечисляет себя сам.
  */
 
-const routes = readFileSync(resolve(__dirname, 'routes', 'pos.ts'), 'utf8').replace(/\r\n/g, '\n');
+const routes = withoutComments(readFileSync(resolve(__dirname, 'routes', 'pos.ts'), 'utf8')).replace(/\r\n/g, '\n');
 
 interface Route {
   method: string;

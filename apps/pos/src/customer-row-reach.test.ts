@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * «Кому продаём» не спрятано за розницу.
@@ -17,7 +18,7 @@ import { resolve } from 'node:path';
  * склад снова онемеет. Поэтому проверяется не поведение, а место.
  */
 
-const read = (name: string) => readFileSync(resolve(__dirname, 'components', name), 'utf8').replace(/\r\n/g, '\n');
+const read = (name: string) => withoutComments(readFileSync(resolve(__dirname, 'components', name), 'utf8')).replace(/\r\n/g, '\n');
 
 const КОРЗИНЫ = ['CartPanel.tsx', 'CartSheet.tsx'];
 

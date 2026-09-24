@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { STOCK_MOVEMENT_PHRASES } from './types';
 import { ru } from './i18n/ru';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * У кассы есть слово для каждой причины движения, которую пишет сервер.
@@ -20,7 +21,7 @@ import { ru } from './i18n/ru';
  */
 
 const серверныеПричины = (): string[] => {
-  const src = readFileSync(resolve(__dirname, '../../api/src/stock.ts'), 'utf8');
+  const src = withoutComments(readFileSync(resolve(__dirname, '../../api/src/stock.ts'), 'utf8'));
   const union = /export type StockMovementReason =([\s\S]*?);/.exec(src)?.[1] ?? '';
   const found = [...union.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
   // Страховка на разбор: если объявление переименуют, `found` станет пустым и

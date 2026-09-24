@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Цикл досылки не должен зависеть от того, доехал ли прошлый запрос.
@@ -17,7 +18,7 @@ import { resolve } from 'node:path';
  * книги. Кассиру нужна правда о том, уходят ли его продажи.
  */
 
-const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n');
+const read = (rel: string) => withoutComments(readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n'));
 
 describe('досылка и полоска спрашивают разное', () => {
   it('циклы досылки спрашивают про сеть, а не про доехавший запрос', () => {

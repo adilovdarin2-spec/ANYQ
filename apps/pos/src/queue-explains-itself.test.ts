@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ru } from './i18n/ru';
 import { kk } from './i18n/kk';
-// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
 import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Сдвинулся остаток — сетка продажи об этом знает.
@@ -20,7 +21,7 @@ import { resolve } from 'node:path';
  * остаток, упрётся в этот тест, пока не скажет, что делает с каталогом.
  */
 
-const app = readFileSync(resolve(__dirname, 'App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const app = withoutComments(readFileSync(resolve(__dirname, 'App.tsx'), 'utf8')).replace(/\r\n/g, '\n');
 
 /** Тело функции: сначала закрываем список параметров, потом берём блок. */
 export function handlerBody(source: string, openParen: number): string {

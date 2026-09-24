@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Панель платформы знает о чужом магазине только то, за что мы берём деньги.
@@ -22,7 +23,7 @@ import { describe, expect, it } from 'vitest';
  * может узнать и записать о чужих людях», и ответить на него точнее, чем
  * посмотрев, нельзя. Живое поведение — в `integration/admin-sees-less.test.ts`.
  */
-const SOURCE = readFileSync(resolve(__dirname, 'routes/companies.ts'), 'utf8');
+const SOURCE = withoutComments(readFileSync(resolve(__dirname, 'routes/companies.ts'), 'utf8'));
 
 function routeDeclarations(): { method: string; path: string }[] {
   return [...SOURCE.matchAll(/companiesRouter\.(get|post|patch|put|delete)\(\s*'([^']+)'/g)].map((m) => ({

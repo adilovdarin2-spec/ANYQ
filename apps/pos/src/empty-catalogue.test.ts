@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Пустой магазин и пустой поиск — разные новости.
@@ -16,7 +17,7 @@ import { resolve } from 'node:path';
  * одному «ничего не найдено» можно ровно одной правкой.
  */
 
-const read = (path: string) => readFileSync(resolve(__dirname, path), 'utf8').replace(/\r\n/g, '\n');
+const read = (path: string) => withoutComments(readFileSync(resolve(__dirname, path), 'utf8').replace(/\r\n/g, '\n'));
 
 describe('пустой каталог', () => {
   it('сетка получает признак, а не догадывается по длине списка', () => {

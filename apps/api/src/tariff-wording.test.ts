@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Отказ по тарифу называет то, чего нет.
@@ -15,7 +16,7 @@ import { resolve } from 'node:path';
  * обслуживать два разных модуля, потому что она называет ровно один.
  */
 
-const src = readFileSync(resolve(__dirname, 'routes/pos.ts'), 'utf8').replace(/\r\n/g, '\n');
+const src = withoutComments(readFileSync(resolve(__dirname, 'routes/pos.ts'), 'utf8')).replace(/\r\n/g, '\n');
 
 /** Пары «проверенный модуль → фраза отказа», стоящие рядом в коде. */
 export function tariffRefusals(source: string): { module: string; message: string }[] {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, relative } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Ключ фразы не должен попадать на экран вместо самой фразы.
@@ -73,7 +74,7 @@ export function literalLeaks(source: string, keys: Set<string>): Leak[] {
 }
 
 describe('ключи фраз не попадают на экран', () => {
-  const keys = phraseKeys(readFileSync(DICTIONARY, 'utf8').replace(/\r\n/g, '\n'));
+  const keys = phraseKeys(withoutComments(readFileSync(DICTIONARY, 'utf8')).replace(/\r\n/g, '\n'));
   const files = sourceFiles(resolve(SRC, 'pos', 'src')).concat(sourceFiles(resolve(SRC, 'orders', 'src')));
 
   it('словарь и файлы вообще нашлись', () => {
@@ -85,7 +86,7 @@ describe('ключи фраз не попадают на экран', () => {
   it('ни один словарь ключей не отдан в разметку без t', () => {
     const leaks: string[] = [];
     for (const file of files) {
-      const source = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+      const source = withoutComments(readFileSync(file, 'utf8')).replace(/\r\n/g, '\n');
       for (const leak of mapLeaks(source, keys)) {
         leaks.push(`${relative(SRC, file)}:${leak.line} ${leak.what}`);
       }
@@ -96,7 +97,7 @@ describe('ключи фраз не попадают на экран', () => {
   it('и ключ нигде не написан в разметке словом', () => {
     const leaks: string[] = [];
     for (const file of files) {
-      const source = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+      const source = withoutComments(readFileSync(file, 'utf8')).replace(/\r\n/g, '\n');
       for (const leak of literalLeaks(source, keys)) {
         leaks.push(`${relative(SRC, file)}:${leak.line} ${leak.what}`);
       }

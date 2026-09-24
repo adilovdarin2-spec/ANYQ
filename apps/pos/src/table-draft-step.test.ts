@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { stepDraft } from './components/TableOrderScreen';
 import type { DraftItem } from './components/TableOrderScreen';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Лишнее нажатие снимается, и снимается вместе с кодом.
@@ -74,7 +75,7 @@ describe('шаг количества в черновике стола', () => {
     /* Функция сама прибавить может — её зовут и обычные позиции. Запрет живёт в
        разметке, и проверять его надо там же, иначе он однажды исчезнет вместе с
        условием. */
-    const source = readFileSync(SCREEN, 'utf8').replace(/\r\n/g, '\n');
+    const source = withoutComments(readFileSync(SCREEN, 'utf8').replace(/\r\n/g, '\n'));
     expect(source).toContain('{d.codes.length === 0 && (');
     const плюс = source.indexOf("aria-label={t('cart.more')}");
     const условие = source.indexOf('{d.codes.length === 0 && (');

@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-// @ts-expect-error — общие помощники написаны на .mjs и типов не имеют.
 import { withoutComments } from './lib/source-text.mjs';
 
 /**
@@ -45,6 +44,15 @@ describe('исходник без комментариев', () => {
     const out = withoutComments(src);
     expect(out).toContain("он сказал");
     expect(out).not.toContain('хвост');
+  });
+
+  it('а для CSS строчные комментарии выключаются', () => {
+    /* В CSS `//` не комментарий, а часть адреса. Съесть остаток строки значило
+       бы уронить охрану вёрстки на исправном файле. */
+    const css = '@import url(https://fonts.example/x.css); .a { color: red; } /* прочь */';
+    const out = withoutComments(css, { lineComments: false });
+    expect(out).toContain('https://fonts.example/x.css');
+    expect(out).not.toContain('прочь');
   });
 
   it('и делитель не путает с комментарием', () => {

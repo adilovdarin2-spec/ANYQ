@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Поле, которое сервер пишет в товар, обязано быть в карточке товара.
@@ -56,7 +57,7 @@ function objectKeys(source: string, from: string): string[] {
   return keys;
 }
 
-const read = (path: string) => readFileSync(resolve(__dirname, path), 'utf8').replace(/\r\n/g, '\n');
+const read = (path: string) => withoutComments(readFileSync(resolve(__dirname, path), 'utf8')).replace(/\r\n/g, '\n');
 
 /** Что маршрут правки товара записывает в базу. */
 function serverFields(): string[] {

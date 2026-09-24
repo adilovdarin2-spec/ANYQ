@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { visibleOpenShifts } from './components/OpenShiftScreen';
 import type { OpenShiftInfo } from './api';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Забытую смену должно быть чем закрыть.
@@ -20,7 +21,7 @@ import type { OpenShiftInfo } from './api';
  * недостачами ниже.
  */
 
-const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n');
+const read = (rel: string) => withoutComments(readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n'));
 
 const shift = (id: string, mine: boolean): OpenShiftInfo => ({
   id,

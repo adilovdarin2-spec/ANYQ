@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Приставка номера документа живёт в SQL, а список типов — в TypeScript.
@@ -28,7 +29,7 @@ function numberingSql(): string {
   const dir = join(REPO_ROOT, 'packages/db/prisma/migrations');
   const folder = readdirSync(dir).find((name) => name.endsWith('_document_numbers'));
   if (!folder) throw new Error('Миграция с нумерацией документов не найдена');
-  return readFileSync(join(dir, folder, 'migration.sql'), 'utf8');
+  return withoutComments(readFileSync(join(dir, folder, 'migration.sql'), 'utf8'));
 }
 
 function migrationSql(): string {
@@ -36,16 +37,16 @@ function migrationSql(): string {
   const folders = readdirSync(dir)
     .filter((name) => {
       const file = join(dir, name, 'migration.sql');
-      return existsSync(file) && readFileSync(file, 'utf8').includes('FUNCTION document_number_prefix');
+      return existsSync(file) && withoutComments(readFileSync(file, 'utf8')).includes('FUNCTION document_number_prefix');
     })
     .sort();
   const folder = folders[folders.length - 1];
   if (!folder) throw new Error('Миграция с нумерацией документов не найдена');
-  return readFileSync(join(dir, folder, 'migration.sql'), 'utf8');
+  return withoutComments(readFileSync(join(dir, folder, 'migration.sql'), 'utf8'));
 }
 
 function typesInLabels(): string[] {
-  const source = readFileSync(join(REPO_ROOT, 'apps/api/src/routes/pos.ts'), 'utf8');
+  const source = withoutComments(readFileSync(join(REPO_ROOT, 'apps/api/src/routes/pos.ts'), 'utf8'));
   const block = source.match(/const DOCUMENT_TYPE_LABELS: Record<string, string> = \{([\s\S]*?)\n\};/);
   if (!block) throw new Error('DOCUMENT_TYPE_LABELS не найден — тест устарел вместе с кодом');
   return [...block[1].matchAll(/^\s*([a-z_]+):/gm)].map((m) => m[1]);

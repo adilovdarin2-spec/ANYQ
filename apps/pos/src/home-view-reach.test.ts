@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Первый экран смены выбирается в одном месте.
@@ -14,7 +15,7 @@ import { resolve } from 'node:path';
  * `homeViewFor`, а не назначается строкой.
  */
 
-const app = readFileSync(resolve(__dirname, 'App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const app = withoutComments(readFileSync(resolve(__dirname, 'App.tsx'), 'utf8')).replace(/\r\n/g, '\n');
 
 /** Первый `setView(...)` после указанного места. */
 export function следующийЭкран(source: string, after: string): string | null {

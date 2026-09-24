@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Набранное человеком не выбрасывается, пока сервер не ответил.
@@ -21,7 +22,7 @@ import { resolve } from 'node:path';
  * запрос, который доехал и потерял ответ, лёг бы гостю в счёт дважды.
  */
 
-const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n');
+const read = (rel: string) => withoutComments(readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n'));
 
 /**
  * Тело функции по её началу: сначала закрываем список параметров, потом блок.

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { receiptTotal } from './receipt-total';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Сумма чека считается в одном месте, и это проверяется чтением исходника.
@@ -62,7 +63,7 @@ const NOT_A_RECEIPT_TOTAL = 'netAfterDiscount';
 function offenders(): string[] {
   const found: string[] = [];
   for (const file of FILES) {
-    const source = readFileSync(join(ROOT, file), 'utf8');
+    const source = withoutComments(readFileSync(join(ROOT, file), 'utf8'));
     for (const line of source.split('\n')) {
       const trimmed = line.trim();
       if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
@@ -106,7 +107,7 @@ describe('сумма чека', () => {
     SUBTRACTS_DISCOUNT.lastIndex = 0;
     // И что файлы действительно читаются.
     for (const file of FILES) {
-      expect(readFileSync(join(ROOT, file), 'utf8').length, file).toBeGreaterThan(500);
+      expect(withoutComments(readFileSync(join(ROOT, file), 'utf8')).length, file).toBeGreaterThan(500);
     }
     // И что исключение — исключение, а не то, что гасит проверку целиком: с
     // другим именем та же строка обязана считаться нарушением.

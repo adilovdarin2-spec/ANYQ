@@ -22,9 +22,13 @@
 
 /**
  * @param {string} source
+ * @param {{ lineComments?: boolean }} [options] `lineComments: false` — для CSS:
+ *   строчных комментариев там не бывает, а `//` встречается внутри `url(https://…)`,
+ *   и съесть из-за него остаток строки значило бы уронить охрану на исправном файле.
  * @returns {string} тот же текст, где комментарии заменены пробелами
  */
-export function withoutComments(source) {
+export function withoutComments(source, options = {}) {
+  const lineComments = options.lineComments !== false;
   let out = '';
   let i = 0;
   /** @type {null | '"' | "'" | '`'} */
@@ -52,7 +56,7 @@ export function withoutComments(source) {
       continue;
     }
 
-    if (ch === '/' && next === '/') {
+    if (lineComments && ch === '/' && next === '/') {
       while (i < source.length && source[i] !== '\n') i += 1;
       continue;
     }

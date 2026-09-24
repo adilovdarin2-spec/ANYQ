@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Заведённый товар виден кассе сразу.
@@ -19,7 +20,7 @@ import { resolve } from 'node:path';
  * это держит, и убрать его можно одной строкой.
  */
 
-const app = readFileSync(resolve(__dirname, 'App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const app = withoutComments(readFileSync(resolve(__dirname, 'App.tsx'), 'utf8').replace(/\r\n/g, '\n'));
 
 /** Тело функции по её началу — со счётом фигурных скобок. */
 export function functionBody(source: string, signature: string): string {

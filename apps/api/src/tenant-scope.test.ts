@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * The contract's strongest sentence, made checkable.
@@ -110,7 +111,7 @@ interface Call {
 function callsKeyedOnInput(): Call[] {
   const found: Call[] = [];
   for (const file of TENANT_FACING) {
-    const lines = readFileSync(resolve(REPO_ROOT, file), 'utf8').split('\n');
+    const lines = withoutComments(readFileSync(resolve(REPO_ROOT, file), 'utf8')).split('\n');
     lines.forEach((line, index) => {
       const match = READ_OR_WRITE.exec(line);
       if (!match) return;
@@ -145,7 +146,7 @@ function callsKeyedOnInput(): Call[] {
 function handlersTakingACallerLocation(): { file: string; header: string; body: string }[] {
   const found: { file: string; header: string; body: string }[] = [];
   for (const file of TENANT_FACING) {
-    const src = readFileSync(resolve(REPO_ROOT, file), 'utf8');
+    const src = withoutComments(readFileSync(resolve(REPO_ROOT, file), 'utf8'));
     // Every handler starts at `xRouter.method(` in column one.
     for (const body of src.split(/\n(?=\w+Router\.(?:get|post|put|patch|delete)\()/)) {
       const header = body.split('\n')[0].trim().slice(0, 80);

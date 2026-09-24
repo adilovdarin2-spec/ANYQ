@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Любую выданную сессию можно отобрать — все три двери, без исключений.
@@ -39,7 +40,7 @@ const DOORS = [
 ];
 
 function source(file: string): string {
-  return readFileSync(resolve(SRC, file), 'utf8');
+  return withoutComments(readFileSync(resolve(SRC, file), 'utf8'));
 }
 
 /** Версия внутри собираемого объекта: `v: что-нибудь`. */

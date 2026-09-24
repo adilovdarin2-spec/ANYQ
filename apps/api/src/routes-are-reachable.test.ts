@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Маршрут, который никто не зовёт, — это обещание, которого продукт не держит.
@@ -66,7 +67,7 @@ function clientSource(files: string[]): string {
   return files
     .map((file) => join(ROOT, file))
     .filter((path) => existsSync(path))
-    .map((path) => readFileSync(path, 'utf8'))
+    .map((path) => withoutComments(readFileSync(path, 'utf8')))
     .join('\n');
 }
 
@@ -76,7 +77,7 @@ interface Route {
 }
 
 function writingRoutes(file: string, router: string): Route[] {
-  const source = readFileSync(resolve(__dirname, file), 'utf8');
+  const source = withoutComments(readFileSync(resolve(__dirname, file), 'utf8'));
   const declaration = new RegExp(`${router}\\.(post|put|patch|delete)\\(\\s*'([^']+)'`, 'g');
   return [...source.matchAll(declaration)].map((m) => ({ method: m[1].toUpperCase(), path: m[2] }));
 }

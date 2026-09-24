@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Дверь, запертая модулем, не должна иметь открытой соседней.
@@ -24,7 +25,7 @@ import { resolve } from 'node:path';
  * молчание — именно из него эти четыре и получились.
  */
 
-const routes = readFileSync(resolve(__dirname, 'routes', 'pos.ts'), 'utf8').replace(/\r\n/g, '\n');
+const routes = withoutComments(readFileSync(resolve(__dirname, 'routes', 'pos.ts'), 'utf8')).replace(/\r\n/g, '\n');
 
 export interface WriteRoute {
   verb: string;

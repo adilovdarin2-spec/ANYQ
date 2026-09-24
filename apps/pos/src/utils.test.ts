@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { genId, formatMoney, formatPhone, looksLikeBarcode, formatWeight, hoursSince, pluralizeRu, resolveScannedBarcode, parseSheet, detectDelimiter } from './utils';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 describe('genId', () => {
   it('includes the given prefix and generates unique ids', () => {
@@ -205,7 +206,7 @@ describe('знак тенге ставит formatMoney, и только он', (
 
   it('никто не дописывает ₸ после formatMoney', () => {
     const нарушения = sources().flatMap((file) =>
-      readFileSync(file, 'utf8')
+      withoutComments(readFileSync(file, 'utf8'))
         .split('\n')
         .map((line, i) => ({ line, i }))
         .filter(({ line }) => /formatMoney\([^)]*\)\}?\s*₸/.test(line))
@@ -219,7 +220,7 @@ describe('знак тенге ставит formatMoney, и только он', (
     const нарушения = sources()
       .filter((f) => f.includes('i18n'))
       .flatMap((file) =>
-        readFileSync(file, 'utf8')
+        withoutComments(readFileSync(file, 'utf8'))
           .split('\n')
           .filter((line) => /\{(amount|sum|total)\}\s*₸/.test(line))
           .map((line) => line.trim().slice(0, 60)),

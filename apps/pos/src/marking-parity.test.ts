@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { markedCodeKey as tillKey, parseMarkedCode as tillParse } from './marking';
 import { markedCodeKey as serverKey, parseMarkedCode as serverParse } from '../../api/src/marking';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Две копии разбора кода обязаны отвечать одинаково.
@@ -89,7 +90,7 @@ describe('разбор кода: касса и сервер', () => {
     // Сравнивается тело разбора, а не файл целиком: заголовочные комментарии у
     // копий разные намеренно — кассовый объясняет, почему он копия.
     const body = (path: string) => {
-      const text = readFileSync(resolve(__dirname, path), 'utf8');
+      const text = withoutComments(readFileSync(resolve(__dirname, path), 'utf8'));
       return text.slice(text.indexOf('const GS =')).replace(/\r\n/g, '\n');
     };
     expect(body('./marking.ts')).toBe(body('../../api/src/marking.ts'));

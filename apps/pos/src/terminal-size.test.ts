@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Размеры за прилавком.
@@ -25,7 +26,7 @@ import { join } from 'node:path';
  * а ровно то, во что целятся пальцем и что читают на ходу.
  */
 
-const CSS = readFileSync(join(__dirname, 'styles/global.css'), 'utf8');
+const CSS = withoutComments(readFileSync(join(__dirname, 'styles/global.css'), 'utf8'), { lineComments: false });
 
 /** Тело @media-блока целиком, со счётом фигурных скобок, а не по отступам. */
 function mediaBlocks(condition: string): string[] {

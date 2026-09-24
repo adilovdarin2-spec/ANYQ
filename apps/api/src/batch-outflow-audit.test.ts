@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Новый способ убрать товар с полки не должен снова забыть про партии.
@@ -22,7 +23,7 @@ import { join } from 'node:path';
  * у автора нового маршрута есть ответ.
  */
 
-const SOURCE = readFileSync(join(__dirname, 'routes', 'pos.ts'), 'utf8');
+const SOURCE = withoutComments(readFileSync(join(__dirname, 'routes', 'pos.ts'), 'utf8'));
 
 /** Знаки того, что партии в этом маршруте всё-таки разобраны. */
 const HANDLES_BATCHES = ['removeFromBatches(', 'decrementBatchQuantity(', 'allocateForRemoval(', 'productBatch.update'];

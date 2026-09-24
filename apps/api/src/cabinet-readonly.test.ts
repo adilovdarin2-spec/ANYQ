@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Кабинет не трогает бизнес — и это должно оставаться правдой завтра.
@@ -28,7 +29,7 @@ import { describe, expect, it } from 'vitest';
  * ровно такой: «что за этой дверью можно записать», и ответить на него
  * точнее, чем посмотрев, нельзя.
  */
-const SOURCE = readFileSync(resolve(__dirname, 'routes/cabinet.ts'), 'utf8');
+const SOURCE = withoutComments(readFileSync(resolve(__dirname, 'routes/cabinet.ts'), 'utf8'));
 
 /** Всё, чем Prisma пишет. */
 const WRITE_CALLS = /(?:prisma|tx)\.(\w+)\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/g;

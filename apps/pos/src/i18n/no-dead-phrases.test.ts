@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { ru } from './ru';
+import { withoutComments } from '../../../../scripts/lib/source-text.mjs';
 
 /**
  * В словаре не лежат фразы, которых никто не показывает.
@@ -33,7 +34,7 @@ function sources(dir: string, found: string[] = []): string[] {
     }
     if (!/\.tsx?$/.test(name) || name.includes('.test.')) continue;
     if (name === 'ru.ts' || name === 'kk.ts') continue;
-    found.push(readFileSync(path, 'utf8'));
+    found.push(withoutComments(readFileSync(path, 'utf8')));
   }
   return found;
 }

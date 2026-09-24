@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { paymentMethodLabel } from './components/CompanyDetailDrawer';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Способ оплаты называется словом, а не кодом.
@@ -29,7 +30,7 @@ export function serverPaymentMethods(source: string): string[] {
 }
 
 describe('подписи способов оплаты', () => {
-  const methods = serverPaymentMethods(readFileSync(PAYMENTS, 'utf8').replace(/\r\n/g, '\n'));
+  const methods = serverPaymentMethods(withoutComments(readFileSync(PAYMENTS, 'utf8')).replace(/\r\n/g, '\n'));
 
   it('разбор нашёл набор на сервере', () => {
     // Иначе первое, что докажет этот файл, — что он находит что угодно.

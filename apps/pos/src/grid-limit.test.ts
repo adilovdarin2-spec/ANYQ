@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Сетка товаров рисует не весь каталог.
@@ -20,7 +21,7 @@ import { resolve } from 'node:path';
  * вместо `shown.map` и молча пропавшую строку «показаны первые».
  */
 
-const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8');
+const read = (rel: string) => withoutComments(readFileSync(resolve(__dirname, rel), 'utf8'));
 
 describe('предел отрисовки списков товаров', () => {
   it('сетка кассы рисует срез, а не весь каталог', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Каждый путь, уводящий товар с полки, обязан сказать, что он делает с кодами.
@@ -17,7 +18,7 @@ import { resolve } from 'node:path';
  * у сырья в производстве кодов не бывает. Не принимается молчание.
  */
 
-const routes = readFileSync(resolve(__dirname, 'routes', 'pos.ts'), 'utf8').replace(/\r\n/g, '\n');
+const routes = withoutComments(readFileSync(resolve(__dirname, 'routes', 'pos.ts'), 'utf8')).replace(/\r\n/g, '\n');
 
 /**
  * Аргументы вызова целиком — со счётом скобок.

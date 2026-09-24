@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SERVER_KK, hasServerTranslation, translateServerMessage } from './server';
+import { withoutComments } from '../../../../scripts/lib/source-text.mjs';
 
 const REPO_ROOT = resolve(__dirname, '../../../..');
 const CYRILLIC = /[А-яЁё]/;
@@ -73,7 +74,10 @@ function apiModules(): string[] {
 function russianStrings(): string[] {
   const found = new Set<string>();
   for (const path of apiModules()) {
-    const source = readFileSync(path, 'utf8');
+    /* Комментарии отсекаются: без этого извлекатель считал текстом сервера и
+       прозу. Пример из пояснения к `csvCell` — `Сок "Дар" 1л` — годами лежал в
+       списке исключений как сообщение, которого касса не получает никогда. */
+    const source = withoutComments(readFileSync(path, 'utf8'));
     for (const match of source.matchAll(/'([^'\n]*)'/g)) {
       if (CYRILLIC.test(match[1])) found.add(match[1]);
     }
@@ -211,8 +215,6 @@ const NOT_A_MESSAGE = new Set<string>([
   // because the shop's own wording sits in the same field.
   'Пересчёт ячеек: 7', 'Сверка журнала: исправлено позиций 7',
   'Сверка журнала: приведено партий 7', 'Сверка журнала: исправлено позиций 7, приведено партий 7',
-  // An example inside a doc comment.
-  'Сок "Дар" 1л',
   // Кусок сообщения, а не сообщение: по нему маршрут спецификаций решает,
   // отвечать 404 или 400. Показывают при этом целую фразу, и она переведена.
   'не найден',

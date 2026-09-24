@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Умолчание при заведении компании — это то, что клиент купил.
@@ -19,7 +20,7 @@ import { resolve } from 'node:path';
  * заведения в другом, и между ними нет ничего, кроме этой проверки.
  */
 
-const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n');
+const read = (rel: string) => withoutComments(readFileSync(resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n'));
 
 describe('умолчание при заведении компании', () => {
   it('включает и розницу, и товар с остатками', () => {

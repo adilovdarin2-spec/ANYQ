@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Инвентаризация обязана присылать момент обхода, а не момент отправки.
@@ -23,7 +24,7 @@ import { resolve } from 'node:path';
  * ровно тот возврат к `new Date()`, который однажды уже случился.
  */
 
-const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8');
+const read = (rel: string) => withoutComments(readFileSync(resolve(__dirname, rel), 'utf8'));
 
 describe('момент пересчёта', () => {
   it('касса отправляет время, пришедшее с экрана, а не своё', () => {

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { clearRefusal, splitQueue } from './sales-queue';
 import type { Sale } from './types';
+import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
  * Продажа, которую сервер не принял, должна дойти до человека.
@@ -99,7 +100,7 @@ describe('отказ виден кассиру', () => {
   // Разбор исходника, потому что DOM в этих тестах нет. Проверяется не
   // вёрстка, а то, что причина вообще доходит до экрана: без этой строки
   // весь разбор выше — работа в стол.
-  const профиль = readFileSync(join(__dirname, 'components/ProfileScreen.tsx'), 'utf8');
+  const профиль = withoutComments(readFileSync(join(__dirname, 'components/ProfileScreen.tsx'), 'utf8'));
 
   it('на экране профиля печатается причина отказа', () => {
     expect(профиль).toContain('sale.syncError');
@@ -111,7 +112,7 @@ describe('отказ виден кассиру', () => {
 
   it('чек не называет отказ ожиданием', () => {
     // «не синхронизирован» под отказанной продажей читается как «уйдёт само».
-    const чек = readFileSync(join(__dirname, 'components/ReceiptScreen.tsx'), 'utf8');
+    const чек = withoutComments(readFileSync(join(__dirname, 'components/ReceiptScreen.tsx'), 'utf8'));
     expect(чек).toContain('receipt.refused');
   });
 });

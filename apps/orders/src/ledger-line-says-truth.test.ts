@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pluralizeRu } from './utils';
-// @ts-expect-error — общий разборщик написан на .mjs и типов не имеет.
 import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
 /**
