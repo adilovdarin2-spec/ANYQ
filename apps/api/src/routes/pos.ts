@@ -50,7 +50,7 @@ import {
 import { resolveLocationId, resolveTransferLocations, locationErrorMessage } from '../locations';
 import { resolveTransferReceipt, transferReceiptErrorMessage, collapseTransferItems } from '../transfers';
 import { resolveReturn, returnErrorMessage } from '../returns';
-import { resolvePackagedLines, packagingErrorMessage } from '../packaging';
+import { resolvePackagedLines, packagingErrorMessage, lineTotal } from '../packaging';
 import { buildDailyClosingBalances, demandWindowDays, estimateDailyDemand, recommendOrder } from '../replenishment';
 import type { DailyMovement } from '../replenishment';
 import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
@@ -4956,14 +4956,7 @@ function serializePurchaseOrder(order: {
     supplier: order.counterparty ? { id: order.counterparty.id, name: order.counterparty.name } : null,
     createdByName: order.createdBy ? nameByUserId.get(order.createdBy) ?? 'Удалённый сотрудник' : null,
     approvedByName: order.fulfilledBy ? nameByUserId.get(order.fulfilledBy) ?? 'Удалённый сотрудник' : null,
-    total: order.items.reduce(
-      (sum, it) =>
-        sum +
-        (it.packPrice !== null && it.packQuantity !== null
-          ? Math.round(it.packPrice * it.packQuantity)
-          : Math.round(it.price * it.quantity)),
-      0,
-    ),
+    total: order.items.reduce((sum, it) => sum + lineTotal(it), 0),
     items: order.items.map((it) => ({
       id: it.id,
       productId: it.productId,
@@ -6157,15 +6150,9 @@ async function loadLedgers(
     const ledger = ledgers.get(doc.counterpartyId);
     if (!ledger) continue;
     // A receipt is billed at what was actually paid per pack, not the rounded
-    // per-unit figure times the units — the same reading the receipt list uses.
-    const lines = doc.items.reduce(
-      (sum, it) =>
-        sum +
-        (it.packPrice !== null && it.packQuantity !== null
-          ? Math.round(it.packPrice * it.packQuantity)
-          : Math.round(it.price * it.quantity)),
-      0,
-    );
+    // per-unit figure times the units. `lineTotal` says so in one place; it
+    // used to be written out here and in the receipt list, word for word.
+    const lines = doc.items.reduce((sum, it) => sum + lineTotal(it), 0);
     // Долг — это то, с чем покупатель согласился, то есть сумма чека: позиции
     // минус скидка минус баллы. Считалось по одним позициям, и покупателю со
     // скидкой в долг записывали полную цену, а закрывшему часть чека баллами —
