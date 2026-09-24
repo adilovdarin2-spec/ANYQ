@@ -32,7 +32,10 @@ const WHERE = ['apps', 'packages', 'scripts'];
  * Пусто: сегодня все до одного читают код. Запись сюда — повод объяснить, что
  * именно читается и почему комментариев там не бывает.
  */
-const НЕ_ИСХОДНИК: Record<string, string> = {};
+const НЕ_ИСХОДНИК: Record<string, string> = {
+  'scripts/runbooks-name-real-commands.test.ts':
+    'читает docs/*.md и package.json: в Markdown и JSON комментариев не бывает',
+};
 
 /** Он сам: этот файл читает тесты именно сырыми, в том и смысл. */
 const СЕБЯ = ['scripts/guards-strip-comments.test.ts'];
