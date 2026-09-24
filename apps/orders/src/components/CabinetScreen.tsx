@@ -1,6 +1,7 @@
 import type { CabinetLocation, CabinetSummary, SupportRequest } from '../types';
 import { CabinetStaff } from './CabinetStaff';
 import { SupportRequests } from './SupportRequests';
+import { pluralizeRu } from '../utils';
 
 interface Props {
   company: string;
@@ -293,12 +294,22 @@ export function CabinetScreen({
           )}
 
           {/* Проверка, а не обещание: остаток равен сумме движений, и это
-              пересчитано, а не заявлено. */}
+              пересчитано, а не заявлено.
+
+              Отсюда и отдельный случай для нуля. «Остатки сходятся» при нуле
+              проверенных позиций — это как раз обещание, которого комментарий
+              выше отрекается: пересчитывать было нечего. Читает это владелец в
+              первый день, когда товаров ещё нет, и зелёная строка говорит ему,
+              что учёт в порядке, хотя учёта пока никакого. Такое здесь уже
+              правили однажды — в очереди дел, где пустому магазину отвечали
+              «ничего не требует вашего решения, хороший день». */}
           <Section title="Учёт">
             <p className={summary.ledgerCheck.mismatched === 0 ? 'cab-good cab-note' : 'cab-error cab-note'}>
-              {summary.ledgerCheck.mismatched === 0
-                ? `Остатки сходятся с журналом: проверено ${summary.ledgerCheck.checked} позиций.`
-                : `Расходится ${summary.ledgerCheck.mismatched} из ${summary.ledgerCheck.checked}. Покажите это внедренцу.`}
+              {summary.ledgerCheck.checked === 0
+                ? 'Сверять пока нечего: движений товара не было.'
+                : summary.ledgerCheck.mismatched === 0
+                  ? `Остатки сходятся с журналом: проверено ${summary.ledgerCheck.checked} ${pluralizeRu(summary.ledgerCheck.checked, 'позиция', 'позиции', 'позиций')}.`
+                  : `Расходится ${summary.ledgerCheck.mismatched} из ${summary.ledgerCheck.checked}. Покажите это внедренцу.`}
             </p>
             {summary.unfiscalised.count > 0 && (
               <p className="cab-warn cab-note">
