@@ -495,6 +495,27 @@ posRouter.get('/licence', requirePosAuth, async (req: PosAuthedRequest, res) => 
 // company's first location) and /pos/catalog (which reloads it when the user
 // switches), so a register can never end up showing one location's stock while
 // selling against another's.
+/**
+ * Каталог кассы — целиком, и это измерено, а не понадеялось.
+ *
+ * Предела здесь нет, в отличие от витрины: там он стоит и объяснён тем, что
+ * ответ «превращается в мегабайты». Здесь тот же вопрос задавали, и вот числа
+ * (24.09.2026, локальный стенд, разнообразные названия — на однотипных gzip
+ * льстит втрое):
+ *
+ *   1 000 товаров — 0,29 МБ, по проводу 18 КБ, сервер отвечает за 0,14 с
+ *   5 000 — 1,43 МБ, по проводу 85 КБ, 0,14 с
+ *  20 000 — 5,66 МБ, по проводу 220 КБ, 0,55 с
+ *
+ * По проводу едет немного: `compression()` стоит выше по стеку и сжимает
+ * повторяющийся JSON в двадцать пять раз. Двести килобайт доедут и на плохой
+ * связи, ради которой касса и умеет работать офлайн.
+ *
+ * Чего числа не говорят: несжатые пять с половиной мегабайт планшет всё-таки
+ * разбирает, и делает это после каждого движения остатка. На дешёвом Android
+ * это заметно. Если однажды понадобится предел, начинать надо оттуда, а не
+ * отсюда: резать ответ, который и так доезжает, смысла нет.
+ */
 async function buildPosCatalog(companyId: string, modules: string[], locationId: string | null) {
   const products = await prisma.product.findMany({ where: { companyId, sellable: true } });
   const stockRows = locationId ? await prisma.stock.findMany({ where: { locationId } }) : [];
