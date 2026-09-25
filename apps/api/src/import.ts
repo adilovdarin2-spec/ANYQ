@@ -1,4 +1,4 @@
-import { normaliseBarcode, barcodeProblemMessage } from './barcode';
+import { normaliseBarcode, barcodeProblemMessage, articleFromGtin, sameArticle } from './barcode';
 
 export type ImportField =
   | 'name'
@@ -13,7 +13,9 @@ export type ImportField =
   /** Как эту коробку называют: «Блок», «Ящик». Есть не всегда. */
   | 'packName'
   /** Свой штрихкод коробки — тот, который сканируют на приёмке. */
-  | 'packBarcode';
+  | 'packBarcode'
+  /** Тот же артикул, записанный четырнадцатью знаками: так его пишет 1С. */
+  | 'gtin';
 
 /**
  * What a shop's own spreadsheet calls each column. Nobody is going to rename
@@ -45,6 +47,7 @@ const HEADER_ALIASES: Record<ImportField, string[]> = {
     'unitsperpack', 'packsize', 'packqty', 'қаптамада',
   ],
   packName: ['упаковка', 'тара', 'видупаковки', 'типупаковки', 'қаптама', 'packaging', 'package'],
+  gtin: ['gtin', 'gtin13', 'gtin14', 'кодgtin', 'глобальныйкодтовара', 'глобальныйномер'],
   barcode: ['штрихкод', 'штрихкодтовара', 'ean', 'ean13', 'barcode', 'бар', 'шк'],
   category: ['категория', 'группа', 'раздел', 'санат', 'category', 'group'],
   unit: ['ед', 'едизм', 'единица', 'единицаизмерения', 'бірлік', 'unit', 'uom'],
@@ -323,7 +326,7 @@ export function buildImportPlan(
        завести его без штрихкода и сказать об этом. */
     const barcodeRaw = cell('barcode');
     const reading = normaliseBarcode(barcodeRaw);
-    const barcode = reading.barcode;
+    let barcode = reading.barcode;
     if (reading.problem) {
       problems.push({
         line,
@@ -332,6 +335,41 @@ export function buildImportPlan(
         // проверить пачку, а не переделывать файл.
         severity: reading.problem === 'excel-notation' ? 'error' : 'warning',
         message: barcodeProblemMessage(reading.problem, name, barcodeRaw),
+      });
+    }
+
+    /* GTIN — тот же артикул, записанный четырнадцатью знаками.
+
+       1С и системы маркировки выгружают именно его, и в файле он бывает вместо
+       штрихкода, а не рядом с ним. Пропустив такой столбец, мы завели бы
+       каталог совсем без кодов: сигареты — а это заметная часть выручки
+       продуктового — не искались бы ни одним сканером.
+
+       Записывается он в том виде, в каком напечатан на пачке: обычный поиск
+       сравнивает строки точно, и четырнадцать знаков в каталоге означали бы
+       товар, который находит сканер маркировки и не находит обычный. */
+    const gtinRaw = cell('gtin');
+    const gtinReading = normaliseBarcode(gtinRaw);
+    const gtinArticle = gtinReading.barcode ? articleFromGtin(gtinReading.barcode) : null;
+    if (gtinReading.problem && !barcode) {
+      // Про испорченный GTIN говорим, только если заменить его нечем: иначе это
+      // замечание про столбец, которым всё равно не пользуются.
+      problems.push({
+        line,
+        severity: gtinReading.problem === 'excel-notation' ? 'error' : 'warning',
+        message: barcodeProblemMessage(gtinReading.problem, name, gtinRaw),
+      });
+    }
+    if (!barcode && gtinArticle) barcode = gtinArticle;
+    else if (barcode && gtinArticle && !sameArticle(barcode, gtinArticle)) {
+      /* Два разных числа в одной строке — это не опечатка в записи, а
+         несогласие: одно из них про другой товар. Выбираем штрихкод, потому что
+         именно его печатают на ценнике и им пользуются каждый день, и говорим —
+         решить, какое верное, может только магазин. */
+      problems.push({
+        line,
+        severity: 'warning',
+        message: `«${name}»: штрихкод ${barcode} и GTIN ${gtinArticle} — это разные товары. Взят штрихкод; проверьте, какой из них про этот.`,
       });
     }
 
