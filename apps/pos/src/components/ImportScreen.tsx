@@ -198,6 +198,16 @@ export function ImportScreen({
                           <span className="order-meta">
                             {t('import.row', { number: row.line })} · {row.salePrice} ₸
                             {row.quantity > 0 ? ` · ${t('import.stock', { count: row.quantity })}` : ''}
+                            {/* Коробка показывается здесь же: человек листает
+                                первые двадцать строк именно затем, чтобы
+                                убедиться, что столбцы разобрались как надо, — а
+                                «в упаковке 12» подтверждает это лучше всего. */}
+                            {row.packaging
+                              ? ` · ${t('import.pack', {
+                                  name: row.packaging.name,
+                                  count: row.packaging.unitsPerPack,
+                                })}`
+                              : ''}
                             {row.existingProductId ? ` · ${t('import.exists')}` : ''}
                           </span>
                         </span>

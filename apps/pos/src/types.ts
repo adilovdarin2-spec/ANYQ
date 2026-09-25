@@ -948,6 +948,14 @@ export interface ImportSampleRow {
   purchasePrice: number;
   salePrice: number;
   quantity: number;
+  /**
+   * Коробка, которая заведётся вместе с товаром.
+   *
+   * Необязательное: сервер и касса выкатываются по отдельности, и ответ версией
+   * старше этого поля его не несёт. Половина каталога штучная, поэтому `null`
+   * здесь — обычное дело, а не признак ошибки.
+   */
+  packaging?: { name: string; unitsPerPack: number; barcode: string | null } | null;
   /** Set when this row updates something that already exists. */
   existingProductId: string | null;
 }

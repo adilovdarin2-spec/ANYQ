@@ -64,6 +64,7 @@ import { resolveBinAddress, binAddressErrorMessage, validatePutaway, putawayErro
 import { computeBalance, allocatePayment, buildAging, resolveCreditSale, creditSaleErrorMessage } from '../settlements';
 import { reconcileBalances, summarize, mismatchExplanation, reconcileBatches, reconcileCodes, reconcileHolds } from '../reconciliation';
 import { buildImportPlan } from '../import';
+import type { ImportPackaging } from '../import';
 import { ensureCabinet, resetCabinet } from '../cabinet';
 import { SOURCE_SYSTEMS, analyseCatalogue, findSourceSystem, type SourceSystem } from '../migration';
 import { matchPriceList, readDeliveryNote, readPriceList, summarisePriceList } from '../price-list';
@@ -7525,6 +7526,33 @@ posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest,
       let created = 0;
       let updated = 0;
       let stocked = 0;
+      let packagingsCreated = 0;
+      let packagingsUpdated = 0;
+
+      /* Коробка товара: заводится или обновляется по имени.
+
+         Имя — ключ, потому что оно ключ и в базе (`@@unique([productId, name])`),
+         и потому что повторный импорт того же прайса обязан поправить «в
+         коробке 12» на «в коробке 6», а не завести вторую коробку с тем же
+         именем. Заводится и существующему товару тоже: прайс с упаковками
+         присылают позже, чем заводят каталог, и это обычный порядок вещей. */
+      const applyPackaging = async (productId: string, pack: ImportPackaging) => {
+        const existing = await tx.productPackaging.findUnique({
+          where: { productId_name: { productId, name: pack.name } },
+        });
+        if (existing) {
+          await tx.productPackaging.update({
+            where: { id: existing.id },
+            data: { unitsPerPack: pack.unitsPerPack, barcode: pack.barcode },
+          });
+          packagingsUpdated += 1;
+          return;
+        }
+        await tx.productPackaging.create({
+          data: { productId, name: pack.name, unitsPerPack: pack.unitsPerPack, barcode: pack.barcode },
+        });
+        packagingsCreated += 1;
+      };
 
       for (const row of plan.rows) {
         if (row.existingProductId) {
@@ -7539,6 +7567,7 @@ posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest,
               salePrice: row.salePrice,
             },
           });
+          if (row.packaging) await applyPackaging(row.existingProductId, row.packaging);
           updated += 1;
           continue;
         }
@@ -7555,6 +7584,7 @@ posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest,
           },
         });
         created += 1;
+        if (row.packaging) await applyPackaging(product.id, row.packaging);
 
         // Opening stock only for goods this import is introducing. Re-running a
         // price list must not overwrite what is on the shelf: a second import
@@ -7574,7 +7604,7 @@ posRouter.post('/import/products', requirePosAuth, async (req: PosAuthedRequest,
         }
       }
 
-      return { created, updated, stocked, skipped: plan.skipped, problemCount: plan.problems.length };
+      return { created, updated, stocked, packagingsCreated, packagingsUpdated, skipped: plan.skipped, problemCount: plan.problems.length };
     });
 
     res.status(outcome.statusCode).json({

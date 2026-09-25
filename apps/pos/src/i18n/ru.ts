@@ -485,6 +485,7 @@ export const ru = {
   'import.row': 'строка {number}',
   'import.stock': 'остаток {count}',
   'import.exists': 'уже есть, обновим',
+  'import.pack': '{name}: по {count} шт',
   'import.problems': 'Что не так ({count})',
   'import.problemsTruncated': 'Показаны первые {shown} из {count}. Остальные покажем, когда исправите эти — скорее всего их станет намного меньше: один перепутанный столбец даёт замечание на каждую строку, а правится один раз.',
   'import.problemRow': 'Строка {number}',
