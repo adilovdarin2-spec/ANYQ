@@ -745,6 +745,24 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   // would land in somebody else's cash reconciliation.
   let shiftId: string | null = null;
   let shiftOpenedAt: Date | null = null;
+  /**
+   * Кассир, пробивший чек, — хозяин смены, а не тот, чей токен его донёс.
+   *
+   * У продажи один путь на сервер: она ложится в очередь кассы и уходит оттуда
+   * под тем входом, который активен в момент отправки. Обычно это тот же
+   * человек. После передачи кассы с непустой очередью — нет: утренние чеки
+   * уходят вечером под сменщиком, и `createdBy` называет его.
+   *
+   * Ящик от этого не страдает — он относит чеки по ссылке на смену, и это
+   * замерено, — а вот признаки выбросов у владельца страдают: доля возвратов и
+   * доля скидок считаются по `createdBy`, и владелец идёт разговаривать с тем,
+   * кто ничего не делал.
+   *
+   * Берётся у смены, а не из тела запроса. Поле в теле кассир может подделать,
+   * а смену сервер находит сам и уже проверил по компании и точке: подменить
+   * автора можно было бы только подменив смену, то есть и ящик заодно.
+   */
+  let shiftUserId: string | null = null;
   const shiftClientId = typeof b.shiftClientId === 'string' && b.shiftClientId ? b.shiftClientId : null;
   const namedShiftId = typeof b.shiftId === 'string' && b.shiftId ? b.shiftId : null;
   if (shiftClientId || namedShiftId) {
@@ -767,7 +785,11 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
     // refused one.
     shiftId = shift ? shift.id : null;
     shiftOpenedAt = shift ? shift.openedAt : null;
+    shiftUserId = shift ? shift.userId : null;
   }
+  // Смена не нашлась — автором остаётся отправитель: другого имени у сервера
+  // нет, а чек без автора хуже чека с приблизительным.
+  const soldBy = shiftUserId ?? req.posUserId!;
   const modules: string[] = company?.tariff ? JSON.parse(company.tariff.modules) : [];
   const hasRestaurant = modules.includes('restaurant');
   // Продаётся ли остаток без срока годности. Решает модуль аптеки — см.
@@ -1128,7 +1150,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           counterpartyId: customer?.id,
           pointsEarned: customer ? pointsEarned : undefined,
           pointsRedeemed: customer ? redemptionAmount : undefined,
-          createdBy: req.posUserId!,
+          createdBy: soldBy,
           items: { create: documentItemsData },
         },
         include: { items: true },
@@ -1169,7 +1191,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         stockMovements.push(
           deductAcrossBins(tx, stockByProduct.get(deduction.productId) ?? [], deduction.quantity, 'sale', {
             documentId: document.id,
-            createdBy: req.posUserId,
+            createdBy: soldBy,
             occurredAt,
           }),
         );
@@ -1178,7 +1200,7 @@ posRouter.post('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
         stockMovements.push(
           deductAcrossBins(tx, ingredientStockByProduct.get(consumption.ingredientId) ?? [], consumption.quantity, 'sale', {
             documentId: document.id,
-            createdBy: req.posUserId,
+            createdBy: soldBy,
             occurredAt,
           }),
         );
