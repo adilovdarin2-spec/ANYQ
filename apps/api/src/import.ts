@@ -1,3 +1,5 @@
+import { normaliseBarcode, barcodeProblemMessage } from './barcode';
+
 export type ImportField =
   | 'name'
   | 'barcode'
@@ -264,8 +266,28 @@ export function buildImportPlan(
       problems.push({ line, severity: 'warning', message: `«${name}»: отрицательный остаток, записан как 0` });
     }
 
+    /* Штрихкод из чужого файла разбирается, а не берётся как есть.
+
+       До 25.09.2026 он попадал в каталог дословно: `4.87012E+12`, `'4870…`,
+       `4870 1234 56789` — и ни одного замечания. Кассир сканировал пачку, касса
+       отвечала «не найден», и объяснить это было нечем.
+
+       Строку при этом не отбрасываем даже при негодном коде: товар настоящий, и
+       найти его по названию можно. Потерять из-за штрихкода весь товар хуже, чем
+       завести его без штрихкода и сказать об этом. */
     const barcodeRaw = cell('barcode');
-    const barcode = barcodeRaw || null;
+    const reading = normaliseBarcode(barcodeRaw);
+    const barcode = reading.barcode;
+    if (reading.problem) {
+      problems.push({
+        line,
+        // Экспонента — потеря данных, о которой человек обязан узнать и
+        // которую исправит только он. Несходящаяся контрольная цифра — повод
+        // проверить пачку, а не переделывать файл.
+        severity: reading.problem === 'excel-notation' ? 'error' : 'warning',
+        message: barcodeProblemMessage(reading.problem, name, barcodeRaw),
+      });
+    }
 
     // A barcode twice in one file means two rows claim the same goods, and
     // whichever lands second silently wins. Better to say so and keep the
