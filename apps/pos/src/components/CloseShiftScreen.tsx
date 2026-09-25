@@ -3,7 +3,7 @@ import type { DrawerEntry, Sale, Shift } from '../types';
 import type { ServerDrawer } from '../shift-tally';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
-import { drawerFigures, refusedInShift, tallyShift } from '../shift-tally';
+import { drawerAddsUp, drawerFigures, refusedInShift, tallyShift } from '../shift-tally';
 
 interface Props {
   shift: Shift;
@@ -31,7 +31,9 @@ export function CloseShiftScreen({ shift, sales, drawer, serverCash, onCancel, o
   // Все строки ящика — из одного источника: серверного, если дозвонились, и
   // своего, если нет. Половина оттуда, половина отсюда даёт столбец, который
   // не складывается, а это хуже, чем посчитать по-своему.
-  const { cash, refundedCash, settledIn, settledOut, expectedCash, fromServer } = drawerFigures(local, serverCash, sales);
+  const figures = drawerFigures(local, serverCash, sales);
+  const { cash, refundedCash, settledIn, settledOut, expectedCash, fromServer } = figures;
+  const addsUp = drawerAddsUp(figures, shift.openingCash);
   // Их деньги в ящике есть, а в Z-отчёте на сервере не будет. Сказать об этом
   // нужно здесь — на этом экране человек последний раз смотрит на смену.
   const refused = refusedInShift(sales);
@@ -90,6 +92,17 @@ export function CloseShiftScreen({ shift, sales, drawer, serverCash, onCancel, o
           <span className="sr-muted">{t('shift.close.expectedCash')}</span>
           <span>{formatMoney(expectedCash)}</span>
         </div>
+        {/* Столбец, который не складывается в свой же итог.
+
+            Проверка написана вместе с этим экраном и не звалась нигде, кроме
+            тестов, — то есть охраняла сама себя. А ловит она ровно то, чем этот
+            экран опасен: строки и итог приходят разными выражениями и разойтись
+            могут тихо. Кассир сложит столбец в уме, не получит итога и решит,
+            что обманывают его.
+
+            Закрыть смену это не мешает: запереть человека с деньгами в ящике
+            хуже любого неверного числа. */}
+        {!addsUp && <p className="login-error">{t('shift.close.doesNotAddUp')}</p>}
         {/* Сказано, а не умолчано: кассир, у которого не сходится, должен
             знать, по чьим данным посчитано. Своё устройство видит только свои
             чеки — долг, принятый на соседней кассе, в нём не отражён. */}
