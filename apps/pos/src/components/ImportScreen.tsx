@@ -211,6 +211,23 @@ export function ImportScreen({
                     <div className="orders-section-title">
                       {t('import.problems', { count: preview.problemCount })}
                     </div>
+                    {/* Список сервер обрезает, а число присылает настоящее. Без
+                        этой строки в заголовке стояло «Что не так (450)», под ним
+                        лежало двести, и человек, которому надо починить файл, не
+                        знал ни про остальные, ни какие они.
+
+                        Сказано и то, что ошибок, скорее всего, меньше, чем
+                        строк: перепутанный столбец даёт по замечанию на каждую
+                        строку и правится один раз. Без этого список на четыреста
+                        строк читается как «файл никуда не годится». */}
+                    {preview.problemCount > preview.problems.length && (
+                      <p className="field-hint">
+                        {t('import.problemsTruncated', {
+                          shown: preview.problems.length,
+                          count: preview.problemCount,
+                        })}
+                      </p>
+                    )}
                     {/* Every problem carries the row number from the file the
                         person is looking at, because "ошибка импорта" is not
                         something anybody can act on. */}

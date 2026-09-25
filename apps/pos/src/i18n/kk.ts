@@ -493,6 +493,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'import.stock': 'қалдық {count}',
   'import.exists': 'бар, жаңартамыз',
   'import.problems': 'Не дұрыс емес ({count})',
+  'import.problemsTruncated': '{count} ішінен алғашқы {shown} көрсетілді. Қалғанын осыларды түзеткенде көрсетеміз — олар әлдеқайда азаяды: бір бағанды шатастырсаң, әр жолға ескерту түседі, ал түзетілетіні біреу.',
   'import.problemRow': '{number}-жол',
   'import.willSkip': 'өткізіп жібереміз',
   'import.attention': 'назар',
