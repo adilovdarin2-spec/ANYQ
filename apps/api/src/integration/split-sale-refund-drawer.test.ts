@@ -91,6 +91,12 @@ describe('возврат по разбитому чеку', () => {
     expect(ret.status, JSON.stringify(ret.body)).toBe(201);
     expect(ret.body.refundAmount).toBe(400);
 
+    /* И касса узнаёт, сколько ушло из ящика, числом. По способу она этого не
+       выведет: у такого возврата он `mixed`, и её собственный счёт — тот, по
+       которому она закрывает смену без сети, — вычел бы ноль. Кассир увидел бы
+       недостачу ровно на те наличные, которые отдал на глазах у всех. */
+    expect(ret.body.cashRefunded, 'касса не узнает наличную часть').toBe(200);
+
     expect(await expectedCash(shiftId), 'из ящика ушло 200, а не 400').toBe(ОТКРЫТО);
   });
 
@@ -134,8 +140,10 @@ describe('возврат по разбитому чеку', () => {
     const ret = await returnAll(sale.body.id, 'plain-cash-return');
     expect(ret.status, JSON.stringify(ret.body)).toBe(201);
     expect(ret.body.paymentMethod).toBe('cash');
+    expect(ret.body.cashRefunded).toBe(400);
     expect(await expectedCash(shiftId)).toBe(ОТКРЫТО);
   });
+
 
   it('и касса может сказать сама, чем вернула', async () => {
     /* Покупателю отдали всё наличными, а карту не трогали — так тоже бывает, и

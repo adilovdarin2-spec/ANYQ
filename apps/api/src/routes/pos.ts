@@ -1699,6 +1699,15 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
         // ответа, мы оставляли её считать по своему предположению, и её
         // ожидаемая сумма расходилась с серверной ровно на такой возврат.
         paymentMethod: document.paymentMethod,
+        /**
+         * Сколько из этого ушло из ящика.
+         *
+         * Не выводится из `paymentMethod`: у разбитого чека он теперь `mixed`,
+         * и касса, читающая только способ, вычла бы ноль — то есть показала бы
+         * кассиру недостачу ровно на наличную часть возврата. Одно число,
+         * посчитанное сервером той же функцией, которой считает сверка.
+         */
+        cashRefunded: cashPortion(refundLines),
         pointsRestored: refund.pointsRestored,
         pointsRevoked: refund.pointsRevoked,
       };

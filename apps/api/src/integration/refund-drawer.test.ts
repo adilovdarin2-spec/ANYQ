@@ -215,6 +215,9 @@ describe('касса узнаёт, чем вернули', () => {
     const back = await refund(sale.body.id, 1, 'drawer-answer-refund', 'cash');
     expect(back.status, JSON.stringify(back.body)).toBe(201);
     expect(back.body.paymentMethod).toBe('credit');
+    // И числом — тоже ноль. Касса ведёт свой счёт ящика по нему: запись на
+    // сумму чека показала бы кассиру выдачу, которой не было.
+    expect(back.body.cashRefunded).toBe(0);
   });
 
   it('и по обычному чеку — тот, о котором просили', async () => {
