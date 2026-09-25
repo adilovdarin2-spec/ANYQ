@@ -290,6 +290,12 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
 
             {sale.paymentMethod === 'credit' ? (
               <p className="field-hint">{t('return.toDebt')}</p>
+            ) : sale.paymentMethod === 'mixed' ? (
+              /* У разбитого чека выбора нет — и раньше он был обманом: пункта
+                 «пополам» в списке не бывает, касса подставляла наличные, а
+                 сервер с 25.09.2026 всё равно возвращает по долям чека.
+                 Показывать кнопку, которую не слушают, хуже, чем объяснить. */
+              <p className="field-hint">{t('return.toSplit')}</p>
             ) : (
               <div className="form-field">
                 <label htmlFor="return-payment">{t('return.howBack')}</label>

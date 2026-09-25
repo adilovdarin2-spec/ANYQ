@@ -76,7 +76,7 @@ import { allocateFefo, allocateForRemoval, classifyExpiry, sellableQuantity, unc
 import type { BatchStock } from '../batches';
 import { computeIngredientConsumption, computeDishCost } from '../recipes';
 import { computeCountAdjustments, computeBinCountAdjustments, balancesAtTime, binCountKey, hasInvalidCountedQuantity, productBalancesAtTime } from '../counts';
-import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy } from '../payments';
+import { resolveSalePayments, paymentErrorMessage, cashPortion, paymentsOrLegacy, refundSplit } from '../payments';
 import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
@@ -1368,7 +1368,8 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
 
   const sale = await prisma.document.findFirst({
     where: { id: bodyId(b.saleId), companyId: req.posCompanyId, type: 'sale', status: 'confirmed' },
-    include: { items: true },
+    // `payments` — чтобы возврат вернулся теми же способами, какими платили.
+    include: { items: true, payments: true },
   });
   if (!sale) {
     res.status(404).json({ error: 'Чек не найден' });
@@ -1457,6 +1458,49 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
   }
   const { lines, refund } = resolution;
 
+  /* Чем деньги уходят обратно — тем же набором способов, каким пришли.
+     Сверка смены считает приход по частям чека (`cashPortion`), а расход
+     считала целиком по одному полю: чек, разбитый пополам между наличными и
+     картой, вычитал из ящика всю сумму возврата. Кассир, вернувший наличными
+     только наличную половину, закрывал смену с излишком, которого не делал.
+
+     Касса своей разбивки пока не присылает — и не обязана: сервер выводит её
+     из чека. Пришлёт — будет принята, потому что это она отдаёт деньги и
+     знает, что произошло у прилавка на самом деле. Поле необязательное: касса
+     и сервер выкатываются по отдельности.
+
+     У чека в долг денег не брали, и возврат по нему ящика не касается —
+     разбивка ему не нужна, `refundMethod` отвечает на это раньше. */
+  const collected = receiptTotal(subtotal, discountAmount, sale.pointsRedeemed ?? 0);
+  const salePayments = paymentsOrLegacy(sale.payments as PaymentLine[], sale.paymentMethod, collected);
+  const singleMethod = refundMethod(b.paymentMethod, sale.paymentMethod);
+
+  let refundLines: PaymentLine[] = [];
+  if (singleMethod !== 'credit' && refund.amount > 0) {
+    if (b.payments !== undefined) {
+      const asked = resolveSalePayments({ payments: b.payments }, refund.amount);
+      if (asked.status !== 'ok') {
+        res.status(400).json({ error: paymentErrorMessage(asked) });
+        return;
+      }
+      refundLines = asked.payments;
+    } else if (salePayments.length > 1) {
+      /* Разбитый чек, а касса прислала один способ. Это не выбор кассира, а
+         подстановка: у неё в списке способов нет пункта «пополам», и для
+         такого чека она подставляет наличные. Верить этой подстановке значит
+         записать карточную половину в ящик. */
+      refundLines = refundSplit(salePayments, refund.amount);
+    } else {
+      // Один способ у чека — просьба кассы сильнее, как и была.
+      refundLines = [{ method: singleMethod as PaymentLine['method'], amount: refund.amount }];
+    }
+  }
+
+  // Чем подписан сам возврат. Одна часть — своим именем; несколько — `mixed`,
+  // ровно как у чека: выбрать «самый большой» значило бы записать карточную
+  // половину наличными, то есть вернуть ту же ошибку с другой стороны.
+  const refundStamp = refundLines.length > 1 ? 'mixed' : refundLines[0]?.method ?? singleMethod;
+
   /* Коды возвращаются вместе с товаром.
      Без этого пачка ложится на полку, а её код остаётся «продан» навсегда:
      остаток есть, а продать нельзя — касса потребует код, сервер ответит
@@ -1519,7 +1563,12 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
           // split sale — makes the return invisible to the shift's cash
           // reconciliation, which counts refunds by this very field: the money
           // left the drawer and the figures say it did not.
-          paymentMethod: refundMethod(b.paymentMethod, sale.paymentMethod),
+          //
+          // С 25.09.2026 `mixed` здесь бывает — и значит ровно то же, что у
+          // чека: способов было несколько, и они лежат в `payments`. Сверка
+          // читает их той же функцией, что и приход.
+          paymentMethod: refundStamp,
+          payments: { create: refundLines.map((line) => ({ method: line.method, amount: line.amount })) },
           shiftId: returnShiftId,
           counterpartyId: sale.counterpartyId,
           originalDocumentId: sale.id,
@@ -1897,6 +1946,8 @@ async function shiftCashFor(shift: {
     }),
     prisma.document.findMany({
       where: { companyId, locationId, type: 'return', status: 'confirmed', ...inThisShift },
+      // Как и у продажи: ящику важна наличная часть возврата, а не вся сумма.
+      include: { payments: true },
     }),
     prisma.settlement.findMany({
       where: { companyId, locationId, paymentMethod: 'cash', ...inThisShift },
@@ -1991,7 +2042,7 @@ function shiftCashFrom(
   // про один и тот же чек одно и то же.
   candidateShifts: { id: string; userId: string | null; openedAt: Date; closedAt: Date | null }[],
   salesDocs: { createdBy: string | null; createdAt: Date; shiftId: string | null; paymentMethod: string | null; discountType: string | null; discountValue: number | null; pointsRedeemed: number | null; items: { price: number; quantity: number }[]; payments: { method: string; amount: number }[] }[],
-  returnDocs: { createdBy: string | null; createdAt: Date; shiftId: string | null; paymentMethod: string | null; refundAmount: number | null }[],
+  returnDocs: { createdBy: string | null; createdAt: Date; shiftId: string | null; paymentMethod: string | null; refundAmount: number | null; payments: { method: string; amount: number }[] }[],
   cashSettlements: { direction: string; amount: number; createdAt: Date; createdBy: string | null; shiftId: string | null }[],
   now: Date,
 ): ShiftCash[] {
@@ -2009,13 +2060,6 @@ function shiftCashFrom(
       createdAt: Date;
       shiftId: string | null;
     }) => (doc.shiftId ? doc.shiftId === shift.id : unlinkedTo(doc) === shift.id);
-    const matches = (doc: {
-      createdBy: string | null;
-      paymentMethod: string | null;
-      createdAt: Date;
-      shiftId: string | null;
-    }) => doc.paymentMethod === 'cash' && belongsToShift(doc);
-
     // Only the cash half of a split sale reaches the drawer. Counting the whole
     // total would leave the cashier short at close by exactly what the customer
     // paid on the phone, through no fault of theirs — and a shortage the
@@ -2027,7 +2071,18 @@ function shiftCashFrom(
       return sum + cashPortion(paymentsOrLegacy(doc.payments as PaymentLine[], doc.paymentMethod, total));
     }, 0);
     // Refunds leave the same drawer, so they belong in the same figure.
-    const paidOut = returnDocs.filter(matches).reduce((sum, doc) => sum + (doc.refundAmount ?? 0), 0);
+    // Той же функцией, что и приход, и по той же причине: возврат по чеку,
+    // разбитому между наличными и картой, выдаёт из ящика только наличную
+    // часть. Считая его целиком, сверка придумывала кассиру излишек ровно на
+    // карточную половину — то же самое, от чего защищён приход строкой выше.
+    const paidOut = returnDocs.filter(belongsToShift).reduce(
+      (sum, doc) =>
+        sum +
+        cashPortion(
+          paymentsOrLegacy(doc.payments as PaymentLine[], doc.paymentMethod, doc.refundAmount ?? 0),
+        ),
+      0,
+    );
 
     // Расчёты наличными — туда же: они ложатся в тот же ящик.
     //
@@ -4347,7 +4402,8 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
       }),
       prisma.document.findMany({
         where: { companyId: companyId, locationId, type: 'return', createdAt: { gte: from } },
-        include: { items: true },
+        // Как и у продажи: ящику важна наличная часть возврата, а не вся сумма.
+        include: { items: true, payments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
       }),
       // Both kinds: a count that came up short and a deliberate write-off are
       // the same thing to an owner — stock that left the books without being

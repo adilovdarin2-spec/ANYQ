@@ -133,11 +133,21 @@ describe('which shift a sale belongs to', () => {
     expect((await shiftCash(shiftId)).expected).toBe(10600);
   });
 
-  it('возврат по чеку, разбитому на части, всё равно уходит из ящика', async () => {
-    // Способ оплаты у такого чека — «mixed», и возврат наследовал его. А
-    // выданные деньги сверка считает по этому полю и «mixed» не знает: наличные
-    // из ящика уходили, а в сверке их не было. Кассир, вернувший деньги
-    // покупателю, оказывался должен ровно эту сумму.
+  it('возврат по чеку, разбитому на части, уходит из ящика своей наличной долей', async () => {
+    /* Две ошибки подряд в одном месте, и вторая родилась из починки первой.
+
+       Сначала способ оплаты такого чека — «mixed» — наследовал возврат, а
+       сверка считала выданное по этому полю и «mixed» не знала: наличные из
+       ящика уходили, а в сверке их не было. Кассир оказывался должен ровно эту
+       сумму.
+
+       Починили тем, что подписали такой возврат наличными. Он стал виден — и
+       стал считаться целиком: карточная доля тоже вычиталась из ящика, и
+       вместо недостачи кассир получал излишек, которого не делал.
+
+       Теперь возврат несёт свои части, как их несёт чек, и сверка читает их той
+       же функцией. Видимым он от этого быть не перестал — а это и было смыслом
+       первой починки. */
     const shiftId = await openShift(10000);
     const sold = await api(fx.token, 'POST', '/pos/sales', {
       locationId: fx.locationId,
@@ -161,11 +171,21 @@ describe('which shift a sale belongs to', () => {
     });
     expect(refund.status, JSON.stringify(refund.body)).toBe(201);
 
-    const document = await prisma.document.findUnique({ where: { id: refund.body.id } });
-    expect(document?.paymentMethod).toBe('cash');
+    const document = await prisma.document.findUnique({
+      where: { id: refund.body.id },
+      include: { payments: { orderBy: { method: 'asc' } } },
+    });
+    // Несколько способов подписываются так же, как у чека, — и лежат строками.
+    expect(document?.paymentMethod).toBe('mixed');
+    expect(document?.payments.map((p) => [p.method, p.amount])).toEqual([
+      ['card', 240],
+      ['cash', 160],
+    ]);
 
-    // 10 000 в кассу + 400 наличными с чека − 400 отданных.
-    expect((await shiftCash(shiftId)).expected).toBe(10000);
+    // Чек 1000 = 600 картой + 400 наличными, возвращают 400 из него. Наличная
+    // доля возврата — 400 × 400/1000 = 160, и только она выходит из ящика.
+    // 10 000 в кассу + 400 наличными с чека − 160 отданных.
+    expect((await shiftCash(shiftId)).expected).toBe(10240);
   });
 });
 

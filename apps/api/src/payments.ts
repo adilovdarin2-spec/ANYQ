@@ -167,6 +167,46 @@ export function paymentsOrLegacy(
   return [{ method: method as PaymentMethod, amount: total }];
 }
 
+/**
+ * Чем возвращают деньги по чеку, оплаченному несколькими способами.
+ *
+ * Возврат до 25.09.2026 нёс один способ, а чек мог нести два, и сверка смены
+ * читала их по-разному: приход — по частям, расход — целиком. Чек на 400, где
+ * 200 наличными и 200 картой, при полном возврате вычитал из ящика все 400.
+ * Кассир, отдавший 200 наличными и отменивший 200 на карте, закрывал смену с
+ * излишком в 200, которого не делал.
+ *
+ * Излишек человек объяснить не может, недостачу — оплачивает; и то и другое
+ * система придумала бы сама. Поэтому возврат раскладывается так же, как чек
+ * был собран: пропорционально каждой его части.
+ *
+ * Остаток от округления достаётся самой большой части. Один тенге не меняет
+ * ничего в обе стороны, а правило «самой большой» ничем не выделяет наличные —
+ * то есть не смещает ящик ни туда, ни сюда.
+ */
+export function refundSplit(salePayments: PaymentLine[], refund: number): PaymentLine[] {
+  if (refund <= 0) return [];
+  const collected = salePayments.reduce((sum, line) => sum + line.amount, 0);
+  // Нечего делить: строка без разбивки или чек на ноль. Зовущий подставит
+  // одиночный способ — так же, как это делает `paymentsOrLegacy`.
+  if (salePayments.length === 0 || collected <= 0) return [];
+
+  const lines = salePayments.map((line) => ({
+    method: line.method,
+    amount: Math.round((line.amount / collected) * refund),
+  }));
+
+  // Сумма долей обязана совпасть с возвратом до тенге: иначе ящик и журнал
+  // разойдутся ровно на округление, и разойдутся тихо.
+  let biggest = 0;
+  for (let i = 1; i < lines.length; i++) {
+    if (salePayments[i].amount > salePayments[biggest].amount) biggest = i;
+  }
+  lines[biggest].amount += refund - lines.reduce((sum, line) => sum + line.amount, 0);
+
+  return lines.filter((line) => line.amount > 0);
+}
+
 /** Takings by method, for a day's or a shift's worth of sales. */
 export function totalsByMethod(sales: { payments: PaymentLine[] }[]): Record<string, number> {
   const totals: Record<string, number> = {};

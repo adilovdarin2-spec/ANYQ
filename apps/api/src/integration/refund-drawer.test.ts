@@ -242,8 +242,48 @@ describe('разбитый чек', () => {
     expect(sale.status, JSON.stringify(sale.body)).toBe(201);
     expect(await expectedCash(shiftId)).toBe(20250);
 
-    // Возврат выдаётся наличными — значит из ящика он и уходит.
+    /* Касса прислала «наличные» — но это не выбор кассира, а подстановка: у неё
+       в списке способов нет пункта «пополам», и для разбитого чека она ставит
+       наличные сама. До 25.09.2026 подстановке верили, и из ящика уходили все
+       200 против 83 настоящих: кассир, отменивший карточную долю на карте,
+       закрывал смену с излишком в 117, которого не делал.
+
+       Наличная доля возврата — 200 × 250/600 = 83. */
     expect((await refund(sale.body.id, 1, 'drawer-split-refund', 'cash')).status).toBe(201);
-    expect(await expectedCash(shiftId)).toBe(20050);
+    expect(await expectedCash(shiftId)).toBe(20250 - 83);
+  });
+
+  it('а если кассир отдал всё наличными, он это и говорит — разбивкой', async () => {
+    /* Обратная сторона. Бывает и так: карту не трогали, всё отдали из ящика.
+       Знает об этом только тот, кто стоял у прилавка, поэтому названная касса
+       сильнее выведенной — но названная разбивкой, а не одним словом, которое
+       касса подставляет и за молчание тоже. */
+    const shiftId = await openShift();
+    const sale = await sell(
+      {
+        payments: [
+          { method: 'cash', amount: 250 },
+          { method: 'card', amount: 350 },
+        ],
+      },
+      'drawer-split-told-sale',
+    );
+    expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+
+    const line = await prisma.documentItem.findFirstOrThrow({ where: { documentId: sale.body.id } });
+    const back = await api(
+      fx.token,
+      'POST',
+      '/pos/returns',
+      {
+        saleId: sale.body.id,
+        reason: 'не подошёл',
+        items: [{ documentItemId: line.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: 200 }],
+      },
+      { 'Idempotency-Key': 'drawer-split-told-refund' },
+    );
+    expect(back.status, JSON.stringify(back.body)).toBe(201);
+    expect(await expectedCash(shiftId)).toBe(20250 - 200);
   });
 });
