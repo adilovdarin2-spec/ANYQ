@@ -12,6 +12,7 @@ import { LandingPage } from './components/LandingPage';
 import { InstallPrompt } from './components/InstallPrompt';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { Cabinet } from './components/Cabinet';
+import { loadCart, reconcileCart, saveCart } from './cart-storage';
 
 type View = 'catalog' | 'checkout' | 'success';
 
@@ -40,7 +41,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [cart, setCart] = useState<CartLine[]>([]);
+  /* Корзина поднимается из хранилища: телефон выгружает фоновую вкладку сам, и
+     закупщик, набравший сорок строк и заглянувший в WhatsApp, возвращался к
+     пустому каталогу. Сведение со свежим каталогом — ниже, когда он придёт:
+     цену и остаток в восстановленной корзине показывать вчерашними нельзя. */
+  const [cart, setCart] = useState<CartLine[]>(() => loadCart(getCompanyId()));
   const [view, setView] = useState<View>('catalog');
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Все');
@@ -58,10 +63,28 @@ export default function App() {
       return;
     }
     fetchCatalog(companyId)
-      .then((data) => setCatalog(data))
+      .then((data) => {
+        setCatalog(data);
+        /* Восстановленная корзина сводится со свежим каталогом тем же правилом,
+           каким сводится корзина после отказа сервера: цена подтягивается,
+           потолок остатка тоже, а о пропавших строках человеку говорят. Сами
+           строки не вычёркиваются — заказ его. */
+        setCart((prev) => {
+          if (prev.length === 0) return prev;
+          const { cart: сведено, problems } = reconcileCart(data, prev);
+          setStaleLines(problems);
+          return сведено;
+        });
+      })
       .catch((err) => setLoadError(err instanceof ApiError ? err.message : 'Не удалось загрузить каталог'))
       .finally(() => setLoading(false));
   }, [companyId]);
+
+  // Сохраняется на каждое изменение, а не на отправку: смысл в том, чтобы
+  // пережить закрытие вкладки, о котором никто не предупреждает.
+  useEffect(() => {
+    saveCart(companyId, cart);
+  }, [companyId, cart]);
 
   useEffect(() => {
     if (!catalog) return;
@@ -85,29 +108,14 @@ export default function App() {
       const fresh = await fetchCatalog(companyId);
       setCatalog(fresh);
 
-      const offered = new Map(fresh.products.map((p) => [p.id, p]));
-      const проблемы: string[] = [];
-      for (const line of cart) {
-        const product = offered.get(line.productId);
-        if (!product) {
-          проблемы.push(line.name);
-          continue;
-        }
-        // Остаток мог упасть, пока страница была открыта: заказ на большее
-        // сервер всё равно не примет, и лучше это знать здесь.
-        if (line.qty > product.stock) {
-          проблемы.push(`${line.name} — осталось ${product.stock} ${product.unit}`);
-        }
-      }
-      // Потолок в строке тоже подтягиваем: иначе «+» продолжал бы разрешать
-      // количество, которого на складе уже нет.
-      setCart((prev) =>
-        prev.map((line) => {
-          const product = offered.get(line.productId);
-          return product ? { ...line, maxStock: product.stock, price: product.price } : line;
-        }),
-      );
-      setStaleLines(проблемы);
+      // Тем же правилом, что и восстановление корзины из хранилища: оба случая
+      // про «страница открыта со вчера», и считать их по-разному значило бы, что
+      // однажды они разойдутся.
+      setCart((prev) => {
+        const { cart: сведено, problems } = reconcileCart(fresh, prev);
+        setStaleLines(problems);
+        return сведено;
+      });
     } catch {
       // Каталог не перечитался — сообщение об отказе уже показано, и второе
       // сообщение про неудачную перезагрузку человеку ничем не поможет.
