@@ -12,7 +12,7 @@ import { LandingPage } from './components/LandingPage';
 import { InstallPrompt } from './components/InstallPrompt';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { Cabinet } from './components/Cabinet';
-import { loadCart, reconcileCart, saveCart } from './cart-storage';
+import { loadBuyer, loadCart, reconcileCart, saveBuyer, saveCart } from './cart-storage';
 
 type View = 'catalog' | 'checkout' | 'success';
 
@@ -46,6 +46,10 @@ export default function App() {
      пустому каталогу. Сведение со свежим каталогом — ниже, когда он придёт:
      цену и остаток в восстановленной корзине показывать вчерашними нельзя. */
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(getCompanyId()));
+  /* Кто заказывал в прошлый раз с этого устройства. Читается один раз при
+     первом рендере и дальше не меняется: лист оформления забирает это как
+     начальные значения полей, а правит их человек сам. */
+  const [buyer] = useState(() => loadBuyer(getCompanyId()));
   const [view, setView] = useState<View>('catalog');
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Все');
@@ -170,6 +174,9 @@ export default function App() {
         items: cart.map((l) => ({ productId: l.productId, quantity: l.qty })),
       });
       setOrderNumber(placed.number ?? null);
+      // Запоминается только то, что сервер принял: сохранив отвергнутое, мы
+      // подставляли бы в следующий заказ данные, из-за которых отказали.
+      saveBuyer(companyId, { name: customerName, phone: customerPhone, address: deliveryAddress });
       setCart([]);
       setView('success');
     } catch (err) {
@@ -270,6 +277,7 @@ export default function App() {
           submitting={submitting}
           error={submitError}
           staleLines={staleLines}
+          buyer={buyer}
           onBack={() => setView('catalog')}
           onSubmit={handleSubmitOrder}
         />

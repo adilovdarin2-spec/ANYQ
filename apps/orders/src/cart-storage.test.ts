@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadCart, saveCart, reconcileCart } from './cart-storage';
+import { loadBuyer, loadCart, saveBuyer, saveCart, reconcileCart } from './cart-storage';
 import type { CartLine, Catalog } from './types';
 import { withoutComments } from '../../../scripts/lib/source-text.mjs';
 
@@ -153,6 +153,49 @@ describe('сведение корзины со свежим каталогом',
   });
 });
 
+describe('кто заказывает', () => {
+  beforeEach(() => {
+    подменитьХранилище();
+  });
+
+  it('запоминается и подставляется в следующий раз', () => {
+    /* Опт — это один и тот же человек, магазин и адрес каждую неделю. Пустой
+       лист означал, что это набирают заново с телефона перед каждым заказом. */
+    saveBuyer('c1', { name: 'ТОО «Береке»', phone: '+77001234567', address: 'Алматы, Абая 10' });
+    expect(loadBuyer('c1')).toEqual({
+      name: 'ТОО «Береке»',
+      phone: '+77001234567',
+      address: 'Алматы, Абая 10',
+    });
+  });
+
+  it('и тоже по компании', () => {
+    // Адрес доставки одному поставщику может быть не тем, что другому.
+    saveBuyer('c1', { name: 'А', phone: '1', address: 'склад' });
+    saveBuyer('c2', { name: 'Б', phone: '2', address: 'магазин' });
+    expect(loadBuyer('c1').address).toBe('склад');
+    expect(loadBuyer('c2').address).toBe('магазин');
+  });
+
+  it('а чего нет — то пустая строка, а не «undefined» в поле', () => {
+    /* Подставить в поле телефона не строку значило бы сломать лист оформления,
+       а не просто не помочь. */
+    expect(loadBuyer('c9')).toEqual({ name: '', phone: '', address: '' });
+    expect(loadBuyer(null)).toEqual({ name: '', phone: '', address: '' });
+  });
+
+  it('и мусор в хранилище не доезжает до полей', () => {
+    const store = подменитьХранилище();
+    for (const мусор of ['не json', '42', 'null', '{"name":{"его":"зовут"}}']) {
+      store.set('anyq.storefront.buyer.c1', мусор);
+      const b = loadBuyer('c1');
+      expect(typeof b.name, мусор).toBe('string');
+      expect(typeof b.phone, мусор).toBe('string');
+      expect(typeof b.address, мусор).toBe('string');
+    }
+  });
+});
+
 describe('витрина пользуется этим, а не своей копией', () => {
   const app = withoutComments(
     readFileSync(resolve(__dirname, 'App.tsx'), 'utf8').replace(/\r\n/g, '\n'),
@@ -166,6 +209,27 @@ describe('витрина пользуется этим, а не своей ко�
     // Смысл в том, чтобы пережить закрытие вкладки, о котором не предупреждают.
     expect(app).toContain('saveCart(companyId, cart);');
     expect(app).toContain('}, [companyId, cart]);');
+  });
+
+  it('подставляет прошлые данные в лист оформления', () => {
+    expect(app).toContain('loadBuyer(getCompanyId())');
+    expect(app).toContain('buyer={buyer}');
+  });
+
+  it('и лист их правда берёт, а не просто получает', () => {
+    /* Передать и не использовать — ровно то, что эта охрана пропустила в первой
+       своей версии: витрина отдавала данные, а лист открывался пустым. */
+    const лист = withoutComments(readFileSync(resolve(__dirname, 'components', 'CheckoutSheet.tsx'), 'utf8'));
+    for (const поле of ['name', 'phone', 'address']) {
+      expect(лист, `поле ${поле} не подставляется`).toContain(`useState(buyer?.${поле} ?? '')`);
+    }
+  });
+
+  it('и запоминает их только после того, как сервер заказ принял', () => {
+    /* Сохранив отвергнутое, мы подставляли бы в следующий заказ данные, из-за
+       которых отказали. */
+    const после = app.slice(app.indexOf('setOrderNumber(placed.number'));
+    expect(после.slice(0, после.indexOf('setView('))).toContain('saveBuyer(companyId,');
   });
 
   it('и сводит с каталогом одним правилом в оба случая', () => {

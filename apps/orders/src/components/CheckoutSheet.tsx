@@ -15,6 +15,8 @@ interface Props {
    * их за него нельзя: заказ его.
    */
   staleLines?: string[];
+  /** Кто заказывал в прошлый раз — с этого устройства, из хранилища витрины. */
+  buyer?: { name: string; phone: string; address: string };
   onBack: () => void;
   onSubmit: (name: string, phone: string, address: string) => void;
 }
@@ -31,10 +33,15 @@ function listRu(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} и ${items[items.length - 1]}`;
 }
 
-export function CheckoutSheet({ cart, total, submitting, error, staleLines, onBack, onSubmit }: Props) {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+export function CheckoutSheet({ cart, total, submitting, error, staleLines, buyer, onBack, onSubmit }: Props) {
+  /* Заполнено тем, чем заказывали в прошлый раз с этого устройства.
+  
+     Опт — это один и тот же человек, магазин и адрес каждую неделю. Пустой лист
+     означал, что это набирают заново с телефона перед каждым заказом, — та же
+     возня, из-за которой закупщик закрывает вкладку и звонит. */
+  const [name, setName] = useState(buyer?.name ?? '');
+  const [phone, setPhone] = useState(buyer?.phone ?? '');
+  const [address, setAddress] = useState(buyer?.address ?? '');
 
   /**
    * Чего не хватает, чтобы отправить заказ.

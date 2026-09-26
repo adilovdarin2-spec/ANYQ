@@ -70,6 +70,58 @@ export function saveCart(companyId: string | null, cart: CartLine[]): void {
   }
 }
 
+/**
+ * Кто заказывает: имя, телефон, адрес доставки.
+ *
+ * Опт — это один и тот же человек, тот же магазин и тот же адрес каждую неделю, а
+ * лист оформления открывался пустым. Набирать это заново с телефона перед каждым
+ * заказом — та же самая возня, из-за которой закупщик закрывает вкладку и звонит;
+ * в этом приложении про неё уже сказано отдельно.
+ *
+ * Данные его собственные и остаются на его устройстве: в заказ они и так уходят,
+ * а поля подставляются заполненными и правятся как обычно.
+ */
+export interface Buyer {
+  name: string;
+  phone: string;
+  address: string;
+}
+
+const BUYER_KEY = 'anyq.storefront.buyer';
+
+function buyerKey(companyId: string): string {
+  return `${BUYER_KEY}.${companyId}`;
+}
+
+export function loadBuyer(companyId: string | null): Buyer {
+  const пусто: Buyer = { name: '', phone: '', address: '' };
+  if (!companyId) return пусто;
+  try {
+    const raw = window.localStorage.getItem(buyerKey(companyId));
+    if (!raw) return пусто;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed !== 'object' || parsed === null) return пусто;
+    // Построчно и с недоверием: подставить в поле телефона объект значило бы
+    // сломать лист оформления, а не просто не помочь.
+    return {
+      name: typeof parsed.name === 'string' ? parsed.name : '',
+      phone: typeof parsed.phone === 'string' ? parsed.phone : '',
+      address: typeof parsed.address === 'string' ? parsed.address : '',
+    };
+  } catch {
+    return пусто;
+  }
+}
+
+export function saveBuyer(companyId: string | null, buyer: Buyer): void {
+  if (!companyId) return;
+  try {
+    window.localStorage.setItem(buyerKey(companyId), JSON.stringify(buyer));
+  } catch {
+    // Запрещённое или переполненное хранилище: заказ это не отменяет.
+  }
+}
+
 export interface Reconciled {
   cart: CartLine[];
   /** Строки, о которых надо сказать: их больше нет или их стало меньше. */
