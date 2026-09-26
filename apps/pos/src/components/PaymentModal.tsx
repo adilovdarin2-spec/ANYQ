@@ -161,11 +161,15 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm, error }:
           <div className="cash-change">
             <div className="form-field">
               <label htmlFor="cash-given">{t('payment.cashGiven')}</label>
+              {/* `text`, а не `number`: `parseCashInput` обещает принимать
+                  пробелы внутри и запятую, а `type="number"` и то и другое
+                  стирает — отдаёт пустую строку. Замерено: «1 200» → `""`.
+                  Кассир, которому дали тысячу двести, набирал «1 200» — так эту
+                  сумму и пишут, — и сдача не считалась вовсе. */}
               <input
                 id="cash-given"
-                type="number"
+                type="text"
                 inputMode="numeric"
-                min="0"
                 value={given}
                 onChange={(e) => setGiven(e.target.value)}
                 placeholder={t('payment.cashGivenPlaceholder')}

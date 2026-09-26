@@ -89,8 +89,25 @@ export function ProductEditScreen({
 
   const purchase = Number(purchasePrice);
   const sale = Number(salePrice);
+  /* Пустая цена — это «ещё не заполнил», а не «бесплатно».
+
+     `Number('')` — ноль, и без проверки на пустоту карточка с незаполненными
+     ценами считалась готовой: кнопка «Сохранить» была доступна, товар уезжал в
+     каталог с ценой ноль, и касса отдавала его даром. Владелец, заводящий сорок
+     товаров подряд, одно поле пропустит обязательно.
+
+     Ноль остаётся разрешённым, если его набрали: бесплатный подарок и
+     ингредиент, который не продают, — случаи настоящие, и сервер их принимает.
+     Запрещено не значение, а незаполненность. */
   const valid =
-    name.trim() !== '' && unit.trim() !== '' && Number.isFinite(purchase) && purchase >= 0 && Number.isFinite(sale) && sale >= 0;
+    name.trim() !== '' &&
+    unit.trim() !== '' &&
+    purchasePrice.trim() !== '' &&
+    Number.isFinite(purchase) &&
+    purchase >= 0 &&
+    salePrice.trim() !== '' &&
+    Number.isFinite(sale) &&
+    sale >= 0;
 
   const packUnitsValue = Number(packUnits);
   const packValid = packName.trim() !== '' && Number.isFinite(packUnitsValue) && packUnitsValue > 0;

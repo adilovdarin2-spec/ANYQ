@@ -27,11 +27,27 @@ export function WeightEntryModal({ product, initialKg, onConfirm, onCancel }: Pr
         <div className="count-hint">{t('weight.perKgInStock', { price: formatMoney(product.price), stock: formatWeight(product.stock) })}</div>
         <div className="field">
           <label htmlFor="weight-kg">{t('weight.label')}</label>
+          {/* `text`, а не `number`, и это не придирка.
+
+              Поле `type="number"` отдаёт пустую строку, когда содержимое не
+              является числом по правилам HTML, — а запятая им не является.
+              Замерено в браузере: «1,5» → `""`, «0,25» → `""`. То есть строка
+              выше, меняющая запятую на точку, не видела запятую ни разу.
+
+              Для кассира это выглядело так: набрал «1», потом «,» — и поле
+              погасло. Причём молча: ошибка ниже показывается только при
+              непустом значении, а оно как раз стало пустым.
+
+              Запятая здесь не редкость: на цифровом блоке с русской и казахской
+              раскладкой десятичная клавиша — это она. А весовой товар в
+              продуктовом — сахар, крупа, конфеты, овощи.
+
+              `inputMode="decimal"` оставляет под пальцем тот же цифровой блок,
+              но не отбирает у строки запятую. */}
           <input
             id="weight-kg"
-            type="number"
-            min="0"
-            step="0.001"
+            type="text"
+            inputMode="decimal"
             autoFocus
             value={value}
             onChange={(e) => setValue(e.target.value)}
