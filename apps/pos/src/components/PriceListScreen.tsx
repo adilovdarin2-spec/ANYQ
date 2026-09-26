@@ -240,10 +240,39 @@ export function PriceListScreen({
                       <br />
                       <span className="order-meta">
                         {line.supplierPrice !== null ? formatMoney(line.supplierPrice) : '—'}
+                        {/* Оба числа и обе единицы рядом с процентом.
+
+                            Процент сам по себе просит доверия к подписи, а
+                            подпись была неточна: сравнение идёт с закупочной
+                            ценой из карточки товара, а приёмка её не меняет —
+                            то есть это наша учётная цена, а не «последняя
+                            закупка», как было написано у поля.
+
+                            С двумя числами верить нечему: видно, что с чем
+                            сравнили. И видно то, чего процент не покажет вовсе
+                            — что у поставщика килограмм, а у нас упаковка, и
+                            сравнивать их нельзя. */}
+                        {line.ourPurchasePrice !== null && (
+                          <>
+                            {' · '}
+                            {t('priceList.ours', {
+                              price: formatMoney(line.ourPurchasePrice),
+                              unit: line.ourUnit ?? '',
+                            })}
+                          </>
+                        )}
                         {line.priceChangePercent !== null && (
                           <span className={line.priceChangePercent > 0 ? 'price-up' : 'price-down'}>
                             {' '}{line.priceChangePercent > 0 ? '+' : ''}{line.priceChangePercent} %
                           </span>
+                        )}
+                        {/* Как строку узнали. По штрихкоду — это тот же товар; по
+                            названию — совпадение точное, но названия у нас и у
+                            поставщика набирал разный человек. Не сказав этого, мы
+                            предлагаем количество и сравниваем цены, не объяснив,
+                            про какой товар речь. */}
+                        {line.productId && line.matchedBy === 'name' && (
+                          <> · {t('priceList.matchedByName')}</>
                         )}
                         {line.available !== null ? ` · ${t('priceList.onShelf', { count: line.available })}` : ''}
                         {line.daysOfCover !== null ? ` · ${t('priceList.cover', { days: line.daysOfCover })}` : ''}

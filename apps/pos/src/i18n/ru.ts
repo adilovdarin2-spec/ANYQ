@@ -1256,6 +1256,8 @@ export const ru = {
   'priceList.noSupplier': 'Не указывать',
   'priceList.onlyNeeded': 'Только то, что нужно заказать или изменилось в цене',
   'priceList.lines': 'Позиции ({count})',
+  'priceList.ours': 'у нас {price}/{unit}',
+  'priceList.matchedByName': 'узнали по названию, не по штрихкоду',
   'priceList.onShelf': 'на полке {count}',
   'priceList.cover': 'хватит на {days} дн.',
   'priceList.notOurs': 'нет у нас',

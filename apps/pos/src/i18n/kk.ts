@@ -1224,6 +1224,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'priceList.noSupplier': 'Көрсетпеу',
   'priceList.onlyNeeded': 'Тек тапсырыс беру керегі немесе бағасы өзгергені',
   'priceList.lines': 'Позициялар ({count})',
+  'priceList.ours': 'бізде {price}/{unit}',
+  'priceList.matchedByName': 'атауы бойынша танылды, штрихкод бойынша емес',
   'priceList.onShelf': 'сөреде {count}',
   'priceList.cover': '{days} күнге жетеді',
   'priceList.notOurs': 'бізде жоқ',
