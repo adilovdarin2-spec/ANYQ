@@ -172,7 +172,10 @@ export function CustomerRow({ netAfterDiscount, selection, onChange, onLookup, s
             <button type="button" className="li-remove" onClick={clear}>{t('loyalty.remove')}</button>
           </span>
         ) : (
-          <button type="button" className="li-remove" onClick={() => setEditing(true)}>{t('loyalty.attach')}</button>
+          // Привязать покупателя — обычное действие, а красный в кассе значит
+          // «уносит». То же самое уже исправлено у скидки: цвет опасности,
+          // розданный всем подряд, перестаёт быть цветом опасности.
+          <button type="button" className="li-action" onClick={() => setEditing(true)}>{t('loyalty.attach')}</button>
         )}
       </div>
       {selection && <CreditLine selection={selection} netAfterDiscount={netAfterDiscount} />}
