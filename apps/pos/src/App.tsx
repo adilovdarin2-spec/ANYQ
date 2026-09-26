@@ -2354,7 +2354,19 @@ export default function App() {
     setSupplierReturnSubmitting(true);
     setSupplierReturnsError(null);
     try {
-      await createSupplierReturn(session.token, { ...payload, locationId: currentLocationId });
+      /* Свой номер операции на каждую попытку — как у возврата покупателю.
+
+         Возврат поставщику списывает товар с учёта, а сервер для этого маршрута
+         защиту от повтора держит (`POST /pos/supplier-returns` в `runIdempotent`)
+         — и она не включалась: ключа никто не присылал. Склад на плохой связи не
+         отличает «не дошло» от «дошло, а ответ потерялся», и кладовщик нажимает
+         второй раз: товар уезжал с учёта дважды, а поставщику выставлялось два
+         возврата вместо одного. */
+      await createSupplierReturn(
+        session.token,
+        { ...payload, locationId: currentLocationId },
+        genId('supplier-return'),
+      );
       await loadSupplierReturns();
       // Goods left the shelf, so the register's cached grid has to hear about it.
       await refreshCatalogAfterStockChange();
