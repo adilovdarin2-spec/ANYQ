@@ -123,6 +123,27 @@ export function SettlementsScreen({
               </div>
 
               <div className="order-items">
+                {/* Из чего сложилось число в шапке.
+
+                    Сальдо стояло одно: «Должен 8 500». По такому числу нельзя
+                    ни спорить, ни соглашаться — а спорят по нему постоянно, это
+                    опт. Начислено минус оплачено даёт его в точности
+                    (`computeBalance`: `charged - settled - unapplied`, а
+                    `paid` — это `settled + unapplied`), поэтому владелец теперь
+                    может сложить его сам и сверить со своей тетрадью.
+
+                    Тот же довод, по которому рядом стоит «не разнесено», и тот
+                    же, по которому на закрытии смены показывают слагаемые, а не
+                    только ожидаемую сумму: итог без слагаемых читается как
+                    произвол. */}
+                {account.charged > 0 && (
+                  <div className="order-item-row">
+                    <span>{t('settle.chargedPaid')}</span>
+                    <span>
+                      {formatMoney(account.charged)} − {formatMoney(account.paid)}
+                    </span>
+                  </div>
+                )}
                 {account.aging.current > 0 && (
                   <div className="order-item-row">
                     <span>{t('settle.upToWeek')}</span>
