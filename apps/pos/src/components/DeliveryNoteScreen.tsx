@@ -4,6 +4,7 @@ import { readSheetFile } from '../sheet-encoding';
 import type { ImportSource } from '../api';
 import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney, parseSheet } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   match: DeliveryMatch | null;
@@ -199,15 +200,14 @@ export function DeliveryNoteScreen({
                     {line.productId ? (
                       <input
                         className="qty-input"
-                        type="number"
+                        type="text"
                         min={0}
-                        step="any"
                         inputMode="decimal"
                         value={quantities[line.productId] ?? 0}
                         onChange={(e) =>
                           setQuantities((prev) => ({
                             ...prev,
-                            [line.productId!]: Math.max(0, Number(e.target.value) || 0),
+                            [line.productId!]: Math.max(0, parseTyped(e.target.value) || 0),
                           }))
                         }
                       />

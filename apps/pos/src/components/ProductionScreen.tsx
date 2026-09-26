@@ -3,6 +3,7 @@ import { useTranslation } from '../i18n/useLanguage';
 import type { Product, ProductionRecipe, ProductionRun } from '../types';
 import { formatDateTime } from '../utils';
 import { pluralPhrase } from '../i18n';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   runs: ProductionRun[];
@@ -57,7 +58,7 @@ export function ProductionScreen({
   }, [recipes, productId]);
 
   const recipe = recipes.find((r) => r.productId === productId);
-  const desired = Number(quantity);
+  const desired = parseTyped(quantity);
   const valid = Number.isFinite(desired) && desired > 0 && !!recipe;
   const batches = valid && recipe ? Math.ceil(desired / recipe.portionYield) : 0;
   const yieldQuantity = valid && recipe ? batches * recipe.portionYield : 0;
@@ -81,10 +82,10 @@ export function ProductionScreen({
     setView('editRecipe');
   }
 
-  const draftFilled = draftLines.filter((line) => line.ingredientId !== '' && Number(line.quantity) > 0);
+  const draftFilled = draftLines.filter((line) => line.ingredientId !== '' && parseTyped(line.quantity) > 0);
   const draftValid =
     editingId !== '' &&
-    Number(draftYield) > 0 &&
+    parseTyped(draftYield) > 0 &&
     draftFilled.length > 0 &&
     // Товар не бывает составляющей самого себя, и сказать об этом лучше до
     // нажатия: сервер откажет тем же, но кассир уже потратит время.
@@ -94,8 +95,8 @@ export function ProductionScreen({
   async function handleSaveRecipe() {
     if (!draftValid) return;
     const success = await onSaveRecipe(editingId, {
-      portionYield: Number(draftYield),
-      ingredients: draftFilled.map((line) => ({ ingredientId: line.ingredientId, quantity: Number(line.quantity) })),
+      portionYield: parseTyped(draftYield),
+      ingredients: draftFilled.map((line) => ({ ingredientId: line.ingredientId, quantity: parseTyped(line.quantity) })),
     });
     if (success) setView('recipes');
   }
@@ -194,9 +195,8 @@ export function ProductionScreen({
             <label htmlFor="recipe-yield">{t('production.yield')}</label>
             <input
               id="recipe-yield"
-              type="number"
-              min="0"
-              step="any"
+              type="text"
+              inputMode="decimal"
               value={draftYield}
               onChange={(e) => setDraftYield(e.target.value)}
             />
@@ -222,9 +222,8 @@ export function ProductionScreen({
                   ))}
               </select>
               <input
-                type="number"
-                min="0"
-                step="any"
+                type="text"
+                inputMode="decimal"
                 aria-label={t('common.quantity')}
                 value={line.quantity}
                 placeholder="0"
@@ -272,8 +271,8 @@ export function ProductionScreen({
                 <label htmlFor="production-qty">{t('production.howMany')}</label>
                 <input
                   id="production-qty"
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="decimal"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   placeholder={t('production.quantityPlaceholder')}

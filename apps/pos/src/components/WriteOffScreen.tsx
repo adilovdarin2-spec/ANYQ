@@ -5,6 +5,7 @@ import { sameMarkedCode } from '../marking-scan';
 import type { Product, WriteOffRecord, WriteOffReason } from '../types';
 import { WRITE_OFF_PHRASES } from '../types';
 import { formatDateTime } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface Line {
   productId: string;
@@ -97,7 +98,7 @@ export function WriteOffScreen({
 
   function addLine() {
     const product = products.find((p) => p.id === productId);
-    const qty = Number(quantity);
+    const qty = parseTyped(quantity);
     if (!product || !(qty > 0)) return;
     setLines((prev) => [...prev, { productId: product.id, name: product.name, quantity: qty }]);
     setQuantity('');
@@ -275,7 +276,8 @@ export function WriteOffScreen({
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
-              <input type="number" min="0" step="any" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              <input type="text" min="0" step="any" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              inputMode="decimal"
               <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
             </div>
 

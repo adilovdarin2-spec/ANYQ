@@ -4,6 +4,7 @@ import { parseMarkedCode } from '../marking';
 import { sameMarkedCode } from '../marking-scan';
 import type { ManagedProduct, ManagedProductPayload, PackagingPayload } from '../api';
 import type { Packaging } from '../types';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   product: ManagedProduct | null;
@@ -87,11 +88,11 @@ export function ProductEditScreen({
     setStockNote(t('product.markStockDone', { count: outcome.registered }));
   }
 
-  const purchase = Number(purchasePrice);
-  const sale = Number(salePrice);
+  const purchase = parseTyped(purchasePrice);
+  const sale = parseTyped(salePrice);
   /* Пустая цена — это «ещё не заполнил», а не «бесплатно».
 
-     `Number('')` — ноль, и без проверки на пустоту карточка с незаполненными
+     `parseTyped('')` — ноль, и без проверки на пустоту карточка с незаполненными
      ценами считалась готовой: кнопка «Сохранить» была доступна, товар уезжал в
      каталог с ценой ноль, и касса отдавала его даром. Владелец, заводящий сорок
      товаров подряд, одно поле пропустит обязательно.
@@ -109,7 +110,7 @@ export function ProductEditScreen({
     Number.isFinite(sale) &&
     sale >= 0;
 
-  const packUnitsValue = Number(packUnits);
+  const packUnitsValue = parseTyped(packUnits);
   const packValid = packName.trim() !== '' && Number.isFinite(packUnitsValue) && packUnitsValue > 0;
 
   async function handleAddPackaging() {
@@ -184,11 +185,13 @@ export function ProductEditScreen({
         <div className="field-row">
           <div className="field">
             <label htmlFor="p-purchase">{t('product.purchasePrice')}</label>
-            <input id="p-purchase" type="number" min="0" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
+            <input id="p-purchase" type="text" min="0" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
+            inputMode="numeric"
           </div>
           <div className="field">
             <label htmlFor="p-sale">{t('product.salePrice')}</label>
-            <input id="p-sale" type="number" min="0" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
+            <input id="p-sale" type="text" min="0" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
+            inputMode="numeric"
           </div>
         </div>
         {product?.isIngredient && (
@@ -264,9 +267,8 @@ export function ProductEditScreen({
             <div className="transfer-add-row">
               <input type="text" placeholder={t('product.packName')} value={packName} onChange={(e) => setPackName(e.target.value)} />
               <input
-                type="number"
-                min="0"
-                step="any"
+                type="text"
+                inputMode="decimal"
                 placeholder={t('product.unitsPerPack')}
                 value={packUnits}
                 onChange={(e) => setPackUnits(e.target.value)}

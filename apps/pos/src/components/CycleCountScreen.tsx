@@ -3,6 +3,7 @@ import { useTranslation } from '../i18n/useLanguage';
 import type { Count, Product } from '../types';
 import { formatDateTime } from '../utils';
 import { pluralPhrase } from '../i18n';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   counts: Count[];
@@ -40,7 +41,7 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
 
   const enteredEntries = Object.entries(countedByProduct).filter(([, v]) => v.trim() !== '');
   const items = enteredEntries
-    .map(([productId, v]) => ({ productId, countedQuantity: Number(v) }))
+    .map(([productId, v]) => ({ productId, countedQuantity: parseTyped(v) }))
     .filter((it) => Number.isFinite(it.countedQuantity) && it.countedQuantity >= 0);
   const invalidCount = enteredEntries.length - items.length;
 
@@ -112,8 +113,8 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
                 <div className="li-price">{t('count.system')}: {p.stock}</div>
               </div>
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 placeholder={String(p.stock)}
                 value={countedByProduct[p.id] ?? ''}
                 onChange={(e) => setCounted(p.id, e.target.value)}

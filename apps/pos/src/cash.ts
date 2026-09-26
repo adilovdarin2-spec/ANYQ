@@ -1,3 +1,5 @@
+import { parseTyped } from './typed-number';
+
 /**
  * Сдача с наличных.
  *
@@ -66,9 +68,13 @@ export function cashShortfall(total: number, received: number): number | null {
   return Math.round(total - received);
 }
 
-/** Строка из поля ввода — в число, с запятой вместо точки и пробелами внутри. */
+/**
+ * Строка из поля ввода — в число, с запятой вместо точки и пробелами внутри.
+ *
+ * Правило одно на всю кассу и живёт в `typed-number`: вес, сдача и количество
+ * набираются одинаково, а два похожих разбора разошлись бы при первой правке
+ * одного из них.
+ */
 export function parseCashInput(raw: string): number {
-  const cleaned = raw.replace(/\s/g, '').replace(',', '.');
-  if (cleaned === '') return NaN;
-  return Number(cleaned);
+  return parseTyped(raw);
 }

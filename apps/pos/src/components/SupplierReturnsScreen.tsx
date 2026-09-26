@@ -3,6 +3,7 @@ import type { Receipt, SupplierReturn } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   returns: SupplierReturn[];
@@ -45,7 +46,7 @@ export function SupplierReturnsScreen({ returns, receipts, loading, error, submi
   const receipt = receipts.find((r) => r.id === receiptId) ?? null;
 
   const lines = (receipt?.items ?? [])
-    .map((item) => ({ productId: item.productId, quantity: Number(quantities[item.productId] ?? '') || 0 }))
+    .map((item) => ({ productId: item.productId, quantity: parseTyped(quantities[item.productId] ?? '') || 0 }))
     .filter((line) => line.quantity > 0);
 
   function chooseReceipt(id: string) {
@@ -99,10 +100,9 @@ export function SupplierReturnsScreen({ returns, receipts, loading, error, submi
                 <div className="li-price">{t('supplierReturn.delivered', { count: item.quantity })}</div>
               </div>
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 max={item.quantity}
-                step="any"
                 placeholder="0"
                 value={quantities[item.productId] ?? ''}
                 onChange={(e) => setQuantities((prev) => ({ ...prev, [item.productId]: e.target.value }))}

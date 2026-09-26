@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { OpenShiftInfo, ShiftCash } from '../api';
 import { formatDateTime, formatMoney } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseTyped } from '../typed-number';
 
 /**
  * Закрыть смену, которую это устройство не открывало.
@@ -38,7 +39,7 @@ export function CloseForgottenShiftScreen({ shift, cash, error, busy, onCancel, 
   const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
-  const countedValue = counted === '' ? null : Number(counted);
+  const countedValue = counted === '' ? null : parseTyped(counted);
   const valid = countedValue !== null && Number.isFinite(countedValue) && countedValue >= 0 && !!cash && !busy;
   const diff = countedValue !== null && cash ? countedValue - cash.expected : null;
 
@@ -107,9 +108,8 @@ export function CloseForgottenShiftScreen({ shift, cash, error, busy, onCancel, 
           <label htmlFor="forgotten-counted">{t('shift.close.countedCash')}</label>
           <input
             id="forgotten-counted"
-            type="number"
+            type="text"
             inputMode="numeric"
-            min="0"
             value={counted}
             onChange={(e) => setCounted(e.target.value)}
           />

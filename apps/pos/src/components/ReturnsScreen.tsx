@@ -6,6 +6,7 @@ import type { PaymentMethod, ReturnRecord, ReturnableSale } from '../types';
 import { PAYMENT_PHRASES } from '../types';
 import type { PhraseKey } from '../i18n';
 import { formatDateTime, formatMoney } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   sales: ReturnableSale[];
@@ -85,7 +86,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
   }
 
   function scanReturnCode(line: ReturnableSale['items'][number], raw: string) {
-    const want = Number(quantities[line.id] ?? '');
+    const want = parseTyped(quantities[line.id] ?? '');
     const already = codes[line.id] ?? [];
     if (!parseMarkedCode(raw).ok) {
       setCodeError(t('return.codeUnreadable'));
@@ -107,7 +108,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
     ? sale.items
         .map((line) => ({
           documentItemId: line.id,
-          quantity: Number(quantities[line.id] ?? ''),
+          quantity: parseTyped(quantities[line.id] ?? ''),
           ...(codes[line.id]?.length ? { codes: codes[line.id] } : {}),
         }))
         .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0)
@@ -118,7 +119,7 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
      покупателю, что сейчас всё получится. */
   const missingCodes = sale
     ? sale.items.filter((line) => {
-        const want = Number(quantities[line.id] ?? '');
+        const want = parseTyped(quantities[line.id] ?? '');
         if (!line.marked || !Number.isFinite(want) || want <= 0) return false;
         return (codes[line.id]?.length ?? 0) !== want;
       })
@@ -233,8 +234,8 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                     <span className="order-meta">{t('return.canReturn', { available: returnable, sold: line.quantity })}</span>
                   </span>
                   <input
-                    type="number"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
                     max={returnable}
                     disabled={returnable === 0}
                     placeholder="0"
@@ -250,9 +251,9 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                 сам, но кассиру надо видеть, к какой строке относится то, что
                 он уже поднёс. */}
             {sale.items
-              .filter((line) => line.marked && Number(quantities[line.id] ?? '') > 0)
+              .filter((line) => line.marked && parseTyped(quantities[line.id] ?? '') > 0)
               .map((line) => {
-                const want = Number(quantities[line.id] ?? '');
+                const want = parseTyped(quantities[line.id] ?? '');
                 const done = codes[line.id]?.length ?? 0;
                 return (
                   <div key={`codes-${line.id}`} className="form-field">

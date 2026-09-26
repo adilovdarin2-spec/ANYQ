@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { Product } from '../types';
 import { formatMoney, formatWeight } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   product: Product;
@@ -13,7 +14,7 @@ interface Props {
 export function WeightEntryModal({ product, initialKg, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [value, setValue] = useState(initialKg ? String(initialKg) : '');
-  const kg = Number(value.replace(',', '.'));
+  const kg = parseTyped(value);
   const valid = Number.isFinite(kg) && kg > 0 && kg <= product.stock;
   const total = valid ? Math.round(product.price * kg) : 0;
 

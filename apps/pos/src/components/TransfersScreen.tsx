@@ -5,6 +5,7 @@ import { sameMarkedCode } from '../marking-scan';
 import type { PhraseKey } from '../i18n';
 import type { CompanyLocation, Product, Transfer } from '../types';
 import { formatDateTime } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface TransferLine {
   productId: string;
@@ -72,7 +73,7 @@ export function TransfersScreen({
 
   function addLine() {
     const product = products.find((p) => p.id === productId);
-    const qty = Number(quantity);
+    const qty = parseTyped(quantity);
     if (!product || !(qty > 0)) return;
     setLines((prev) => {
       const existing = prev.find((l) => l.productId === product.id);
@@ -144,7 +145,7 @@ export function TransfersScreen({
   async function confirmReceive(transfer: Transfer) {
     const items = transfer.items.map((it) => ({
       productId: it.productId,
-      receivedQuantity: Number(counted[it.productId]),
+      receivedQuantity: parseTyped(counted[it.productId]),
     }));
     if (items.some((it) => !Number.isFinite(it.receivedQuantity) || it.receivedQuantity < 0)) return;
     setBusyId(transfer.id);
@@ -202,8 +203,8 @@ export function TransfersScreen({
                       <span>{it.name}</span>
                       {counting ? (
                         <input
-                          type="number"
-                          min="0"
+                          type="text"
+                          inputMode="decimal"
                           max={it.quantity}
                           value={counted[it.productId] ?? ''}
                           onChange={(e) => setCounted((prev) => ({ ...prev, [it.productId]: e.target.value }))}
@@ -307,7 +308,8 @@ export function TransfersScreen({
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
-                    <input type="number" min="1" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                    <input type="text" min="1" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                    inputMode="decimal"
                     <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
                   </div>
                 </>

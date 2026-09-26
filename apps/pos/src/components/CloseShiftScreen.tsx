@@ -4,6 +4,7 @@ import type { ServerDrawer } from '../shift-tally';
 import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import { drawerAddsUp, drawerFigures, refusedInShift, tallyShift } from '../shift-tally';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   shift: Shift;
@@ -39,7 +40,7 @@ export function CloseShiftScreen({ shift, sales, drawer, serverCash, onCancel, o
   const refused = refusedInShift(sales);
   const refusedSum = refused.reduce((sum, s) => sum + s.total, 0);
 
-  const countedValue = counted === '' ? null : Number(counted);
+  const countedValue = counted === '' ? null : parseTyped(counted);
   const diff = countedValue === null ? null : countedValue - expectedCash;
 
   return (
@@ -114,9 +115,8 @@ export function CloseShiftScreen({ shift, sales, drawer, serverCash, onCancel, o
           <label htmlFor="counted-cash">{t('shift.close.countedCash')}</label>
           <input
             id="counted-cash"
-            type="number"
+            type="text"
             inputMode="numeric"
-            min="0"
             value={counted}
             onChange={(e) => setCounted(e.target.value)}
           />

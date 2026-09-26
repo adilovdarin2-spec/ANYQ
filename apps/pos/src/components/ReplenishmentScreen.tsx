@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { Translator } from '../i18n/useLanguage';
 import type { ReplenishmentItem } from '../types';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   /** Весь ассортимент точки: минимум задают и тому, чего в списке нет. */
@@ -80,9 +81,9 @@ export function ReplenishmentScreen({
 
   async function saveForProduct(productId: string) {
     const saved = await onSavePolicy(productId, {
-      minQuantity: Number(minQuantity),
-      targetQuantity: Number(targetQuantity),
-      leadTimeDays: Number(leadTimeDays) || 3,
+      minQuantity: parseTyped(minQuantity),
+      targetQuantity: parseTyped(targetQuantity),
+      leadTimeDays: parseTyped(leadTimeDays) || 3,
     });
     if (saved) {
       setAddingFor('');
@@ -92,9 +93,9 @@ export function ReplenishmentScreen({
 
   async function savePolicy(item: ReplenishmentItem) {
     const saved = await onSavePolicy(item.productId, {
-      minQuantity: Number(minQuantity),
-      targetQuantity: Number(targetQuantity),
-      leadTimeDays: Number(leadTimeDays),
+      minQuantity: parseTyped(minQuantity),
+      targetQuantity: parseTyped(targetQuantity),
+      leadTimeDays: parseTyped(leadTimeDays),
     });
     if (saved) setEditingId(null);
   }
@@ -144,26 +145,24 @@ export function ReplenishmentScreen({
                 же действие не должно выглядеть двумя разными. */}
             <div className="transfer-add-row">
               <input
-                type="number"
-                min="0"
-                step="any"
+                type="text"
+                inputMode="decimal"
                 placeholder={t('repl.minimum')}
                 value={minQuantity}
                 onChange={(e) => setMinQuantity(e.target.value)}
                 aria-label={t('repl.minimumStock')}
               />
               <input
-                type="number"
-                min="0"
-                step="any"
+                type="text"
+                inputMode="decimal"
                 placeholder={t('repl.target')}
                 value={targetQuantity}
                 onChange={(e) => setTargetQuantity(e.target.value)}
                 aria-label={t('repl.targetStock')}
               />
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 placeholder={t('repl.leadDays')}
                 value={leadTimeDays}
                 onChange={(e) => setLeadTimeDays(e.target.value)}
@@ -172,7 +171,7 @@ export function ReplenishmentScreen({
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={savingProductId === addingFor || Number(minQuantity) <= 0}
+                disabled={savingProductId === addingFor || parseTyped(minQuantity) <= 0}
                 onClick={() => saveForProduct(addingFor)}
               >{savingProductId === addingFor ? t('common.saving') : t('common.save')}</button>
             </div>
@@ -245,24 +244,24 @@ export function ReplenishmentScreen({
                   </p>
                   <div className="transfer-add-row">
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       placeholder={t('repl.minimum')}
                       value={minQuantity}
                       onChange={(e) => setMinQuantity(e.target.value)}
                       aria-label={t('repl.minimumStock')}
                     />
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       placeholder={t('repl.target')}
                       value={targetQuantity}
                       onChange={(e) => setTargetQuantity(e.target.value)}
                       aria-label={t('repl.targetStock')}
                     />
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       placeholder={t('repl.leadDays')}
                       value={leadTimeDays}
                       onChange={(e) => setLeadTimeDays(e.target.value)}

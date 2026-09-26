@@ -4,6 +4,7 @@ import type { PhraseKey } from '../i18n';
 import { pluralPhrase } from '../i18n';
 import type { Product, PurchaseOrder, PurchaseOrderStatus, Supplier } from '../types';
 import { formatDateTime, formatMoney } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface DraftLine {
   productId: string;
@@ -85,8 +86,8 @@ export function PurchaseOrdersScreen({
 
   function addLine() {
     const product = products.find((p) => p.id === productId);
-    const qty = Number(quantity);
-    const unitPrice = Number(price);
+    const qty = parseTyped(quantity);
+    const unitPrice = parseTyped(price);
     if (!product || !(qty > 0) || !(unitPrice >= 0)) return;
     const pack = product.packagings.find((candidate) => candidate.id === packagingId) ?? null;
     setLines((prev) => [
@@ -250,15 +251,15 @@ export function PurchaseOrdersScreen({
                 </select>
               )}
               <input
-                type="number"
-                min="1"
+                type="text"
+                inputMode="decimal"
                 placeholder={selectedPackaging ? t('po.packs') : t('common.quantity')}
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
               />
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="numeric"
                 placeholder={selectedPackaging ? t('po.packPrice') : t('po.unitPrice')}
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}

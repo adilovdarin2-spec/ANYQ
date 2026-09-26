@@ -6,6 +6,7 @@ import type { PhraseKey } from '../i18n';
 import type { Batch, ExpiryStatus, Product } from '../types';
 import type { UncoveredStockRow } from '../api';
 import { formatDate } from '../utils';
+import { parseTyped } from '../typed-number';
 
 const STATUS_PHRASES: Record<ExpiryStatus, PhraseKey> = {
   expired: 'batch.expired',
@@ -59,7 +60,7 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
   const marked = products.find((p) => p.id === productId)?.marked === true;
 
   function scanBatchCode(raw: string) {
-    const want = Number(quantity);
+    const want = parseTyped(quantity);
     if (!parseMarkedCode(raw).ok) {
       setCodeError(t('batch.codeUnreadable'));
       return;
@@ -80,15 +81,15 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
   const soon = batches.filter((b) => b.status === 'expiring_soon');
   const ok = batches.filter((b) => b.status === 'ok');
 
-  const codesReady = !marked || codes.length === Number(quantity);
-  const formValid = productId !== '' && batchNumber.trim() !== '' && expiryDate !== '' && Number(quantity) > 0 && codesReady;
+  const codesReady = !marked || codes.length === parseTyped(quantity);
+  const formValid = productId !== '' && batchNumber.trim() !== '' && expiryDate !== '' && parseTyped(quantity) > 0 && codesReady;
 
   async function handleSubmit() {
     const success = await onReceive({
       productId,
       batchNumber: batchNumber.trim(),
       expiryDate,
-      quantity: Number(quantity),
+      quantity: parseTyped(quantity),
       ...(codes.length ? { codes } : {}),
     });
     if (success) {
@@ -191,11 +192,12 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
               </div>
               <div className="form-field">
                 <label htmlFor="batch-qty">{t('common.quantity')}</label>
-                <input id="batch-qty" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
+                <input id="batch-qty" type="text" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
+                inputMode="decimal"
               </div>
               {/* Только для маркированного: в аптеке таких позиций много, но
                   не все — бинты и шприцы приходят партией без кодов. */}
-              {marked && Number(quantity) > 0 && (
+              {marked && parseTyped(quantity) > 0 && (
                 <div className="form-field">
                   <label htmlFor="batch-scan">{t('batch.scanCodes')}</label>
                   <input
@@ -209,7 +211,7 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
                       field.value = '';
                     }}
                   />
-                  <span className="field-hint">{t('batch.scanned', { done: codes.length, need: Number(quantity) })}</span>
+                  <span className="field-hint">{t('batch.scanned', { done: codes.length, need: parseTyped(quantity) })}</span>
                   {codeError && <div className="login-error">{codeError}</div>}
                 </div>
               )}

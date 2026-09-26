@@ -3,6 +3,7 @@ import type { CompanyLocation } from '../types';
 import type { OpenShiftInfo } from '../api';
 import { formatDateTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   locations: CompanyLocation[];
@@ -72,7 +73,7 @@ export function OpenShiftScreen({
 }: Props) {
   const { t } = useTranslation();
   const [cash, setCash] = useState('0');
-  const value = Number(cash);
+  const value = parseTyped(cash);
   const valid = Number.isFinite(value) && value >= 0 && !!currentLocationId && !switchingLocation;
 
   const canClose = (shift: OpenShiftInfo) => shift.mine || canCloseOthers;
@@ -150,9 +151,8 @@ export function OpenShiftScreen({
           <label htmlFor="opening-cash">{t('shift.open.cash')}</label>
           <input
             id="opening-cash"
-            type="number"
+            type="text"
             inputMode="numeric"
-            min="0"
             value={cash}
             onChange={(e) => setCash(e.target.value)}
           />

@@ -4,6 +4,7 @@ import { formatMoney, formatTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import { parseMarkedCode } from '../marking';
 import { sameMarkedCode } from '../marking-scan';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   order: Order;
@@ -37,7 +38,7 @@ export function PickOrderScreen({ order, products, submitting, error, onBack, on
   });
 
   const lines = order.items.map((item) => {
-    const found = Number(picked[item.productId] ?? '');
+    const found = parseTyped(picked[item.productId] ?? '');
     const quantity = Number.isFinite(found) && found >= 0 ? found : 0;
     return { ...item, found: quantity, shortfall: Math.max(item.quantity - quantity, 0) };
   });
@@ -145,10 +146,9 @@ export function PickOrderScreen({ order, products, submitting, error, onBack, on
               </div>
             </div>
             <input
-              type="number"
-              min="0"
+              type="text"
+              inputMode="decimal"
               max={line.quantity}
-              step="any"
               value={picked[line.productId] ?? ''}
               onChange={(e) => setPicked((prev) => ({ ...prev, [line.productId]: e.target.value }))}
             />

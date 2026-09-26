@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { Discount, DiscountType } from '../types';
 import { formatMoney } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   discount: Discount | null;
@@ -22,7 +23,7 @@ export function DiscountEditor({ discount, discountAmount, onChange }: Props) {
   }
 
   function apply() {
-    const num = Number(value);
+    const num = parseTyped(value);
     onChange(Number.isFinite(num) && num > 0 ? { type, value: num } : null);
     setEditing(false);
   }
@@ -41,8 +42,8 @@ export function DiscountEditor({ discount, discountAmount, onChange }: Props) {
           <button type="button" className={type === 'fixed' ? 'active' : ''} onClick={() => setType('fixed')}>₸</button>
         </div>
         <input
-          type="number"
-          min="0"
+          type="text"
+          inputMode="numeric"
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}

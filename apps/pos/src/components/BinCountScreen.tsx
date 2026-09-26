@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CountSheetLine, StorageBin } from '../types';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   bins: StorageBin[];
@@ -56,7 +57,7 @@ export function BinCountScreen({
     // there is no such thing here — the shelf was either counted or it wasn't.
     const lines = sheet.lines.map((line) => ({
       productId: line.productId,
-      countedQuantity: Number(counted[line.productId] ?? '0') || 0,
+      countedQuantity: parseTyped(counted[line.productId] ?? '0') || 0,
     }));
     const done = await onSubmit(sheet.bin, lines);
     if (done) setCounted({});
@@ -153,9 +154,8 @@ export function BinCountScreen({
                   </div>
                 </div>
                 <input
-                  type="number"
-                  min="0"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="0"
                   value={counted[line.productId] ?? ''}
                   onChange={(e) => setCounted((prev) => ({ ...prev, [line.productId]: e.target.value }))}

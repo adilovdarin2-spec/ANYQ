@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { SettlementAccount } from '../types';
 import { formatMoney, formatPhone } from '../utils';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   type: 'customer' | 'supplier';
@@ -39,7 +40,7 @@ export function SettlementsScreen({
   const overdue = accounts.reduce((sum, account) => sum + account.aging.days31to60 + account.aging.over60, 0);
 
   async function pay(account: SettlementAccount) {
-    const value = Number(amount);
+    const value = parseTyped(amount);
     if (!(value > 0)) return;
     const done = await onPay(account.counterpartyId, value);
     if (done) {
@@ -49,7 +50,7 @@ export function SettlementsScreen({
   }
 
   async function saveCredit(account: SettlementAccount) {
-    const done = await onSetCredit(account.counterpartyId, creditAllowed, Number(creditLimit) || 0);
+    const done = await onSetCredit(account.counterpartyId, creditAllowed, parseTyped(creditLimit) || 0);
     if (done) setCreditId(null);
   }
 
@@ -172,8 +173,8 @@ export function SettlementsScreen({
                   <p className="field-hint">{t('settle.oldestFirst')}</p>
                   <div className="transfer-add-row">
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="numeric"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       aria-label={t('settle.amount')}
@@ -212,8 +213,8 @@ export function SettlementsScreen({
                     <p className="field-hint">{t('settle.limitWhy')}</p>
                   <div className="transfer-add-row">
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="numeric"
                       placeholder={t('settle.creditLimit')}
                       value={creditLimit}
                       onChange={(e) => setCreditLimit(e.target.value)}

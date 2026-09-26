@@ -6,6 +6,7 @@ import type { PaymentLine, PaymentMethod } from '../types';
 import { formatMoney } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   total: number;
@@ -44,7 +45,7 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
 
   const entered = SPLITTABLE.map((method) => ({
     method,
-    amount: Math.round(Number(amounts[method] ?? '')) || 0,
+    amount: Math.round(parseTyped(amounts[method] ?? '')) || 0,
   })).filter((line) => line.amount > 0);
 
   const paid = entered.reduce((sum, line) => sum + line.amount, 0);
@@ -54,7 +55,7 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
   // head at the counter is where the wrong number comes from.
   function fillRemainder(method: PaymentMethod) {
     const others = SPLITTABLE.filter((m) => m !== method).reduce(
-      (sum, m) => sum + (Math.round(Number(amounts[m] ?? '')) || 0),
+      (sum, m) => sum + (Math.round(parseTyped(amounts[m] ?? '')) || 0),
       0,
     );
     const rest = total - others;
@@ -87,9 +88,7 @@ export function SplitPaymentEditor({ total, onBack, onConfirm }: Props) {
               </button>
             </div>
             <input
-              type="number"
-              min="0"
-              step="1"
+              type="text"
               inputMode="numeric"
               placeholder="0"
               value={amounts[method] ?? ''}

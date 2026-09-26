@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { BinContent, StorageBin } from '../types';
 import { useTranslation } from '../i18n/useLanguage';
+import { parseTyped } from '../typed-number';
 
 interface Props {
   bins: StorageBin[];
@@ -68,7 +69,7 @@ export function BinsScreen({
 
   async function confirmMove() {
     if (!moving) return;
-    const quantity = Number(moveQuantity);
+    const quantity = parseTyped(moveQuantity);
     if (!(quantity > 0)) return;
     const done = await onPutaway({
       productId: moving.productId,
@@ -231,9 +232,8 @@ export function BinsScreen({
               </div>
               <div className="transfer-add-row">
                 <input
-                  type="number"
-                  min="0"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   max={moving.max}
                   value={moveQuantity}
                   onChange={(e) => setMoveQuantity(e.target.value)}
