@@ -217,6 +217,10 @@ export function SettlementsScreen({
                   {statementLoading && <div className="empty-state">{t('common.loading')}</div>}
                   {!statementLoading && statement && (
                     <div className="order-items">
+                      {/* Заголовок, потому что выше в такой же рамке стоят итоги:
+                          без него накладные читаются как их продолжение, а на
+                          экране, к которому подходят стоя, разбираться некогда. */}
+                      <div className="section-title">{t('settle.documentsTitle')}</div>
                       {statement.charges.length === 0 && statement.payments.length === 0 && (
                         <div className="empty-state">{t('settle.noDocuments')}</div>
                       )}
