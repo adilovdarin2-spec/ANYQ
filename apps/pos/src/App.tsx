@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount,
+  SettlementStatement, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
 import { expiringSoonByProduct } from './expiry';
 import { readScannedMarking, sameMarkedCode } from './marking-scan';
 import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveLicenceConfirmedAt, saveSession, saveShift } from './storage';
@@ -82,6 +83,7 @@ import {
   createStaff,
   updateStaff,
   fetchSettlements,
+  fetchSettlementStatement,
   fetchSourceSystems,
   fetchStockMovements,
   fetchSupplierReturns,
@@ -278,6 +280,11 @@ export default function App() {
   const [settlementsLoading, setSettlementsLoading] = useState(false);
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [settlementsSubmitting, setSettlementsSubmitting] = useState(false);
+  // Выписка по одному контрагенту: держим одну, а не по штуке на каждого.
+  // Разворачивают её на сверке и по одному счёту за раз.
+  const [statement, setStatement] = useState<SettlementStatement | null>(null);
+  const [statementFor, setStatementFor] = useState<string | null>(null);
+  const [statementLoading, setStatementLoading] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [sourceSystems, setSourceSystems] = useState<SourceSystemInfo[]>([]);
   const [cabinet, setCabinet] = useState<CabinetInfo | null>(null);
@@ -1777,8 +1784,36 @@ export default function App() {
     void loadSettlements(settlementType);
   }
 
+  async function handleShowStatement(counterpartyId: string) {
+    if (!session) return;
+    // Раскрываем сразу, до ответа: иначе нажатие выглядит непринятым, а на
+    // слабой связи это секунды.
+    setStatementFor(counterpartyId);
+    setStatement(null);
+    setStatementLoading(true);
+    try {
+      const data = await fetchSettlementStatement(session.token, counterpartyId);
+      setStatement(data);
+    } catch (err) {
+      setSettlementsError(err instanceof ApiError ? err.message : t('fail.loadSettlements'));
+      // Свернуть обратно: раскрытая пустота выглядит как счёт без документов, а
+      // это другое утверждение, и на сверке оно дорого стоит.
+      setStatementFor(null);
+    } finally {
+      setStatementLoading(false);
+    }
+  }
+
+  function handleHideStatement() {
+    setStatementFor(null);
+    setStatement(null);
+  }
+
   function handleChangeSettlementType(type: 'customer' | 'supplier') {
     setSettlementType(type);
+    // Выписка принадлежала контрагенту из прежнего списка: оставить её
+    // раскрытой — показать документы покупателя под карточкой поставщика.
+    handleHideStatement();
     void loadSettlements(type);
   }
 
@@ -3738,6 +3773,11 @@ export default function App() {
           onChangeType={handleChangeSettlementType}
           onPay={handleRecordSettlement}
           onSetCredit={handleSetCredit}
+          statement={statement}
+          statementFor={statementFor}
+          statementLoading={statementLoading}
+          onShowStatement={handleShowStatement}
+          onHideStatement={handleHideStatement}
         />
       )}
 

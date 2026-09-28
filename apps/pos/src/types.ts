@@ -835,6 +835,51 @@ export interface SettlementAccount {
   unapplied?: number;
 }
 
+/**
+ * По каким документам сложился долг и какие платежи по нему прошли.
+ *
+ * Сальдо показывает итог, и по итогу спорят: у контрагента своя тетрадь, и
+ * сверяют они её при каждой поставке. «Должен 8 500» на такой сверке не
+ * помогает — нужен список накладных и список платежей, каждый со своей датой.
+ */
+export interface SettlementCharge {
+  documentId: string;
+  amount: number;
+  /** Сколько по этому документу уже закрыто платежами. */
+  settled: number;
+  at: string;
+}
+
+export interface SettlementPayment {
+  id: string;
+  /** `in` — приняли деньги, `out` — заплатили сами. */
+  direction: string;
+  amount: number;
+  paymentMethod: string;
+  /** Документ, на который платёж лёг; пусто, если он остался на счёте. */
+  documentId: string | null;
+  note: string;
+  createdAt: string;
+}
+
+export interface SettlementStatement {
+  counterparty: {
+    id: string;
+    name: string;
+    type: string;
+    creditAllowed: boolean;
+    creditLimit: number;
+  };
+  charged: number;
+  paid: number;
+  balance: number;
+  openCount: number;
+  unapplied: number;
+  aging: AgingBuckets;
+  charges: SettlementCharge[];
+  payments: SettlementPayment[];
+}
+
 /** A line on the sheet somebody walks the shelf with. */
 export interface CountSheetLine {
   productId: string;

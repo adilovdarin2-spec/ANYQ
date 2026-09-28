@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord, StaffMember, StaffPayload } from './types';
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SettlementStatement, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord, StaffMember, StaffPayload } from './types';
 import { getDeviceKey } from './storage';
 import { noteServerAnswered, noteServerUnreachable } from './reachable';
 import { translate } from './i18n';
@@ -1048,6 +1048,17 @@ export function fetchSettlements(
   type: 'customer' | 'supplier',
 ): Promise<{ type: string; accounts: SettlementAccount[] }> {
   return request(`/pos/settlements?type=${type}`, { method: 'GET' }, token);
+}
+
+// Выписка по одному контрагенту: накладные и платежи с датами.
+//
+// Сервер считал её с самого начала и не отдавал никому: экран показывал только
+// итог, а спорят по нему постоянно — это опт, и у контрагента своя тетрадь.
+export function fetchSettlementStatement(
+  token: string,
+  counterpartyId: string,
+): Promise<SettlementStatement> {
+  return request(`/pos/settlements/${counterpartyId}`, { method: 'GET' }, token);
 }
 
 export interface RecordSettlementPayload {

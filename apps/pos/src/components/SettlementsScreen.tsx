@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
-import type { SettlementAccount } from '../types';
-import { formatMoney, formatPhone } from '../utils';
+import type { SettlementAccount, SettlementStatement } from '../types';
+import { formatMoney, formatPhone, formatDate } from '../utils';
 import { parseTyped } from '../typed-number';
 
 interface Props {
@@ -15,6 +15,18 @@ interface Props {
   onChangeType: (type: 'customer' | 'supplier') => void;
   onPay: (counterpartyId: string, amount: number) => Promise<boolean>;
   onSetCredit: (counterpartyId: string, creditAllowed: boolean, creditLimit: number) => Promise<boolean>;
+  /**
+   * Выписка по одному контрагенту, когда её попросили.
+   *
+   * Отдельным запросом, а не в общем списке: список открывают каждый день,
+   * чтобы понять, кому звонить, а документы разворачивают на сверке — и
+   * тянуть сто накладных по каждому из сорока должников ради этого нельзя.
+   */
+  statement: SettlementStatement | null;
+  statementFor: string | null;
+  statementLoading: boolean;
+  onShowStatement: (counterpartyId: string) => void;
+  onHideStatement: () => void;
 }
 
 export function SettlementsScreen({
@@ -28,6 +40,11 @@ export function SettlementsScreen({
   onChangeType,
   onPay,
   onSetCredit,
+  statement,
+  statementFor,
+  statementLoading,
+  onShowStatement,
+  onHideStatement,
 }: Props) {
   const { t } = useTranslation();
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -180,6 +197,59 @@ export function SettlementsScreen({
                   </div>
                 )}
               </div>
+
+              {/* По каким документам сложился долг.
+
+                  Сальдо и сроки отвечают «сколько» и «давно ли», а на сверке
+                  спрашивают «по каким накладным» — и ответа не было: сервер
+                  считал выписку с самого начала и не отдавал её никому,
+                  маршрут стоял без единого вызова.
+
+                  Разворачивается по требованию, а не грузится со списком: в
+                  список заходят каждый день, чтобы понять, кому звонить, а
+                  документы смотрят на сверке. */}
+              {statementFor !== account.counterpartyId ? (
+                <button className="btn btn-ghost btn-block" onClick={() => onShowStatement(account.counterpartyId)}>
+                  {t('settle.showDocuments')}
+                </button>
+              ) : (
+                <>
+                  {statementLoading && <div className="empty-state">{t('common.loading')}</div>}
+                  {!statementLoading && statement && (
+                    <div className="order-items">
+                      {statement.charges.length === 0 && statement.payments.length === 0 && (
+                        <div className="empty-state">{t('settle.noDocuments')}</div>
+                      )}
+                      {statement.charges.map((charge) => (
+                        <div key={charge.documentId} className="order-item-row">
+                          <span>
+                            {formatDate(charge.at)} · {t('settle.document')}
+                          </span>
+                          {/* Начислено и сколько из этого уже закрыто: без
+                              второго числа строка не говорит, спорят про неё
+                              или она уже оплачена. */}
+                          <span>
+                            {formatMoney(charge.amount)}
+                            {charge.settled > 0 ? ` (${t('settle.ofItPaid', { amount: formatMoney(charge.settled) })})` : ''}
+                          </span>
+                        </div>
+                      ))}
+                      {statement.payments.map((payment) => (
+                        <div key={payment.id} className="order-item-row">
+                          <span>
+                            {formatDate(payment.createdAt)} · {t('settle.payment')}
+                            {payment.note ? ` · ${payment.note}` : ''}
+                          </span>
+                          <span>−{formatMoney(payment.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button className="btn btn-ghost btn-block" onClick={onHideStatement}>
+                    {t('settle.hideDocuments')}
+                  </button>
+                </>
+              )}
 
               {!paying && (
                 <button className="btn btn-primary btn-block" onClick={() => { setPayingId(account.counterpartyId); setAmount(String(Math.max(account.balance, 0))); }}>

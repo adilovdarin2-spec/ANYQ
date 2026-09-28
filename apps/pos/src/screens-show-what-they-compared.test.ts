@@ -115,6 +115,42 @@ describe('карточка расчётов', () => {
       expect((d as Record<string, string>)['settle.chargedPaid'], `${язык}: нет фразы`).toBeTruthy();
     }
   });
+
+  /* И по каким документам сложилось.
+
+     Сальдо со слагаемыми отвечает «сколько», а на сверке спрашивают «по каким
+     накладным» — у контрагента своя тетрадь, и спорят построчно. Выписку сервер
+     считал с самого начала и не отдавал никому: маршрут стоял без единого
+     вызова, а экран показывал итог. Что маршрут вообще кто-то зовёт, стережёт
+     `scripts/every-route-has-a-caller`; здесь — что строки видно. */
+  it('и показывает сами документы, когда их попросили', () => {
+    expect(settlements, 'выписка снова никем не запрашивается').toContain('onShowStatement');
+    expect(settlements).toContain('statement.charges.map');
+    expect(settlements).toContain('statement.payments.map');
+  });
+
+  it('и не грузит их вместе со списком', () => {
+    /* В список заходят каждый день, чтобы понять, кому звонить. Сто накладных
+       по каждому из сорока должников ради этого тянуть нельзя — и на слабой
+       связи это не оптимизация, а разница между «открылось» и «висит». */
+    expect(settlements, 'выписка разворачивается всем сразу').toContain('statementFor !== account.counterpartyId');
+  });
+
+  it('и говорит по накладной, сколько из неё уже закрыто', () => {
+    // Без этого строка не отличает спорную накладную от оплаченной.
+    expect(settlements).toContain('charge.settled > 0');
+    expect(settlements).toContain("t('settle.ofItPaid'");
+  });
+
+  it('и фразы выписки есть на двух языках', () => {
+    for (const [язык, d] of [['русский', ru], ['казахский', kk]] as const) {
+      const словарь = d as Record<string, string>;
+      for (const ключ of ['settle.showDocuments', 'settle.hideDocuments', 'settle.noDocuments', 'settle.document', 'settle.payment']) {
+        expect(словарь[ключ], `${язык}: нет фразы ${ключ}`).toBeTruthy();
+      }
+      expect(словарь['settle.ofItPaid'], `${язык}: сумма не подставляется`).toContain('{amount}');
+    }
+  });
 });
 
 /**
