@@ -128,17 +128,56 @@ export function SettlementsScreen({
 
           return (
             <div key={account.counterpartyId} className="order-card">
-              <div className="order-card-head">
-                <div>
-                  <div className="order-customer">{account.name}</div>
-                  <div className="order-meta">
-                    {account.phone ? `${formatPhone(account.phone)} · ` : ''}
-                    {t('settle.openDocuments', { count: account.openCount })}
-                  </div>
-                </div>
-                <span className={account.aging.over60 > 0 ? 'pill warn' : 'pill'}>{formatMoney(account.balance)}</span>
-              </div>
+              <div className="order-customer">{account.name}</div>
 
+              {/* Сальдо — крупно и первым.
+
+                  Стояло маленькой плашкой в углу, а под ней шли слагаемые,
+                  сроки и документы одинаковым мелким шрифтом. На этот экран
+                  заходят с одним вопросом — «сколько за ним» — и получали
+                  таблицу, в которой ответ был самым мелким пятном. */}
+              <div className="card-answer">
+                <span className="label">{type === 'customer' ? t('settle.owes') : t('settle.weOweShort')}</span>
+                <span className="value">{formatMoney(account.balance)}</span>
+              </div>
+              <p className="card-reason">
+                {account.phone ? `${formatPhone(account.phone)} · ` : ''}
+                {t('settle.openDocuments', { count: account.openCount })}
+              </p>
+
+              {/* Долг старше двух месяцев — это другой разговор, и выглядеть он
+                  должен иначе. Раньше об этом говорил только оттенок плашки с
+                  суммой, то есть ничего не говорил. */}
+              {account.aging.over60 > 0 && (
+                <div className="card-alert">
+                  <span aria-hidden="true">!</span>
+                  <span className="card-alert-text">
+                    {t('settle.over60Alert', { amount: formatMoney(account.aging.over60) })}
+                  </span>
+                </div>
+              )}
+
+              {/* Одно раскрытие вместо двух.
+
+                  Было так: слагаемые и сроки всегда на виду, а документы — за
+                  отдельной кнопкой «Показать документы». Две кнопки раскрытия
+                  на одной карточке, и обе про одно и то же: «объясни это
+                  число». Теперь одна, и она же просит у сервера выписку. */}
+              <button
+                type="button"
+                className="details-toggle"
+                aria-expanded={statementFor === account.counterpartyId}
+                onClick={() =>
+                  statementFor === account.counterpartyId
+                    ? onHideStatement()
+                    : onShowStatement(account.counterpartyId)
+                }
+              >
+                {statementFor === account.counterpartyId ? t('common.hideDetails') : t('common.showDetails')}
+                <span className="chev" aria-hidden="true">▾</span>
+              </button>
+
+              {statementFor === account.counterpartyId && (
               <div className="order-items">
                 {/* Из чего сложилось число в шапке.
 
@@ -197,6 +236,7 @@ export function SettlementsScreen({
                   </div>
                 )}
               </div>
+              )}
 
               {/* По каким документам сложился долг.
 
@@ -208,11 +248,7 @@ export function SettlementsScreen({
                   Разворачивается по требованию, а не грузится со списком: в
                   список заходят каждый день, чтобы понять, кому звонить, а
                   документы смотрят на сверке. */}
-              {statementFor !== account.counterpartyId ? (
-                <button className="btn btn-ghost btn-block" onClick={() => onShowStatement(account.counterpartyId)}>
-                  {t('settle.showDocuments')}
-                </button>
-              ) : (
+              {statementFor === account.counterpartyId && (
                 <>
                   {statementLoading && <div className="empty-state">{t('common.loading')}</div>}
                   {!statementLoading && statement && (
@@ -249,9 +285,6 @@ export function SettlementsScreen({
                       ))}
                     </div>
                   )}
-                  <button className="btn btn-ghost btn-block" onClick={onHideStatement}>
-                    {t('settle.hideDocuments')}
-                  </button>
                 </>
               )}
 

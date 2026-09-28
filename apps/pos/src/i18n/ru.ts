@@ -144,6 +144,8 @@ export const ru = {
   'tab.profile': 'Профиль',
   'common.back': 'Назад',
   'common.cancel': 'Отмена',
+  'common.showDetails': 'Подробнее',
+  'common.hideDetails': 'Свернуть',
   'common.loading': 'Загрузка…',
 
   // --- the operations menu ------------------------------------------------
@@ -549,6 +551,11 @@ export const ru = {
 
   // --- what to order -------------------------------------------------------
   'repl.title': 'Что заказать',
+  'repl.order': 'Заказать',
+  'repl.overdueAlert': 'Заказ на {quantity} {unit} не пришёл — больше его не ждём',
+  'repl.soldPerDayValue': '{sold} {unit} за {days} дн.',
+  'repl.daysOutOf': '{days} дн. из {of}',
+  'repl.packOf': 'по {count} {unit}',
   'repl.nothing': 'Заказывать пока нечего — запаса хватает по всем товарам',
   'repl.atMinimum': 'при минимуме {count}',
   'repl.sellingRate': 'продаёте {rate} в день',
@@ -556,9 +563,8 @@ export const ru = {
   'repl.freeHere': 'Свободно на точке',
   'repl.inTransit': 'Уже в пути',
   'repl.onOrder': 'Заказано у поставщика',
-  'repl.onOrderOverdue': 'Заказано и не пришло',
-  'repl.overdueWhy': 'Этот заказ ждали давно и он не пришёл. В расчёт мы его больше не берём — иначе полка стоит пустой, а автозаказ молчит. Если поставка всё же в пути, уточните срок у поставщика.',
-  'repl.soldPerDayBasis': 'Продано ÷ дней на полке',
+  'repl.overdueWhy': 'В расчёт мы его не берём. Если поставка всё же в пути — уточните срок у поставщика.',
+  'repl.soldPerDayBasis': 'Продано, пока был на полке',
   'repl.soldInWindow': 'Продано за {days} дн.',
   'repl.wasOutOfStock': 'Не было в наличии',
   'repl.roundedToPacks': 'Округлено до упаковок',
@@ -639,6 +645,9 @@ export const ru = {
 
   // --- settlements ---------------------------------------------------------
   'settle.title': 'Расчёты',
+  'settle.owes': 'Должен',
+  'settle.weOweShort': 'Мы должны',
+  'settle.over60Alert': 'Из них {amount} — старше двух месяцев',
   'settle.owedToUs': 'Нам должны',
   'settle.weOwe': 'Мы должны',
   'settle.allSettledCustomers': 'Никто не должен — все рассчитались',
@@ -650,9 +659,7 @@ export const ru = {
   'settle.days31to60': '31–60 дней',
   'settle.over60': 'Больше 60 дней',
   'settle.chargedPaid': 'Начислено минус оплачено',
-  'settle.showDocuments': 'Показать документы',
   'settle.documentsTitle': 'Документы и платежи',
-  'settle.hideDocuments': 'Свернуть документы',
   'settle.noDocuments': 'Документов и платежей по этому счёту нет',
   'settle.document': 'накладная',
   'settle.payment': 'платёж',

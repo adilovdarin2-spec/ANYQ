@@ -126,7 +126,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm, error }:
         {selected === 'kaspi' && (
           <>
             <div className="qr-box"><Icon name="qr" size={28} /> Kaspi QR</div>
-            <p style={{ textAlign: 'center', color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
+            <p style={{ textAlign: 'center', color: 'var(--ink-muted)', fontSize: 'var(--text-base)' }}>
               {t('payment.kaspiHint')}
             </p>
           </>

@@ -61,6 +61,10 @@ export function ReplenishmentScreen({
 }: Props) {
   const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
+  /* Раскрыта одна карточка за раз: список открывают, чтобы решить, что везти,
+     а не чтобы читать его целиком. Раскрытые все сразу — это тот же экран, что
+     был до 28.09.2026, только с кнопками. */
+  const [openDetails, setOpenDetails] = useState<string | null>(null);
   // Товар, которого в списке нет.
   //
   // Список — это решение: только то, что пора заказывать. Но чтобы товар в
@@ -120,12 +124,195 @@ export function ReplenishmentScreen({
           <div className="empty-state">{t('repl.nothing')}</div>
         )}
 
-        {/* Настроить запас по товару, которого в списке нет. Отдельным
-            действием, а не превращением списка в отчёт: список отвечает
-            «что заказать», и им пользуются каждый день, а это — раз в
-            полгода, когда заводят новый товар. */}
+        {items.map((item) => {
+          const editing = editingId === item.productId;
+          const busy = savingProductId === item.productId;
+
+          return (
+            <div key={item.productId} className="order-card">
+              <div className="order-customer">{item.name}</div>
+
+              {/* Ответ — крупно и первым.
+
+                  Стояла маленькая плашка в углу, а под ней пять одинаковых
+                  строк цифр. Всё одного размера значит «всё одинаково важно»,
+                  то есть не важно ничего: человек открывает этот экран за
+                  ответом «сколько везти», а получал таблицу. */}
+              <div className="card-answer">
+                <span className="label">{t('repl.order')}</span>
+                <span className="value accent">
+                  {formatQuantity(item.recommended)} {item.unit}
+                </span>
+              </div>
+
+              {/* Причина — одной фразой, обычными словами. */}
+              <p className="card-reason">{explain(item, t)}</p>
+
+              {/* Заказ, которого уже не будет.
+
+                  Вычитание заказанного из потребности верно, пока поставка
+                  едет. Срока у него не было: мартовский заказ вычитался в
+                  сентябре — полка пустая, а автозаказ отвечал «заказывать не
+                  надо». Теперь просроченное в расчёт не идёт, но молчать об
+                  этом нельзя: владелец видел «заказано 40» и планировал на
+                  эти сорок. Поэтому отдельной рамкой, а не строкой в ряду
+                  прочих: показывают её редко и по делу. */}
+              {(item.onOrderOverdue ?? 0) > 0 && (
+                <div className="card-alert">
+                  <span aria-hidden="true">!</span>
+                  <span>
+                    <span className="card-alert-text">
+                      {t('repl.overdueAlert', {
+                        quantity: formatQuantity(item.onOrderOverdue ?? 0),
+                        unit: item.unit,
+                      })}
+
+
+                    </span>
+                    <span className="card-alert-why">{t('repl.overdueWhy')}</span>
+                  </span>
+                </div>
+              )}
+
+              {/* Подробности — свёрнуты. Нужны они не каждый раз, а когда
+                  рекомендации не поверили, и вот тогда нужны все сразу. */}
+              <button
+                type="button"
+                className="details-toggle"
+                aria-expanded={openDetails === item.productId}
+                onClick={() => setOpenDetails(openDetails === item.productId ? null : item.productId)}
+              >
+                {openDetails === item.productId ? t('common.hideDetails') : t('common.showDetails')}
+                <span className="chev" aria-hidden="true">▾</span>
+              </button>
+
+              {openDetails === item.productId && (
+                <div className="order-items">
+                  <div className="order-item-row">
+                    <span>{t('repl.freeHere')}</span>
+                    <span>{formatQuantity(item.available)} {item.unit}</span>
+                  </div>
+                  {item.inTransit > 0 && (
+                    <div className="order-item-row">
+                      <span>{t('repl.inTransit')}</span>
+                      <span>{formatQuantity(item.inTransit)} {item.unit}</span>
+                    </div>
+                  )}
+                  {/* Already asked for. Shown because the reason a line is small
+                      is as worth seeing as the reason it is large. */}
+                  {item.onOrder > 0 && (
+                    <div className="order-item-row">
+                      <span>{t('repl.onOrder')}</span>
+                      <span>{formatQuantity(item.onOrder)} {item.unit}</span>
+                    </div>
+                  )}
+                  {/* Из чего сложилась скорость продаж.
+
+                      Стояло «Продано ÷ дней на полке — 3 ÷ 2»: формула, а не
+                      фраза. Число проверяемое, и это правильно, но читать его
+                      человеку за прилавком было нечем. Теперь то же самое
+                      сказано словами и в том же порядке, в каком считается. */}
+                  {item.soldInStock !== undefined && item.daysInStock > 0 && item.demandPerDay !== null && (
+                    <div className="order-item-row">
+                      <span>{t('repl.soldPerDayBasis')}</span>
+                      <span>
+                        {t('repl.soldPerDayValue', {
+                          sold: formatQuantity(item.soldInStock),
+                          unit: item.unit,
+                          days: item.daysInStock,
+                        })}
+                      </span>
+                    </div>
+                  )}
+                  {/* Возвраты в дни, когда полка стояла пустой, в числитель выше
+                      не попадают — и тогда за окно продано меньше, чем делится.
+                      Строка появляется только в этом случае: иначе она повторяла
+                      бы предыдущую теми же цифрами. */}
+                  {item.soldInStock !== undefined && item.soldInWindow !== item.soldInStock && (
+                    <div className="order-item-row">
+                      <span>{t('repl.soldInWindow', { days: windowDays })}</span>
+                      <span>{formatQuantity(item.soldInWindow)} {item.unit}</span>
+                    </div>
+                  )}
+                  {/* Shown because it is the reason to distrust the rate: a
+                      product that was missing for most of the window has a rate
+                      measured on very few days. */}
+                  {item.daysOutOfStock > 0 && (
+                    <div className="order-item-row">
+                      <span>{t('repl.wasOutOfStock')}</span>
+                      <span>{t('repl.daysOutOf', { days: item.daysOutOfStock, of: windowDays })}</span>
+                    </div>
+                  )}
+                  {item.unitsPerPack !== null && (
+                    <div className="order-item-row">
+                      <span>{t('repl.roundedToPacks')}</span>
+                      <span>{t('repl.packOf', { count: formatQuantity(item.unitsPerPack), unit: item.unit })}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!editing && (
+                <button className="btn btn-ghost btn-block" onClick={() => startEditing(item)}>
+                  {t('repl.setOwn')}
+                </button>
+              )}
+
+              {editing && (
+                <>
+                  <p className="field-hint">
+                    {t('repl.setOwnWhy')}
+                  </p>
+                  <div className="transfer-add-row">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder={t('repl.minimum')}
+                      value={minQuantity}
+                      onChange={(e) => setMinQuantity(e.target.value)}
+                      aria-label={t('repl.minimumStock')}
+                    />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder={t('repl.target')}
+                      value={targetQuantity}
+                      onChange={(e) => setTargetQuantity(e.target.value)}
+                      aria-label={t('repl.targetStock')}
+                    />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder={t('repl.leadDays')}
+                      value={leadTimeDays}
+                      onChange={(e) => setLeadTimeDays(e.target.value)}
+                      aria-label={t('repl.leadDaysField')}
+                    />
+                    <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => savePolicy(item)}>
+                      {busy ? t('common.saving') : t('common.save')}
+                    </button>
+                  </div>
+                  <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => setEditingId(null)}>
+                    {t('common.cancel')}
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Настроить запас по товару, которого в списке нет.
+
+            Отдельным действием, а не превращением списка в отчёт: список
+            отвечает «что заказать», и им пользуются каждый день, а это — раз в
+            полгода, когда заводят новый товар.
+
+            И внизу, а не сверху. Залитой кнопкой во всю ширину над списком это
+            было самым громким пятном на экране — то есть глаз первым делом
+            попадал на действие, которое делают дважды в год, а ответ, ради
+            которого экран открыли, оказывался под ним. */}
         {addingFor === '' ? (
-          <button className="btn btn-secondary btn-block" onClick={() => {
+          <button className="btn btn-ghost btn-block" onClick={() => {
             setAddingFor(products[0]?.id ?? '');
             setMinQuantity('');
             setTargetQuantity('');
@@ -178,162 +365,6 @@ export function ReplenishmentScreen({
             <button className="btn btn-ghost btn-block" onClick={() => setAddingFor('')}>{t('common.cancel')}</button>
           </div>
         )}
-
-        {items.map((item) => {
-          const editing = editingId === item.productId;
-          const busy = savingProductId === item.productId;
-
-          return (
-            <div key={item.productId} className="order-card">
-              <div className="order-card-head">
-                <div>
-                  <div className="order-customer">{item.name}</div>
-                  <div className="order-meta">{explain(item, t)}</div>
-                </div>
-                <span className={item.trigger === 'below_min' ? 'pill warn' : 'pill'}>
-                  {formatQuantity(item.recommended)} {item.unit}
-                </span>
-              </div>
-
-              <div className="order-items">
-                <div className="order-item-row">
-                  <span>{t('repl.freeHere')}</span>
-                  <span>{formatQuantity(item.available)}</span>
-                </div>
-                {item.inTransit > 0 && (
-                  <div className="order-item-row">
-                    <span>{t('repl.inTransit')}</span>
-                    <span>{formatQuantity(item.inTransit)}</span>
-                  </div>
-                )}
-                {/* Already asked for. Shown because the reason a line is small
-                    is as worth seeing as the reason it is large. */}
-                {item.onOrder > 0 && (
-                  <div className="order-item-row">
-                    <span>{t('repl.onOrder')}</span>
-                    <span>{formatQuantity(item.onOrder)}</span>
-                  </div>
-                )}
-                {/* Заказ, которого уже не будет.
-
-                    Заказанное вычитается из потребности, и это верно, пока
-                    поставка едет. Срока у вычитания не было: заказ, отправленный
-                    в марте и не пришедший, вычитался в сентябре — полка пустая,
-                    а автозаказ отвечает «заказывать не надо».
-
-                    Молчать про это нельзя даже теперь, когда просроченное в
-                    расчёт не идёт: владелец видел «заказано 40» и планировал на
-                    эти сорок. Строка говорит, что сорока не будет, — и рядом
-                    сказано, что с этим делать. */}
-                {(item.onOrderOverdue ?? 0) > 0 && (
-                  <>
-                    <div className="order-item-row">
-                      <span>{t('repl.onOrderOverdue')}</span>
-                      {/* Тем же «просроченным» цветом, которым в этом продукте
-                          помечены долги старше двух месяцев: это то же самое
-                          сообщение — ждали и не дождались. */}
-                      <span className="pill warn">{formatQuantity(item.onOrderOverdue ?? 0)}</span>
-                    </div>
-                    <p className="field-hint">{t('repl.overdueWhy')}</p>
-                  </>
-                )}
-                {/* Из чего сложилась скорость продаж.
-
-                    В шапке стоит «продаёте 2,9 в день, запаса на 4 дн.», и по
-                    этому числу владелец решает, заказывать сорок или сто. Само
-                    число он до сих пор не мог проверить ничем: сервер считал
-                    его из проданного и дней на полке, а касса показывала только
-                    результат. Рекомендацию без основания либо принимают на
-                    веру, либо не пользуются ею вовсе — и второе случается чаще.
-
-                    Числитель — проданное **в дни на полке**, а не за всё окно:
-                    делится именно оно, и деление обязано сойтись. Тот же довод,
-                    по которому в расчётах рядом с сальдо стоит «начислено минус
-                    оплачено», а на закрытии смены — слагаемые, а не только
-                    ожидаемая сумма. */}
-                {item.soldInStock !== undefined && item.daysInStock > 0 && item.demandPerDay !== null && (
-                  <div className="order-item-row">
-                    <span>{t('repl.soldPerDayBasis')}</span>
-                    <span>
-                      {formatQuantity(item.soldInStock)} ÷ {item.daysInStock}
-                    </span>
-                  </div>
-                )}
-                {/* Возвраты в дни, когда полка стояла пустой, в числитель выше
-                    не попадают — и тогда за окно продано меньше, чем делится.
-                    Строка появляется только в этом случае: иначе она повторяла
-                    бы предыдущую теми же цифрами. */}
-                {item.soldInStock !== undefined && item.soldInWindow !== item.soldInStock && (
-                  <div className="order-item-row">
-                    <span>{t('repl.soldInWindow', { days: windowDays })}</span>
-                    <span>{formatQuantity(item.soldInWindow)}</span>
-                  </div>
-                )}
-                {/* Shown because it is the reason to distrust the rate: a
-                    product that was missing for most of the window has a rate
-                    measured on very few days. */}
-                {item.daysOutOfStock > 0 && (
-                  <div className="order-item-row">
-                    <span>{t('repl.wasOutOfStock')}</span>
-                    <span>{t('owner.outOf', { received: item.daysOutOfStock, sent: windowDays })}</span>
-                  </div>
-                )}
-                {item.unitsPerPack !== null && (
-                  <div className="order-item-row">
-                    <span>{t('repl.roundedToPacks')}</span>
-                    <span>× {formatQuantity(item.unitsPerPack)}</span>
-                  </div>
-                )}
-              </div>
-
-              {!editing && (
-                <button className="btn btn-ghost btn-block" onClick={() => startEditing(item)}>
-                  {t('repl.setOwn')}
-                </button>
-              )}
-
-              {editing && (
-                <>
-                  <p className="field-hint">
-                    {t('repl.setOwnWhy')}
-                  </p>
-                  <div className="transfer-add-row">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder={t('repl.minimum')}
-                      value={minQuantity}
-                      onChange={(e) => setMinQuantity(e.target.value)}
-                      aria-label={t('repl.minimumStock')}
-                    />
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder={t('repl.target')}
-                      value={targetQuantity}
-                      onChange={(e) => setTargetQuantity(e.target.value)}
-                      aria-label={t('repl.targetStock')}
-                    />
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder={t('repl.leadDays')}
-                      value={leadTimeDays}
-                      onChange={(e) => setLeadTimeDays(e.target.value)}
-                      aria-label={t('repl.leadDaysField')}
-                    />
-                    <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => savePolicy(item)}>
-                      {busy ? t('common.saving') : t('common.save')}
-                    </button>
-                  </div>
-                  <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => setEditingId(null)}>
-                    {t('common.cancel')}
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })}
       </div>
 
       {/* A recommendation nobody can act on is a report. This is the press. */}

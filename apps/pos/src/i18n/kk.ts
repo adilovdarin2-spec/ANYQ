@@ -142,6 +142,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'tab.profile': 'Профиль',
   'common.back': 'Артқа',
   'common.cancel': 'Болдырмау',
+  'common.showDetails': 'Толығырақ',
+  'common.hideDetails': 'Жию',
   'common.loading': 'Жүктелуде…',
 
   // --- the operations menu ------------------------------------------------
@@ -556,6 +558,11 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
 
   // --- what to order -------------------------------------------------------
   'repl.title': 'Не тапсырыс беру',
+  'repl.order': 'Тапсырыс беру',
+  'repl.overdueAlert': '{quantity} {unit} тапсырысы келмеді — оны енді күтпейміз',
+  'repl.soldPerDayValue': '{days} күнде {sold} {unit}',
+  'repl.daysOutOf': '{of} күннің {days}-і',
+  'repl.packOf': '{count} {unit} бойынша',
   'repl.nothing': 'Әзірге тапсырыс беретін ештеңе жоқ — барлық тауар бойынша қор жетеді',
   'repl.atMinimum': 'ең азы {count} болғанда',
   'repl.sellingRate': 'күніне {rate} сатасыз',
@@ -563,9 +570,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'repl.freeHere': 'Нүктеде бос',
   'repl.inTransit': 'Жолда келеді',
   'repl.onOrder': 'Жеткізушіден тапсырыс берілген',
-  'repl.onOrderOverdue': 'Тапсырыс берілген, келмеген',
-  'repl.overdueWhy': 'Бұл тапсырысты күткелі көп болды, ол келмеді. Есепке оны бұдан былай алмаймыз — әйтпесе сөре бос тұрады, ал автотапсырыс үндемейді. Егер жеткізілім жолда болса, жеткізушіден мерзімін нақтылаңыз.',
-  'repl.soldPerDayBasis': 'Сатылған ÷ сөреде тұрған күн',
+  'repl.overdueWhy': 'Оны есепке алмаймыз. Егер жеткізілім жолда болса — жеткізушіден мерзімін нақтылаңыз.',
+  'repl.soldPerDayBasis': 'Сөреде тұрғанда сатылған',
   'repl.soldInWindow': '{days} күнде сатылған',
   'repl.wasOutOfStock': 'Қолда болмаған',
   'repl.roundedToPacks': 'Қаптамаға дейін дөңгелектелген',
@@ -644,6 +650,9 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
 
   // --- settlements ---------------------------------------------------------
   'settle.title': 'Есеп айырысу',
+  'settle.owes': 'Қарызы',
+  'settle.weOweShort': 'Біз қарызбыз',
+  'settle.over60Alert': 'Оның {amount} — екі айдан асқан',
   'settle.owedToUs': 'Бізге қарыз',
   'settle.weOwe': 'Біз қарызбыз',
   'settle.allSettledCustomers': 'Ешкім қарыз емес — барлығы есеп айырысты',
@@ -655,9 +664,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'settle.days31to60': '31–60 күн',
   'settle.over60': '60 күннен көп',
   'settle.chargedPaid': 'Есептелген минус төленген',
-  'settle.showDocuments': 'Құжаттарды көрсету',
   'settle.documentsTitle': 'Құжаттар мен төлемдер',
-  'settle.hideDocuments': 'Құжаттарды жасыру',
   'settle.noDocuments': 'Бұл шот бойынша құжат та, төлем де жоқ',
   'settle.document': 'жүкқұжат',
   'settle.payment': 'төлем',

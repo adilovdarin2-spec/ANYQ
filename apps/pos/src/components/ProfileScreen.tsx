@@ -268,13 +268,13 @@ export function ProfileScreen({
           <div className="section-title">{t('profile.storefront')}</div>
           <div className="mini-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
             {storefrontUrl && (
-              <div style={{ fontSize: '0.85rem', wordBreak: 'break-all', color: 'var(--ink-muted)' }}>{storefrontUrl}</div>
+              <div style={{ fontSize: 'var(--text-sm)', wordBreak: 'break-all', color: 'var(--ink-muted)' }}>{storefrontUrl}</div>
             )}
             {/* Чем именно торгует эта ссылка. У компании с одной точкой это
                 очевидно и не пишется; у компании с двумя — это единственное
                 место, где вообще можно узнать, откуда уйдёт товар. */}
             {storefrontLocationName && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--ink-muted)' }}>
                 {t('profile.storefrontLocation', { name: storefrontLocationName })}
               </div>
             )}

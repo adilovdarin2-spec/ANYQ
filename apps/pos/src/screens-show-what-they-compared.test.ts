@@ -133,7 +133,21 @@ describe('карточка расчётов', () => {
     /* В список заходят каждый день, чтобы понять, кому звонить. Сто накладных
        по каждому из сорока должников ради этого тянуть нельзя — и на слабой
        связи это не оптимизация, а разница между «открылось» и «висит». */
-    expect(settlements, 'выписка разворачивается всем сразу').toContain('statementFor !== account.counterpartyId');
+    expect(settlements, 'выписка разворачивается всем сразу').toContain('statementFor === account.counterpartyId');
+  });
+
+  it('и раскрывает всё одной кнопкой, а не двумя', () => {
+    /* Было две: слагаемые и сроки всегда на виду, документы — за отдельной
+       «Показать документы». Две кнопки раскрытия на одной карточке, и обе про
+       одно и то же — «объясни это число». */
+    expect(settlements).toContain("t('common.showDetails')");
+    expect(settlements, 'вторая кнопка раскрытия вернулась').not.toContain("t('settle.showDocuments')");
+  });
+
+  it('и показывает сальдо крупно, а не плашкой в углу', () => {
+    // Иначе экран снова отвечает на свой единственный вопрос самым мелким пятном.
+    expect(settlements).toContain('card-answer');
+    expect(settlements).toContain("t('settle.owes')");
   });
 
   it('и говорит по накладной, сколько из неё уже закрыто', () => {
@@ -145,7 +159,7 @@ describe('карточка расчётов', () => {
   it('и фразы выписки есть на двух языках', () => {
     for (const [язык, d] of [['русский', ru], ['казахский', kk]] as const) {
       const словарь = d as Record<string, string>;
-      for (const ключ of ['settle.showDocuments', 'settle.hideDocuments', 'settle.noDocuments', 'settle.document', 'settle.payment']) {
+      for (const ключ of ['settle.documentsTitle', 'settle.noDocuments', 'settle.document', 'settle.payment']) {
         expect(словарь[ключ], `${язык}: нет фразы ${ключ}`).toBeTruthy();
       }
       expect(словарь['settle.ofItPaid'], `${язык}: сумма не подставляется`).toContain('{amount}');
@@ -220,8 +234,22 @@ describe('карточка автозаказа', () => {
      `integration/stale-order-stops-blocking`; здесь — что исчезло оно не молча. */
   it('и говорит, какой заказ перестал считаться', () => {
     expect(repl, 'просроченный заказ исчезает молча').toContain('item.onOrderOverdue');
-    expect(repl).toContain("t('repl.onOrderOverdue')");
+    expect(repl).toContain("t('repl.overdueAlert'");
     expect(repl, 'сказано, что число изменилось, и не сказано, что делать').toContain("t('repl.overdueWhy')");
+  });
+
+  it('и отвечает «сколько заказать» крупно и первым', () => {
+    /* Рекомендация стояла маленькой плашкой в углу, а под ней пять одинаковых
+       строк цифр. Всё одного размера значит «всё одинаково важно», то есть не
+       важно ничего. */
+    expect(repl).toContain('card-answer');
+    expect(repl).toContain("t('repl.order')");
+  });
+
+  it('а цифры прячет под «подробнее»', () => {
+    // Нужны они реже раза на двадцать, а места занимали больше всего.
+    expect(repl).toContain('details-toggle');
+    expect(repl).toContain('openDetails === item.productId');
   });
 
   it('но молчит, когда пропавшего заказа нет', () => {
@@ -231,8 +259,22 @@ describe('карточка автозаказа', () => {
 
   it('и фразы про пропавший заказ есть на двух языках', () => {
     for (const [язык, d] of [['русский', ru], ['казахский', kk]] as const) {
-      expect((d as Record<string, string>)['repl.onOrderOverdue'], `${язык}: нет фразы`).toBeTruthy();
+      const alert = (d as Record<string, string>)['repl.overdueAlert'];
+      expect(alert, `${язык}: нет фразы`).toBeTruthy();
+      expect(alert, `${язык}: количество не подставляется`).toContain('{quantity}');
       expect((d as Record<string, string>)['repl.overdueWhy'], `${язык}: нет объяснения`).toBeTruthy();
+    }
+  });
+
+  it('и основание скорости продаж — фраза, а не формула', () => {
+    /* Стояло «Продано ÷ дней на полке — 3 ÷ 2». Число проверяемое, и это верно,
+       но читать его человеку за прилавком было нечем. */
+    for (const [язык, d] of [['русский', ru], ['казахский', kk]] as const) {
+      const value = (d as Record<string, string>)['repl.soldPerDayValue'];
+      expect(value, `${язык}: нет фразы`).toBeTruthy();
+      expect(value, `${язык}: проданное не подставляется`).toContain('{sold}');
+      expect(value, `${язык}: дни не подставляются`).toContain('{days}');
+      expect(value, `${язык}: формула вернулась`).not.toContain('÷');
     }
   });
 });
