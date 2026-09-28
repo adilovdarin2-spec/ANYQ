@@ -214,6 +214,38 @@ export function ReplenishmentScreen({
                     <span>{formatQuantity(item.onOrder)}</span>
                   </div>
                 )}
+                {/* Из чего сложилась скорость продаж.
+
+                    В шапке стоит «продаёте 2,9 в день, запаса на 4 дн.», и по
+                    этому числу владелец решает, заказывать сорок или сто. Само
+                    число он до сих пор не мог проверить ничем: сервер считал
+                    его из проданного и дней на полке, а касса показывала только
+                    результат. Рекомендацию без основания либо принимают на
+                    веру, либо не пользуются ею вовсе — и второе случается чаще.
+
+                    Числитель — проданное **в дни на полке**, а не за всё окно:
+                    делится именно оно, и деление обязано сойтись. Тот же довод,
+                    по которому в расчётах рядом с сальдо стоит «начислено минус
+                    оплачено», а на закрытии смены — слагаемые, а не только
+                    ожидаемая сумма. */}
+                {item.soldInStock !== undefined && item.daysInStock > 0 && item.demandPerDay !== null && (
+                  <div className="order-item-row">
+                    <span>{t('repl.soldPerDayBasis')}</span>
+                    <span>
+                      {formatQuantity(item.soldInStock)} ÷ {item.daysInStock}
+                    </span>
+                  </div>
+                )}
+                {/* Возвраты в дни, когда полка стояла пустой, в числитель выше
+                    не попадают — и тогда за окно продано меньше, чем делится.
+                    Строка появляется только в этом случае: иначе она повторяла
+                    бы предыдущую теми же цифрами. */}
+                {item.soldInStock !== undefined && item.soldInWindow !== item.soldInStock && (
+                  <div className="order-item-row">
+                    <span>{t('repl.soldInWindow', { days: windowDays })}</span>
+                    <span>{formatQuantity(item.soldInWindow)}</span>
+                  </div>
+                )}
                 {/* Shown because it is the reason to distrust the rate: a
                     product that was missing for most of the window has a rate
                     measured on very few days. */}

@@ -560,6 +560,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'repl.freeHere': 'Нүктеде бос',
   'repl.inTransit': 'Жолда келеді',
   'repl.onOrder': 'Жеткізушіден тапсырыс берілген',
+  'repl.soldPerDayBasis': 'Сатылған ÷ сөреде тұрған күн',
+  'repl.soldInWindow': '{days} күнде сатылған',
   'repl.wasOutOfStock': 'Қолда болмаған',
   'repl.roundedToPacks': 'Қаптамаға дейін дөңгелектелген',
   'repl.setOwn': 'Өз қорыңызды белгілеу',

@@ -568,6 +568,18 @@ export interface ReplenishmentItem {
   daysInStock: number;
   daysOutOfStock: number;
   soldInWindow: number;
+  /**
+   * Сколько продали за те дни, что товар был на полке.
+   *
+   * Отдельно от `soldInWindow`, потому что скорость считается именно из этого
+   * числа: `soldInStock / daysInStock` даёт её в точности. Возврат, принесённый
+   * в день с пустой полкой, попадает в итог за окно и не попадает сюда, и если
+   * показать рядом с «дней на полке» итог за окно, деление не сойдётся.
+   *
+   * Необязательное: касса и сервер выкатываются порознь, и сервер на версию
+   * старше этого поля не отдаёт. Строка тогда не рисуется — ровно как до неё.
+   */
+  soldInStock?: number;
   daysOfCover: number | null;
   recommended: number;
   trigger: ReplenishmentTrigger;

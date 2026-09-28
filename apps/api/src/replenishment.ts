@@ -14,6 +14,17 @@ export interface DemandEstimate {
   daysOutOfStock: number;
   /** Total sold in the window, in base units. */
   soldInWindow: number;
+  /**
+   * Sold on the days it was on the shelf — the numerator perDay is actually
+   * made of, so that `soldInStock / daysInStock` reproduces it exactly.
+   *
+   * Separate from `soldInWindow` because the two can differ: a return handed
+   * back on a day the shelf was empty lands in the window total and not in
+   * this one. Putting the window total next to `daysInStock` on a screen would
+   * be arithmetic that does not come out, and a rate an owner cannot reproduce
+   * is a rate they stop believing.
+   */
+  soldInStock: number;
 }
 
 // Walks the ledger backwards from today's balance to reconstruct what was on
@@ -83,6 +94,7 @@ export function estimateDailyDemand(
     daysInStock,
     daysOutOfStock: windowDays - daysInStock,
     soldInWindow: Math.max(soldInWindow, 0),
+    soldInStock: Math.max(sellableSold, 0),
   };
 }
 

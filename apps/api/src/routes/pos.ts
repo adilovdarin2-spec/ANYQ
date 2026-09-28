@@ -3101,6 +3101,7 @@ export async function replenishmentFor(companyId: string, locationId: string) {
       daysInStock: demand.daysInStock,
       daysOutOfStock: demand.daysOutOfStock,
       soldInWindow: demand.soldInWindow,
+      soldInStock: demand.soldInStock,
       daysOfCover: recommendation.daysOfCover === null ? null : Math.round(recommendation.daysOfCover * 10) / 10,
       recommended: recommendation.quantity,
       trigger: recommendation.trigger,

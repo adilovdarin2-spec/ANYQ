@@ -553,6 +553,8 @@ export const ru = {
   'repl.freeHere': 'Свободно на точке',
   'repl.inTransit': 'Уже в пути',
   'repl.onOrder': 'Заказано у поставщика',
+  'repl.soldPerDayBasis': 'Продано ÷ дней на полке',
+  'repl.soldInWindow': 'Продано за {days} дн.',
   'repl.wasOutOfStock': 'Не было в наличии',
   'repl.roundedToPacks': 'Округлено до упаковок',
   'repl.setOwn': 'Задать свой запас',
