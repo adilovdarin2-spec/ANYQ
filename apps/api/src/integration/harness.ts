@@ -5,6 +5,7 @@ import { app } from '../app';
 import { resetRateLimits } from '../rateLimit';
 import { signPosToken } from '../pos-auth';
 import { computeDiscount } from '../discounts';
+import { pinFingerprint } from '../pin';
 
 /**
  * Everything these tests need to talk to a real database and a real server.
@@ -156,7 +157,9 @@ export async function createFixture(options: FixtureOptions = {}): Promise<Fixtu
       companyId: company.id,
       name: userName,
       role: options.role ?? 'owner',
-      posPin: pin,
+      // Тем же видом, каким его пишет сервер: иначе фикстура проверяла бы вход,
+      // которого в продукте нет.
+      posPin: pinFingerprint(pin),
     },
   });
 

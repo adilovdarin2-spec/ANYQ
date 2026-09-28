@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { api, createFixture, prisma, resetDatabase, startTestServer, stopTestServer } from './harness';
+import { pinFingerprint } from '../pin';
 
 /**
  * One PIN, one person, across the whole platform.
@@ -75,10 +76,10 @@ describe('POS PINs', () => {
     const b = await createFixture();
 
     await expect(
-      prisma.user.update({ where: { id: b.userId }, data: { posPin: a.pin } }),
+      prisma.user.update({ where: { id: b.userId }, data: { posPin: pinFingerprint(a.pin) } }),
     ).rejects.toMatchObject({ code: 'P2002' });
 
-    expect(await prisma.user.count({ where: { posPin: a.pin } })).toBe(1);
+    expect(await prisma.user.count({ where: { posPin: pinFingerprint(a.pin) } })).toBe(1);
   });
 
   it('serves two admins reaching for the same PIN together', async () => {
@@ -95,7 +96,7 @@ describe('POS PINs', () => {
     ]);
 
     expect([first.status, second.status].sort()).toEqual([201, 409]);
-    expect(await prisma.user.count({ where: { posPin: wanted } })).toBe(1);
+    expect(await prisma.user.count({ where: { posPin: pinFingerprint(wanted) } })).toBe(1);
   });
 
   it('holds on the way in through an edit, too', async () => {
@@ -114,7 +115,7 @@ describe('POS PINs', () => {
     // The PIN did not move, and — because the write and its audit entry share a
     // transaction — no log entry claims it did.
     const after = await prisma.user.findUniqueOrThrow({ where: { id: victim.id } });
-    expect(after.posPin).toBe(theirs.pin);
+    expect(after.posPin).toBe(pinFingerprint(theirs.pin));
     const claimed = await prisma.auditEntry.findMany({ where: { entityId: victim.id, field: 'posPin' } });
     expect(claimed).toEqual([]);
   });

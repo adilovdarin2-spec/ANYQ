@@ -51,6 +51,7 @@ import { resolveLocationId, resolveTransferLocations, locationErrorMessage } fro
 import { resolveTransferReceipt, transferReceiptErrorMessage, collapseTransferItems } from '../transfers';
 import { resolveReturn, returnErrorMessage } from '../returns';
 import { resolvePackagedLines, packagingErrorMessage, lineTotal } from '../packaging';
+import { looksLikeFingerprint, pinFingerprint } from '../pin';
 import { buildDailyClosingBalances, demandWindowDays, estimateDailyDemand, recommendOrder, splitOnOrder } from '../replenishment';
 import type { DailyMovement, OpenOrderLine } from '../replenishment';
 import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
@@ -297,13 +298,43 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
   // than turned into a second reason to refuse a correct login.
   const deviceKey = readDeviceKey((req.body ?? {}).deviceKey);
 
-  const user = await prisma.user.findFirst({
-    where: { posPin: pin },
-    // Ordered, because an unordered list has no meaningful "first" — Postgres
-    // is free to return these in any order, so the location the register
-    // defaulted to could change between logins.
-    include: { company: { include: { tariff: true, locations: { orderBy: { name: 'asc' } } } } },
-  });
+  // Ordered, because an unordered list has no meaningful "first" — Postgres is
+  // free to return these in any order, so the location the register defaulted
+  // to could change between logins.
+  const withCompany = {
+    company: { include: { tariff: true, locations: { orderBy: { name: 'asc' as const } } } },
+  };
+
+  let user = await prisma.user.findFirst({ where: { posPin: pinFingerprint(pin) }, include: withCompany });
+
+  /* PIN, записанный до того, как их начали подписывать.
+     
+     Такой ищется по самим цифрам и тут же заменяется отпечатком. Иначе выкладка
+     оставила бы без входа всех, кто уже работает, а «выдайте всем PIN-ы заново»
+     — это магазин, который утром не открылся.
+     
+     Ветка временная и убирается, когда `select count(*) from users where
+     length("posPin") <> 64` даст ноль — запрос записан в PRODUCTION_RUNBOOK.
+     Найденное значение проверяется на длину: отпечаток сюда не попадёт, потому
+     что PIN-ом он быть не может. */
+  if (!user) {
+    const legacy = await prisma.user.findFirst({ where: { posPin: pin }, include: withCompany });
+    if (legacy && legacy.posPin && !looksLikeFingerprint(legacy.posPin)) {
+      try {
+        await prisma.user.update({ where: { id: legacy.id }, data: { posPin: pinFingerprint(pin) } });
+        user = legacy;
+      } catch {
+        /* Отпечаток занят кем-то ещё — то есть этот PIN за время перехода успели
+           выдать второму человеку. Проверки занятости смотрят на оба вида записи
+           именно затем, чтобы сюда не попадать, но пустить обоих по одному PIN-у
+           нельзя ни при каких обстоятельствах: по нему продают и списывают, а
+           журнал назовёт не того. Отказ со словами, что делать. */
+        res.status(409).json({ error: 'Этот PIN оказался занят. Попросите владельца выдать вам новый.' });
+        return;
+      }
+    }
+  }
+
   if (!user) {
     res.status(401).json({ error: 'Неверный PIN' });
     return;

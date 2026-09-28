@@ -13,6 +13,7 @@ import { computeDiscount } from '../discounts';
 import { paymentsOrLegacy, totalsByMethod } from '../payments';
 import { expiryFrom, grantState, isOpen, reasonRefusal, refusalFor } from '../support-access';
 import type { PaymentLine } from '../payments';
+import { pinFingerprint, pinTakenBy } from '../pin';
 
 export const companiesRouter = Router();
 companiesRouter.use(requireAuth);
@@ -157,7 +158,7 @@ companiesRouter.post('/', async (req, res) => {
   if (ownerPin) {
     // PIN уникален на всю платформу: два человека с одним кодом — это две
     // смены, записанные на одного.
-    const clash = await prisma.user.findFirst({ where: { posPin: ownerPin } });
+    const clash = await prisma.user.findFirst({ where: { OR: pinTakenBy(ownerPin) } });
     if (clash) {
       res.status(409).json({ error: PIN_TAKEN });
       return;
@@ -175,7 +176,7 @@ companiesRouter.post('/', async (req, res) => {
       phone: phoneKey(b.phone),
       slug,
       locations: { create: [{ name: b.location.name, type: b.location.type, address: b.location.address ?? '' }] },
-      users: { create: [{ name: b.owner.name, role: 'owner', phone: phoneKey(b.owner.phone ?? ''), posPin: ownerPin || null }] },
+      users: { create: [{ name: b.owner.name, role: 'owner', phone: phoneKey(b.owner.phone ?? ''), posPin: ownerPin ? pinFingerprint(ownerPin) : null }] },
       tariff: {
         create: {
           modules: JSON.stringify(b.tariff?.modules ?? []),
@@ -462,7 +463,7 @@ companiesRouter.post('/:id/owner-pin', async (req: AuthedRequest, res) => {
     return;
   }
 
-  const clash = await prisma.user.findFirst({ where: { posPin, id: { not: owner.id } } });
+  const clash = await prisma.user.findFirst({ where: { OR: pinTakenBy(posPin), id: { not: owner.id } } });
   if (clash) {
     res.status(409).json({ error: PIN_TAKEN });
     return;
@@ -483,7 +484,7 @@ companiesRouter.post('/:id/owner-pin', async (req: AuthedRequest, res) => {
     const updated = await prisma.$transaction(async (tx) => {
       const user = await tx.user.update({
         where: { id: owner.id },
-        data: { posPin, tokenVersion: { increment: 1 } },
+        data: { posPin: pinFingerprint(posPin), tokenVersion: { increment: 1 } },
       });
       await recordChanges(tx, actor, {
         entity: 'user',

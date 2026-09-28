@@ -5,6 +5,7 @@ import { lastOwnerRefusal, selfRoleRefusal } from './staff';
 import { roleRefusal } from './roles';
 import { limitRefusal } from './limits';
 import { phoneKey } from './phone';
+import { pinFingerprint, pinTakenBy } from './pin';
 
 /**
  * Что делают с сотрудником — в одном месте на оба входа.
@@ -112,7 +113,7 @@ export async function createStaff(
   if (refusal) return { ok: false, status: 409, error: refusal };
 
   if (posPin) {
-    const clash = await prisma.user.findFirst({ where: { posPin } });
+    const clash = await prisma.user.findFirst({ where: { OR: pinTakenBy(posPin) } });
     if (clash) return { ok: false, status: 409, error: STAFF_PIN_TAKEN };
   }
 
@@ -124,7 +125,7 @@ export async function createStaff(
           name,
           role: b.role as string,
           phone: phoneKey(typeof b.phone === 'string' ? b.phone : null) || null,
-          posPin: posPin || null,
+          posPin: posPin ? pinFingerprint(posPin) : null,
         },
       });
       // Заведение нового: сравнивать не с чем, поэтому «до» — пустая карточка.
@@ -182,11 +183,12 @@ export async function updateStaff(
   if (posPin && !STAFF_PIN_PATTERN.test(posPin)) {
     return { ok: false, status: 400, error: 'PIN должен быть числом из 4–6 цифр' };
   }
-  if (posPin && posPin !== existing.posPin) {
-    const clash = await prisma.user.findFirst({ where: { posPin, id: { not: existing.id } } });
+  const nextFingerprint = posPin ? pinFingerprint(posPin) : '';
+  if (posPin && nextFingerprint !== existing.posPin) {
+    const clash = await prisma.user.findFirst({ where: { OR: pinTakenBy(posPin), id: { not: existing.id } } });
     if (clash) return { ok: false, status: 409, error: STAFF_PIN_TAKEN };
   }
-  const nextPin = clearPin ? null : posPin || existing.posPin;
+  const nextPin = clearPin ? null : nextFingerprint || existing.posPin;
 
   // Новый PIN или новая роль — это тот момент, когда выданный токен должен
   // перестать работать. Переименование — нет: оно не выгоняет человека из

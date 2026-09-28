@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { pinFingerprint } from '../../../apps/api/src/pin';
 
 const prisma = new PrismaClient();
 
@@ -254,12 +255,12 @@ async function seedPosDemoData() {
 
   const cashier = shop.users.find((u) => u.role === 'cashier');
   if (cashier && !cashier.posPin) {
-    await prisma.user.update({ where: { id: cashier.id }, data: { posPin: '1234' } });
+    await prisma.user.update({ where: { id: cashier.id }, data: { posPin: pinFingerprint('1234') } });
     console.log(`Set POS PIN 1234 for cashier ${cashier.name}`);
   }
   const owner = shop.users.find((u) => u.role === 'owner');
   if (owner && !owner.posPin) {
-    await prisma.user.update({ where: { id: owner.id }, data: { posPin: '0000' } });
+    await prisma.user.update({ where: { id: owner.id }, data: { posPin: pinFingerprint('0000') } });
     console.log(`Set POS PIN 0000 for owner ${owner.name}`);
   }
 
@@ -327,12 +328,12 @@ async function seedSupplyDemoData() {
 
   const owner = supply.users.find((u) => u.role === 'owner');
   if (owner && !owner.posPin) {
-    await prisma.user.update({ where: { id: owner.id }, data: { posPin: '5678' } });
+    await prisma.user.update({ where: { id: owner.id }, data: { posPin: pinFingerprint('5678') } });
     console.log(`Set POS PIN 5678 for owner ${owner.name}`);
   }
   const staff = supply.users.find((u) => u.role === 'warehouse_staff');
   if (staff && !staff.posPin) {
-    await prisma.user.update({ where: { id: staff.id }, data: { posPin: '5679' } });
+    await prisma.user.update({ where: { id: staff.id }, data: { posPin: pinFingerprint('5679') } });
     console.log(`Set POS PIN 5679 for warehouse staff ${staff.name}`);
   }
 
@@ -461,12 +462,12 @@ async function seedPharmacyDemoData() {
 
   const owner = pharmacy.users.find((u) => u.role === 'owner');
   if (owner && !owner.posPin) {
-    await prisma.user.update({ where: { id: owner.id }, data: { posPin: '2222' } });
+    await prisma.user.update({ where: { id: owner.id }, data: { posPin: pinFingerprint('2222') } });
     console.log(`Set POS PIN 2222 for owner ${owner.name}`);
   }
   const pharmacist = pharmacy.users.find((u) => u.role === 'pharmacist');
   if (pharmacist && !pharmacist.posPin) {
-    await prisma.user.update({ where: { id: pharmacist.id }, data: { posPin: '2223' } });
+    await prisma.user.update({ where: { id: pharmacist.id }, data: { posPin: pinFingerprint('2223') } });
     console.log(`Set POS PIN 2223 for pharmacist ${pharmacist.name}`);
   }
 
@@ -615,12 +616,12 @@ async function seedRestaurantDemoData() {
 
   const owner = cafe.users.find((u) => u.role === 'owner');
   if (owner && !owner.posPin) {
-    await prisma.user.update({ where: { id: owner.id }, data: { posPin: '3333' } });
+    await prisma.user.update({ where: { id: owner.id }, data: { posPin: pinFingerprint('3333') } });
     console.log(`Set POS PIN 3333 for owner ${owner.name}`);
   }
   const cashier = cafe.users.find((u) => u.role === 'cashier');
   if (cashier && !cashier.posPin) {
-    await prisma.user.update({ where: { id: cashier.id }, data: { posPin: '3334' } });
+    await prisma.user.update({ where: { id: cashier.id }, data: { posPin: pinFingerprint('3334') } });
     console.log(`Set POS PIN 3334 for cashier ${cashier.name}`);
   }
 
@@ -754,12 +755,12 @@ async function seedWarehouseTransferDemoData() {
 
   const manager = network.users.find((u) => u.role === 'manager');
   if (manager && !manager.posPin) {
-    await prisma.user.update({ where: { id: manager.id }, data: { posPin: '4444' } });
+    await prisma.user.update({ where: { id: manager.id }, data: { posPin: pinFingerprint('4444') } });
     console.log(`Set POS PIN 4444 for manager ${manager.name}`);
   }
   const warehouseStaff = network.users.find((u) => u.role === 'warehouse_staff');
   if (warehouseStaff && !warehouseStaff.posPin) {
-    await prisma.user.update({ where: { id: warehouseStaff.id }, data: { posPin: '4445' } });
+    await prisma.user.update({ where: { id: warehouseStaff.id }, data: { posPin: pinFingerprint('4445') } });
     console.log(`Set POS PIN 4445 for warehouse staff ${warehouseStaff.name}`);
   }
 
