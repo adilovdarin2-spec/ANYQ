@@ -563,6 +563,19 @@ export interface ReplenishmentItem {
   inTransit: number;
   /** Already asked of a supplier on a sent order and not yet delivered. */
   onOrder: number;
+  /**
+   * Заказано у поставщика и уже не ждём.
+   *
+   * Заказанное вычитается из потребности — и правильно: заказывать поверх
+   * опаздывающей поставки значит набрать трёхмесячный запас одного товара. Но
+   * срока у этого вычитания не было: заказ, отправленный в марте и не пришедший,
+   * вычитался в сентябре, и автозаказ отвечал «заказывать не надо» про пустую
+   * полку. Просроченное больше не вычитается — и показывается здесь, чтобы
+   * исчезло оно не молча.
+   *
+   * Необязательное: касса и сервер выкатываются порознь.
+   */
+  onOrderOverdue?: number;
   /** Base units a day, measured only over the days it was on the shelf. Null when it never was. */
   demandPerDay: number | null;
   daysInStock: number;

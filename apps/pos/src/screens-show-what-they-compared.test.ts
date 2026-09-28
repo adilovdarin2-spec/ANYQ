@@ -210,4 +210,66 @@ describe('карточка автозаказа', () => {
       expect(окно, `${язык}: число дней не подставляется`).toContain('{days}');
     }
   });
+
+  /* И про заказ, которого уже не будет.
+
+     Заказанное вычитается из потребности — верно, пока поставка едет. Срока у
+     вычитания не было: мартовский заказ вычитался в сентябре, полка стояла
+     пустой, а экран отвечал «заказывать не надо». Правило проверено арифметикой
+     в `api/order-we-stopped-waiting-for` и по живой базе в
+     `integration/stale-order-stops-blocking`; здесь — что исчезло оно не молча. */
+  it('и говорит, какой заказ перестал считаться', () => {
+    expect(repl, 'просроченный заказ исчезает молча').toContain('item.onOrderOverdue');
+    expect(repl).toContain("t('repl.onOrderOverdue')");
+    expect(repl, 'сказано, что число изменилось, и не сказано, что делать').toContain("t('repl.overdueWhy')");
+  });
+
+  it('но молчит, когда пропавшего заказа нет', () => {
+    // Строка «уже не ждём: 0» заставляет искать то, чего не было.
+    expect(repl).toContain('(item.onOrderOverdue ?? 0) > 0');
+  });
+
+  it('и фразы про пропавший заказ есть на двух языках', () => {
+    for (const [язык, d] of [['русский', ru], ['казахский', kk]] as const) {
+      expect((d as Record<string, string>)['repl.onOrderOverdue'], `${язык}: нет фразы`).toBeTruthy();
+      expect((d as Record<string, string>)['repl.overdueWhy'], `${язык}: нет объяснения`).toBeTruthy();
+    }
+  });
+});
+
+/**
+ * Заказ поставщику принимает дату, к которой его обещали.
+ *
+ * Сервер принимал `expectedAt` с самого начала, и задать её было негде: касса
+ * поле не читала и не отправляла. От этой даты зависит, когда заказ перестаёт
+ * считаться едущим и снимать потребность, — то есть без неё срок берётся из
+ * общего правила вместо того, что поставщик сказал про этот заказ.
+ */
+describe('заказ поставщику', () => {
+  const po = withoutComments(
+    readFileSync(resolve(__dirname, 'components', 'PurchaseOrdersScreen.tsx'), 'utf8'),
+  );
+
+  it('экран разобрался', () => {
+    expect(po).toContain('onCreate');
+  });
+
+  it('спрашивает, когда ждём поставку', () => {
+    expect(po, 'дата снова не задаётся ниоткуда').toContain("t('po.expectedAt')");
+    expect(po).toContain('expectedAt: expectedAt || null');
+  });
+
+  it('и показывает её в списке заказов', () => {
+    // Иначе нельзя понять, какой из десяти открытых заказов опаздывает.
+    expect(po).toContain('order.expectedAt');
+    expect(po).toContain("t('po.expecting'");
+  });
+
+  it('и фразы есть на двух языках', () => {
+    for (const [язык, d] of [['русский', ru], ['казахский', kk]] as const) {
+      expect((d as Record<string, string>)['po.expectedAt'], `${язык}: нет подписи поля`).toBeTruthy();
+      expect((d as Record<string, string>)['po.expectedWhy'], `${язык}: не сказано, зачем дата`).toBeTruthy();
+      expect((d as Record<string, string>)['po.expecting'], `${язык}: дата не подставляется`).toContain('{date}');
+    }
+  });
 });

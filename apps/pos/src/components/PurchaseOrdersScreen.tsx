@@ -3,7 +3,7 @@ import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 import { pluralPhrase } from '../i18n';
 import type { Product, PurchaseOrder, PurchaseOrderStatus, Supplier } from '../types';
-import { formatDateTime, formatMoney } from '../utils';
+import { formatDate, formatDateTime, formatMoney } from '../utils';
 import { parseTyped } from '../typed-number';
 
 interface DraftLine {
@@ -29,6 +29,7 @@ interface Props {
   onCreate: (payload: {
     supplierId: string | null;
     note: string;
+    expectedAt?: string | null;
     items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
   }) => Promise<boolean>;
   onAct: (orderId: string, action: 'approve' | 'send' | 'cancel') => void;
@@ -67,6 +68,13 @@ export function PurchaseOrdersScreen({
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [supplierId, setSupplierId] = useState(LOOSE);
+  /* Когда договорились привезти.
+     
+     Сервер принимал эту дату с самого начала, и задать её было негде, — а от
+     неё зависит, когда автозаказ перестанет считать заказ едущим. Без неё срок
+     берётся из политики товара, то есть из общего правила вместо того, что
+     поставщик сказал про этот конкретный заказ. */
+  const [expectedAt, setExpectedAt] = useState('');
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [productId, setProductId] = useState(products[0]?.id ?? '');
@@ -109,6 +117,7 @@ export function PurchaseOrdersScreen({
     const created = await onCreate({
       supplierId: supplierId || null,
       note: note.trim(),
+      expectedAt: expectedAt || null,
       items: lines.map((l) => ({
         productId: l.productId,
         quantity: l.quantity,
@@ -119,6 +128,7 @@ export function PurchaseOrdersScreen({
     if (created) {
       setLines([]);
       setNote('');
+      setExpectedAt('');
       setView('list');
     }
   }
@@ -153,6 +163,7 @@ export function PurchaseOrdersScreen({
                     <div className="order-customer">{order.supplier?.name ?? t('po.noSupplier')}</div>
                     <div className="order-meta">
                       {formatDateTime(order.createdAt)} · {formatMoney(order.total)}
+                      {order.expectedAt ? ` · ${t('po.expecting', { date: formatDate(order.expectedAt) })}` : ''}
                       {order.approvedByName ? ` · ${t('po.approvedBy', { name: order.approvedByName })}` : ''}
                     </div>
                   </div>
@@ -215,6 +226,20 @@ export function PurchaseOrdersScreen({
                   <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
                 ))}
               </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="po-expected">{t('po.expectedAt')}</label>
+              {/* Дата — единственное место в кассе, где `type="date"` уместен:
+                  свой календарь у планшета крупный и пальцем набирается, а
+                  разбирать «29.09» из текстового поля — это гадать про формат. */}
+              <input
+                id="po-expected"
+                type="date"
+                value={expectedAt}
+                onChange={(e) => setExpectedAt(e.target.value)}
+              />
+              <p className="field-hint">{t('po.expectedWhy')}</p>
             </div>
 
             <div className="form-field">

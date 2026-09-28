@@ -924,6 +924,13 @@ export interface CreatePurchaseOrderPayload {
   locationId: string;
   supplierId: string | null;
   note: string;
+  /**
+   * Когда договорились привезти. Пусто — считаем по сроку поставки товара.
+   *
+   * Сервер принимал эту дату с самого начала и никто её не задавал, а от неё
+   * зависит, когда заказ перестаёт считаться едущим и снимать потребность.
+   */
+  expectedAt?: string | null;
   /** `quantity` and `price` are per pack when packagingId is set, per base unit otherwise. */
   items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
 }

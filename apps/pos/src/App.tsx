@@ -2092,6 +2092,7 @@ export default function App() {
   async function handleCreatePurchaseOrder(payload: {
     supplierId: string | null;
     note: string;
+    expectedAt?: string | null;
     items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
   }) {
     if (!session || !currentLocationId) return false;

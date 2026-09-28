@@ -130,6 +130,59 @@ export interface Recommendation {
 // van arrives, every time.
 const SAFETY_DAYS = 3;
 
+/** Одна открытая строка заказа поставщику: сколько ещё не привезли и когда ждали. */
+export interface OpenOrderLine {
+  /** Base units ordered and not yet received. */
+  outstanding: number;
+  orderedAt: Date;
+  /** Дата, к которой обещали. Пусто — считаем от срока поставки. */
+  expectedAt: Date | null;
+}
+
+/**
+ * Заказ, который ещё едет, и заказ, которого уже не будет.
+ *
+ * Расчёт вычитает заказанное из потребности, и это верно: заказывать поверх
+ * опаздывающей поставки — как раз тот способ, которым склад набирает трёхмесячный
+ * запас одного товара. Но верхней границы у этого не было никакой. Заказ,
+ * отправленный в марте и не пришедший, вычитался в сентябре: полка пустая,
+ * автозаказ говорит «заказано 40, заказывать не надо», и не говорит этого никто.
+ *
+ * Хуже всего то, что молчит он именно там, где ошибка дорогая. Пустая полка —
+ * это потерянная продажа и ушедший покупатель; двойной заказ — это замороженные
+ * деньги. Второе лечится, первое нет.
+ *
+ * Поэтому у ожидания есть срок: обещанная дата, а если её не задавали — день
+ * заказа плюс срок поставки. Плюс запас на обычное опоздание: поставщик, который
+ * задержался на день, всё ещё едет. Запас равен сроку поставки, но не меньше
+ * трёх дней, — то есть при сроке в три дня заказ перестаёт считаться едущим через
+ * шесть, а при сроке в две недели — через месяц. Поставщик, опоздавший на целый
+ * свой срок, не опаздывает: его заказа не будет.
+ *
+ * Просроченное не исчезает молча: оно возвращается отдельным числом и показывается
+ * на экране. Иначе это была бы вторая тихая ошибка вместо первой.
+ */
+export function splitOnOrder(
+  lines: OpenOrderLine[],
+  leadTimeDays: number,
+  now: Date,
+): { coming: number; overdue: number } {
+  const lead = Number.isFinite(leadTimeDays) && leadTimeDays > 0 ? leadTimeDays : 3;
+  const grace = Math.max(lead, 3);
+  let coming = 0;
+  let overdue = 0;
+
+  for (const line of lines) {
+    if (line.outstanding <= 0) continue;
+    const due = line.expectedAt ?? new Date(line.orderedAt.getTime() + lead * 86_400_000);
+    const gaveUpAt = new Date(due.getTime() + grace * 86_400_000);
+    if (now.getTime() > gaveUpAt.getTime()) overdue += line.outstanding;
+    else coming += line.outstanding;
+  }
+
+  return { coming, overdue };
+}
+
 export function recommendOrder(input: ReplenishmentInput): Recommendation {
   // Everything already coming, from wherever. Ordering on top of goods that
   // are merely late is how a stockroom ends up holding three months of one

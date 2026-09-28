@@ -51,8 +51,8 @@ import { resolveLocationId, resolveTransferLocations, locationErrorMessage } fro
 import { resolveTransferReceipt, transferReceiptErrorMessage, collapseTransferItems } from '../transfers';
 import { resolveReturn, returnErrorMessage } from '../returns';
 import { resolvePackagedLines, packagingErrorMessage, lineTotal } from '../packaging';
-import { buildDailyClosingBalances, demandWindowDays, estimateDailyDemand, recommendOrder } from '../replenishment';
-import type { DailyMovement } from '../replenishment';
+import { buildDailyClosingBalances, demandWindowDays, estimateDailyDemand, recommendOrder, splitOnOrder } from '../replenishment';
+import type { DailyMovement, OpenOrderLine } from '../replenishment';
 import { buildAverageCost, computeGrossMargin, findDeadStock, flagOutliers, reconcileShiftCash } from '../owner';
 import type { CashierActivity, ShiftCash, ShiftCashResult } from '../owner';
 import { isValidManualEntry, manualRegistration } from '../fiscal';
@@ -3079,10 +3079,14 @@ export async function replenishmentFor(companyId: string, locationId: string) {
     const closing = buildDailyClosingBalances(available, allByProduct.get(product.id) ?? [], effectiveWindowDays);
     const demand = estimateDailyDemand(closing, demandByProduct.get(product.id) ?? [], () => true);
 
+    // Заказ, который ещё едет, отдельно от заказа, которого уже не будет: второй
+    // вычитался из потребности бессрочно, и полка оставалась пустой молча.
+    const onOrder = splitOnOrder(onOrderByProduct.get(product.id) ?? [], policy?.leadTimeDays ?? 3, now);
+
     const recommendation = recommendOrder({
       available,
       inTransit,
-      onOrder: onOrderByProduct.get(product.id) ?? 0,
+      onOrder: onOrder.coming,
       demandPerDay: demand.perDay,
       leadTimeDays: policy?.leadTimeDays ?? 3,
       minQuantity: policy?.minQuantity ?? 0,
@@ -3096,7 +3100,8 @@ export async function replenishmentFor(companyId: string, locationId: string) {
       unit: product.unit,
       available,
       inTransit,
-      onOrder: onOrderByProduct.get(product.id) ?? 0,
+      onOrder: onOrder.coming,
+      onOrderOverdue: onOrder.overdue,
       demandPerDay: demand.perDay === null ? null : Math.round(demand.perDay * 100) / 100,
       daysInStock: demand.daysInStock,
       daysOutOfStock: demand.daysOutOfStock,
@@ -5033,7 +5038,10 @@ posRouter.put('/fiscal/device', requirePosAuth, async (req: PosAuthedRequest, re
 // Goods a supplier has been asked for and has not yet delivered. Counted
 // against a new recommendation, so a shop doesn't order again on top of a
 // delivery that is merely late.
-async function outstandingOnOrder(companyId: string, locationId: string): Promise<Map<string, number>> {
+async function outstandingOnOrder(
+  companyId: string,
+  locationId: string,
+): Promise<Map<string, OpenOrderLine[]>> {
   const lines = await prisma.documentItem.findMany({
     where: {
       document: {
@@ -5043,14 +5051,27 @@ async function outstandingOnOrder(companyId: string, locationId: string): Promis
         status: { in: ['sent', 'partially_received'] },
       },
     },
-    select: { productId: true, quantity: true, receivedQuantity: true },
+    select: {
+      productId: true,
+      quantity: true,
+      receivedQuantity: true,
+      // Даты нужны, чтобы отличить заказ, который едет, от того, которого уже не
+      // будет: без них вычитание из потребности не имело срока годности.
+      document: { select: { createdAt: true, expectedAt: true } },
+    },
   });
 
-  const byProduct = new Map<string, number>();
+  const byProduct = new Map<string, OpenOrderLine[]>();
   for (const line of lines) {
     const outstanding = Math.max(line.quantity - (line.receivedQuantity ?? 0), 0);
     if (outstanding <= 0) continue;
-    byProduct.set(line.productId, (byProduct.get(line.productId) ?? 0) + outstanding);
+    const open = byProduct.get(line.productId) ?? [];
+    open.push({
+      outstanding,
+      orderedAt: line.document.createdAt,
+      expectedAt: line.document.expectedAt,
+    });
+    byProduct.set(line.productId, open);
   }
   return byProduct;
 }
