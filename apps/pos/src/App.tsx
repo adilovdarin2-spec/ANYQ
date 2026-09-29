@@ -3133,6 +3133,14 @@ export default function App() {
           setSaleNotice(stockNotice(product));
           return prev;
         }
+        /* Отказ снимается, как только что-то легло в корзину.
+
+           Иначе он висит над товаром, который только что добавили: кассир
+           поднёс маркированную пачку пальцем, получил красное «добавляют
+           сканером», положил вместо неё воду — и предупреждение осталось,
+           теперь уже про воду, по всему виду экрана. Читается это как «и эту
+           тоже не приняли», и кассир жмёт снова. */
+        setSaleNotice(null);
         if (existing) {
           return prev.map((l) => (l.id === lineId ? { ...l, qty: nextQty } : l));
         }
@@ -3144,6 +3152,7 @@ export default function App() {
         setSaleNotice(stockNotice(product));
         return prev;
       }
+      setSaleNotice(null);
       if (existing) {
         return prev.map((l) => (l.id === lineId ? { ...l, qty: l.qty + 1 } : l));
       }

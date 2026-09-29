@@ -103,7 +103,23 @@ body { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 .search-hint { font-size: var(--text-xs); color: var(--ink-muted); margin: 6px 2px 0; overflow-wrap: anywhere; }
 /* Промах скана стоит на месте подсказки: тем же размером, но так, чтобы
    глаз зацепился — кассир смотрит на сетку, а не на строку под полем. */
-.search-hint.miss { color: var(--status-overdue); font-weight: 600; }
+/* Касса отказала — и это надо увидеть, не глядя прямо туда.
+
+   Отказ рисовался тонкой красной строчкой того же кегля, что подсказка про
+   сканер. На телефоне это рядом с пальцем, а на терминале кассир жмёт плитку
+   в трёхстах пикселях ниже — и строчка наверху остаётся незамеченной: он
+   давит второй раз, третий, и решает, что касса зависла.
+
+   Теперь это блок с подложкой и знаком: боковым зрением видно, что наверху
+   что-то появилось, даже если смотришь на товар. */
+.search-hint.miss {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 10px 0 0; padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--status-overdue-bg); color: var(--status-overdue);
+  font-size: var(--text-base); font-weight: 600; line-height: var(--leading-tight);
+}
+.search-hint.miss::before { content: '!'; font-weight: 800; }
 .category-bar {
   display: flex; gap: 8px; overflow-x: auto; margin: 8px -14px 0; padding: 2px 14px 4px;
   scrollbar-width: none;
@@ -346,6 +362,37 @@ body { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
    не приходило. Рамка возвращает ему вид кнопки, не делая его главным. */
 .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); }
 .btn-ghost:active { background: var(--surface-2); }
+
+/* Выбор файла.
+
+   Системный `input[type=file]` рисуется браузером и в кассу не вписывается
+   ничем: серая кнопка чужой формы, подпись «Файл не выбран» на каждой
+   карточке приёмки и цель размером в сантиметр там, где тычут пальцем.
+
+   Настоящий элемент оставлен как есть — он и открывает камеру на телефоне, и
+   доступен с клавиатуры, — но его собственная кнопка оформлена как наши
+   кнопки, а текст «файл не выбран» убран: он ничего не сообщает, потому что
+   выбранный файл и так виден по тому, что происходит дальше. */
+input[type='file'] {
+  font-size: var(--text-base);
+  color: transparent;
+  max-width: 100%;
+}
+input[type='file']::file-selector-button {
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  min-height: 48px;
+  margin-right: 12px;
+  cursor: pointer;
+}
+input[type='file']:hover::file-selector-button { background: var(--surface); }
+input[type='file']:focus-visible::file-selector-button { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-allowed; }
 /* Кнопка, после которой что-то не вернуть. Класс стоял в разметке, правила не
    было: «сбросить кабинет» выглядела так же, как «сохранить». */
 .btn-danger { background: var(--status-overdue-bg); color: var(--status-overdue); }
