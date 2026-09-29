@@ -354,8 +354,6 @@ export const ru = {
   'owner.money': 'Деньги',
   'owner.netRevenue': 'Выручка за вычетом возвратов',
   'owner.grossMargin': 'Валовая маржа',
-  'owner.ledgerMismatch': 'Остатки не сходятся с журналом',
-  'owner.unfiscalised': 'Не фискализировано чеков',
   'owner.owedToUs': 'Должны нам',
   'owner.overdue': '{amount} старше месяца',
   'owner.weOwe': 'Должны мы',

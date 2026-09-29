@@ -277,7 +277,11 @@ button { cursor: pointer; }
 /* Сколько наличных должно оказаться в ящике. Это не справка в столбце итогов,
    а величина, с которой сверяют пересчитанные деньги: если она не выделена,
    кассир ищет её глазами среди строк «Kaspi QR» и «Карта» — каждую смену. */
-.summary-row.expected-cash { font-size: var(--text-md); font-weight: 700; margin-top: 18px; }
+/* Число, ради которого экран закрытия смены и открывают: с ним сравнивают то,
+   что лежит в ящике. Оно было лишь чуть крупнее строки «Kaspi QR» — то есть
+   читалось как ещё одна справочная величина в столбце из десяти. */
+.summary-row.expected-cash { font-size: var(--text-xl); font-weight: 700; margin-top: 22px; align-items: baseline; }
+.summary-row.expected-cash .sr-muted { font-size: var(--text-base); }
 .summary-row .sr-muted { color: var(--ink-muted); }
 
 /* discounts (retail tariff) */
@@ -763,7 +767,7 @@ button { cursor: pointer; }
      из телефонной позы, а сверху вниз через прилавок. Это единственное
      число на экране оплаты, которое произносят. */
   .pos-shell .cash-change .summary-row.total { font-size: var(--text-xl); }
-  .pos-shell .summary-row.expected-cash { font-size: var(--text-lg); }
+  .pos-shell .summary-row.expected-cash { font-size: var(--text-2xl); }
 
   /* Кнопка, которой заканчивается каждая продажа. На телефоне она и так
      во всю ширину; на терминале ей место соразмерное тому, как часто по ней
@@ -793,7 +797,27 @@ button { cursor: pointer; }
   padding: 14px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
 }
 .report-card .value { font-size: var(--text-md); font-weight: 700; font-variant-numeric: tabular-nums; }
-.report-card .label { font-size: var(--text-xs); color: var(--ink-muted); }
+.report-card .label { font-size: var(--text-sm); color: var(--ink-muted); line-height: var(--leading-tight); }
+
+/* Главное число сводки.
+
+   Восемь одинаковых карточек в сетке — выручка, маржа, расхождения журнала,
+   нефискализированные чеки, долги в обе стороны, возвраты, скидки — это не
+   сводка, а таблица: все числа одного размера, значит владелец читает их по
+   очереди и не видит ответа. А открывает он этот экран с одним вопросом:
+   сколько заработали.
+
+   Поэтому выручка занимает всю ширину и набрана вдвое крупнее, маржа стоит
+   её подписью, а прочее остаётся обычными карточками под ними. */
+.report-card.headline {
+  grid-column: 1 / -1; align-items: flex-start; text-align: left; padding: 20px 22px; gap: 6px;
+}
+.report-card.headline .value { font-size: var(--text-2xl); line-height: 1.05; }
+.report-card.headline .label { font-size: var(--text-base); }
+/* Вторая строка — то, из чего главное число складывается. Отдельной строкой, а
+   не через точку в подписи: «Выручка за вычетом возвратов · Валовая маржа 0 ₸»
+   читается как одна длинная фраза, в которой не видно ни того, ни другого. */
+.report-card.headline .sub { font-size: var(--text-sm); color: var(--ink-muted); margin-top: 2px; }
 .report-row { display: flex; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: var(--text-base); line-height: var(--leading-tight); }
 .report-row.low { color: var(--status-overdue); font-weight: 600; }
 .food-cost-figures { display: flex; align-items: center; gap: 8px; }

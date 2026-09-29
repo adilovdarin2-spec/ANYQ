@@ -98,33 +98,20 @@ export function OwnerDashboardScreen({
             {/* 1. Где деньги */}
             <div className="orders-section-title">{t('owner.money')}</div>
             <div className="report-cards">
-              <div className="report-card">
+              {/* Выручка — ответ на вопрос, с которым сюда заходят.
+
+                  Восемь одинаковых карточек в сетке сводкой не были: все числа
+                  одного размера, и владелец читал их по очереди, не находя
+                  главного. Маржа стоит подписью под выручкой — она про то же
+                  самое число и без него не значит ничего. */}
+              <div className="report-card headline">
                 <span className="value">{formatMoney(dashboard.money.netRevenue)}</span>
                 <span className="label">{t('owner.netRevenue')}</span>
-              </div>
-              <div className="report-card">
-                <span className="value">{formatMoney(dashboard.money.grossMargin)}</span>
-                <span className="label">
-                  {t('owner.grossMargin')}{dashboard.money.marginPercent !== null ? ` · ${dashboard.money.marginPercent}%` : ''}
+                <span className="sub">
+                  {t('owner.grossMargin')} {formatMoney(dashboard.money.grossMargin)}
+                  {dashboard.money.marginPercent !== null ? ` (${dashboard.money.marginPercent}%)` : ''}
                 </span>
               </div>
-              {/* Beside the money, because it is the figure that turns into a
-                  fine rather than a loss. */}
-              {/* Shown only when it isn't zero. A trust indicator that is
-                  always green stops being read, and this one should be green
-                  every single day. */}
-              {dashboard.ledgerCheck.mismatched > 0 && (
-                <div className="report-card">
-                  <span className="value">{dashboard.ledgerCheck.mismatched}</span>
-                  <span className="label">{t('owner.ledgerMismatch')}</span>
-                </div>
-              )}
-              {dashboard.unfiscalised.count > 0 && (
-                <div className="report-card">
-                  <span className="value">{dashboard.unfiscalised.count}</span>
-                  <span className="label">{t('owner.unfiscalised')}</span>
-                </div>
-              )}
               {/* A till figure answers "what did we take today"; these answer
                   "where is our money", which is usually the larger question. */}
               {dashboard.debts.receivable.total > 0 && (
@@ -157,6 +144,15 @@ export function OwnerDashboardScreen({
                 </div>
               )}
             </div>
+
+            {/* Расхождения журнала и нефискализированных чеков здесь больше нет
+                — намеренно.
+
+                Обе цифры стояли в этой же сетке отдельными карточками, и обе
+                уже стоят выше, в очереди «что сделать сегодня»: `ledger_drift`
+                и `unfiscalised`, обе со срочностью «сейчас» и со словами о том,
+                чем это кончится. Повтор их не усиливал, а разбавлял — среди
+                восьми одинаковых карточек штраф читается как статистика. */}
 
             {/* Касса: единственная цифра, которую владелец проверяет первой */}
             {dashboard.money.shifts.length > 0 && (
