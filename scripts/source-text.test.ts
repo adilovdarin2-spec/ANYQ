@@ -58,4 +58,46 @@ describe('исходник без комментариев', () => {
   it('и делитель не путает с комментарием', () => {
     expect(withoutComments('const x = a / b; const y = c / d;')).toContain('a / b');
   });
+
+  /* Регулярные выражения — 29.09.2026, поломкой.
+
+     Охрана содержала `/url\(\s*['"]?([^'")]+)/g`. Кавычка внутри класса
+     символов открывала «строку», которая не закрывалась никогда, и дальше по
+     файлу комментарии не снимались вовсе: пример `requireSecret('SENDGRID_API_KEY')`
+     из комментария той же охраны был прочитан как настоящий вызов.
+
+     Заметили это громко, но ошибка умеет и молчать: незакрытая строка оставляет
+     закомментированный код видимым — ровно тот случай, ради которого весь этот
+     файл и написан. */
+  it('кавычка внутри регулярки не открывает строку', () => {
+    const src = [
+      `const re = /url\\(\\s*['"]?([^'")]+)/g;`,
+      '/* хвост */ const after = 1;',
+    ].join('\n');
+    const out = withoutComments(src);
+    expect(out, 'комментарий после регулярки не снят').not.toContain('хвост');
+    expect(out, 'сама регулярка пострадала').toContain(`[^'")]+`);
+    expect(out).toContain('const after = 1;');
+  });
+
+  it('и слэш внутри регулярки её не закрывает', () => {
+    const src = 'const re = /^(https?:)?\/\//; // хвост';
+    const out = withoutComments(src);
+    expect(out).toContain('https?:');
+    expect(out, 'строчный комментарий после регулярки не снят').not.toContain('хвост');
+  });
+
+  it('а деление после имени или скобки регуляркой не считается', () => {
+    /* Иначе `a / b; // хвост` съело бы половину файла как «регулярку»: слэш
+       после имени делит, а не открывает. */
+    expect(withoutComments('const x = total / count; // хвост')).not.toContain('хвост');
+    expect(withoutComments('const x = total / count; // хвост')).toContain('total / count');
+    expect(withoutComments('const x = (a + b) / c; // хвост')).toContain('(a + b) / c');
+    expect(withoutComments('const x = arr[0] / c; // хвост')).toContain('arr[0] / c');
+  });
+
+  it('и regex после ключевого слова — считается', () => {
+    const out = withoutComments("if (x) return /['\"]/.test(s); /* хвост */");
+    expect(out, 'комментарий после regex-возврата не снят').not.toContain('хвост');
+  });
 });

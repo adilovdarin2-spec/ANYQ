@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './ErrorBoundary';
 import { registerOfflineSupport } from './offline';
+import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/global.css';
 

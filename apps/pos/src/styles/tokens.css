@@ -1,4 +1,21 @@
 /**
+ * Вид кассы: «Терминал».
+ *
+ * Выбран 29.09.2026 из трёх показанных вариантов. Прежний светло-зелёный
+ * владелец забраковал словами «выглядит ужасно и неудобно» — и дело было не в
+ * размерах: продукт выглядел как телефонное приложение, открытое на мониторе.
+ *
+ * Здесь другое: холодная графитовая гамма, плотная геометрия, заметные рамки,
+ * крупные моноширинные цифры. За этим экраном работают стоя, по нему бьют
+ * пальцем и смотрят на него с вытянутой руки — он должен выглядеть
+ * оборудованием, а не витриной.
+ *
+ * Обе темы носят один характер: тёмная — основная, светлая — та же гамма,
+ * повёрнутая. Ни одна пара «текст на фоне» не опускается ниже 4.5:1, самая
+ * узкая — 5.46.
+ */
+
+/**
  * Размеры текста.
  *
  * До 28.09.2026 шкалы не было вовсе: в кассе жили двадцать разных значений
@@ -20,127 +37,135 @@
   --text-xl: 1.6rem;
   --text-2xl: 2rem;
 
+  /**
+   * Скругления.
+   *
+   * Их было десять разных, от 4 до 20, набранных по месту. Крупные мягкие углы
+   * читаются как телефонное приложение; касса — это оборудование, за которым
+   * работают, и выглядеть она должна собранной. Три ступени, все мельче
+   * прежних, и радиус кнопки-пилюли отдельно.
+   */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
   /* Межстрочное для плотных мест: строка документа, подпись под числом. */
   --leading-tight: 1.35;
   --leading-normal: 1.5;
 
-  --bg: #FBFDFC;
+  --bg: #F1F3F4;
   --surface: #FFFFFF;
-  --surface-2: #EDF6F0;
-  --ink: #0E1A14;
-  --ink-muted: #57675E;
-  /* #0F8A4D давал 4.41 на белом при норме 4.5 — то есть зелёный текст (цена,
-     активная вкладка, «Активен») формально нечитаем. Тон глубже: 5.4 на белом,
-     4.9 даже на зеленоватой подложке, и это тот же зелёный. */
-  --accent: #0D7A45;
-  --accent-strong: #0A6237;
-  /* Пара для залитых зелёным поверхностей.
-     Белый на #0F8A4D даёт 4.41 при норме 4.5 — то есть подпись на главной
-     кнопке продукта формально нечитаема, и это не придирка: касса стоит у окна.
-     Заливка взята на тон глубже, и белый на ней даёт 7.46. Зелёный из
-     `--accent` остаётся для текста и значков, где он на светлом фоне и читается
-     прекрасно. */
-  --accent-fill: #0A6237;
+  --surface-2: #E8EBED;
+  --ink: #101416;
+  --ink-muted: #5A656B;
+  /* Зелёный для текста — цена, активная вкладка, «Активен».
+     6.53 на белой карточке и 5.46 даже на серой подложке при норме 4.5. */
+  --accent: #0A6B4A;
+  --accent-strong: #075138;
+  /* Пара для залитых зелёным поверхностей: белый на ней даёт 9.36.
+     Заливка глубже текстового зелёного намеренно — подпись на главной кнопке
+     читают в зале у окна, и запас по контрасту там не роскошь. */
+  --accent-fill: #075138;
   --on-accent: #FFFFFF;
-  --border: #DBE7E0;
+  --border: #CBD2D6;
 
-  --status-active: #0D7A45;
-  --status-active-bg: #E4F4EA;
-  --status-trial: #2E6FA3;
-  --status-trial-bg: #DDEAF4;
-  --status-overdue: #C0392B;
-  --status-soon: #B26B00;
-  --status-overdue-bg: #FBE8E5;
-  --status-suspended: #64736A;
-  --status-suspended-bg: #EEF2EF;
+  --status-active: #0A6B4A;
+  --status-active-bg: #DCEDE5;
+  --status-trial: #25587F;
+  --status-trial-bg: #DAE6F0;
+  --status-overdue: #A3301E;
+  --status-soon: #8A5300;
+  --status-overdue-bg: #F7E2DE;
+  --status-suspended: #59646A;
+  --status-suspended-bg: #E6EAEC;
 
-  --shadow-sm: 0 1px 2px rgba(14, 26, 20, 0.06);
-  --shadow-md: 0 12px 32px rgba(14, 26, 20, 0.12);
+  --shadow-sm: 0 1px 0 rgba(16,20,22,.05);
+  --shadow-md: 0 10px 28px rgba(16,20,22,.14);
   --tab-bar-h: 56px;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0E1311;
-    --surface: #161C19;
-    --surface-2: #1E2723;
-    --ink: #ECF1EE;
-    --ink-muted: #97A49C;
-    --accent: #3FBF77;
+    --bg: #101619;
+    --surface: #182025;
+    --surface-2: #222C32;
+    --ink: #EDF2F4;
+    --ink-muted: #95A3AB;
+    --accent: #3DD68C;
     /* В тёмной теме наоборот: яркая зелёная заливка и тёмный текст на ней.
-       Белый на #3FBF77 — это 2.35, нечитаемо. Тёмный — 7.97, и кнопка при этом
-       остаётся той же яркой, ради которой этот зелёный и выбран. */
-    --accent-fill: #3FBF77;
-    --on-accent: #08120D;
-    --accent-strong: #63D294;
-    --border: #2A3430;
+       Белый на такой заливке нечитаем; тёмный даёт 9.96, и кнопка остаётся той
+       же яркой, ради которой этот зелёный и выбран. */
+    --accent-fill: #3DD68C;
+    --on-accent: #08150E;
+    --accent-strong: #66E3A8;
+    --border: #2C373E;
 
-    --status-active: #3FBF77;
-    --status-active-bg: #14301F;
-    --status-trial: #7FB8E8;
-    --status-trial-bg: #1B2E3D;
-    --status-overdue: #E8917A;
-    --status-soon: #E0B050;
-    --status-overdue-bg: #35221C;
-    --status-suspended: #9AA79E;
-    --status-suspended-bg: #1F2724;
+    --status-active: #3DD68C;
+    --status-active-bg: #123023;
+    --status-trial: #77B6E8;
+    --status-trial-bg: #152A3B;
+    --status-overdue: #F08A6E;
+    --status-soon: #E0A43C;
+    --status-overdue-bg: #33211B;
+    --status-suspended: #93A1A8;
+    --status-suspended-bg: #1D262B;
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --shadow-sm: 0 1px 0 rgba(0,0,0,.35);
+    --shadow-md: 0 12px 32px rgba(0,0,0,.5);
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0E1311;
-  --surface: #161C19;
-  --surface-2: #1E2723;
-  --ink: #ECF1EE;
-  --ink-muted: #97A49C;
-  --accent: #3FBF77;
-  --accent-strong: #63D294;
-  --accent-fill: #3FBF77;
-  --on-accent: #08120D;
-  --border: #2A3430;
-  --status-active: #3FBF77;
-  --status-active-bg: #14301F;
-  --status-trial: #7FB8E8;
-  --status-trial-bg: #1B2E3D;
-  --status-overdue: #E8917A;
-  --status-soon: #E0B050;
-  --status-overdue-bg: #35221C;
-  --status-suspended: #9AA79E;
-  --status-suspended-bg: #1F2724;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --bg: #101619;
+  --surface: #182025;
+  --surface-2: #222C32;
+  --ink: #EDF2F4;
+  --ink-muted: #95A3AB;
+  --accent: #3DD68C;
+  --accent-strong: #66E3A8;
+  --accent-fill: #3DD68C;
+  --on-accent: #08150E;
+  --border: #2C373E;
+  --status-active: #3DD68C;
+  --status-active-bg: #123023;
+  --status-trial: #77B6E8;
+  --status-trial-bg: #152A3B;
+  --status-overdue: #F08A6E;
+  --status-soon: #E0A43C;
+  --status-overdue-bg: #33211B;
+  --status-suspended: #93A1A8;
+  --status-suspended-bg: #1D262B;
+  --shadow-sm: 0 1px 0 rgba(0,0,0,.35);
+  --shadow-md: 0 12px 32px rgba(0,0,0,.5);
   color-scheme: dark;
 }
 
 :root[data-theme="light"] {
-  --bg: #FBFDFC;
+  --bg: #F1F3F4;
   --surface: #FFFFFF;
-  --surface-2: #EDF6F0;
-  --ink: #0E1A14;
-  --ink-muted: #57675E;
-  /* #0F8A4D давал 4.41 на белом при норме 4.5 — то есть зелёный текст (цена,
-     активная вкладка, «Активен») формально нечитаем. Тон глубже: 5.4 на белом,
-     4.9 даже на зеленоватой подложке, и это тот же зелёный. */
-  --accent: #0D7A45;
-  --accent-strong: #0A6237;
-  --accent-fill: #0A6237;
+  --surface-2: #E8EBED;
+  --ink: #101416;
+  --ink-muted: #5A656B;
+  /* Зелёный для текста — цена, активная вкладка, «Активен».
+     6.53 на белой карточке и 5.46 даже на серой подложке при норме 4.5. */
+  --accent: #0A6B4A;
+  --accent-strong: #075138;
+  --accent-fill: #075138;
   --on-accent: #FFFFFF;
-  --border: #DBE7E0;
-  --status-active: #0D7A45;
-  --status-active-bg: #E4F4EA;
-  --status-trial: #2E6FA3;
-  --status-trial-bg: #DDEAF4;
-  --status-overdue: #C0392B;
-  --status-soon: #B26B00;
-  --status-overdue-bg: #FBE8E5;
-  --status-suspended: #64736A;
-  --status-suspended-bg: #EEF2EF;
-  --shadow-sm: 0 1px 2px rgba(14, 26, 20, 0.06);
-  --shadow-md: 0 12px 32px rgba(14, 26, 20, 0.12);
+  --border: #CBD2D6;
+  --status-active: #0A6B4A;
+  --status-active-bg: #DCEDE5;
+  --status-trial: #25587F;
+  --status-trial-bg: #DAE6F0;
+  --status-overdue: #A3301E;
+  --status-soon: #8A5300;
+  --status-overdue-bg: #F7E2DE;
+  --status-suspended: #59646A;
+  --status-suspended-bg: #E6EAEC;
+  --shadow-sm: 0 1px 0 rgba(16,20,22,.05);
+  --shadow-md: 0 10px 28px rgba(16,20,22,.14);
   color-scheme: light;
 }

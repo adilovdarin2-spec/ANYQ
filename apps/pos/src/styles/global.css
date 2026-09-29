@@ -4,12 +4,25 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  /* Onest лежит у нас, в `public/fonts`; системные шрифты — запас на те
+     полсекунды, пока файл не прочитан, и на случай, если он не прочитан вовсе. */
+  font-family: 'Onest', "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: contain;
 }
 button, input { font-family: inherit; }
 button { cursor: pointer; }
+
+/* Цифры — моноширинные везде, без исключений.
+
+   В кассе числа стоят в столбцах и их сравнивают глазом: цена под ценой,
+   остаток под остатком, сумма под суммой. Пропорциональная единица уже
+   соседней цифры, и столбец «12 500 / 6 200 / 15 800» едет вправо-влево на
+   каждой строке — читать его приходится по одной строке вместо одного взгляда.
+
+   Onest умеет `tnum`, и включается он раз на весь документ, а не в двадцати
+   правилах, где про него вспомнили. */
+body { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 
 .pos-shell {
   min-height: 100vh;
@@ -44,7 +57,7 @@ button { cursor: pointer; }
   gap: 10px;
 }
 .shift-bar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.shift-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent-fill); color: var(--on-accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-base); flex-shrink: 0; }
+.shift-mark { width: 28px; height: 28px; border-radius: var(--radius); background: var(--accent-fill); color: var(--on-accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-base); flex-shrink: 0; }
 .shift-info { display: flex; flex-direction: column; min-width: 0; }
 .shift-info .name { font-weight: 700; font-size: var(--text-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shift-info .meta { font-size: var(--text-xs); color: var(--ink-muted); }
@@ -54,16 +67,16 @@ button { cursor: pointer; }
 .dot.online { background: var(--status-active); }
 .dot.offline { background: var(--status-overdue); }
 
-.pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 20px; font-size: var(--text-xs); font-weight: 600; background: var(--surface-2); color: var(--ink-muted); white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-pill); font-size: var(--text-sm); font-weight: 600; background: var(--surface-2); color: var(--ink-muted); white-space: nowrap; }
 .pill.warn { background: var(--status-overdue-bg); color: var(--status-overdue); }
 
-.icon-btn { position: relative; background: var(--surface-2); border: none; border-radius: 8px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: var(--text-md); flex-shrink: 0; }
+.icon-btn { position: relative; background: var(--surface-2); border: none; border-radius: var(--radius); width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: var(--text-md); flex-shrink: 0; }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .icon-btn-badge {
   position: absolute; top: -5px; right: -5px;
   background: var(--status-overdue); color: #fff;
   font-size: var(--text-xs); font-weight: 800; line-height: 1;
-  min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
+  min-width: 16px; height: 16px; padding: 0 3px; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center;
 }
 
@@ -75,7 +88,7 @@ button { cursor: pointer; }
 /* search */
 .search-bar { position: sticky; top: 56px; z-index: 15; padding: 10px 14px; background: var(--bg); }
 .search-bar input {
-  width: 100%; border: 1px solid var(--border); border-radius: 10px;
+  width: 100%; border: 1px solid var(--border); border-radius: var(--radius);
   padding: 12px 14px; font-size: var(--text-md); background: var(--surface); color: var(--ink);
 }
 .search-bar input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -98,7 +111,7 @@ button { cursor: pointer; }
 .category-bar::-webkit-scrollbar { display: none; }
 .category-chip {
   flex-shrink: 0; display: inline-flex; align-items: center; min-height: 40px;
-  padding: 0 16px; border-radius: 20px; border: 1px solid var(--border);
+  padding: 0 16px; border-radius: var(--radius-pill); border: 1px solid var(--border);
   background: var(--surface); color: var(--ink-muted); font-size: var(--text-sm); font-weight: 600; white-space: nowrap;
 }
 .category-chip.on { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
@@ -128,12 +141,12 @@ button { cursor: pointer; }
   font-size: var(--text-xs); font-weight: 700; line-height: 1;
   color: var(--status-soon);
   background: color-mix(in srgb, var(--status-soon) 14%, transparent);
-  border-radius: 6px; padding: 3px 6px; margin-top: 2px;
+  border-radius: var(--radius-sm); padding: 3px 6px; margin-top: 2px;
 }
 
 .product-tile-wrap { position: relative; }
 .product-tile {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 14px 12px; text-align: left; min-height: 88px; width: 100%;
   display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
 }
@@ -203,10 +216,10 @@ button { cursor: pointer; }
   padding: 12px 14px;
   background: var(--accent-fill); color: var(--on-accent);
   display: flex; align-items: center; justify-content: space-between;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
 }
-.cart-bar-count { background: rgba(255,255,255,0.2); border-radius: 20px; padding: 3px 10px; font-size: var(--text-sm); font-weight: 700; }
+.cart-bar-count { background: rgba(255,255,255,0.2); border-radius: var(--radius-pill); padding: 3px 10px; font-size: var(--text-sm); font-weight: 700; }
 .cart-bar-total { font-weight: 700; font-size: var(--text-md); font-variant-numeric: tabular-nums; }
 .cart-bar-label { font-size: var(--text-base); font-weight: 600; }
 
@@ -255,7 +268,7 @@ button { cursor: pointer; }
 .line-item .li-name { flex: 1; font-size: var(--text-base); font-weight: 600; }
 .line-item .li-price { font-size: var(--text-sm); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .qty-stepper { display: flex; align-items: center; gap: 8px; }
-.qty-stepper button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: var(--text-md); font-weight: 700; color: var(--ink); }
+.qty-stepper button { width: 40px; height: 40px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); font-size: var(--text-md); font-weight: 700; color: var(--ink); }
 .qty-stepper span { min-width: 20px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
 .li-total { min-width: 70px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 /* Красный — только у того, что уносит.
@@ -287,13 +300,13 @@ button { cursor: pointer; }
 /* discounts (retail tariff) */
 .discount-row button { color: var(--accent); background: none; border: none; font-size: var(--text-sm); padding: 4px; margin-left: 8px; }
 .discount-editor { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-.discount-type-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.discount-type-toggle { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .discount-type-toggle button {
   border: none; background: var(--surface); color: var(--ink); padding: 8px 12px; font-size: var(--text-base); font-weight: 700;
 }
 .discount-type-toggle button.active { background: var(--accent-fill); color: var(--on-accent); }
 .discount-editor input {
-  flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: var(--text-md);
+  flex: 1; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: var(--text-md);
   background: var(--surface); color: var(--ink);
 }
 
@@ -309,19 +322,19 @@ button { cursor: pointer; }
    мимо узкой строки на планшете легко. */
 .table-scan {
   width: 100%; box-sizing: border-box; margin-bottom: 10px;
-  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
   font-size: var(--text-md); background: var(--surface); color: var(--ink);
 }
 .credit-line.credit-over { color: var(--status-overdue); }
 .loyalty-found { font-size: var(--text-base); color: var(--ink-muted); }
 .loyalty-lookup-row { display: flex; align-items: center; gap: 8px; }
 .loyalty-lookup-row input {
-  flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: var(--text-md);
+  flex: 1; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: var(--text-md);
   background: var(--surface); color: var(--ink);
 }
 
 /* buttons */
-.btn { border: none; border-radius: 10px; padding: 13px 18px; font-size: var(--text-md); font-weight: 700; }
+.btn { border: none; border-radius: var(--radius); padding: 13px 18px; font-size: var(--text-md); font-weight: 700; }
 .btn-block { width: 100%; }
 .btn-primary { background: var(--accent-fill); color: var(--on-accent); }
 .btn-primary:disabled { background: var(--border); color: var(--ink-muted); }
@@ -352,21 +365,21 @@ button { cursor: pointer; }
 .payment-options { display: flex; flex-direction: column; gap: 10px; }
 .payment-option {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 16px; border-radius: 12px; border: 1px solid var(--border);
+  padding: 18px 16px; border-radius: var(--radius); border: 1px solid var(--border);
   background: var(--surface); font-size: var(--text-md); font-weight: 700; color: var(--ink);
 }
 .payment-option:active { background: var(--surface-2); }
 .payment-option:disabled { color: var(--ink-muted); opacity: 0.6; }
 .qr-box {
   margin: 24px auto; width: 200px; height: 200px; border: 2px dashed var(--border);
-  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
   color: var(--ink-muted); font-size: var(--text-base); text-align: center; padding: 16px;
   background: var(--surface);
 }
 
 /* receipt */
 .receipt-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 20px; font-family: Consolas, "SF Mono", monospace; font-size: var(--text-base);
 }
 .receipt-card .r-title { font-family: inherit; font-weight: 700; text-align: center; margin-bottom: 4px; font-size: var(--text-base); }
@@ -385,7 +398,7 @@ button { cursor: pointer; }
    кассир при первом запуске видел меньше половины того, чем торгует. */
 .install-banner {
   margin: 10px 14px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 10px 12px;
 }
 .install-banner-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
@@ -398,7 +411,7 @@ button { cursor: pointer; }
 .install-banner .icon-btn:active { background: var(--surface-2); }
 .install-steps { margin: 8px 0 0; padding-left: 1.2em; font-size: var(--text-sm); color: var(--ink-muted); }
 .install-steps li { margin: 3px 0; }
-.share-glyph { display: inline-block; border: 1.5px solid var(--ink-muted); border-radius: 4px; padding: 0 5px; font-size: 0.75em; }
+.share-glyph { display: inline-block; border: 1.5px solid var(--ink-muted); border-radius: var(--radius-sm); padding: 0 5px; font-size: 0.75em; }
 
 /* shift open/close forms */
 /* Ширина своя, а не по содержимому.
@@ -408,7 +421,7 @@ button { cursor: pointer; }
    вместо 360. Клавиши PIN получались по 45 пикселей — меньше пальца и вдвое
    меньше задуманного, и это видел каждый кассир на каждом устройстве. */
 .form-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 24px 20px; width: 100%; max-width: 360px; margin: 10vh auto 0;
 }
 .form-card h1 { font-size: var(--text-lg); margin: 0 0 4px; }
@@ -416,7 +429,7 @@ button { cursor: pointer; }
 .form-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
 .form-field label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-muted); }
 .form-field input, .form-field select {
-  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
   font-size: var(--text-lg); font-variant-numeric: tabular-nums; background: var(--bg); color: var(--ink);
 }
 .form-field input:focus-visible, .form-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -426,13 +439,13 @@ button { cursor: pointer; }
 .cab-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: var(--text-base); }
 .cab-check input { width: 20px; height: 20px; accent-color: var(--accent); }
 
-.reconcile-diff { text-align: center; padding: 14px; border-radius: 10px; margin: 12px 0 4px; font-weight: 700; }
+.reconcile-diff { text-align: center; padding: 14px; border-radius: var(--radius); margin: 12px 0 4px; font-weight: 700; }
 .reconcile-diff.ok { background: var(--status-active-bg); color: var(--status-active); }
 .reconcile-diff.short { background: var(--status-overdue-bg); color: var(--status-overdue); }
 .reconcile-diff.over { background: var(--status-trial-bg); color: var(--status-trial); }
 
 /* pin login */
-.login-error { margin-top: 4px; padding: 10px 12px; border-radius: 8px; background: var(--status-overdue-bg); color: var(--status-overdue); font-size: var(--text-base); text-align: center; }
+.login-error { margin-top: 4px; padding: 10px 12px; border-radius: var(--radius); background: var(--status-overdue-bg); color: var(--status-overdue); font-size: var(--text-base); text-align: center; }
 .pin-display { text-align: center; font-size: var(--text-xl); letter-spacing: 0.35em; margin: 18px 0; min-height: 2.1rem; color: var(--ink); }
 .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .pin-key {
@@ -458,7 +471,7 @@ button { cursor: pointer; }
 .register-choice-list { display: grid; gap: 10px; margin-bottom: 16px; }
 .register-choice-option {
   display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
-  min-height: 64px; padding: 12px 16px; border-radius: 12px;
+  min-height: 64px; padding: 12px 16px; border-radius: var(--radius);
   border: 1px solid var(--border); background: var(--surface); text-align: left; width: 100%;
 }
 .register-choice-option:active { background: var(--surface-2); }
@@ -468,10 +481,10 @@ button { cursor: pointer; }
 .register-choice-meta { font-size: var(--text-sm); color: var(--ink-muted); }
 .register-choice-new { width: 100%; min-height: 64px; font-size: var(--text-md); }
 .register-choice-refusal {
-  padding: 12px 14px; border-radius: 10px; font-size: var(--text-base); line-height: 1.4;
+  padding: 12px 14px; border-radius: var(--radius); font-size: var(--text-base); line-height: 1.4;
   background: var(--status-trial-bg); color: var(--status-trial);
 }
-.register-choice-error { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--status-overdue-bg); color: var(--status-overdue); font-size: var(--text-base); }
+.register-choice-error { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius); background: var(--status-overdue-bg); color: var(--status-overdue); font-size: var(--text-base); }
 .register-choice-skip { display: block; margin: 18px auto 0; background: none; border: none; color: var(--ink-muted); font-size: var(--text-base); text-decoration: underline; min-height: 44px; }
 .sidebar-logout-row { display: flex; justify-content: center; margin-top: 10px; }
 .text-link { background: none; border: none; color: var(--ink-muted); font-size: var(--text-sm); text-decoration: underline; }
@@ -485,7 +498,7 @@ button { cursor: pointer; }
 .section-title { font-size: var(--text-xs); font-weight: 700; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 22px 0 10px; }
 .orders-section-title:first-child,
 .section-title:first-child { margin-top: 0; }
-.order-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+.order-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px; margin-bottom: 14px; }
 .order-card.resolved { opacity: 0.65; }
 
 /* Ответ карточки — то, ради чего на неё смотрят.
@@ -511,7 +524,7 @@ button { cursor: pointer; }
    не потерялась среди прочих: её показывают редко и по делу. */
 .card-alert {
   display: flex; gap: 10px; align-items: flex-start;
-  margin: 12px 0 4px; padding: 12px 14px; border-radius: 10px;
+  margin: 12px 0 4px; padding: 12px 14px; border-radius: var(--radius);
   background: var(--status-overdue-bg); color: var(--status-overdue);
   font-size: var(--text-base); line-height: var(--leading-tight);
 }
@@ -526,7 +539,7 @@ button { cursor: pointer; }
   color: var(--accent); font-size: var(--text-base); font-weight: 600;
   min-height: 44px;
 }
-.details-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.details-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 .details-toggle .chev { transition: transform 0.15s ease; }
 .details-toggle[aria-expanded="true"] .chev { transform: rotate(180deg); }
 .order-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
@@ -557,7 +570,7 @@ button { cursor: pointer; }
 .photo-thumb { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .photo-thumb img {
   width: 96px; height: 96px; object-fit: cover;
-  border-radius: 8px; border: 1px solid var(--border);
+  border-radius: var(--radius); border: 1px solid var(--border);
 }
 
 .row-actions { display: flex; gap: 8px; margin-top: 12px; }
@@ -565,7 +578,7 @@ button { cursor: pointer; }
 
 .order-actions { display: flex; gap: 8px; margin-top: 12px; }
 .order-actions .btn { flex: 1; padding: 10px; font-size: var(--text-base); }
-.chip-status { display: inline-block; margin-top: 10px; font-size: var(--text-xs); font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+.chip-status { display: inline-block; margin-top: 10px; font-size: var(--text-xs); font-weight: 700; padding: 3px 8px; border-radius: var(--radius-sm); }
 .chip-status.confirmed { background: var(--status-active-bg); color: var(--status-active); }
 .chip-status.cancelled { background: var(--status-overdue-bg); color: var(--status-overdue); }
 .chip-status.neutral { background: var(--surface-2); color: var(--ink-muted); }
@@ -780,7 +793,7 @@ button { cursor: pointer; }
   top: 76px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -793,7 +806,7 @@ button { cursor: pointer; }
 /* reports (terminal tariff) */
 .report-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
 .report-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 14px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
 }
 .report-card .value { font-size: var(--text-md); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -821,17 +834,17 @@ button { cursor: pointer; }
 .report-row { display: flex; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: var(--text-base); line-height: var(--leading-tight); }
 .report-row.low { color: var(--status-overdue); font-weight: 600; }
 .food-cost-figures { display: flex; align-items: center; gap: 8px; }
-.margin-pct { font-size: var(--text-xs); font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--status-active-bg); color: var(--status-active); }
+.margin-pct { font-size: var(--text-xs); font-weight: 700; padding: 2px 7px; border-radius: var(--radius-sm); background: var(--status-active-bg); color: var(--status-active); }
 .margin-pct.low { background: var(--status-overdue-bg); color: var(--status-overdue); }
 
 /* transfers (warehouse tariff) */
 .transfer-add-row { display: flex; gap: 8px; margin-top: 14px; }
 .transfer-add-row select {
-  flex: 2; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  flex: 2; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
   font-size: var(--text-md); background: var(--surface); color: var(--ink);
 }
 .transfer-add-row input {
-  flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
   font-size: var(--text-md); background: var(--surface); color: var(--ink);
 }
 .transfer-add-row .btn { flex-shrink: 0; padding: 10px 14px; font-size: var(--text-base); }
@@ -840,14 +853,14 @@ button { cursor: pointer; }
 .count-hint { font-size: var(--text-sm); color: var(--ink-muted); line-height: 1.5; padding: 4px 0 16px; }
 .count-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .count-row input {
-  width: 90px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  width: 90px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px;
   font-size: var(--text-md); background: var(--surface); color: var(--ink); text-align: right;
 }
 
 /* floor plan + KDS (restaurant tariff) */
 .table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 4px; }
 .table-tile {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-height: 80px;
 }
 .table-tile.free { border-color: var(--status-active); }
@@ -968,7 +981,7 @@ button { cursor: pointer; }
   position: absolute; top: -6px; right: -10px;
   background: var(--status-overdue); color: #fff;
   font-size: var(--text-xs); font-weight: 800; line-height: 1;
-  min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
+  min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center;
 }
 
@@ -1001,7 +1014,7 @@ button { cursor: pointer; }
 }
 .error-boundary-card {
   max-width: 360px; width: 100%; text-align: center;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 32px 24px; box-shadow: var(--shadow-md);
 }
 .error-boundary-icon { font-size: var(--text-2xl); margin-bottom: 12px; }
@@ -1013,7 +1026,7 @@ button { cursor: pointer; }
 /* Операции */
 .operations-row {
   display: flex; align-items: center; gap: 12px; width: 100%;
-  padding: 14px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); text-align: left;
 }
 /* Значок операции: рисованный и приглушённый.
@@ -1025,7 +1038,7 @@ button { cursor: pointer; }
 .operations-label { flex: 1; font-size: var(--text-base); font-weight: 600; }
 .operations-badge {
   background: var(--status-overdue); color: #fff; font-size: var(--text-xs); font-weight: 800;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center;
 }
 .operations-chevron { color: var(--ink-muted); font-size: var(--text-lg); }
@@ -1045,10 +1058,10 @@ button { cursor: pointer; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
 .field-row .field label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-muted); }
-.field-row .field input { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: var(--text-md); background: var(--bg); color: var(--ink); }
+.field-row .field input { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; font-size: var(--text-md); background: var(--bg); color: var(--ink); }
 .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: var(--text-base); color: var(--ink-muted); margin: 4px 0 18px; }
 .checkbox-row input { width: 18px; height: 18px; }
-.field-hint { font-size: var(--text-sm); color: var(--ink-muted); line-height: var(--leading-normal); margin: -8px 0 16px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px; }
+.field-hint { font-size: var(--text-sm); color: var(--ink-muted); line-height: var(--leading-normal); margin: -8px 0 16px; padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius); }
 
 /* --- переезд из другой программы ---------------------------------------- */
 /* Плитки, а не выпадающий список: владелец ищет глазами знакомое название,
@@ -1056,7 +1069,7 @@ button { cursor: pointer; }
 .migrate-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 14px 0 18px; }
 .migrate-tile {
   display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left;
-  padding: 14px 12px; border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 12px; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); color: var(--ink); cursor: pointer; font: inherit;
 }
 .migrate-tile:hover { border-color: var(--accent); }
@@ -1064,7 +1077,7 @@ button { cursor: pointer; }
 .migrate-tile-name { font-size: var(--text-md); font-weight: 700; }
 .migrate-tile-note { font-size: var(--text-xs); color: var(--ink-muted); }
 
-.migrate-steps { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
+.migrate-steps { background: var(--surface-2); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
 .migrate-steps-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .migrate-steps-title { font-size: var(--text-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); }
 .migrate-steps-list { margin: 8px 0 0; padding-left: 20px; font-size: var(--text-base); line-height: 1.5; }
@@ -1080,7 +1093,7 @@ button { cursor: pointer; }
 .cabinet-link {
   font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
   font-size: var(--text-sm); line-height: 1.5; word-break: break-all;
-  background: var(--surface-2); border-radius: 10px; padding: 12px 14px; margin: 12px 0;
+  background: var(--surface-2); border-radius: var(--radius); padding: 12px 14px; margin: 12px 0;
   user-select: all;
 }
 /* Номер документа рядом с типом: моноширинный, чтобы столбцы номеров читались
@@ -1098,7 +1111,7 @@ button { cursor: pointer; }
    вечер работы, который экран и должен убрать. */
 .qty-input {
   width: 76px; flex-shrink: 0; text-align: right;
-  padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); color: var(--ink);
   font: inherit; font-variant-numeric: tabular-nums;
 }
@@ -1136,7 +1149,7 @@ button { cursor: pointer; }
 .ops-tile {
   position: relative; display: flex; flex-direction: column; align-items: flex-start;
   justify-content: space-between; gap: 10px; min-height: 96px; padding: 14px;
-  border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
   text-align: left; cursor: pointer;
 }
 .ops-tile:active { background: var(--surface-active, var(--bg)); }
@@ -1147,7 +1160,7 @@ button { cursor: pointer; }
 .ops-tile-badge {
   position: absolute; top: 10px; right: 10px;
   background: var(--status-overdue); color: #fff; font-size: var(--text-sm); font-weight: 800;
-  min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  min-width: 22px; height: 22px; padding: 0 6px; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center;
 }
 
@@ -1165,7 +1178,7 @@ button { cursor: pointer; }
 .tariff-notice {
   margin: 12px 16px;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--surface-2);
   display: grid;
@@ -1198,7 +1211,7 @@ button { cursor: pointer; }
 .recipe-line input { width: 90px; flex: 0 0 auto; }
 
 .batch-uncovered-note {
-  margin: 0 0 10px; padding: 10px 12px; border-radius: 10px;
+  margin: 0 0 10px; padding: 10px 12px; border-radius: var(--radius);
   background: var(--surface-2); color: var(--ink-muted);
   font-size: var(--text-sm); line-height: 1.4;
 }
@@ -1206,7 +1219,7 @@ button { cursor: pointer; }
 .licence-offline {
   margin: 12px 16px;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid var(--status-trial);
   background: var(--status-trial-bg);
   display: grid;
@@ -1225,7 +1238,7 @@ button { cursor: pointer; }
 }
 .licence-reminder {
   width: 100%; max-width: 380px; padding: 20px;
-  border-radius: 16px; border: 1px solid var(--status-overdue);
+  border-radius: var(--radius-lg); border: 1px solid var(--status-overdue);
   background: var(--surface);
 }
 .licence-reminder-title { font-size: var(--text-lg); font-weight: 700; color: var(--status-overdue); margin-bottom: 8px; }
@@ -1246,7 +1259,7 @@ button { cursor: pointer; }
   height: 40px;
 }
 .qty-field:focus { outline: none; }
-.qty-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.qty-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 .qty-field::-webkit-outer-spin-button,
 .qty-field::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
@@ -1271,7 +1284,7 @@ button { cursor: pointer; }
    написано ниже. */
 .mini-card {
   display: flex;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 12px 14px; margin-bottom: 14px;
 }
 
@@ -1324,7 +1337,7 @@ button { cursor: pointer; }
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 /* --- очередь дел владельца ------------------------------------------------ */
@@ -1338,7 +1351,7 @@ button { cursor: pointer; }
 .queue-row {
   display: flex; align-items: center; gap: 12px; width: 100%;
   padding: 12px 14px; margin-bottom: 8px;
-  border: 1px solid var(--border); border-left-width: 4px; border-radius: 12px;
+  border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--radius);
   background: var(--surface); text-align: left;
 }
 .queue-now { border-left-color: var(--status-overdue); }
