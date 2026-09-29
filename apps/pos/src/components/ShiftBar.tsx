@@ -19,9 +19,18 @@ interface Props {
   online: boolean;
   pendingCount: number;
   stuckCount: number;
+  /**
+   * Куда идти с этим «требует внимания».
+   *
+   * Плашка стояла надписью: касса сообщала, что чек не ушёл, и не говорила,
+   * где он лежит. Отказы живут в профиле — туда она теперь и ведёт. Найдено
+   * 29.09.2026 прогоном дня магазина: сервер отклонил продажу, в шапке
+   * появилось предупреждение, и нажать на него было нельзя.
+   */
+  onOpenStuck?: () => void;
 }
 
-export function ShiftBar({ shift, cashierName, locationName, registerNumber, online, pendingCount, stuckCount }: Props) {
+export function ShiftBar({ shift, cashierName, locationName, registerNumber, online, pendingCount, stuckCount, onOpenStuck }: Props) {
   const { t } = useTranslation();
   const hours = hoursSince(shift.openedAt);
   const nearLimit = hours >= 20;
@@ -43,9 +52,9 @@ export function ShiftBar({ shift, cashierName, locationName, registerNumber, onl
               плашка появилась. Русский счётный оборот требует трёх форм, и
               казахский дословно повторяет одну — этим занимается pluralPhrase. */}
           {stuckCount > 0 && (
-            <span className="pill warn">
+            <button type="button" className="pill warn pill-action" onClick={onOpenStuck}>
               ⚠ {t(pluralPhrase(stuckCount, 'shift.bar.needAttentionOne', 'shift.bar.needAttentionFew', 'shift.bar.needAttentionMany'), { count: stuckCount })}
-            </span>
+            </button>
           )}
           {pendingCount > 0 && <span className="pill warn">⏳ {t('shift.bar.notSent', { count: pendingCount })}</span>}
           <span className="pill">

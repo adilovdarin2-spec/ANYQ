@@ -69,6 +69,9 @@ body { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-pill); font-size: var(--text-sm); font-weight: 600; background: var(--surface-2); color: var(--ink-muted); white-space: nowrap; }
 .pill.warn { background: var(--status-overdue-bg); color: var(--status-overdue); }
+/* Плашка, которая ведёт куда-то. Выглядит так же, но нажимается: «требует
+   внимания» без дороги к самому отказу — это тупик, а не предупреждение. */
+.pill-action { border: none; cursor: pointer; font: inherit; min-height: 40px; }
 
 .icon-btn { position: relative; background: var(--surface-2); border: none; border-radius: var(--radius); width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: var(--text-md); flex-shrink: 0; }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1014,6 +1017,12 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
  * Сорок восемь, а не сорок четыре: сорок четыре — минимум Apple для телефона в
  * руке, а здесь в стекло жмут через прилавок и не глядя. */
 @media (pointer: coarse) {
+  /* Плашка «требует внимания» — теперь кнопка, и в неё тоже целятся пальцем.
+     Отдельный блок `pointer: coarse` здесь заводить нельзя: охрана читает
+     первый попавшийся и на моём однострочнике прочла тридцать шесть символов
+     вместо всего блока. Правила про палец живут в одном месте. */
+  .pill-action { min-height: 48px; }
+
   /* «Весь остаток» вычитает за кассира то, что он иначе считает в уме у
      прилавка, — и был подчёркнутой строчкой в двадцать пикселей высотой.
      Промах по ней означает, что кассир считает сам, а это и есть тот случай,
