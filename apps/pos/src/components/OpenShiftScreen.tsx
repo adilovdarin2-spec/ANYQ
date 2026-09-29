@@ -3,6 +3,7 @@ import type { CompanyLocation } from '../types';
 import type { OpenShiftInfo } from '../api';
 import { formatDateTime } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
+import { pluralPhrase } from '../i18n';
 import { parseTyped } from '../typed-number';
 
 interface Props {
@@ -120,14 +121,25 @@ export function OpenShiftScreen({
                 должен: у неё есть кнопка, и спрятать кнопку за словами «и ещё
                 семь» значит вернуть ровно ту беспомощность, ради которой она
                 и появилась. Поэтому такие показываются все. */}
+            {/* Список, а не три одинаковых предложения подряд.
+
+                Каждая смена печаталась целой фразой «На этой точке уже открыта
+                смена: имя, с датой» — и при трёх открытых сменах человек читал
+                одно и то же вступление трижды, чтобы каждый раз добраться до
+                имени в конце. Вступление сказано один раз, дальше имя и время
+                строкой, кнопка справа. */}
+            <p>
+              {t(
+                pluralPhrase(shown.length + hidden, 'shift.open.alreadyOpenOne', 'shift.open.alreadyOpenFew', 'shift.open.alreadyOpenMany'),
+                { count: shown.length + hidden },
+              )}
+            </p>
             {shown.map((shift) => (
-              <div key={shift.id}>
-                <p>
-                  {t('shift.open.alreadyOpen', {
-                    cashier: shift.cashierName,
-                    time: formatDateTime(shift.openedAt),
-                  })}
-                </p>
+              <div key={shift.id} className="open-shift-row">
+                <span>
+                  <b>{shift.cashierName}</b>
+                  <span className="open-shift-when">{formatDateTime(shift.openedAt)}</span>
+                </span>
                 {canClose(shift) && onCloseForgotten && (
                   <button
                     type="button"

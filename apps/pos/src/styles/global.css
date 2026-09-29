@@ -491,6 +491,25 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
 .reconcile-diff.short { background: var(--status-overdue-bg); color: var(--status-overdue); }
 .reconcile-diff.over { background: var(--status-trial-bg); color: var(--status-trial); }
 
+/* Строка забытой смены: кто и когда — слева, кнопка — справа.
+
+   Печаталось это целым предложением на каждую смену, и при трёх открытых
+   человек трижды читал одно и то же вступление, чтобы каждый раз добраться до
+   имени в конце. */
+.open-shift-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px 14px;
+  /* Карточка открытия смены узкая (420), а в строке имя, дата и кнопка. Без
+     переноса имя ломается посередине — «Асель / Каримова», — и строка
+     перестаёт читаться как одна смена. Не помещается кнопка — она уходит
+     вниз целиком. */
+  flex-wrap: wrap;
+  padding: 12px 0; border-top: 1px solid var(--border);
+}
+.open-shift-row:first-of-type { border-top: none; }
+.open-shift-row > span:first-child { min-width: 55%; }
+.open-shift-row .open-shift-when { display: block; color: var(--ink-muted); font-size: var(--text-sm); }
+.open-shift-row .btn { flex: 1 0 auto; padding: 10px 16px; font-size: var(--text-base); }
+
 /* pin login */
 .login-error { margin-top: 4px; padding: 10px 12px; border-radius: var(--radius); background: var(--status-overdue-bg); color: var(--status-overdue); font-size: var(--text-base); text-align: center; }
 .pin-display { text-align: center; font-size: var(--text-xl); letter-spacing: 0.35em; margin: 18px 0; min-height: 2.1rem; color: var(--ink); }
