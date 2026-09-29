@@ -37,35 +37,33 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
       </div>
 
       <div className="screen-body">
-        {/* Два абзаца, а не две строки подряд: рядом стоящие выражения JSX
-            склеиваются без пробела, и на экране стояло «…что так оно и
-            есть.Пока сходится…». Мелочь, но она на экране, который объясняет,
-            почему цифрам можно верить. */}
-        <div className="field-hint">
-          <p>{t('recon.what')}</p>
-          <p>{t('recon.why')}</p>
-        </div>
-
         {error && <div className="login-error">{error}</div>}
         {loading && !report && <div className="empty-state">{t('recon.checking')}</div>}
 
         {report && (
           <>
+            {/* Ответ, а не три равных числа.
+
+                Стояло «Позиций проверено 2500 / Расхождений 0 / Единиц разницы
+                —», и читателю оставалось самому сообразить, что ноль здесь
+                хорошо. Экран отвечает на один вопрос — сходится или нет, — и
+                отвечать должен словом, а не предлагать вычислить ответ из трёх
+                одинаковых карточек. */}
             <div className="report-cards">
-              <div className="report-card">
-                <span className="value">{report.checked}</span>
-                <span className="label">{t('recon.checked')}</span>
+              <div className={report.mismatched === 0 ? 'report-card headline' : 'report-card headline low'}>
+                <span className="value">
+                  {report.mismatched === 0 ? t('recon.matches') : report.mismatched}
+                </span>
+                <span className="label">
+                  {report.mismatched === 0 ? t('recon.checkedCount', { count: report.checked }) : t('recon.mismatched')}
+                </span>
+                {report.mismatched > 0 && (
+                  <span className="sub">
+                    {t('recon.checkedCount', { count: report.checked })}
+                    {report.totalDrift > 0 ? ` · ${t('recon.unitsOffValue', { count: formatQuantity(report.totalDrift) })}` : ''}
+                  </span>
+                )}
               </div>
-              <div className="report-card">
-                <span className="value">{report.mismatched}</span>
-                <span className="label">{t('recon.mismatched')}</span>
-              </div>
-              {report.totalDrift > 0 && (
-                <div className="report-card">
-                  <span className="value">{formatQuantity(report.totalDrift)}</span>
-                  <span className="label">{t('recon.unitsOff')}</span>
-                </div>
-              )}
             </div>
 
             {report.batchExcess.length > 0 && (
@@ -160,6 +158,21 @@ export function ReconciliationScreen({ report, loading, error, repairing, onBack
                 ))}
               </>
             )}
+
+            {/* Объяснение — после ответа, а не до него.
+
+                Два абзаца занимали треть экрана, и человек, открывший сверку с
+                единственным вопросом «сходится?», сначала читал, что такое
+                остаток. Прочесть это стоит один раз, а открывают экран много
+                раз — значит место объяснения внизу.
+
+                Два абзаца, а не две строки подряд: рядом стоящие выражения JSX
+                склеиваются без пробела, и на экране стояло «…что так оно и
+                есть.Пока сходится…». */}
+            <div className="field-hint">
+              <p>{t('recon.what')}</p>
+              <p>{t('recon.why')}</p>
+            </div>
           </>
         )}
       </div>

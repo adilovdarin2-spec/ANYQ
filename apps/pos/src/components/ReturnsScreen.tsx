@@ -308,10 +308,23 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
               </div>
             )}
 
+            {/* Деньги, которые кассир сейчас достанет из ящика.
+
+                Стояли серой строчкой мелкого кегля под выпадающим списком —
+                тем же, каким подписаны служебные пояснения. Между тем это
+                единственное число, которое на этом экране называют покупателю
+                и отсчитывают руками. */}
             {refundEstimate > 0 && (
-              <p className="order-meta">
-            {t('return.estimate', { amount: formatMoney(refundEstimate) })}
-              </p>
+              <>
+                <div className="card-answer">
+                  <span className="label">{t('return.estimateLabel')}</span>
+                  <span className="value accent">≈ {formatMoney(refundEstimate)}</span>
+                </div>
+                {/* «Примерно» — не отговорка: скидка и баллы этого чека
+                    считаются на сервере, и сказать точную сумму до отправки
+                    касса честно не может. */}
+                <p className="card-reason">{t('return.estimateWhy')}</p>
+              </>
             )}
 
             {error && <div className="login-error">{error}</div>}

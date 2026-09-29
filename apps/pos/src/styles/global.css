@@ -278,7 +278,15 @@ body { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 }
 .screen-title { font-size: var(--text-md); font-weight: 700; }
 .screen-body { flex: 1; overflow-y: auto; padding: 16px 14px 24px; }
-.screen-footer { padding: 14px; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: 10px; }
+/* Подвал экрана — ряд кнопок.
+
+   Но иногда рядом с кнопкой ставят абзац-объяснение, и в одну строку они не
+   помещаются: подпись занимает всю ширину, а кнопке остаётся столбик, в
+   котором «Привести цифры в порядок» ломается на три строки. Абзац уходит на
+   свою строку целиком, кнопки остаются рядом. */
+.screen-footer { padding: 14px; border-top: 1px solid var(--border); background: var(--surface); display: flex; flex-wrap: wrap; gap: 10px; }
+.screen-footer > p { flex: 1 0 100%; margin: 0; }
+.screen-footer > .btn { flex: 1 1 auto; }
 
 .line-item { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .line-item .li-name { flex: 1; font-size: var(--text-base); font-weight: 600; }
@@ -897,6 +905,12 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
    не через точку в подписи: «Выручка за вычетом возвратов · Валовая маржа 0 ₸»
    читается как одна длинная фраза, в которой не видно ни того, ни другого. */
 .report-card.headline .sub { font-size: var(--text-sm); color: var(--ink-muted); margin-top: 2px; }
+/* Главное число, которое говорит «плохо». Тем же цветом, каким в этом продукте
+   помечены просроченный долг и пропавший заказ: ждали одного, вышло другое. */
+.report-card.headline.low { background: var(--status-overdue-bg); border-color: transparent; }
+.report-card.headline.low .value { color: var(--status-overdue); }
+.report-card.headline.low .label,
+.report-card.headline.low .sub { color: var(--status-overdue); opacity: 0.85; }
 .report-row { display: flex; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: var(--text-base); line-height: var(--leading-tight); }
 .report-row.low { color: var(--status-overdue); font-weight: 600; }
 .food-cost-figures { display: flex; align-items: center; gap: 8px; }
