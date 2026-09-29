@@ -612,11 +612,23 @@ export default function App() {
    * в поиск и попадает в него; остальные символы штрихкода приходят уже туда,
    * а Enter добавляет товар.
    *
-   * Только на терминале и только на экране продажи: на телефоне в поле тыкают
-   * пальцем, а перехват открывал бы экранную клавиатуру поверх товаров.
+   * Только на экране продажи. Ширину устройства перехват больше не смотрит.
+   *
+   * Стояло `isDesktop` — то есть тысяча пикселей и шире. Планшет за тридцать
+   * тысяч тенге, самая частая касса у маленького магазина, до девятисот не
+   * добирает, а сканер к нему подключают такой же. На нём кассир нажимал
+   * плитку, фокус уходил на кнопку, скан не попадал никуда — ровно тот тупик,
+   * ради которого перехват и написан. Найдено 29.09.2026 прогоном дня магазина.
+   *
+   * Довод против перехвата на телефоне — «откроется экранная клавиатура поверх
+   * товаров» — на поверку не работает: без физической клавиатуры нажатию
+   * взяться неоткуда. Экранная клавиатура сама появляется только тогда, когда
+   * поле уже в фокусе, а при фокусе в поле перехват не срабатывает вовсе
+   * (`shouldRedirectToSearch` отсекает INPUT). Значит событие, пришедшее мимо
+   * всех полей, — это всегда сканер или настоящая клавиатура.
    */
   useEffect(() => {
-    if (!isDesktop || view !== 'sale' || !session) return;
+    if (view !== 'sale' || !session) return;
     function onKeyDown(event: KeyboardEvent) {
       if (!shouldRedirectToSearch(pressFrom(event))) return;
       const input = searchRef.current;
@@ -627,7 +639,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isDesktop, view, session]);
+  }, [view, session]);
 
   const canManageProducts = session?.user.role === 'owner' || session?.user.role === 'manager';
   // Only when this deployment was told where the storefront lives. Without it
