@@ -242,7 +242,14 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                   <span>
                     {line.name}
                     <br />
-                    <span className="order-meta">{t('return.canReturn', { available: returnable, sold: line.quantity })}</span>
+                    {/* С единицей и по-русски, как на чеке. Стояло «можно
+                        вернуть 0.35 из 0.35» — точкой и без килограммов. */}
+                    <span className="order-meta">
+                      {t('return.canReturn', {
+                        available: formatSold({ quantity: returnable, saleUnit: line.saleUnit }),
+                        sold: formatSold(line),
+                      })}
+                    </span>
                   </span>
                   <input
                     type="text"
