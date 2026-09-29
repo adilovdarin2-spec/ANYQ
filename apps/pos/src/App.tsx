@@ -4,7 +4,7 @@ import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, Bin
 import { expiringSoonByProduct } from './expiry';
 import { readScannedMarking, sameMarkedCode } from './marking-scan';
 import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveLicenceConfirmedAt, saveSession, saveShift } from './storage';
-import { cartTotals } from './cart';
+import { cartCount, cartTotals } from './cart';
 import { shouldRefreshCatalog } from './catalog-refresh';
 import { pressFrom, shouldRedirectToSearch } from './scanner';
 import { refusalIsAboutThisRequest } from './refusal';
@@ -3380,7 +3380,8 @@ export default function App() {
     pointsRedeemed: cartPointsRedeemed,
     total: cartTotal,
   } = cartTotals(cart, discount, loyalty);
-  const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
+  // Штуки и килограммы в одно число не складываются: `cartCount` считает вещи.
+  const cartItemCount = cartCount(cart);
   const cartQtyByProduct = cart.reduce<Record<string, number>>((acc, l) => {
     acc[l.productId] = (acc[l.productId] ?? 0) + l.qty;
     return acc;
@@ -3634,7 +3635,7 @@ export default function App() {
             catalogueEmpty={(session?.products.length ?? 0) === 0}
             canAddProducts={canManageProducts}
           />
-          {cartCount > 0 && <CartBar count={cartCount} total={cartTotal} onOpen={() => setView('cart')} />}
+          {cartItemCount > 0 && <CartBar count={cartItemCount} total={cartTotal} onOpen={() => setView('cart')} />}
         </>
       )}
 

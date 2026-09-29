@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import { parseMarkedCode } from '../marking';
 import { sameMarkedCode } from '../marking-scan';
-import type { PaymentMethod, ReturnRecord, ReturnableSale } from '../types';
+import type { PaymentMethod, ReturnRecord, ReturnableSale, SaleUnit } from '../types';
 import { PAYMENT_PHRASES } from '../types';
 import type { PhraseKey } from '../i18n';
-import { formatDateTime, formatMoney } from '../utils';
+import { formatDateTime, formatMoney, formatWeight } from '../utils';
 import { parseTyped } from '../typed-number';
 
 interface Props {
@@ -28,6 +28,13 @@ const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'kaspi', 'card'];
 
 function returnableQuantity(line: ReturnableSale['items'][number]): number {
   return line.quantity - line.returnedQuantity;
+}
+
+/** Сколько продали — так же, как это написано на чеке. */
+function formatSold(line: { quantity: number; saleUnit?: SaleUnit }): string {
+  return line.saleUnit === 'weight'
+    ? formatWeight(line.quantity)
+    : line.quantity.toLocaleString('ru-RU');
 }
 
 export function ReturnsScreen({ sales, returns, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
@@ -209,7 +216,11 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
                 {s.items.map((it) => (
                   <div key={it.id} className="order-item-row">
                     <span>{it.name}</span>
-                    <span>{it.quantity}</span>
+                    {/* С единицей и по-русски. Печаталось «0.35»: точкой, как
+                        в коде, и без килограммов — а на чеке та же строка
+                        выглядит «0,35 кг». Кассир, выбирающий чек для
+                        возврата, читает «0.35» как количество. */}
+                    <span>{formatSold(it)}</span>
                   </div>
                 ))}
               </div>

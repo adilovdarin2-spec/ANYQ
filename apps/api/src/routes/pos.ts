@@ -1352,6 +1352,10 @@ posRouter.get('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
           // What is still returnable on this line, so the client never offers
           // more than the server would accept.
           returnedQuantity: returnedByItemId.get(it.id) ?? 0,
+          // Килограммы и штуки на экране возврата надо различать: «0,35» без
+          // единицы читается как количество, и кассир вернёт одну штуку вместо
+          // трёхсот пятидесяти граммов.
+          saleUnit: it.product.saleUnit,
           marked: codedProducts.has(`${sale.id}:${it.productId}`),
         })),
       };

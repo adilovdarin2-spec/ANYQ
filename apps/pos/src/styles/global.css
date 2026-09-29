@@ -411,7 +411,11 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
    cashier would otherwise do in their head at the counter, which is where the
    wrong number comes from. */
 .split-fill {
-  padding: 2px 0; min-height: 0; font-size: var(--text-sm); font-weight: 600;
+  /* Своей строкой, а не встык к названию способа. Кнопка шла сразу за
+     подписью, и на экране стояло «Наличныевесь остаток» — два слова без
+     пробела на экране, где считают деньги. */
+  display: flex; align-items: center;
+  padding: 4px 0; min-height: 0; font-size: var(--text-sm); font-weight: 600;
   text-decoration: underline; text-underline-offset: 3px;
 }
 .split-fill:disabled { opacity: 0.4; text-decoration: none; }
@@ -759,6 +763,7 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
   .pos-shell .product-tile .p-stock { font-size: var(--text-sm); }
 
   .pos-shell .qty-stepper button { width: 48px; height: 48px; font-size: var(--text-lg); }
+
   .pos-shell .qty-field { min-height: 48px; font-size: var(--text-lg); }
 
   /* Сорок восемь — пол, ниже которого на терминале не опускается ничего.
@@ -999,6 +1004,16 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
  * Сорок восемь, а не сорок четыре: сорок четыре — минимум Apple для телефона в
  * руке, а здесь в стекло жмут через прилавок и не глядя. */
 @media (pointer: coarse) {
+  /* «Весь остаток» вычитает за кассира то, что он иначе считает в уме у
+     прилавка, — и был подчёркнутой строчкой в двадцать пикселей высотой.
+     Промах по ней означает, что кассир считает сам, а это и есть тот случай,
+     из-за которого сумма расходится.
+
+     Сюда, а не в блок «ширина ≥ 900»: планшет за тридцать тысяч тенге до
+     девятисот не добирает, а рука у кассира та же. Ровно на этом меня и
+     поймала охрана, написанная про эту самую ошибку. */
+  .split-fill { min-height: 48px; padding: 0; }
+
   .li-remove,
   .li-action { min-height: 48px; padding: 12px 10px; }
   .qty-stepper button { width: 48px; height: 48px; }
