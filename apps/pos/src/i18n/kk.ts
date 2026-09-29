@@ -92,6 +92,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
 
   // --- payment ------------------------------------------------------------
   'payment.title': 'Төлем {amount}',
+  'payment.titlePlain': 'Төлем',
+  'payment.due': 'Төлеуге',
   'payment.cash': 'Қолма-қол',
   'payment.cashGiven': 'Сатып алушыдан алынды',
   'payment.cashGivenPlaceholder': 'Мыс. 1000',

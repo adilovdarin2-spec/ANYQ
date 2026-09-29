@@ -101,11 +101,33 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm, error }:
     <div className="screen">
       <div className="screen-header">
         <button className="icon-btn" onClick={() => (selected ? setSelected(null) : onCancel())} aria-label={t('common.back')}>←</button>
-        <span className="screen-title">{t('payment.title', { amount: formatMoney(total) })}</span>
+        {/* Сумма в заголовке — только когда способ уже выбран.
+
+            Пока выбирают, она стоит крупно под шапкой, и повторять её мелким
+            кеглем в двух сантиметрах выше значит написать одно число дважды.
+            А на экранах «наличные» и «Kaspi QR» крупной строки нет, и там
+            заголовок остаётся единственным местом, где сумма видна. */}
+        <span className="screen-title">
+          {selected === null && !splitting
+            ? t('payment.titlePlain')
+            : t('payment.title', { amount: formatMoney(total) })}
+        </span>
       </div>
       <div className="screen-body">
         {error && <div className="login-error" style={{ marginBottom: 12 }}>{error}</div>}
         {selected === null && (
+          <>
+            {/* Сумма — самое крупное на экране.
+
+                Она стояла подписью в шапке, тем же кеглем, что слово «Оплата».
+                А на этом экране её произносят вслух: кассир называет сумму
+                покупателю и одновременно ищет, чем тот платит. Искать её среди
+                служебного заголовка, стоя лицом к очереди, — лишняя секунда на
+                каждой продаже. */}
+            <div className="card-answer" style={{ marginTop: 0 }}>
+              <span className="label">{t('payment.due')}</span>
+              <span className="value accent">{formatMoney(total)}</span>
+            </div>
           <div className="payment-options">
             {methods.map((m) => (
               <button key={m} className="payment-option" onClick={() => setSelected(m)}>
@@ -121,6 +143,7 @@ export function PaymentModal({ total, hasCustomer, onCancel, onConfirm, error }:
               <span aria-hidden="true">→</span>
             </button>
           </div>
+          </>
         )}
 
         {selected === 'kaspi' && (

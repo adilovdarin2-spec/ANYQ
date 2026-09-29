@@ -94,6 +94,8 @@ export const ru = {
 
   // --- payment ------------------------------------------------------------
   'payment.title': 'Оплата {amount}',
+  'payment.titlePlain': 'Оплата',
+  'payment.due': 'К оплате',
   'payment.cash': 'Наличные',
   'payment.cashGiven': 'Получено от покупателя',
   'payment.cashGivenPlaceholder': 'Напр. 1000',
