@@ -82,6 +82,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'cart.empty': 'Себет бос',
   'cart.remove': 'Жою',
   'cart.change': 'өзгерту',
+  'cart.byScanner': 'сканер бойынша',
+  'cart.oneLess': 'біреуін алып тастау',
   'cart.less': 'Азырақ',
   'cart.more': 'Көбірек',
   'cart.quantity': 'Саны',

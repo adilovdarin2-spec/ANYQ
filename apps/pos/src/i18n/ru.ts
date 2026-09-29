@@ -84,6 +84,8 @@ export const ru = {
   'cart.empty': 'Корзина пуста',
   'cart.remove': 'Удалить',
   'cart.change': 'изменить',
+  'cart.byScanner': 'по сканеру',
+  'cart.oneLess': 'убрать одну',
   'cart.less': 'Меньше',
   'cart.more': 'Больше',
   'cart.quantity': 'Количество',

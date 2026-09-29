@@ -3242,6 +3242,20 @@ export default function App() {
       prev
         .map((l) => {
           if (l.id !== lineId) return l;
+          /* Маркированную пачку не дописывают руками.
+
+             Строка держит по коду на пачку, и «плюс» ломал эту пару: три
+             пачки при двух кодах. Сервер такой чек отклонит — после того, как
+             покупатель отдал деньги, ровно как с плиткой. Прибавить можно
+             только сканером; убавить — можно, лишний код уходит с пачкой. */
+          if (l.markingCodes?.length) {
+            if (delta > 0) {
+              setSaleNotice(t('marking.scanRequired'));
+              return l;
+            }
+            const codes = l.markingCodes.slice(0, Math.max(0, l.qty + delta));
+            return { ...l, qty: codes.length, markingCodes: codes };
+          }
           const next = l.qty + delta;
           // «Плюс» в корзине не проверял остаток вовсе — в отличие от плитки и
           // сканера. Кассир мог набрать больше, чем лежит на полке, и узнать об
@@ -3273,6 +3287,16 @@ export default function App() {
       prev
         .map((l) => {
           if (l.id !== lineId) return l;
+          /* Та же причина, что у «плюса»: набранное руками число разошлось бы
+             с числом поднесённых кодов. */
+          if (l.markingCodes?.length) {
+            if (clean > l.markingCodes.length) {
+              setSaleNotice(t('marking.scanRequired'));
+              return l;
+            }
+            const codes = l.markingCodes.slice(0, clean);
+            return { ...l, qty: codes.length, markingCodes: codes };
+          }
           // Прижимаем к остатку здесь, а не на оплате. Набранные «999» сервер
           // всё равно не примет, и узнать об этом лучше сейчас, чем в момент,
           // когда покупатель уже достал деньги.

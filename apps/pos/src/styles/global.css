@@ -522,6 +522,16 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
 .open-shift-row .open-shift-when { display: block; color: var(--ink-muted); font-size: var(--text-sm); }
 .open-shift-row .btn { flex: 1 0 auto; padding: 10px 16px; font-size: var(--text-base); }
 
+/* Количество маркированной строки: число, а рядом — чем оно набрано.
+
+   Счётчика здесь нет намеренно: пачки в такой строке считает сканер, и кнопка,
+   которая всегда отказывает, — это не защита, а раздражение. */
+.qty-scanned {
+  display: inline-flex; align-items: center; gap: 12px;
+  font-size: var(--text-base); font-weight: 600; white-space: nowrap;
+}
+.qty-scanned .li-action { font-weight: 500; }
+
 /* pin login */
 .login-error { margin-top: 4px; padding: 10px 12px; border-radius: var(--radius); background: var(--status-overdue-bg); color: var(--status-overdue); font-size: var(--text-base); text-align: center; }
 .pin-display { text-align: center; font-size: var(--text-xl); letter-spacing: 0.35em; margin: 18px 0; min-height: 2.1rem; color: var(--ink); }

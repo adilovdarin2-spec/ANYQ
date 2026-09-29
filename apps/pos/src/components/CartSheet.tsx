@@ -62,6 +62,21 @@ export function CartSheet({
             </div>
             {line.saleUnit === 'weight' ? (
               <button className="li-action" onClick={() => onEditWeight(line)}>{formatWeight(line.qty)} · {t('cart.change')}</button>
+            ) : line.markingCodes?.length ? (
+              /* Количество маркированной строки решает сканер, а не «плюс».
+
+                 Здесь стоял обычный счётчик, и им можно было дописать пачку,
+                 которую никто не подносил: у строки осталось бы два кода на три
+                 пачки. Сервер такой чек отклонит — но уже после того, как
+                 покупатель отдал деньги, а это ровно тот случай, ради которого
+                 плитка маркированный товар пальцем не кладёт.
+
+                 Убавить можно: пачку передумали брать, и лишний код уходит
+                 вместе с ней. Прибавить — только сканером. */
+              <span className="qty-scanned">
+                {line.qty} · {t('cart.byScanner')}
+                <button className="li-action" onClick={() => onChangeQty(line.id, -1)}>{t('cart.oneLess')}</button>
+              </span>
             ) : (
               <div className="qty-stepper">
                 <button onClick={() => onChangeQty(line.id, -1)} aria-label={t('cart.less')}>–</button>
