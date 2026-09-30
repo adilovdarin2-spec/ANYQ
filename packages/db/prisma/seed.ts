@@ -880,30 +880,53 @@ async function seedProductionDemoData() {
     return;
   }
 
-  const existingRecipe = await prisma.recipe.findUnique({ where: { productId: retailSugar.id } });
-  if (existingRecipe) {
-    console.log('Production demo BOM already seeded, skipping');
-    return;
-  }
-
   const location = network.locations.find((l) => l.name.includes('Бостандык'));
   if (!location) {
     console.log('Бостандык location not found, skipping production demo data');
     return;
   }
 
-  const bulkSugar = await prisma.product.create({
-    data: {
-      companyId: network.id,
-      name: 'Сахар мешок 50кг (опт)',
-      category: 'Бакалея',
-      unit: 'кг',
-      purchasePrice: 300,
-      salePrice: 300,
-      sellable: false,
-    },
+  /* Проверяется то, что этот сидер создаёт, а не то, что он создаёт следом.
+
+     Стояла проверка на рецепт: «рецепт есть — значит всё готово». А создаётся
+     здесь сначала мешок с двумястами килограммами, и только потом рецепт. В
+     базе, где мешок уже есть, а рецепта нет — а это ровно то, что получается
+     при прерванном или частичном прогоне, — второй прогон заводил **второй**
+     мешок и ещё двести килограммов. В сводке владельца это молча прибавляло
+     60 000 ₸ к «лежит без движения»: строка «Сахар мешок 50кг (опт)»
+     показывалась дважды.
+
+     Сосед ниже — сыр — так и написан: ищет по имени ровно тот товар, который
+     создаёт. Здесь теперь так же, и найденный мешок переиспользуется, чтобы
+     наполовину засеянная база чинилась, а не удваивалась.
+
+     Найдено 30.09.2026 прогоном производства. */
+  const bulkSugar =
+    (await prisma.product.findFirst({ where: { companyId: network.id, name: 'Сахар мешок 50кг (опт)' } })) ??
+    (await prisma.product.create({
+      data: {
+        companyId: network.id,
+        name: 'Сахар мешок 50кг (опт)',
+        category: 'Бакалея',
+        unit: 'кг',
+        purchasePrice: 300,
+        salePrice: 300,
+        sellable: false,
+      },
+    }));
+
+  const bulkStock = await prisma.stock.findFirst({
+    where: { productId: bulkSugar.id, locationId: location.id, binLocation: '' },
   });
-  await prisma.stock.create({ data: { productId: bulkSugar.id, locationId: location.id, quantity: 200 } });
+  if (!bulkStock) {
+    await prisma.stock.create({ data: { productId: bulkSugar.id, locationId: location.id, quantity: 200 } });
+  }
+
+  const existingRecipe = await prisma.recipe.findUnique({ where: { productId: retailSugar.id } });
+  if (existingRecipe) {
+    console.log('Production demo BOM already seeded, skipping');
+    return;
+  }
 
   await prisma.recipe.create({
     data: {
