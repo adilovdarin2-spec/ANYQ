@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount,
-  SettlementStatement, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
+  SettlementMethod, SettlementStatement, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
 import { expiringSoonByProduct } from './expiry';
 import { readScannedMarking, sameMarkedCode } from './marking-scan';
 import { addClosedShift, addDrawerEntry, addSale, getCachedCountSheet, getCurrentLocationId, getSales, getSession, getShift, markShiftCloseRefused, markShiftCloseSynced, pendingShiftCloses, drawerEntriesForShift, refusedShiftCloses, retryShiftClose, salesForShift, SalesStorageFullError, saveCachedCountSheet, saveCurrentLocationId, saveLicenceConfirmedAt, saveSession, saveShift } from './storage';
@@ -1860,7 +1860,11 @@ export default function App() {
     void loadSettlements(type);
   }
 
-  async function handleRecordSettlement(counterpartyId: string, amount: number) {
+  async function handleRecordSettlement(
+    counterpartyId: string,
+    amount: number,
+    method: SettlementMethod,
+  ) {
     if (!session || !currentLocationId) return false;
     setSettlementsSubmitting(true);
     setSettlementsError(null);
@@ -1869,12 +1873,17 @@ export default function App() {
         locationId: currentLocationId,
         counterpartyId,
         amount,
-        paymentMethod: 'cash',
+        paymentMethod: method,
       });
-      // Эти деньги прошли через ящик: клиент принёс наличные по долгу или их
-      // выдали поставщику. На закрытии смены их считают наравне с чеками —
-      // иначе кассир отвечает за сумму, которую при нём же и приняли.
-      if (shift) {
+      /* Через ящик проходят только наличные.
+         Способ был зашит в «наличные», а экран о нём не спрашивал: счёт
+         поставщику на четыреста тысяч, оплаченный переводом, уводил из сверки
+         смены четыреста тысяч, которые из ящика не выходили. Кассир на
+         закрытии оставался с излишком, которого не делал, — а излишек,
+         придуманный кассой, хуже отсутствия сверки: в него верят.
+
+         Найдено 30.09.2026 прогоном расчётов с поставщиками. */
+      if (shift && method === 'cash') {
         addDrawerEntry({
           id: `settlement_${Date.now()}_${counterpartyId}`,
           shiftId: shift.id,

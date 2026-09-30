@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
-import type { SettlementAccount, SettlementStatement } from '../types';
+import type { SettlementAccount, SettlementMethod, SettlementStatement } from '../types';
 import { formatMoney, formatPhone, formatDate } from '../utils';
 import { parseTyped } from '../typed-number';
 
@@ -13,7 +13,12 @@ interface Props {
   onBack: () => void;
   onRefresh: () => void;
   onChangeType: (type: 'customer' | 'supplier') => void;
-  onPay: (counterpartyId: string, amount: number) => Promise<boolean>;
+  /**
+   * @param method чем двигались деньги. Не украшение: ящик кассира считает
+   * только наличные, и платёж поставщику переводом, записанный как наличный,
+   * уводит из сверки сумму, которая из ящика не выходила.
+   */
+  onPay: (counterpartyId: string, amount: number, method: SettlementMethod) => Promise<boolean>;
   onSetCredit: (counterpartyId: string, creditAllowed: boolean, creditLimit: number) => Promise<boolean>;
   /**
    * Выписка по одному контрагенту, когда её попросили.
@@ -49,6 +54,10 @@ export function SettlementsScreen({
   const { t } = useTranslation();
   const [payingId, setPayingId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
+  /* Наличные первыми: так платят у прилавка, и это самый частый случай. Но
+     счёт поставщику на четыреста тысяч платят переводом, и до 30.09.2026
+     сказать об этом было негде — касса записывала любой платёж наличным. */
+  const [method, setMethod] = useState<SettlementMethod>('cash');
   const [creditId, setCreditId] = useState<string | null>(null);
   const [creditLimit, setCreditLimit] = useState('');
   const [creditAllowed, setCreditAllowed] = useState(false);
@@ -59,10 +68,11 @@ export function SettlementsScreen({
   async function pay(account: SettlementAccount) {
     const value = parseTyped(amount);
     if (!(value > 0)) return;
-    const done = await onPay(account.counterpartyId, value);
+    const done = await onPay(account.counterpartyId, value, method);
     if (done) {
       setPayingId(null);
       setAmount('');
+      setMethod('cash');
     }
   }
 
@@ -299,6 +309,27 @@ export function SettlementsScreen({
                   {/* Oldest first, always — so the aging figures above keep
                       meaning something. */}
                   <p className="field-hint">{t('settle.oldestFirst')}</p>
+                  {/* Чем двигались деньги.
+                      Ящик кассира считает только наличные: платёж переводом,
+                      записанный наличным, уводит из сверки сумму, которая из
+                      ящика не выходила, — и кассир на закрытии остаётся с
+                      излишком, которого он не делал. */}
+                  <div className="form-field">
+                    <label htmlFor={`settle-method-${account.counterpartyId}`}>{t('settle.method')}</label>
+                    <select
+                      id={`settle-method-${account.counterpartyId}`}
+                      value={method}
+                      onChange={(e) => setMethod(e.target.value as SettlementMethod)}
+                    >
+                      <option value="cash">{t('payment.cash')}</option>
+                      <option value="kaspi">{t('payment.kaspi')}</option>
+                      <option value="card">{t('payment.card')}</option>
+                      <option value="transfer">{t('settle.transfer')}</option>
+                    </select>
+                    <span className="field-hint">
+                      {method === 'cash' ? t('settle.fromDrawer') : t('settle.notFromDrawer')}
+                    </span>
+                  </div>
                   <div className="transfer-add-row">
                     <input
                       type="text"

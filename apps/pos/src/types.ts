@@ -14,6 +14,16 @@ export interface ProductVariantOption {
 
 export type SaleUnit = 'piece' | 'weight';
 
+/**
+ * Чем рассчитались с контрагентом.
+ *
+ * Отдельно от `PaymentMethod` чека: у долга есть перевод на счёт, которого у
+ * покупателя за прилавком не бывает, и нет «смешанной» оплаты. А главное —
+ * ящик кассира считает только наличные: платёж поставщику переводом,
+ * записанный наличным, уводит из сверки сумму, которая из ящика не выходила.
+ */
+export type SettlementMethod = 'cash' | 'kaspi' | 'card' | 'transfer';
+
 /** A shape the goods arrive or leave in — a case, a six-pack. Never a second place stock is counted. */
 export interface Packaging {
   id: string;
