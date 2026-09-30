@@ -90,6 +90,10 @@ export async function resolveSaleCodes(
       if (known.state === 'sold') return refuse(409, { kind: 'alreadySold', code });
       if (known.state === 'in_transit') return refuse(409, { kind: 'inTransit', code });
       if (known.state === 'returned') return refuse(409, { kind: 'returnedToSupplier', code });
+      /* Карантин — не списание: пачка здесь, на балансе, просто отложена до
+         решения. Без своего отказа она попадала бы в «эту упаковку списали»,
+         и кассир искал бы списание, которого не было. */
+      if (known.state === 'quarantined') return refuse(409, { kind: 'quarantined', code });
       if (known.state !== 'in_stock') return refuse(409, { kind: 'writtenOff', code });
       if (known.productId !== productId) return refuse(409, { kind: 'wrongProduct', code });
       if (known.locationId !== input.locationId) return refuse(409, { kind: 'elsewhere', code });

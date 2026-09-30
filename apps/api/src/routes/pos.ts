@@ -83,7 +83,7 @@ import { recordChanges, resolveActor } from '../audit-log';
 import { createStaff, listStaff, updateStaff } from '../staff-operations';
 import { findDuplicate, markingRefusalMessage, readLineCodes } from '../marking-service';
 import { markedCodeKey, parseMarkedCode } from '../marking';
-import { orderCodesRefusalMessage, pickCodes, planDocumentCodes, returnCodesRefusalMessage, supplierReturnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
+import { orderCodesRefusalMessage, pickCodes, quarantineCodesRefusalMessage, planDocumentCodes, returnCodesRefusalMessage, supplierReturnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
 import { resolveSaleCodes } from '../marking-sale';
 import { resolveIncomingCodes } from '../marking-incoming';
 import { resolveStockCodes } from '../marking-stock';
@@ -5690,7 +5690,7 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
 
   const b = req.body ?? {};
   const note = typeof b.note === 'string' ? b.note.trim() : '';
-  const changes: { productId: string; quantity: number }[] = Array.isArray(b.items) ? b.items : [];
+  const changes: { productId: string; quantity: number; codes?: string[] }[] = Array.isArray(b.items) ? b.items : [];
   if (action === 'block' && !note) {
     res.status(400).json({ error: 'Опишите, почему товар изолируется' });
     return;
@@ -5726,6 +5726,47 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
   }
 
   const stockByProduct = groupStockByProduct(stockRows);
+
+  /* Карантин откладывает упаковки, а не количество.
+     Пока коды он не трогал, изоляция держала на балансе «одну штуку», а какую
+     именно — не знал никто: та самая пачка, на которую пришла жалоба и которую
+     кладовщик унёс в коробку, по-прежнему пробивалась на кассе, потому что
+     свободного остатка хватало. Магазин при этом был уверен, что отложил её.
+
+     Правило одно со списанием: двигаем товар — двигаем коды. Разница только в
+     том, что отсюда пачка может вернуться в продажу. */
+  const heldState = action === 'block' ? 'in_stock' : 'quarantined';
+  const quarantineCodes = await prisma.markedCode.findMany({
+    where: {
+      companyId: req.posCompanyId!,
+      locationId,
+      state: heldState,
+      productId: { in: changes.map((c) => c.productId) },
+    },
+    select: { id: true, productId: true, gtin: true, serial: true },
+  });
+  const movingCodeIds: string[] = [];
+  if (quarantineCodes.length > 0) {
+    const byProduct = new Map<string, { quantity: number; scanned: string[] }>();
+    for (const change of changes) {
+      const entry = byProduct.get(change.productId) ?? { quantity: 0, scanned: [] };
+      entry.quantity += change.quantity;
+      if (Array.isArray(change.codes)) entry.scanned.push(...change.codes.map((c: unknown) => String(c)));
+      byProduct.set(change.productId, entry);
+    }
+    for (const [productId, entry] of byProduct) {
+      const plan = pickCodes({
+        quantity: entry.quantity,
+        outstanding: quarantineCodes.filter((c) => c.productId === productId),
+        scanned: entry.scanned,
+      });
+      if (!plan.ok) {
+        res.status(400).json({ error: quarantineCodesRefusalMessage(plan.refusal, action as QuarantineAction) });
+        return;
+      }
+      movingCodeIds.push(...plan.codeIds);
+    }
+  }
 
   const keyResult = readIdempotencyKey(req.headers[IDEMPOTENCY_HEADER]);
   if (keyResult.status === 'invalid') {
@@ -5781,6 +5822,16 @@ posRouter.post('/quarantine/:action', requirePosAuth, async (req: PosAuthedReque
           remaining -= take;
         }
         if (remaining > 0) throw new ConcurrentStockChangeError(change.productId);
+      }
+
+      /* Коды — в той же транзакции, что и остаток.
+         Отдельной записью они однажды не запишутся: количество отложено, а
+         пачка осталась «лежит» — то есть продаётся. */
+      if (movingCodeIds.length > 0) {
+        await tx.markedCode.updateMany({
+          where: { id: { in: movingCodeIds } },
+          data: { state: action === 'block' ? 'quarantined' : 'in_stock' },
+        });
       }
 
       return { id: created.id, action };

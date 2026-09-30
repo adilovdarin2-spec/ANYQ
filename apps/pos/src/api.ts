@@ -981,7 +981,8 @@ export function createWriteOff(
 export interface QuarantinePayload {
   locationId: string;
   note: string;
-  items: { productId: string; quantity: number }[];
+  /** Коды упаковок — карантин откладывает пачки, а не количество. */
+  items: { productId: string; quantity: number; codes?: string[] }[];
 }
 
 // Quarantine is not a write-off: the goods stay on the books and stop being

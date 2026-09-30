@@ -644,6 +644,98 @@ describe('коды маркировки', () => {
     expect(await prisma.markedCode.count({ where: { state: 'written_off' } })).toBe(0);
   });
 
+  /**
+   * Карантин откладывает упаковки, а не количество.
+   *
+   * Изоляция держала на балансе «одну штуку», а какую именно — не знал никто.
+   * Та самая пачка, на которую пришла жалоба и которую кладовщик унёс в
+   * коробку, по-прежнему пробивалась на кассе: свободного остатка хватало.
+   * Магазин при этом был уверен, что отложил её — ради чего карантин и есть.
+   *
+   * В коде так и было написано: «изоляция товар со склада не убирает, и коды
+   * при ней трогать нечего». Не убирает — но откладывает она пачки.
+   *
+   * Найдено 30.09.2026 прогоном карантина руками.
+   */
+  describe('карантин', () => {
+    const изолировать = (action: 'block' | 'release', serials: string[], quantity = serials.length) =>
+      api(fx.token, 'POST', `/pos/quarantine/${action}`, {
+        locationId: fx.locationId,
+        note: 'жалоба на партию',
+        items: [{ productId: fx.productId, quantity, codes: serials.map(code) }],
+      });
+
+    it('уводит код вместе с пачкой', async () => {
+      expect((await receive(['A1', 'A2'], 'q-receive')).status).toBe(201);
+
+      const blocked = await изолировать('block', ['A1']);
+      expect(blocked.status, JSON.stringify(blocked.body)).toBe(201);
+
+      const code = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } });
+      expect(code.state, 'пачка отложена, а код остался в продаже').toBe('quarantined');
+      const other = await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A2' } });
+      expect(other.state, 'отложили не ту').toBe('in_stock');
+    });
+
+    it('и отложенную пачку касса не продаёт', async () => {
+      /* То, ради чего карантин и существует. Остатка при этом хватает — на
+         полке вторая пачка, — поэтому отказать может только код. */
+      expect((await receive(['A1', 'A2'], 'q-sell-receive')).status).toBe(201);
+      expect((await изолировать('block', ['A1'])).status).toBe(201);
+
+      const sale = await sell(['A1'], 'q-sell-blocked', 1);
+      expect(sale.status).toBe(409);
+      expect(sale.body.error, 'отказ говорит про списание, которого не было').toContain('карантине');
+
+      // А вторая продаётся как ни в чём не бывало.
+      expect((await sell(['A2'], 'q-sell-other', 1)).status).toBe(201);
+    });
+
+    it('а возврат в продажу возвращает ровно ту пачку', async () => {
+      expect((await receive(['A1', 'A2'], 'q-release-receive')).status).toBe(201);
+      expect((await изолировать('block', ['A1', 'A2'])).status).toBe(201);
+
+      expect((await изолировать('release', ['A1'])).status).toBe(201);
+      expect((await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A1' } })).state).toBe('in_stock');
+      expect((await prisma.markedCode.findFirstOrThrow({ where: { serial: 'A2' } })).state).toBe('quarantined');
+
+      expect((await sell(['A1'], 'q-release-sell', 1)).status).toBe(201);
+      const still = await sell(['A2'], 'q-release-sell-blocked', 1);
+      expect(still.status).toBe(409);
+    });
+
+    it('и часть пачек без скана не откладывается', async () => {
+      /* Отложить «любую из трёх» — это ровно то, чем карантин был: количество
+         держится, а на кассе проходит любая. */
+      expect((await receive(['A1', 'A2', 'A3'], 'q-part-receive')).status).toBe(201);
+      const blocked = await api(fx.token, 'POST', '/pos/quarantine/block', {
+        locationId: fx.locationId,
+        note: 'одна подозрительная',
+        items: [{ productId: fx.productId, quantity: 1 }],
+      });
+      expect(blocked.status).toBe(400);
+      expect(blocked.body.error).toContain('Отсканируйте коды');
+      expect(await prisma.markedCode.count({ where: { state: 'quarantined' } })).toBe(0);
+    });
+
+    it('а немаркированный товар откладывается как раньше', async () => {
+      // Бинты и шурупы кодов не имеют, и карантин для них не меняется.
+      const plain = await prisma.product.create({
+        data: { companyId: fx.companyId, name: 'Шурупы', unit: 'шт', salePrice: 50, purchasePrice: 20 },
+      });
+      await prisma.stock.create({ data: { productId: plain.id, locationId: fx.locationId, binLocation: '', quantity: 10 } });
+
+      const blocked = await api(fx.token, 'POST', '/pos/quarantine/block', {
+        locationId: fx.locationId,
+        note: 'ржавые',
+        items: [{ productId: plain.id, quantity: 3 }],
+      });
+      expect(blocked.status, JSON.stringify(blocked.body)).toBe(201);
+      const stock = await prisma.stock.findFirstOrThrow({ where: { productId: plain.id, locationId: fx.locationId } });
+      expect(stock.blocked).toBe(3);
+    });
+  });
+
   describe('вторая дверь: заказ за столом', () => {
     /**
      * Кафе продаёт сигареты не чеком, а столом.

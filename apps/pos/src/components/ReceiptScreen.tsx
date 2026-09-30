@@ -16,9 +16,11 @@ interface Props {
   sale: Sale;
   onNewSale: () => void;
   canPrint?: boolean;
+  /** Куда идти разбирать отказ. Без этого «не проведён» — тупик. */
+  onOpenStuck?: () => void;
 }
 
-export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
+export function ReceiptScreen({ sale, onNewSale, canPrint, onOpenStuck }: Props) {
   const { t } = useTranslation();
   return (
     <div className="screen">
@@ -90,6 +92,25 @@ export function ReceiptScreen({ sale, onNewSale, canPrint }: Props) {
             </div>
           )}
         </div>
+
+        {/* Слова сервера — здесь, а не только в профиле.
+            Отказ на чеке читался как «не проведён на сервере» и всё: деньги у
+            кассира взяты, покупатель стоит, а почему — не сказано нигде на этом
+            экране. Плашка «требует внимания» в шапке при этом лежит под чеком:
+            `.screen` накрывает всё, и нажать её отсюда нельзя.
+
+            Найдено 30.09.2026: касса отказала в продаже пачки, отложенной в
+            карантин, и объяснить это было нечем. */}
+        {sale.syncError && (
+          <div className="login-error">
+            {sale.syncError}
+            {onOpenStuck && (
+              <div className="row-actions" style={{ marginTop: 8 }}>
+                <button className="btn btn-secondary" onClick={onOpenStuck}>{t('receipt.openStuck')}</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="screen-footer">
         {canPrint && (

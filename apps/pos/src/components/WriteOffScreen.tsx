@@ -28,7 +28,7 @@ interface Props {
   }) => Promise<boolean>;
   onQuarantine: (
     action: 'block' | 'release',
-    payload: { note: string; items: { productId: string; quantity: number }[] },
+    payload: { note: string; items: { productId: string; quantity: number; codes?: string[] }[] },
   ) => Promise<boolean>;
 }
 
@@ -60,12 +60,17 @@ export function WriteOffScreen({
   const [lines, setLines] = useState<Line[]>([]);
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [quantity, setQuantity] = useState('');
-  /* Коды списываемых упаковок, по строке. Списать «любую из трёх» значит
-     объявить списанной пачку, которая цела и лежит на полке: продать её потом
-     будет нельзя, а разбитая останется в остатке.
+  /* Коды упаковок, по строке. Списать «любую из трёх» значит объявить
+     списанной пачку, которая цела и лежит на полке: продать её потом будет
+     нельзя, а разбитая останется в остатке.
 
-     Только для списания: изоляция товар со склада не убирает — он здесь, просто
-     не для продажи, — и коды при ней трогать нечего. */
+     Карантину коды нужны ровно по той же причине, хотя здесь так и не считали:
+     «изоляция товар со склада не убирает, и коды трогать нечего». Не убирает —
+     но откладывает она упаковки, а не количество. Отложив «одну штуку» из
+     четырёх, магазин был уверен, что убрал ту самую пачку, на которую пришла
+     жалоба, — а касса продолжала её пробивать: свободного остатка хватало.
+
+     Найдено 30.09.2026 прогоном карантина руками. */
   const [codes, setCodes] = useState<Record<number, string[]>>({});
   const [codeError, setCodeError] = useState<string | null>(null);
 
@@ -91,10 +96,9 @@ export function WriteOffScreen({
     setCodes((prev) => ({ ...prev, [index]: [...already, raw] }));
   }
 
-  const missingCodes =
-    mode === 'write_off'
-      ? lines.filter((l, i) => isMarked(l.productId) && (codes[i]?.length ?? 0) !== l.quantity)
-      : [];
+  const missingCodes = lines.filter(
+    (l, i) => isMarked(l.productId) && (codes[i]?.length ?? 0) !== l.quantity,
+  );
 
   function addLine() {
     const product = products.find((p) => p.id === productId);
@@ -113,7 +117,7 @@ export function WriteOffScreen({
     const done =
       mode === 'write_off'
         ? await onWriteOff({ reasonCode, note: note.trim(), items })
-        : await onQuarantine(mode, { note: note.trim(), items: items.map(({ productId, quantity }) => ({ productId, quantity })) });
+        : await onQuarantine(mode, { note: note.trim(), items });
     if (done) {
       setLines([]);
       setCodes({});
@@ -162,8 +166,16 @@ export function WriteOffScreen({
                     {record.createdByName ? ` · ${record.createdByName}` : ''}
                   </div>
                 </div>
+                {/* Возврат из карантина стоял с той же меткой «изолировано»,
+                    что и сам карантин: в списке две противоположные операции
+                    читались одинаково, и понять, лежит товар отложенным или
+                    уже вернулся на полку, по метке было нельзя. */}
                 <span className={record.type === 'write_off' ? 'pill warn' : 'pill'}>
-                  {record.type === 'write_off' ? t('writeOff.written') : t('writeOff.isolated')}
+                  {record.type === 'write_off'
+                    ? t('writeOff.written')
+                    : record.reasonCode === 'release'
+                      ? t('writeOff.released')
+                      : t('writeOff.isolated')}
                 </span>
               </div>
               <div className="order-items">
@@ -249,9 +261,13 @@ export function WriteOffScreen({
                     {t('common.delete')}
                   </button>
                 </div>
-                {mode === 'write_off' && isMarked(l.productId) && (
+                {isMarked(l.productId) && (
                   <div className="form-field">
-                    <label htmlFor={`writeoff-scan-${i}`}>{t('writeOff.scanCodes')}</label>
+                    {/* Слова по делу: «коды списываемых упаковок» кладовщику,
+                        который откладывает пачку до ответа поставщика, врут. */}
+                    <label htmlFor={`writeoff-scan-${i}`}>
+                      {t(mode === 'write_off' ? 'writeOff.scanCodes' : mode === 'block' ? 'writeOff.blockCodes' : 'writeOff.releaseCodes')}
+                    </label>
                     <input
                       id={`writeoff-scan-${i}`}
                       type="text"

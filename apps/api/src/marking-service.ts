@@ -45,6 +45,8 @@ export type MarkingRefusal =
   | { kind: 'writtenOff'; code: MarkedCode }
   /** Уехал обратно поставщику — товаром этого магазина он быть перестал. */
   | { kind: 'returnedToSupplier'; code: MarkedCode }
+  /** Отложен до решения: он здесь, на балансе, но продавать его нельзя. */
+  | { kind: 'quarantined'; code: MarkedCode }
   | { kind: 'countMismatch'; productId: string; codes: number; quantity: number };
 
 export type MarkingOutcome<T> = { ok: true; value: T } | { ok: false; refusal: MarkingRefusal };
@@ -74,6 +76,8 @@ export function markingRefusalMessage(refusal: MarkingRefusal): string {
       return 'Эту упаковку списали — продавать её нельзя, позовите владельца';
     case 'returnedToSupplier':
       return 'Эту упаковку вернули поставщику — её здесь быть не должно';
+    case 'quarantined':
+      return 'Эта упаковка в карантине — её продавать нельзя, пока её не вернут в продажу';
     case 'countMismatch':
       return `Кодов ${refusal.codes}, а товара ${refusal.quantity} — их должно быть поровну`;
   }

@@ -2099,7 +2099,7 @@ export default function App() {
 
   async function handleQuarantine(
     action: 'block' | 'release',
-    payload: { note: string; items: { productId: string; quantity: number }[] },
+    payload: { note: string; items: { productId: string; quantity: number; codes?: string[] }[] },
   ) {
     if (!session || !currentLocationId) return false;
     setWriteOffSubmitting(true);
@@ -3749,7 +3749,7 @@ export default function App() {
       )}
 
       {view === 'receipt' && lastSale && (
-        <ReceiptScreen sale={lastSale} onNewSale={() => setView('sale')} canPrint={hasTerminal} />
+        <ReceiptScreen sale={lastSale} onNewSale={() => setView('sale')} canPrint={hasTerminal} onOpenStuck={() => setView('profile')} />
       )}
 
       {view === 'close-shift' && (
