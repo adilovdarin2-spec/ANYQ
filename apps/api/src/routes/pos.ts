@@ -87,6 +87,7 @@ import { orderCodesRefusalMessage, pickCodes, quarantineCodesRefusalMessage, pla
 import { resolveSaleCodes } from '../marking-sale';
 import { resolveIncomingCodes } from '../marking-incoming';
 import { drawerShiftFor } from '../shift-drawer';
+import { receiptDayWindow } from '../receipt-day';
 import { resolveStockCodes } from '../marking-stock';
 
 /**
@@ -1306,11 +1307,27 @@ posRouter.get('/sales', requirePosAuth, async (req: PosAuthedRequest, res) => {
   const locationId = resolveLocationOrRespond(company?.locations ?? [], req.query.locationId, res);
   if (!locationId) return;
 
+  /* День можно назвать — иначе старый чек не найти вовсе.
+     Список отдавал последние пятьдесят чеков и ничего больше: в продуктовом это
+     до обеда, и покупатель, пришедший через неделю, своего чека в нём не
+     находил. Ни поиска, ни выбора дня при этом не было — кассиру нечего было
+     сделать. А возврат по чеку недельной давности — обычный разговор у
+     прилавка. Границы дня местные: вечерний чек в UTC уже завтрашний. */
+  const day = receiptDayWindow(req.query.day);
   const sales = await prisma.document.findMany({
-    where: { companyId: req.posCompanyId, locationId, type: 'sale', status: 'confirmed' },
+    where: {
+      companyId: req.posCompanyId,
+      locationId,
+      type: 'sale',
+      status: 'confirmed',
+      ...(day ? { createdAt: { gte: day.gte, lt: day.lt } } : {}),
+    },
     include: { items: { include: { product: true } }, returns: { include: { items: true } } },
     orderBy: { createdAt: 'desc' },
-    take: 50,
+    // За названный день берётся весь день: пятьдесят — это «последние», а не
+    // «за двадцать третье», и обрезать выбранный день тем же числом значило бы
+    // снова не показать утренние чеки.
+    take: day ? 500 : 50,
   });
 
   // Какие строки этих чеков продавались по коду. Кассе это нужно до того, как
@@ -4034,11 +4051,20 @@ posRouter.get('/export/:dataset', requirePosAuth, async (req: PosAuthedRequest, 
 
   const filename = csvFilename(`${dataset}-${locationNameById.get(locationId) ?? ''}`.replace(/\s+/g, '-'));
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  // Both forms: the plain one for old clients, the encoded one because the
-  // filename carries the location's Cyrillic name.
+  /* Оба имени, и оба говорящие.
+
+     Закодированное несёт кириллическое название точки, простое — нет: там
+     стояло `export.csv` на все пять выгрузок. Клиент, который читает только
+     простое, отдаёт владельцу `export.csv`, `export (1).csv`, `export (2).csv`
+     — то самое «которая из них какая», ради чего имя и датируется (см.
+     `csvFilename`). Хуже всего это в тот вечер, ради которого выгрузка и
+     существует: магазин уходит обратно на старую кассу и разбирает пять
+     одинаковых файлов.
+
+     В простом имени только набор и дата — они латиницей и цифрами. */
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename="export.csv"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    `attachment; filename="${csvFilename(dataset)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
   );
   res.send(csvFile(header, rows));
 });

@@ -57,6 +57,35 @@ describe('taking the data out', () => {
     expect(disposition).toContain('attachment');
     expect(decodeURIComponent(disposition)).toMatch(/anyq-products-.*\d{4}-\d{2}-\d{2}\.csv/);
     expect(res.headers.get('content-type')).toContain('text/csv');
+
+    /* И простое имя — тоже говорящее.
+
+       Заголовок несёт два имени: закодированное с кириллическим названием
+       точки и простое, для клиентов, которые читают только его. Простым
+       стояло `export.csv` на все пять выгрузок, то есть ровно то «которая из
+       них какая», ради чего имя и датируется. Больнее всего это в тот вечер,
+       ради которого выгрузка и существует: магазин уходит на старую кассу и
+       разбирает пять одинаковых файлов. Найдено 30.09.2026 репетицией отката. */
+    const plain = /filename="([^"]+)"/.exec(disposition)?.[1];
+    expect(plain, 'простое имя снова одно на все выгрузки').toMatch(
+      /^anyq-products-\d{4}-\d{2}-\d{2}\.csv$/,
+    );
+  });
+
+  it('и у каждой выгрузки это имя своё', async () => {
+    /* Свойством, а не одним примером: пять файлов подряд должны получиться
+       пятью разными именами, иначе браузер сложит их в `export (1).csv`. */
+    const names = new Set<string>();
+    for (const dataset of ['products', 'stock', 'sales', 'movements', 'counterparties']) {
+      const res = await fetch(`${baseUrl}/pos/export/${dataset}?locationId=${fx.locationId}`, {
+        headers: { Authorization: `Bearer ${fx.token}` },
+      });
+      expect(res.status, dataset).toBe(200);
+      const plain = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1];
+      expect(plain, `${dataset}: простого имени нет вовсе`).toBeTruthy();
+      names.add(plain!);
+    }
+    expect(names.size, 'имена совпали — файлы не различить').toBe(5);
   });
 
   it('exports stock with the unplaced pile named rather than left blank', async () => {

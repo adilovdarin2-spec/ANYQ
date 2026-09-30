@@ -2534,7 +2534,7 @@ export default function App() {
     }
   }
 
-  async function loadReturns() {
+  async function loadReturns(day?: string) {
     if (!session || !currentLocationId) return;
     setReturnsLoading(true);
     setReturnsError(null);
@@ -2542,7 +2542,7 @@ export default function App() {
       // Both halves in one go: the screen shows past returns and needs the
       // receipts behind them the moment the cashier taps "new".
       const [sales, made] = await Promise.all([
-        fetchReturnableSales(session.token, currentLocationId),
+        fetchReturnableSales(session.token, currentLocationId, day),
         fetchReturns(session.token, currentLocationId),
       ]);
       setReturnableSales(sales);
@@ -4157,6 +4157,9 @@ export default function App() {
           submitting={returnSubmitting}
           onBack={() => setView('operations')}
           onRefresh={loadReturns}
+          // Пустой день — снова последние чеки: кассир стёр дату и вернулся к
+          // привычному списку, не выходя с экрана.
+          onPickDay={(day) => void loadReturns(day || undefined)}
           onSubmit={handleCreateReturn}
         />
       )}

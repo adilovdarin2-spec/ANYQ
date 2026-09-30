@@ -745,8 +745,14 @@ export function unsubscribePush(token: string, endpoint: string): Promise<{ ok: 
 // The receipts a return can be filed against, newest first. Each line carries
 // what is still outstanding on it, so the register never offers more than the
 // server would accept.
-export function fetchReturnableSales(token: string, locationId: string): Promise<ReturnableSale[]> {
-  return request(`/pos/sales?locationId=${encodeURIComponent(locationId)}`, { method: 'GET' }, token);
+export function fetchReturnableSales(
+  token: string,
+  locationId: string,
+  /** День магазина как `2026-09-23`. Пусто — последние чеки, как раньше. */
+  day?: string,
+): Promise<ReturnableSale[]> {
+  const query = `locationId=${encodeURIComponent(locationId)}${day ? `&day=${encodeURIComponent(day)}` : ''}`;
+  return request(`/pos/sales?${query}`, { method: 'GET' }, token);
 }
 
 export function fetchReturns(token: string, locationId: string): Promise<ReturnRecord[]> {

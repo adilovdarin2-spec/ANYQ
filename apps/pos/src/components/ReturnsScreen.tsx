@@ -16,6 +16,14 @@ interface Props {
   submitting: boolean;
   onBack: () => void;
   onRefresh: () => void;
+  /**
+   * Показать чеки одного дня.
+   *
+   * Список отдаёт последние пятьдесят чеков — в продуктовом это до обеда.
+   * Покупатель, пришедший через неделю, своего чека в нём не находил, и сделать
+   * с этим было нечего: ни поиска, ни выбора дня. Пусто — снова последние.
+   */
+  onPickDay: (day: string) => void;
   onSubmit: (payload: {
     saleId: string;
     reason: string;
@@ -37,7 +45,7 @@ function formatSold(line: { quantity: number; saleUnit?: SaleUnit }): string {
     : line.quantity.toLocaleString('ru-RU');
 }
 
-export function ReturnsScreen({ sales, returns, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
+export function ReturnsScreen({ sales, returns, loading, error, submitting, onBack, onRefresh, onPickDay, onSubmit }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'pick-sale' | 'compose'>('list');
   const [sale, setSale] = useState<ReturnableSale | null>(null);
@@ -50,6 +58,8 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
   const [codeError, setCodeError] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  /** День, за который смотрят чеки. Пусто — последние. */
+  const [day, setDay] = useState('');
 
   /**
    * Как вернули деньги — словом.
@@ -202,7 +212,27 @@ export function ReturnsScreen({ sales, returns, loading, error, submitting, onBa
         <div className="screen-body">
           {error && <div className="login-error">{error}</div>}
           <p className="order-meta">{t('return.pickReceipt')}</p>
-          {openSales.length === 0 && <div className="empty-state">{t('return.noReceipts')}</div>}
+
+          {/* Дата — потому что покупатель называет день.
+              На бумажке, которую он приносит, есть дата и сумма; номер чека
+              там тоже есть, но человек говорит «брал в среду». */}
+          <div className="form-field">
+            <label htmlFor="return-day">{t('return.pickDay')}</label>
+            <input
+              id="return-day"
+              type="date"
+              value={day}
+              onChange={(e) => {
+                setDay(e.target.value);
+                onPickDay(e.target.value);
+              }}
+            />
+            <span className="field-hint">{day ? t('return.dayShown') : t('return.latestShown')}</span>
+          </div>
+
+          {openSales.length === 0 && (
+            <div className="empty-state">{day ? t('return.noReceiptsThatDay') : t('return.noReceipts')}</div>
+          )}
           {openSales.map((s) => (
             <button key={s.id} className="order-card" style={{ width: '100%', textAlign: 'left' }} onClick={() => startReturn(s)}>
               <div className="order-card-head">
