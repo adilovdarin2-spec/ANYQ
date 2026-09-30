@@ -1,3 +1,4 @@
+import { withUnit } from './unit-form';
 /**
  * Почему число перестало расти.
  *
@@ -13,5 +14,5 @@
  * отвечает и на «почему тридцать», и на «почему плюс не нажимается».
  */
 export function capNote(stock: number, unit: string): string {
-  return `Это весь остаток — ${stock} ${unit}`;
+  return `Это весь остаток — ${withUnit(stock, unit)}`;
 }

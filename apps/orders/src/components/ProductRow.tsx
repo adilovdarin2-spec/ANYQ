@@ -1,6 +1,7 @@
 import type { CatalogProduct } from '../types';
 import { capNote } from '../cap-note';
 import { formatMoney } from '../utils';
+import { unitFor } from '../unit-form';
 
 interface Props {
   product: CatalogProduct;
@@ -53,7 +54,8 @@ export function ProductRow({ product, qty, onAdd, onChangeQty, onSetQty }: Props
               max={product.stock}
               inputMode="numeric"
               value={qty}
-              aria-label={`Сколько ${product.unit}`}
+              // «Сколько мешков», а не «Сколько мешок» — см. CartSidebar.
+              aria-label={`Сколько ${unitFor(5, product.unit)}`}
               onChange={(e) => onSetQty(Math.floor(Number(e.target.value) || 0))}
             />
             <button onClick={() => onChangeQty(1)} disabled={qty >= product.stock} aria-label="Больше">+</button>

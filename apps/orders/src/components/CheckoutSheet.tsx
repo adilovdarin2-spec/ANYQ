@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CartLine } from '../types';
 import { formatMoney, normalizePhone } from '../utils';
+import { withUnit } from '../unit-form';
 
 interface Props {
   cart: CartLine[];
@@ -78,7 +79,7 @@ export function CheckoutSheet({ cart, total, submitting, error, staleLines, buye
                 <div>
                   <div className="checkout-line-name">{line.name}</div>
                   <div className="checkout-line-sub">
-                    {line.qty} {line.unit} × {formatMoney(line.price)}
+                    {withUnit(line.qty, line.unit)} × {formatMoney(line.price)}
                   </div>
                 </div>
                 <div className="checkout-line-total">{formatMoney(Math.round(line.price * line.qty))}</div>

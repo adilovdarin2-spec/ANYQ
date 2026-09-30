@@ -1,6 +1,7 @@
 import type { CartLine } from '../types';
 import { capNote } from '../cap-note';
 import { formatMoney } from '../utils';
+import { unitFor, withUnit } from '../unit-form';
 
 interface Props {
   cart: CartLine[];
@@ -27,7 +28,7 @@ export function CartSidebar({ cart, total, onChangeQty, onSetQty, onCheckout }: 
                 <div>
                   <div className="cart-sidebar-line-name">{line.name}</div>
                   <div className="cart-sidebar-line-sub">
-                    {line.qty} {line.unit} × {formatMoney(line.price)}
+                    {withUnit(line.qty, line.unit)} × {formatMoney(line.price)}
                   </div>
                 </div>
                 <div className="qty-col">
@@ -42,7 +43,10 @@ export function CartSidebar({ cart, total, onChangeQty, onSetQty, onCheckout }: 
                       max={line.maxStock}
                       inputMode="numeric"
                       value={line.qty}
-                      aria-label={`Сколько ${line.unit}`}
+                      // «Сколько упаковок», а не «Сколько упаковка»: подпись
+                      // читает вслух программа чтения с экрана, и число в ней
+                      // не участвует — нужна форма множественного.
+                      aria-label={`Сколько ${unitFor(5, line.unit)}`}
                       onChange={(e) => onSetQty(line.productId, Math.floor(Number(e.target.value) || 0))}
                     />
                     <button onClick={() => onChangeQty(line.productId, 1)} disabled={line.qty >= line.maxStock} aria-label="Больше">

@@ -1,4 +1,5 @@
 import type { CartLine, Catalog } from './types';
+import { withUnit } from './unit-form';
 
 /**
  * Корзина витрины переживает перезагрузку страницы.
@@ -151,7 +152,7 @@ export function reconcileCart(catalog: Catalog, cart: CartLine[]): Reconciled {
       continue;
     }
     if (line.qty > product.stock) {
-      problems.push(`${line.name} — осталось ${product.stock} ${product.unit}`);
+      problems.push(`${line.name} — осталось ${withUnit(product.stock, product.unit)}`);
     }
   }
 
