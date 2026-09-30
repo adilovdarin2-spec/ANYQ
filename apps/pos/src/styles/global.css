@@ -880,6 +880,23 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
   .pos-shell .cart-panel-footer .btn-primary { min-height: 64px; font-size: var(--text-lg); }
 }
 
+/* Корзина за прилавком — и «Оплатить», до которого можно дотянуться.
+
+   Высота панели ограничена так, чтобы она кончалась над нижней панелью. Но
+   содержимое из неё вываливалось: `flex: 1` без `min-height: 0` не даёт списку
+   товаров сжаться, и итоги с кнопкой «Оплатить» уезжали вниз — под нижнюю
+   панель, которая `fixed` и накрывает последние 68 пикселей. На экране 961×417
+   кнопка оказывалась физически ненажимаемой: `elementFromPoint` в её середине
+   отдавал `.tab-bar`. Продажу нельзя было завершить вовсе.
+
+   961×417 — это не выдумка: телефон в альбомной ориентации даёт как раз такое
+   окно, а раскладка выбирается по одной ширине (`useIsDesktop`, 900px). Это
+   четвёртый раз, когда допущение про кассу оказалось привязано к ширине.
+
+   Две строки ниже: список уступает место итогам, а если и этого мало —
+   прокручивается сама панель, и кнопка достижима на любой высоте. Какую
+   раскладку вообще давать телефону в альбомной — вопрос про их устройство,
+   он записан в план отдельно. */
 .cart-panel {
   position: sticky;
   top: 76px;
@@ -890,10 +907,21 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 96px - var(--tab-bar-h));
+  overflow-y: auto;
 }
 .cart-panel-title { font-weight: 700; font-size: var(--text-md); margin-bottom: 10px; }
-.cart-panel-body { flex: 1; overflow-y: auto; }
+.cart-panel-body { flex: 1; min-height: 0; overflow-y: auto; }
 .cart-panel-footer { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 4px; }
+/* «Оплатить» видно всегда, даже когда корзину приходится прокручивать.
+
+   Иначе кассир на низком экране прокручивает панель вслепую, ища кнопку, ради
+   которой эта панель и существует. Фон не задаётся: он уже непрозрачный у самой
+   `.btn-primary`, а переопределить его здесь значило бы перекрасить и
+   `:disabled` — у них одинаковый вес, и победило бы правило ниже по файлу. */
+.cart-panel-footer .btn-primary {
+  position: sticky;
+  bottom: 0;
+}
 
 /* reports (terminal tariff) */
 .report-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
