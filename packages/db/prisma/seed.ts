@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { pinFingerprint } from '../../../apps/api/src/pin';
+import { planOpeningBalances } from '../src/opening-balances';
 
 const prisma = new PrismaClient();
 
@@ -1005,26 +1006,45 @@ main()
 // Opening stock is a real event: the goods were on the shelf before the system
 // arrived. Saying so as a movement is what makes every later figure traceable,
 // and it is what the product import will have to do too.
+//
+// Что именно дописать, решает `planOpeningBalances`: правило вынесено рядом с
+// остальным кодом пакета, чтобы его можно было проверить на числах, а не только
+// прогоном сидера по живой базе.
 async function recordOpeningBalances(): Promise<void> {
   const [rows, existing] = await Promise.all([
     prisma.stock.findMany(),
-    prisma.stockMovement.groupBy({ by: ['productId', 'locationId', 'binLocation'] }),
+    prisma.stockMovement.groupBy({
+      by: ['productId', 'locationId', 'binLocation'],
+      _sum: { quantity: true },
+    }),
   ]);
 
-  const explained = new Set(existing.map((m) => `${m.locationId}|${m.binLocation}|${m.productId}`));
-  const missing = rows.filter(
-    (row) => row.quantity !== 0 && !explained.has(`${row.locationId}|${row.binLocation}|${row.productId}`),
-  );
-  if (missing.length === 0) return;
-
-  await prisma.stockMovement.createMany({
-    data: missing.map((row) => ({
+  const { opening, short } = planOpeningBalances(
+    rows.map((row) => ({
       productId: row.productId,
       locationId: row.locationId,
       binLocation: row.binLocation,
       quantity: row.quantity,
-      reason: 'opening',
     })),
+    existing.map((row) => ({
+      productId: row.productId,
+      locationId: row.locationId,
+      binLocation: row.binLocation,
+      quantity: row._sum.quantity ?? 0,
+    })),
+  );
+
+  if (short.length > 0) {
+    console.warn(
+      `Журнал обещает больше, чем лежит на полке, строк: ${short.length}. ` +
+        'Начальным остатком это не объясняется — смотрите сидер.',
+    );
+  }
+
+  if (opening.length === 0) return;
+
+  await prisma.stockMovement.createMany({
+    data: opening.map((entry) => ({ ...entry, reason: 'opening' })),
   });
-  console.log(`Recorded opening balances for ${missing.length} stock rows`);
+  console.log(`Recorded opening balances for ${opening.length} stock rows`);
 }
