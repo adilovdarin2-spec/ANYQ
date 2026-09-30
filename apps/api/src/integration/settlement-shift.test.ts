@@ -103,6 +103,23 @@ describe('долг, принятый наличными', () => {
     expect(await expectedCash(shiftId)).toBe(23000);
   });
 
+  it('и из двух своих открытых смен — в открытую последней', async () => {
+    /* Тот же выбор, что у возврата, и та же болезнь: запрос открытых смен шёл
+       без сортировки, и деньги, принятые сегодня, ложились во вчерашний
+       забытый ящик. У сегодняшней смены от этого недостача. */
+    const party = await debtor();
+    const вчерашняя = await openShift(fx.token);
+    await prisma.shift.update({
+      where: { id: вчерашняя },
+      data: { openedAt: new Date(Date.now() - 20 * 60 * 60 * 1000) },
+    });
+    const сегодняшняя = await openShift(fx.token);
+
+    expect((await takeDebtPayment(fx.token, party.id, 3000, 'settle-two-open')).status).toBe(201);
+    expect(await expectedCash(сегодняшняя), 'долг ушёл в чужой ящик').toBe(23000);
+    expect(await expectedCash(вчерашняя), 'вчерашней смене приписали лишнее').toBe(20000);
+  });
+
   it('а безналичный — ящика не касается', async () => {
     // Kaspi и карта в ящик не кладутся. Самопроверка: иначе всё выше было бы
     // зелёным и на правиле «считать любой платёж».

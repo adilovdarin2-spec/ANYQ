@@ -86,6 +86,7 @@ import { markedCodeKey, parseMarkedCode } from '../marking';
 import { orderCodesRefusalMessage, pickCodes, quarantineCodesRefusalMessage, planDocumentCodes, returnCodesRefusalMessage, supplierReturnCodesRefusalMessage, transferCodesRefusalMessage, writeOffCodesRefusalMessage } from '../marking-pick';
 import { resolveSaleCodes } from '../marking-sale';
 import { resolveIncomingCodes } from '../marking-incoming';
+import { drawerShiftFor } from '../shift-drawer';
 import { resolveStockCodes } from '../marking-stock';
 
 /**
@@ -1461,11 +1462,9 @@ posRouter.post('/returns', requirePosAuth, async (req: PosAuthedRequest, res) =>
   // по времени и автору: у каждой кассы свой ящик, и угадывать не по чему.
   const openHere = await prisma.shift.findMany({
     where: { companyId: req.posCompanyId, locationId: sale.locationId, closedAt: null },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, openedAt: true },
   });
-  const returnShiftId =
-    openHere.find((shift) => shift.userId === req.posUserId)?.id ??
-    (openHere.length === 1 ? openHere[0].id : null);
+  const returnShiftId = drawerShiftFor(openHere, req.posUserId ?? null);
 
   const returnedRows = await prisma.documentItem.groupBy({
     by: ['originalItemId'],
@@ -6571,11 +6570,9 @@ posRouter.post('/settlements', requirePosAuth, async (req: PosAuthedRequest, res
   // по-старому — по времени и автору.
   const openShifts = await prisma.shift.findMany({
     where: { companyId: req.posCompanyId, locationId, closedAt: null },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, openedAt: true },
   });
-  const settlementShiftId =
-    openShifts.find((shift) => shift.userId === req.posUserId)?.id ??
-    (openShifts.length === 1 ? openShifts[0].id : null);
+  const settlementShiftId = drawerShiftFor(openShifts, req.posUserId ?? null);
 
   const ledger = await loadLedger(req.posCompanyId!, counterparty.id, counterparty.type);
   const charges = ledger.charges;
