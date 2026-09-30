@@ -662,6 +662,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'settle.title': 'Есеп айырысу',
   'settle.owes': 'Қарызы',
   'settle.weOweShort': 'Біз қарызбыз',
+  'settle.supplierOwesUs': 'Жеткізуші бізге берешек',
+  'settle.weOweCustomer': 'Сатып алушыға берешекпіз',
   'settle.over60Alert': 'Оның {amount} — екі айдан асқан',
   'settle.owedToUs': 'Бізге қарыз',
   'settle.weOwe': 'Біз қарызбыз',

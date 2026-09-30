@@ -146,9 +146,25 @@ export function SettlementsScreen({
                   сроки и документы одинаковым мелким шрифтом. На этот экран
                   заходят с одним вопросом — «сколько за ним» — и получали
                   таблицу, в которой ответ был самым мелким пятном. */}
+              {/* Подпись — по знаку сальдо, а не по вкладке.
+
+                  Магазин заплатил поставщику и вернул ему часть товара: долг
+                  ушёл в минус, и карточка писала «МЫ ДОЛЖНЫ −100 ₸». Владелец
+                  читает «мы должны минус сто тенге» и не понимает ничего, хотя
+                  новость простая и приятная — это поставщик должен нам.
+
+                  С покупателем то же самое в другую сторону: он заплатил
+                  вперёд или вернул оплаченное, и в его карточке стояло
+                  «ДОЛЖЕН −2 000 ₸».
+
+                  Найдено 30.09.2026 прогоном возврата поставщику. */}
               <div className="card-answer">
-                <span className="label">{type === 'customer' ? t('settle.owes') : t('settle.weOweShort')}</span>
-                <span className="value">{formatMoney(account.balance)}</span>
+                <span className="label">
+                  {account.balance < 0
+                    ? t(type === 'customer' ? 'settle.weOweCustomer' : 'settle.supplierOwesUs')
+                    : t(type === 'customer' ? 'settle.owes' : 'settle.weOweShort')}
+                </span>
+                <span className="value">{formatMoney(Math.abs(account.balance))}</span>
               </div>
               <p className="card-reason">
                 {account.phone ? `${formatPhone(account.phone)} · ` : ''}
@@ -298,8 +314,13 @@ export function SettlementsScreen({
                 </>
               )}
 
+              {/* Сумма подставляется, только когда есть что гасить. При нулевом
+                  или отрицательном сальдо там стояло «0», и кнопка «Провести»
+                  молча не делала ничего: платёж в ноль сервер не принимает, а
+                  сказать об этом было некому. Теперь поле пустое — аванс вносят
+                  руками, и это по-прежнему можно. */}
               {!paying && (
-                <button className="btn btn-primary btn-block" onClick={() => { setPayingId(account.counterpartyId); setAmount(String(Math.max(account.balance, 0))); }}>
+                <button className="btn btn-primary btn-block" onClick={() => { setPayingId(account.counterpartyId); setAmount(account.balance > 0 ? String(account.balance) : ''); }}>
                   {type === 'customer' ? t('settle.takePayment') : t('settle.payySupplier')}
                 </button>
               )}

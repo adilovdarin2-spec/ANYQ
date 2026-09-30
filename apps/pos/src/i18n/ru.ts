@@ -657,6 +657,8 @@ export const ru = {
   'settle.title': 'Расчёты',
   'settle.owes': 'Должен',
   'settle.weOweShort': 'Мы должны',
+  'settle.supplierOwesUs': 'Поставщик должен нам',
+  'settle.weOweCustomer': 'Мы должны покупателю',
   'settle.over60Alert': 'Из них {amount} — старше двух месяцев',
   'settle.owedToUs': 'Нам должны',
   'settle.weOwe': 'Мы должны',
