@@ -196,6 +196,7 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'warehouse.queued': 'Жіберуді күтіп тұрған қойма операциялары: {count}. Байланыс пайда болғанда өздері кетеді.',
   'warehouse.blockedTitle': '{kind}: сервер қабылдамады',
   'warehouse.blockedWaiting': 'Қалған қойма операциялары күтуде: келесілері осының өткеніне есептелген.',
+  'warehouse.blockedHere': 'Жазылды, бірақ қойма кезегі тұр: сервер «{kind}» қабылдамады. Оны «Операцияларда» шешпейінше, бұл жөнелмейді.',
   'warehouse.blockedQueue': 'Кезекте әлі {count}.',
   'warehouse.retry': 'Қайталау',
   'warehouse.discard': 'Операцияны болдырмау',
@@ -800,6 +801,9 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'incoming.noOrder': 'Тапсырыссыз',
   'incoming.supplierPhone': 'Жеткізуші телефоны',
   'incoming.toStock': 'қоймаға',
+  'incoming.total': 'Жүкқұжат сомасы',
+  'incoming.needCodes': 'Әр қаптаманы сканерлеңіз: {need} ішінен {done}',
+  'incoming.markedByScanner': 'Тапсырыстың бұл позицияларын сканермен қосыңыз, әр қаптамадағы код бойынша: {names}',
 
   // --- the whole-location count --------------------------------------------
   'cycle.title': 'Түгендеу',

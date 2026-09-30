@@ -185,13 +185,11 @@ export function ProductEditScreen({
         <div className="field-row">
           <div className="field">
             <label htmlFor="p-purchase">{t('product.purchasePrice')}</label>
-            <input id="p-purchase" type="text" min="0" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
-            inputMode="numeric"
+            <input id="p-purchase" type="text" inputMode="numeric" min="0" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
           </div>
           <div className="field">
             <label htmlFor="p-sale">{t('product.salePrice')}</label>
-            <input id="p-sale" type="text" min="0" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
-            inputMode="numeric"
+            <input id="p-sale" type="text" inputMode="numeric" min="0" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
           </div>
         </div>
         {product?.isIngredient && (

@@ -308,8 +308,7 @@ export function TransfersScreen({
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
-                    <input type="text" min="1" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-                    inputMode="decimal"
+                    <input type="text" inputMode="decimal" min="1" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
                     <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
                   </div>
                 </>

@@ -276,8 +276,7 @@ export function WriteOffScreen({
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
-              <input type="text" min="0" step="any" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-              inputMode="decimal"
+              <input type="text" inputMode="decimal" min="0" step="any" placeholder={t('common.quantity')} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
               <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
             </div>
 

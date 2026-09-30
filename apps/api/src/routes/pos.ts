@@ -9105,30 +9105,8 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     return;
   }
 
-  /* Коды маркировки — до всякой записи.
-     Кладовщик подносит сканер к каждой пачке, и если один код не прочитался
-     или их оказалось меньше, чем товара, приёмку нельзя записать наполовину:
-     пачка без кода по документам останется на полке навсегда.
-
-     Правило общее с приходом партии: обе двери входа поднимают остаток, и обе
-     обязаны завести коды. Требование к маркированному товару стоит именно
-     здесь — принять его без кодов значит завести в магазин упаковку, которую
-     нельзя продать, и узнать об этом на первом покупателе, а не сейчас, пока
-     кладовщик ещё стоит у коробки со сканером. */
-  const incomingMarked = await prisma.product.findMany({
-    where: { companyId: req.posCompanyId, id: { in: rawItems.map((it) => it.productId) }, marked: true },
-    select: { id: true, name: true },
-  });
-  const incoming = resolveIncomingCodes(
-    rawItems.map((line) => ({ productId: line.productId, quantity: Number(line.quantity), codes: line.codes })),
-    incomingMarked,
-  );
-  if (!incoming.ok) {
-    res.status(400).json({ error: incoming.message });
-    return;
-  }
-  const markedByProduct = incoming.byProduct;
-
+  /* Тариф и точка — раньше разбора строк: отказ «приёмка недоступна на вашем
+     тарифе» не должен выходить из-под отказа по данным. */
   const company = await prisma.company.findUnique({
     where: { id: req.posCompanyId },
     include: { tariff: true, locations: true },
@@ -9147,8 +9125,15 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
   const locationId = resolveLocationOrRespond(company?.locations ?? [], b.locationId, res);
   if (!locationId) return;
 
-  // A line's quantity is however many of the thing the storeman handled — two
-  // cases, not forty-eight bottles. Everything past this point is base units.
+  /* Упаковки раскрываются до проверки кодов, а не после.
+     Иначе коды считались против ящиков: один код на ящик из десяти пачек
+     проходил проверку, остаток поднимался на десять, и девять пачек входили в
+     магазин без кодов — то есть непродаваемыми навсегда. Ровно та же цена, что
+     у приёмки вообще без кодов, только незаметнее: кладовщик код поднёс, и
+     отказа не было.
+
+     Это уже третий раз, когда защита проверяла один конец связи: количество
+     здесь и количество кодов — одна пара, и сверять их надо в одних единицах. */
   const namedPackagingIds = rawItems.map((it) => it.packagingId).filter((id): id is string => !!id);
   const packagings = namedPackagingIds.length
     ? await prisma.productPackaging.findMany({
@@ -9160,7 +9145,41 @@ posRouter.post('/receipts', requirePosAuth, async (req: PosAuthedRequest, res) =
     res.status(400).json({ error: packagingErrorMessage(packaged) });
     return;
   }
+  // A line's quantity is however many of the thing the storeman handled — two
+  // cases, not forty-eight bottles. Everything past this point is base units.
   const items = packaged.lines;
+
+  /* Коды маркировки — до всякой записи.
+     Кладовщик подносит сканер к каждой пачке, и если один код не прочитался
+     или их оказалось меньше, чем товара, приёмку нельзя записать наполовину:
+     пачка без кода по документам останется на полке навсегда.
+
+     Правило общее с приходом партии: обе двери входа поднимают остаток, и обе
+     обязаны завести коды. Требование к маркированному товару стоит именно
+     здесь — принять его без кодов значит завести в магазин упаковку, которую
+     нельзя продать, и узнать об этом на первом покупателе, а не сейчас, пока
+     кладовщик ещё стоит у коробки со сканером. */
+  const incomingMarked = await prisma.product.findMany({
+    where: { companyId: req.posCompanyId, id: { in: rawItems.map((it) => it.productId) }, marked: true },
+    select: { id: true, name: true },
+  });
+  /* Строки идут один к одному: `resolvePackagedLines` возвращает по строке на
+     строку и в том же порядке. Коды при этом остались в сырой строке — в
+     раскрытой их нет, — поэтому пара собирается по индексу, и на всякий случай
+     проверяется, что пара вообще есть. */
+  if (items.length !== rawItems.length) {
+    res.status(400).json({ error: 'Некорректные данные приёмки' });
+    return;
+  }
+  const incoming = resolveIncomingCodes(
+    items.map((line, i) => ({ productId: line.productId, quantity: line.quantity, codes: rawItems[i]?.codes })),
+    incomingMarked,
+  );
+  if (!incoming.ok) {
+    res.status(400).json({ error: incoming.message });
+    return;
+  }
+  const markedByProduct = incoming.byProduct;
 
   // A delivery can answer an order, and then the shop can tell a short
   // delivery from a small order — which is the whole reason to order through

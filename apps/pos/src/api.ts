@@ -519,7 +519,7 @@ export interface CreateReceiptPayload {
    * `quantity` and `price` are per pack when packagingId is set, per base unit
    * otherwise — the storeman enters what they handled, and the server converts.
    */
-  items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
+  items: { productId: string; quantity: number; price: number; packagingId: string | null; codes?: string[] }[];
   /**
    * Когда товар приняли на складе. Отличается от момента, когда команда дошла
    * до сервера, ровно на время, которое она пролежала в офлайн-очереди.

@@ -185,6 +185,7 @@ export const ru = {
   'warehouse.queued': 'Операций склада ждут отправки: {count}. Уйдут сами, когда появится связь.',
   'warehouse.blockedTitle': '{kind}: сервер не принял',
   'warehouse.blockedWaiting': 'Остальные операции склада ждут: следующие рассчитаны на то, что эта прошла.',
+  'warehouse.blockedHere': 'Записано, но очередь склада стоит: сервер не принял «{kind}». Пока её не разберут в «Операциях», это не уедет.',
   'warehouse.blockedQueue': 'В очереди ещё {count}.',
   'warehouse.retry': 'Повторить',
   'warehouse.discard': 'Отменить операцию',
@@ -814,6 +815,9 @@ export const ru = {
   'incoming.noOrder': 'Без заказа',
   'incoming.supplierPhone': 'Телефон поставщика',
   'incoming.toStock': 'на склад',
+  'incoming.total': 'Сумма накладной',
+  'incoming.needCodes': 'Отсканируйте каждую упаковку: {done} из {need}',
+  'incoming.markedByScanner': 'Эти позиции заказа добавьте сканером, по коду на каждой упаковке: {names}',
 
   // --- the whole-location count --------------------------------------------
   'cycle.title': 'Инвентаризация',

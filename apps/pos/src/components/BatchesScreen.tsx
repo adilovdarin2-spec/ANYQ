@@ -192,8 +192,11 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
               </div>
               <div className="form-field">
                 <label htmlFor="batch-qty">{t('common.quantity')}</label>
-                <input id="batch-qty" type="text" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
-                inputMode="decimal"
+                {/* `inputMode` стоял за закрывающей скобкой поля — то есть не
+                    атрибутом, а текстом: на экране прихода партии под надписью
+                    «Количество» так и было напечатано, а числовой клавиатуры у
+                    поля не было. Найдено 30.09.2026. */}
+                <input id="batch-qty" type="text" inputMode="decimal" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" />
               </div>
               {/* Только для маркированного: в аптеке таких позиций много, но
                   не все — бинты и шприцы приходят партией без кодов. */}

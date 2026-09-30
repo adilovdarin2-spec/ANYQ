@@ -4,6 +4,8 @@ import { formatDateTime, formatMoney } from '../utils';
 import { DocumentPhotos } from './DocumentPhotos';
 import { useTranslation } from '../i18n/useLanguage';
 import { parseTyped } from '../typed-number';
+import { parseMarkedCode } from '../marking';
+import { codesNeeded, sameMarkedCode } from '../marking-scan';
 
 interface ReceiptLine {
   productId: string;
@@ -15,6 +17,15 @@ interface ReceiptLine {
   packagingId: string | null;
   packagingName: string | null;
   unitsPerPack: number;
+  /**
+   * Коды принятых упаковок — по одному на упаковку.
+   *
+   * Без них маркированный товар в магазин не завести вовсе: сервер отвечает
+   * «принимается только по коду маркировки», и до 30.09.2026 поднести код на
+   * этом экране было негде. Дверь была одна — «Партии», а она просит номер
+   * партии и срок годности, которых у пачки сигарет нет.
+   */
+  codes?: string[];
 }
 
 // '' rather than null, because that is what an unselected <option> carries.
@@ -38,7 +49,7 @@ interface Props {
     purchaseOrderId: string | null;
     supplierName: string;
     supplierPhone: string;
-    items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
+    items: { productId: string; quantity: number; price: number; packagingId: string | null; codes?: string[] }[];
   }) => Promise<boolean>;
 }
 
@@ -53,9 +64,23 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
   const [packagingId, setPackagingId] = useState(LOOSE);
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
+  /* Коды набираются до того, как строка легла в накладную: пачки считает
+     сканер, и число упаковок в строке — это число поднесённых кодов. */
+  const [codes, setCodes] = useState<string[]>([]);
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  /* Позиции заказа, которые касса не может подставить сама: их пачки считает
+     сканер, и подставленная строка без кодов ушла бы на сервер и вернулась
+     отказом, который нечем исправить. */
+  const [markedFromOrder, setMarkedFromOrder] = useState<string[]>([]);
 
   const selectedProduct = products.find((p) => p.id === productId) ?? null;
   const selectedPackaging = selectedProduct?.packagings.find((pack) => pack.id === packagingId) ?? null;
+
+  /* Сколько кодов нужно строке — по одному на упаковку, а не на ящик. Правило
+     живёт рядом со сканированием (`marking-scan`), потому что по ту же
+     арифметику сверяется сервер. */
+  const needCodes = codesNeeded(parseTyped(quantity), selectedPackaging?.unitsPerPack ?? 1, !!selectedProduct?.marked);
 
   // Picking an order fills the delivery in with what is still owed on it.
   // Whatever actually turned up gets corrected line by line, and the gap
@@ -65,9 +90,20 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
     const order = openOrders.find((candidate) => candidate.id === nextOrderId);
     if (!order) return;
     setSupplierName(order.supplier?.name ?? '');
+    /* Маркированное из заказа не подставляется: строка без кодов вернулась бы
+       отказом сервера, а дописать коды к подставленной строке нечем — их
+       считает сканер до того, как строка легла в накладную. Кладовщик добавит
+       эти позиции ниже, сканером, и о том, каких именно не хватает, ему
+       говорят по именам. */
+    const isMarked = (productId: string) => !!products.find((p) => p.id === productId)?.marked;
+    setMarkedFromOrder(
+      order.items
+        .filter((item) => item.quantity > item.receivedQuantity && isMarked(item.productId))
+        .map((item) => item.name),
+    );
     setLines(
       order.items
-        .filter((item) => item.quantity > item.receivedQuantity)
+        .filter((item) => item.quantity > item.receivedQuantity && !isMarked(item.productId))
         .map((item) => ({
           productId: item.productId,
           name: item.name,
@@ -87,12 +123,41 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
     setPackagingId(LOOSE);
   }
 
+  /** Один код — одна упаковка. Те же отказы, что в партиях: у кладовщика один сканер. */
+  function scanIncomingCode(raw: string) {
+    const want = needCodes;
+    if (!parseMarkedCode(raw).ok) {
+      setCodeError(t('batch.codeUnreadable'));
+      return;
+    }
+    if (codes.some((seen) => sameMarkedCode(seen, raw))) {
+      setCodeError(t('batch.codeDuplicate'));
+      return;
+    }
+    if (Number.isFinite(want) && want > 0 && codes.length >= want) {
+      setCodeError(t('batch.codeExtra'));
+      return;
+    }
+    setCodeError(null);
+    setCodes((prev) => [...prev, raw]);
+  }
+
   function addLine() {
     const product = products.find((p) => p.id === productId);
     const qty = parseTyped(quantity);
     const unitPrice = parseTyped(price);
     if (!product || !(qty > 0) || !(unitPrice >= 0)) return;
     const pack = product.packagings.find((candidate) => candidate.id === packagingId) ?? null;
+    /* Маркированную строку в накладную не положить, пока кодов меньше, чем
+       упаковок: сервер её всё равно отклонит, и узнать об этом кладовщик
+       должен здесь, пока стоит у коробки со сканером.
+
+       И отказ говорит — молчащая кнопка «Добавить» не отличима от сломанной. */
+    const need = codesNeeded(qty, pack?.unitsPerPack ?? 1, !!product.marked);
+    if (need > 0 && codes.length !== need) {
+      setCodeError(t('incoming.needCodes', { done: codes.length, need }));
+      return;
+    }
     setLines((prev) => [
       ...prev,
       {
@@ -103,10 +168,13 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
         packagingId: pack?.id ?? null,
         packagingName: pack?.name ?? null,
         unitsPerPack: pack?.unitsPerPack ?? 1,
+        ...(codes.length ? { codes } : {}),
       },
     ]);
     setQuantity('');
     setPrice('');
+    setCodes([]);
+    setCodeError(null);
   }
 
   function removeLine(index: number) {
@@ -118,13 +186,22 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
       purchaseOrderId: purchaseOrderId || null,
       supplierName: supplierName.trim(),
       supplierPhone: supplierPhone.trim(),
-      items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, price: l.price, packagingId: l.packagingId })),
+      items: lines.map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        price: l.price,
+        packagingId: l.packagingId,
+        ...(l.codes?.length ? { codes: l.codes } : {}),
+      })),
     });
     if (success) {
       setLines([]);
       setPurchaseOrderId(LOOSE);
       setSupplierName('');
       setSupplierPhone('');
+      setCodes([]);
+      setCodeError(null);
+      setMarkedFromOrder([]);
       setView('list');
     }
   }
@@ -215,6 +292,11 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
               </div>
 
               <div className="section-title">{t('transfer.products')}</div>
+              {/* Что заказ подставить не смог — по именам, чтобы кладовщик не
+                  сверял две накладные глазами в поисках недостающей строки. */}
+              {markedFromOrder.length > 0 && (
+                <div className="search-hint miss">{t('incoming.markedByScanner', { names: markedFromOrder.join(', ') })}</div>
+              )}
               {lines.length === 0 && <div className="empty-state">{t('transfer.addAtLeastOne')}</div>}
               {lines.map((l, i) => (
                 <div key={`${l.productId}-${i}`} className="report-row">
@@ -225,9 +307,26 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
                         a wrong coefficient is caught here and not on the shelf. */}
                     {l.packagingId && <span className="order-meta"> → {l.quantity * l.unitsPerPack} {t('incoming.toStock')}</span>}
                   </span>
+                  {/* Сумма строки. Кладовщик вбивает количество и цену с бумаги
+                      поставщика, а произведение считал в уме — и не считал:
+                      ошибка в цене видна только по сумме. */}
+                  <span className="incoming-line-sum">{formatMoney(Math.round(l.price * l.quantity))}</span>
                   <button className="li-remove" onClick={() => removeLine(i)}>{t('common.delete')}</button>
                 </div>
               ))}
+
+              {/* Итог накладной — то самое число, которое сверяют с бумагой.
+
+                  Его не было вовсе: кладовщик заносил десять строк с ценами и
+                  не мог сравнить результат с накладной поставщика, ради чего
+                  цены и заносятся. Ошибка всплывала на сверке расчётов через
+                  неделю, когда вспомнить нечего. */}
+              {lines.length > 0 && (
+                <div className="summary-row total">
+                  <span>{t('incoming.total')}</span>
+                  <span>{formatMoney(lines.reduce((sum, l) => sum + Math.round(l.price * l.quantity), 0))}</span>
+                </div>
+              )}
 
               <div className="transfer-add-row">
                 <select value={productId} onChange={(e) => pickProduct(e.target.value)}>
@@ -261,6 +360,35 @@ export function IncomingScreen({ receipts, products, openOrders, token, canManag
                 />
                 <button type="button" className="btn btn-secondary" onClick={addLine}>{t('common.add')}</button>
               </div>
+
+              {/* Коды маркировки — только для маркированного товара и только
+                  когда сказано, сколько его.
+
+                  До 30.09.2026 подносить код здесь было негде. Сервер требует
+                  код на каждую упаковку — «принимается только по коду
+                  маркировки», — и на «Оприходовать» приёмка сигарет или пива
+                  отклонялась целиком, без единого места на экране, где это
+                  можно было исправить. Вторая дверь, «Партии», просит номер
+                  партии и срок годности, которых у пачки сигарет нет. То есть
+                  маркированный товар в магазин не заводился вовсе. */}
+              {needCodes > 0 && (
+                <div className="form-field">
+                  <label htmlFor="incoming-scan">{t('batch.scanCodes')}</label>
+                  <input
+                    id="incoming-scan"
+                    type="text"
+                    placeholder={t('batch.scanPlaceholder')}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      const field = e.currentTarget;
+                      if (field.value.trim()) scanIncomingCode(field.value.trim());
+                      field.value = '';
+                    }}
+                  />
+                  <span className="field-hint">{t('batch.scanned', { done: codes.length, need: needCodes })}</span>
+                  {codeError && <div className="login-error">{codeError}</div>}
+                </div>
+              )}
             </>
           )}
           {error && <div className="login-error">{error}</div>}

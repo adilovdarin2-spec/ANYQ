@@ -13,7 +13,7 @@ import { formatWeight, genId, looksLikeBarcode, resolveScannedBarcode } from './
 import { useSalesSync } from './hooks/useSalesSync';
 import { useServerReachable } from './hooks/useOnlineStatus';
 import { useOutboxSync } from './hooks/useOutboxSync';
-import { getOutbox, outcomeOf, queueCommand } from './outbox';
+import { commandPhrase, getOutbox, isBlocked, outcomeOf, queueCommand } from './outbox';
 import { useTranslation } from './i18n/useLanguage';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
 import { useIsDesktop } from './hooks/useIsDesktop';
@@ -127,8 +127,8 @@ import { RegisterChoiceScreen } from './components/RegisterChoiceScreen';
 import { ShiftBar } from './components/ShiftBar';
 import { TabBar } from './components/TabBar';
 import type { MainTab } from './components/TabBar';
-import { homeViewFor, mainTabFor } from './views';
 import type { View } from './views';
+import { homeViewFor, mainTabFor } from './views';
 import { OpenShiftScreen } from './components/OpenShiftScreen';
 import { CloseShiftScreen } from './components/CloseShiftScreen';
 import { CloseForgottenShiftScreen } from './components/CloseForgottenShiftScreen';
@@ -522,7 +522,7 @@ export default function App() {
     languageSent.current = language;
     void saveLanguage(session.token, language).catch(() => {});
   }, [language, session]);
-  const outbox = useOutboxSync(session?.token ?? null);
+  const outbox = useOutboxSync(session?.token ?? null, refreshCatalogRef);
 
   // Whether the till can be opened without a network at all, as opposed to
   // whether it has one right now. See offline.ts.
@@ -1092,7 +1092,11 @@ export default function App() {
         setBatchesError(outcome.error);
         return false;
       }
-      if (outcome.status === 'queued') return true;
+      if (outcome.status === 'queued') {
+        const stuck = queueStuckNotice();
+        if (stuck) setBatchesError(stuck);
+        return true;
+      }
 
       await loadBatches();
       await refreshCatalogAfterStockChange();
@@ -1226,11 +1230,31 @@ export default function App() {
     void loadReceipts();
   }
 
+  /**
+   * Очередь склада стоит на отказе — сказать об этом там, где дали команду.
+   *
+   * Очередь замирает на отказе намеренно: то, что за ним, посчитано на мир,
+   * который он должен был создать. Но плашка с отказом висит в «Операциях», а
+   * команды дают на других экранах — и кладовщик, оприходовавший накладную
+   * поверх застрявшего отказа, получал ровно то же «записано», что и без сети.
+   * Разница огромная: без сети очередь уедет сама, а эта не уедет никогда,
+   * пока отказ не разберут руками.
+   *
+   * Найдено 30.09.2026: приёмка маркированного товара со сканера легла в
+   * очередь за отказом от прошлой попытки принять его без кодов, и экран
+   * ответил «принято».
+   */
+  function queueStuckNotice(): string | null {
+    const queue = getOutbox();
+    if (!isBlocked(queue)) return null;
+    return t('warehouse.blockedHere', { kind: t(commandPhrase(queue[0].kind)) });
+  }
+
   async function handleCreateReceipt(payload: {
     purchaseOrderId: string | null;
     supplierName: string;
     supplierPhone: string;
-    items: { productId: string; quantity: number; price: number; packagingId: string | null }[];
+    items: { productId: string; quantity: number; price: number; packagingId: string | null; codes?: string[] }[];
   }) {
     if (!session || !currentLocationId) return false;
     setReceiptSubmitting(true);
@@ -1257,7 +1281,11 @@ export default function App() {
         setReceiptsError(outcome.error);
         return false;
       }
-      if (outcome.status === 'queued') return true;
+      if (outcome.status === 'queued') {
+        const stuck = queueStuckNotice();
+        if (stuck) setReceiptsError(stuck);
+        return true;
+      }
 
       await loadReceipts();
       // A delivery against an order changes that order's status, so the list
@@ -1750,6 +1778,9 @@ export default function App() {
         // yet know.
         setBinCountResult(null);
         setBinCountQueued(bin);
+        // И если очередь стоит на отказе — это не «ждёт связи», а «не уедет».
+        const stuck = queueStuckNotice();
+        if (stuck) setBinCountError(stuck);
         return true;
       }
 
@@ -1979,7 +2010,11 @@ export default function App() {
         setBinsError(outcome.error);
         return false;
       }
-      if (outcome.status === 'queued') return true;
+      if (outcome.status === 'queued') {
+        const stuck = queueStuckNotice();
+        if (stuck) setBinsError(stuck);
+        return true;
+      }
 
       await loadBins();
       return true;
@@ -2045,7 +2080,11 @@ export default function App() {
         setWriteOffError(outcome.error);
         return false;
       }
-      if (outcome.status === 'queued') return true;
+      if (outcome.status === 'queued') {
+        const stuck = queueStuckNotice();
+        if (stuck) setWriteOffError(stuck);
+        return true;
+      }
 
       await loadWriteOffs();
       await refreshCatalogAfterStockChange();

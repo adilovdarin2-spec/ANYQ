@@ -1220,4 +1220,76 @@ describe('коды маркировки', () => {
     expect(await prisma.markedCode.count({ where: { companyId: fx.companyId } })).toBe(0);
     expect(await prisma.document.count({ where: { companyId: fx.companyId, type: 'receipt' } })).toBe(0);
   });
+
+  /**
+   * Приёмка ящиком: код на каждую пачку, а не один на ящик.
+   *
+   * Сигареты приезжают блоками по десять, и в накладной кладовщик пишет «1
+   * блок». Проверка кодов при этом сверялась с количеством из накладной — то
+   * есть с ящиками, — а остаток поднимался на пачки внутри него. Один код на
+   * блок проходил, остаток становился десять, кодов было один: девять пачек
+   * входили в магазин без кодов и не продавались никогда.
+   *
+   * Цена та же, что у приёмки вообще без кодов, только тише: отказа не было,
+   * и кладовщик уходил, считая, что принял.
+   *
+   * Найдено 30.09.2026 при починке приёмки маркированного товара на кассе.
+   */
+  describe('ящиком', () => {
+    const блок = (unitsPerPack: number) =>
+      prisma.productPackaging.create({ data: { productId: fx.productId, name: 'Блок', unitsPerPack } });
+
+    const принять = (packagingId: string, quantity: number, serials: string[], key: string) =>
+      api(
+        fx.token,
+        'POST',
+        '/pos/receipts',
+        {
+          locationId: fx.locationId,
+          items: [{ productId: fx.productId, quantity, price: 1000, packagingId, codes: serials.map(code) }],
+        },
+        { 'Idempotency-Key': key },
+      );
+
+    it('один код на блок из десяти не проходит', async () => {
+      const pack = await блок(10);
+      const got = await принять(pack.id, 1, ['B1'], 'box-one-code');
+      expect(got.status, JSON.stringify(got.body)).toBe(400);
+      /* И отказ считает пачками: «товара 1» значило бы, что сверка снова
+         смотрит на накладную, а не на то, на сколько встанет остаток. */
+      expect(got.body.error, 'отказ считает блоки, а не пачки').toContain('товара 10');
+      // И ничего не записалось: ни кодов, ни остатка, ни документа.
+      expect(await prisma.markedCode.count({ where: { companyId: fx.companyId } })).toBe(0);
+      expect(await prisma.document.count({ where: { companyId: fx.companyId, type: 'receipt' } })).toBe(0);
+      const stock = await prisma.stock.findFirst({ where: { productId: fx.productId, locationId: fx.locationId } });
+      expect(stock?.quantity ?? 0).toBe(0);
+    });
+
+    it('а со всеми кодами блок принимается, и каждая пачка продаётся', async () => {
+      const pack = await блок(3);
+      const got = await принять(pack.id, 1, ['B1', 'B2', 'B3'], 'box-all-codes');
+      expect(got.status, JSON.stringify(got.body)).toBe(201);
+
+      const stock = await prisma.stock.findFirstOrThrow({ where: { productId: fx.productId, locationId: fx.locationId } });
+      expect(stock.quantity, 'остаток поднялся на пачки, а не на блоки').toBe(3);
+      expect(await prisma.markedCode.count({ where: { companyId: fx.companyId, state: 'in_stock' } })).toBe(3);
+
+      // То, ради чего всё это: принятая пачка продаётся.
+      const sale = await sell(['B2'], 'box-sale', 1);
+      expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+    });
+
+    it('и два блока требуют кодов на оба', async () => {
+      /* Свойством, а не одним примером: сколько бы блоков ни приехало, кодов
+         нужно столько, на сколько поднимается остаток. */
+      const pack = await блок(3);
+      const мало = await принять(pack.id, 2, ['B1', 'B2', 'B3'], 'box-two-short');
+      expect(мало.status, JSON.stringify(мало.body)).toBe(400);
+
+      const все = await принять(pack.id, 2, ['B1', 'B2', 'B3', 'B4', 'B5', 'B6'], 'box-two-full');
+      expect(все.status, JSON.stringify(все.body)).toBe(201);
+      const stock = await prisma.stock.findFirstOrThrow({ where: { productId: fx.productId, locationId: fx.locationId } });
+      expect(stock.quantity).toBe(6);
+    });
+  });
 });

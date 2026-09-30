@@ -931,6 +931,8 @@ input[type='file']:disabled::file-selector-button { opacity: 0.55; cursor: not-a
 .report-card.headline.low .sub { color: var(--status-overdue); opacity: 0.85; }
 .report-row { display: flex; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: var(--text-base); line-height: var(--leading-tight); }
 .report-row.low { color: var(--status-overdue); font-weight: 600; }
+/* Сумма строки приёмки: рядом с количеством и ценой, до кнопки «Удалить». */
+.incoming-line-sum { font-weight: 700; white-space: nowrap; margin-left: auto; padding-left: 14px; }
 .food-cost-figures { display: flex; align-items: center; gap: 8px; }
 .margin-pct { font-size: var(--text-xs); font-weight: 700; padding: 2px 7px; border-radius: var(--radius-sm); background: var(--status-active-bg); color: var(--status-active); }
 .margin-pct.low { background: var(--status-overdue-bg); color: var(--status-overdue); }

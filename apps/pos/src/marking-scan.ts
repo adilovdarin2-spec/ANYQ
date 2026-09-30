@@ -70,3 +70,20 @@ export function sameMarkedCode(a: string, b: string): boolean {
   if (!left.ok || !right.ok) return false;
   return markedCodeKey(left.code) === markedCodeKey(right.code);
 }
+
+/**
+ * Сколько кодов нужно строке приёмки — по одному на упаковку, а не на ящик.
+ *
+ * Кладовщик пишет в накладной «1 блок», а на полку встают десять пачек, и у
+ * каждой свой код. Считать коды по накладной значит принять блок по одному
+ * коду: остаток десять, кодов один, и девять пачек нельзя продать никогда.
+ *
+ * Держится рядом с самим сканированием, а не внутри экрана, потому что по эту
+ * же арифметику сверяется сервер, и расходиться им нельзя.
+ */
+export function codesNeeded(quantity: number, unitsPerPack: number, marked: boolean): number {
+  if (!marked) return 0;
+  if (!Number.isFinite(quantity) || !(quantity > 0)) return 0;
+  if (!Number.isFinite(unitsPerPack) || !(unitsPerPack > 0)) return 0;
+  return quantity * unitsPerPack;
+}

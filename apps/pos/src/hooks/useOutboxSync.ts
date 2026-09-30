@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import { refusalIsAboutThisRequest } from '../refusal';
 import { ApiError, createReceipt, createWriteOff, putawayStock, receiveBatch, submitBinCount } from '../api';
 import type { BinCountPayload, CreateReceiptPayload, CreateWriteOffPayload, PutawayPayload, ReceiveBatchPayload } from '../api';
@@ -40,7 +41,23 @@ async function send(token: string, command: WarehouseCommand): Promise<unknown> 
  * the server would rightly refuse — so the queue would break itself trying to
  * go quickly.
  */
-export function useOutboxSync(token: string | null) {
+/**
+ * @param onApplied вызывается, когда очередь только что довезла хоть одну
+ * команду до сервера. Через ref, а не значением: иначе `drain` пересоздавался
+ * бы на каждый рендер кассы и эффект «вернулась сеть» бил бы по серверу без
+ * повода.
+ *
+ * Нужно это ради остатков. Приёмка, отправленная из очереди, поднимает остаток
+ * на сервере, а сетка продажи держит свою копию каталога: пока её никто не
+ * перечитал, касса показывает вчерашнее — принятое не продать, списанное
+ * продолжает предлагаться. Экран, с которого дали команду, каталог перечитывает
+ * сам; но команда, уехавшая позже — когда вернулась связь или когда разобрали
+ * застрявший отказ, — не проходит ни через один экран.
+ *
+ * Найдено 30.09.2026: приёмка двух пачек уехала после разбора отказа, остаток
+ * на сервере стал четыре, а на плитке остались две.
+ */
+export function useOutboxSync(token: string | null, onApplied?: MutableRefObject<() => void>) {
   const online = useOnlineStatus();
   const [queue, setQueue] = useState<WarehouseCommand[]>(() => getOutbox());
   const drainingRef = useRef(false);
@@ -89,8 +106,10 @@ export function useOutboxSync(token: string | null) {
       drainingRef.current = false;
       refresh();
     }
+    // Остатки на сервере сдвинулись — сетка продажи держит свою копию.
+    if (results.size > 0) onApplied?.current?.();
     return results;
-  }, [token, refresh]);
+  }, [token, refresh, onApplied]);
 
   useEffect(() => {
     if (online) void drain();
