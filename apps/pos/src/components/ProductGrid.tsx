@@ -2,7 +2,7 @@ import type { Product } from '../types';
 import type { SoonExpiring } from '../expiry';
 import { shortDate } from '../expiry';
 import { useTranslation } from '../i18n/useLanguage';
-import { formatMoney, formatWeight } from '../utils';
+import { formatMoney, formatStock } from '../utils';
 
 interface Props {
   products: Product[];
@@ -108,7 +108,7 @@ export function ProductGrid({
                   <span className={`p-stock${remaining <= 5 ? ' low' : ''}`}>
                     {out
                     ? t('grid.outOfStock')
-                    : t('grid.leftWeight', { amount: p.saleUnit === 'weight' ? formatWeight(remaining) : remaining })}
+                    : t('grid.leftWeight', { amount: formatStock(remaining, p.saleUnit) })}
                   </span>
                 )}
               </span>

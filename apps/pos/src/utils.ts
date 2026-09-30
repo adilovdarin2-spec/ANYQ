@@ -1,5 +1,6 @@
 import { translate } from './i18n';
 import { getLanguage } from './i18n/useLanguage';
+import type { SaleUnit } from './types';
 
 export function genId(prefix: string): string {
   // A sale's id is what the server matches a retry against, so two registers
@@ -30,6 +31,24 @@ export function formatWeight(kg: number): string {
   // lives in the dictionary anyway so that no display text sits in code.
   const kilograms = translate(getLanguage(), 'unit.kg');
   return `${kg.toLocaleString('ru-RU', { maximumFractionDigits: 3 })} ${kilograms}`;
+}
+
+/**
+ * Остаток так, как его читает человек у полки.
+ *
+ * Весовой товар — с запятой и килограммами, штучный — числом. Правило одно, и
+ * поэтому оно здесь: четыре экрана писали его тернарником у себя, а пятый —
+ * пересчёт — не писал вовсе, и кладовщик на инвентаризации читал «система:
+ * 11.75». Точка вместо запятой и ни слова про килограммы: одиннадцать штук?
+ * одиннадцать кило? Он идёт взвешивать и не знает, с чем сверяется.
+ *
+ * Найдено 30.09.2026 прогоном инвентаризации. Тот же класс, что «весовая
+ * строка в чеке» и «счётчик корзины»: весовой товар, показанный как штучный.
+ */
+export function formatStock(quantity: number, saleUnit?: SaleUnit): string {
+  return saleUnit === 'weight'
+    ? formatWeight(quantity)
+    : quantity.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 }
 
 export function formatTime(iso: string): string {

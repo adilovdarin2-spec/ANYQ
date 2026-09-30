@@ -8,7 +8,7 @@ const METHOD_PHRASES: Record<PaymentMethod, PhraseKey> = {
   card: 'payment.card',
   credit: 'payment.credit',
 };
-import { formatMoney, formatDateTime, formatWeight } from '../utils';
+import { formatMoney, formatDateTime, formatStock } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 
@@ -44,7 +44,7 @@ export function ReceiptScreen({ sale, onNewSale, canPrint, onOpenStuck }: Props)
           </div>
           {sale.items.map((line) => (
             <div key={line.id} className="receipt-line">
-              <span>{line.name} × {line.saleUnit === 'weight' ? formatWeight(line.qty) : line.qty}</span>
+              <span>{line.name} × {formatStock(line.qty, line.saleUnit)}</span>
               <span>{formatMoney(Math.round(line.price * line.qty))}</span>
             </div>
           ))}

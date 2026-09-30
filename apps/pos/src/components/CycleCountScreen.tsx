@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
 import type { Count, Product } from '../types';
-import { formatDateTime } from '../utils';
+import { formatDateTime, formatStock } from '../utils';
 import { pluralPhrase } from '../i18n';
 import { parseTyped } from '../typed-number';
 
@@ -24,6 +24,8 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [countedByProduct, setCountedByProduct] = useState<Record<string, string>>({});
+  /* Чем меряется товар — по каталогу: запись пересчёта единицы не несёт. */
+  const unitOf = new Map(products.map((p) => [p.id, p.saleUnit]));
   /**
    * Когда открыли лист пересчёта — то есть когда кладовщик подошёл к полке.
    *
@@ -91,7 +93,12 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
                 {c.items.map((it) => (
                   <div key={it.productId} className={`report-row${it.delta !== 0 ? ' low' : ''}`}>
                     <span>{it.name}</span>
-                    <span>{it.delta > 0 ? `+${it.delta}` : it.delta}</span>
+                    {/* Разница — тоже количество, и у весового товара она в
+                        килограммах. Печаталось «-0.25»: точкой и без единицы,
+                        хотя четверть килограмма сыра и четверть штуки — разные
+                        новости. Единицу берём из каталога: в самой записи
+                        пересчёта её нет. */}
+                    <span>{it.delta > 0 ? `+${formatStock(it.delta, unitOf.get(it.productId))}` : formatStock(it.delta, unitOf.get(it.productId))}</span>
                   </div>
                 ))}
               </div>
@@ -110,12 +117,15 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
             <div key={p.id} className="count-row">
               <div>
                 <div className="li-name">{p.name}</div>
-                <div className="li-price">{t('count.system')}: {p.stock}</div>
+                {/* С единицей и по-русски. Печаталось «система: 11.75» —
+                    точкой, как в коде, и без килограммов: кладовщик идёт
+                    взвешивать сыр и не знает, с чем сверяется. */}
+                <div className="li-price">{t('count.system')}: {formatStock(p.stock, p.saleUnit)}</div>
               </div>
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder={String(p.stock)}
+                placeholder={formatStock(p.stock, p.saleUnit)}
                 value={countedByProduct[p.id] ?? ''}
                 onChange={(e) => setCounted(p.id, e.target.value)}
               />
