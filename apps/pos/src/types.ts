@@ -672,7 +672,9 @@ export interface TransferDiscrepancy {
   fromLocationName: string;
   receivedAt: string | null;
   receivedByName: string | null;
-  lines: { name: string; sent: number; received: number }[];
+  /** Во что обошлось пропавшее — по себестоимости, как и у пересчёта. */
+  shortfallValue: number;
+  lines: { name: string; sent: number; received: number; saleUnit?: SaleUnit }[];
 }
 
 /** Sales that have not reached the tax authority. The count that turns into a fine. */

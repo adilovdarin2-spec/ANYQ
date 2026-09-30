@@ -4706,17 +4706,48 @@ export async function dashboardFor(companyId: string, locationId: string, days: 
     where: { companyId: companyId, type: 'transfer', toLocationId: locationId, status: 'confirmed', fulfilledAt: { gte: from } },
     include: { items: { include: { product: true } }, location: true },
   });
+  /* Недостача перемещения — в деньгах, как и недостача пересчёта.
+
+     Обе карточки стоят под одним заголовком «Расхождения», и владелец читает
+     их подряд. У пересчёта в углу «−4 500 ₸», у перемещения не было ничего:
+     «принято 2 из 3» — а сколько это, две пачки хлеба или два блока сигарет,
+     не сказано. Вопрос, ради которого он открыл экран, — «куда уходят
+     деньги», и именно та недостача, которая вероятнее всего воровство —
+     товар, пропавший в фургоне между двумя своими же точками, — оказывалась
+     единственной без цены.
+
+     Себестоимость берётся та же, что у пересчёта: одна на экран, иначе две
+     строки про один убыток разойдутся в цене.
+
+     Найдено 30.09.2026 прогоном перемещений. */
   const transferDiscrepancies = receivedTransfers
-    .map((doc) => ({
-      documentId: doc.id,
-      fromLocationName: doc.location.name,
-      receivedAt: doc.fulfilledAt ? doc.fulfilledAt.toISOString() : null,
-      receivedByName: doc.fulfilledBy ? nameByUserId.get(doc.fulfilledBy) ?? 'Удалённый сотрудник' : null,
-      lines: doc.items
-        .filter((it) => it.receivedQuantity !== null && it.receivedQuantity < it.quantity)
-        .map((it) => ({ name: it.product.name, sent: it.quantity, received: it.receivedQuantity ?? 0 })),
-    }))
+    .map((doc) => {
+      const short = doc.items.filter((it) => it.receivedQuantity !== null && it.receivedQuantity < it.quantity);
+      return {
+        documentId: doc.id,
+        fromLocationName: doc.location.name,
+        receivedAt: doc.fulfilledAt ? doc.fulfilledAt.toISOString() : null,
+        receivedByName: doc.fulfilledBy ? nameByUserId.get(doc.fulfilledBy) ?? 'Удалённый сотрудник' : null,
+        shortfallValue: short.reduce(
+          (sum, it) =>
+            sum +
+            Math.round((costByProduct.get(it.productId) ?? 0) * (it.quantity - (it.receivedQuantity ?? 0))),
+          0,
+        ),
+        lines: short.map((it) => ({
+          name: it.product.name,
+          sent: it.quantity,
+          received: it.receivedQuantity ?? 0,
+          /* Чем меряется товар: «принято 2 из 3» у сыра — это килограммы, и
+             без единицы строка читается как штуки. */
+          saleUnit: it.product.saleUnit,
+        })),
+      };
+    })
     .filter((doc) => doc.lines.length > 0)
+    // По деньгам, как и пересчёты: список, в котором дорогая пропажа стоит
+    // третьей, читается сверху вниз и закрывается на первой строке.
+    .sort((a, b) => b.shortfallValue - a.shortfallValue)
     .slice(0, 20);
 
   // What the shop is owed and what it owes. A till figure answers "what did we

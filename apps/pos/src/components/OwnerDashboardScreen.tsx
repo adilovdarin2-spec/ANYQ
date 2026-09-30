@@ -1,7 +1,7 @@
 import type { OwnerDashboard, OwnerFlag } from '../types';
 import { needsOwnerAttention } from '../owner-attention';
 import { OwnerQueue } from './OwnerQueue';
-import { formatDateTime, formatMoney, hoursSince } from '../utils';
+import { formatDateTime, formatMoney, formatStock, hoursSince } from '../utils';
 import { useTranslation } from '../i18n/useLanguage';
 import type { PhraseKey } from '../i18n';
 import { pluralPhrase } from '../i18n';
@@ -272,13 +272,23 @@ export function OwnerDashboardScreen({
                       {transfer.receivedByName ? ` · ${t('owner.receivedBy', { name: transfer.receivedByName })}` : ''}
                     </div>
                   </div>
+                  {/* Цена пропавшего — как у пересчёта строкой выше.
+                      Обе карточки стоят под одним заголовком, и владелец читает
+                      их подряд: у одной «−4 500 ₸», у другой не было ничего.
+                      А это та самая недостача, которая вероятнее всего
+                      воровство: товар, пропавший в фургоне между двумя своими
+                      же точками. */}
+                  <span className="pill warn">−{formatMoney(transfer.shortfallValue)}</span>
                 </div>
                 <div className="order-items">
                   {transfer.lines.map((line, index) => (
                     <div key={`${transfer.documentId}-${index}`} className="order-item-row">
                       <span>{line.name}</span>
                       <span>
-                        {t('owner.outOf', { received: formatQuantity(line.received), sent: formatQuantity(line.sent) })}
+                        {t('owner.outOf', {
+                          received: formatStock(line.received, line.saleUnit),
+                          sent: formatStock(line.sent, line.saleUnit),
+                        })}
                       </span>
                     </div>
                   ))}
