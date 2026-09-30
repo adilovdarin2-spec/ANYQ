@@ -15,6 +15,15 @@ interface Props {
    */
   needsCode: boolean;
   onSubmit: (password: string, code: string) => void;
+  /**
+   * Владелец начал исправлять то, на что жаловался сервер.
+   *
+   * Отказ приходит сверху и сам не уходит: сервер ответил «пароль короче 10
+   * знаков», владелец набрал пятнадцать — и надпись про «короче» висела под
+   * полем, противореча тому, что в нём написано. Верить в такой момент нечему:
+   * либо экран врёт, либо пароль правда не тот.
+   */
+  onEdit: () => void;
 }
 
 /**
@@ -28,7 +37,7 @@ interface Props {
  * убедиться, что открыл свою ссылку, а не соседа. Больше по ссылке не видно
  * ничего — ни выручки, ни точек, ни имён.
  */
-export function CabinetGate({ company, needsPassword, submitting, error, needsCode, onSubmit }: Props) {
+export function CabinetGate({ company, needsPassword, submitting, error, needsCode, onSubmit, onEdit }: Props) {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [repeat, setRepeat] = useState('');
@@ -67,7 +76,10 @@ export function CabinetGate({ company, needsPassword, submitting, error, needsCo
             value={password}
             autoComplete={needsPassword ? 'new-password' : 'current-password'}
             autoFocus
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              onEdit();
+            }}
           />
 
           {needsPassword && (
@@ -81,7 +93,10 @@ export function CabinetGate({ company, needsPassword, submitting, error, needsCo
                 type={show ? 'text' : 'password'}
                 value={repeat}
                 autoComplete="new-password"
-                onChange={(e) => setRepeat(e.target.value)}
+                onChange={(e) => {
+                  setRepeat(e.target.value);
+                  onEdit();
+                }}
               />
               <p className="cab-hint">
                 От 10 знаков. По этой ссылке видна выручка — телефон и дата рождения не подойдут.

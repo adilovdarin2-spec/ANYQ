@@ -188,6 +188,9 @@ export function Cabinet({ secret }: { secret: string }) {
         error={gateError}
         needsCode={needsCode}
         onSubmit={handleGate}
+        // Отказ сервера убирается, как только его начали исправлять: иначе
+        // «пароль короче 10 знаков» висит под полем, в котором уже пятнадцать.
+        onEdit={() => setGateError(null)}
       />
     );
   }

@@ -108,7 +108,7 @@ export interface CabinetSummary {
   flags: OwnerFlag[];
   discrepancies: {
     counts: { documentId: string; createdAt: string; createdByName: string | null; shortfallValue: number; lines: { name: string; delta: number }[] }[];
-    transfers: { documentId: string; fromLocationName: string; receivedAt: string | null; receivedByName: string | null; lines: { name: string; sent: number; received: number }[] }[];
+    transfers: { documentId: string; fromLocationName: string; receivedAt: string | null; receivedByName: string | null; shortfallValue: number; lines: { name: string; sent: number; received: number }[] }[];
   };
 }
 

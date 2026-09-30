@@ -293,6 +293,29 @@ export function CabinetScreen({
             </Section>
           )}
 
+          {/* Пропало по дороге между точками.
+
+              Сервер отдавал это с самого начала, в том же поле, что и недостачи
+              пересчёта, — а кабинет рисовал только пересчёты. То есть владелец,
+              который смотрит магазин с телефона, не видел ровно ту недостачу,
+              которая вероятнее всего воровство: товар, пропавший в фургоне
+              между двумя своими же точками. В кассе она показывается, в
+              кабинете — нет, и это две разные картины одного магазина.
+
+              Найдено 30.09.2026 прогоном кабинета владельца. */}
+          {summary.discrepancies.transfers.length > 0 && (
+            <Section title="Пропало по дороге">
+              {summary.discrepancies.transfers.slice(0, 5).map((doc) => (
+                <Row
+                  key={doc.documentId}
+                  name={doc.receivedAt ? new Date(doc.receivedAt).toLocaleDateString('ru-RU') : 'дата неизвестна'}
+                  note={`из ${doc.fromLocationName}${doc.receivedByName ? ` · принял ${doc.receivedByName}` : ''} · ${doc.lines.slice(0, 3).map((l) => l.name).join(', ')}`}
+                  value={money(doc.shortfallValue)}
+                />
+              ))}
+            </Section>
+          )}
+
           {/* Проверка, а не обещание: остаток равен сумме движений, и это
               пересчитано, а не заявлено.
 
