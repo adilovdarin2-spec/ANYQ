@@ -613,6 +613,14 @@ export interface ReplenishmentItem {
   soldInStock?: number;
   daysOfCover: number | null;
   recommended: number;
+  /**
+   * Закупочная цена товара — то, что мы ожидаем заплатить.
+   *
+   * Необязательное: касса и сервер выкатываются порознь. Без него черновик
+   * заказа ставит ноль — и это видно, — а не продажную цену, которая выглядит
+   * правдоподобно и врёт в полтора раза.
+   */
+  purchasePrice?: number;
   trigger: ReplenishmentTrigger;
   minQuantity: number;
   targetQuantity: number;

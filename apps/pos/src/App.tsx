@@ -2204,15 +2204,23 @@ export default function App() {
   // purchase price, for a person to check and approve.
   async function handleOrderEverythingRecommended() {
     if (!session || !currentLocationId || replenishment.length === 0) return;
-    const items = replenishment.map((item) => {
-      const product = session.products.find((p) => p.id === item.productId);
-      return {
-        productId: item.productId,
-        quantity: item.recommended,
-        price: product?.price ?? 0,
-        packagingId: null,
-      };
-    });
+    /* Закупочная, а не продажная.
+
+       Комментарий выше обещал закупочную с самого начала, а код брал
+       `product.price` — то есть цену полки: в каталоге кассы `price` это то,
+       по чему продают. Заказ на 74 бутылки выходил на 16 280 ₸ вместо
+       10 582 ₸, и владелец согласовывал сумму, которой поставщик не выставит,
+       а планировал по ней деньги.
+
+       Нет закупочной — ставим ноль. Старый сервер её не пришлёт, и ноль в
+       черновике видно сразу; продажная цена выглядела бы правдоподобно и
+       врала в полтора раза. */
+    const items = replenishment.map((item) => ({
+      productId: item.productId,
+      quantity: item.recommended,
+      price: item.purchasePrice ?? 0,
+      packagingId: null,
+    }));
     const created = await handleCreatePurchaseOrder({ supplierId: null, note: t('po.fromReplenishment'), items });
     if (created) setView('purchase-orders');
   }

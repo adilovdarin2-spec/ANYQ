@@ -3160,6 +3160,12 @@ export async function replenishmentFor(companyId: string, locationId: string) {
       soldInStock: demand.soldInStock,
       daysOfCover: recommendation.daysOfCover === null ? null : Math.round(recommendation.daysOfCover * 10) / 10,
       recommended: recommendation.quantity,
+      /* Закупочная цена — чтобы черновик заказа не пришлось считать по
+         продажной. Касса её не знала вовсе, и кнопка «заказать всё» ставила в
+         заказ цену полки: заказ на 74 бутылки выходил на 16 280 ₸ вместо
+         10 582 ₸, и владелец согласовывал сумму, которой поставщик не
+         выставит. Найдено 30.09.2026 прогоном автозаказа. */
+      purchasePrice: product.purchasePrice,
       trigger: recommendation.trigger,
       minQuantity: policy?.minQuantity ?? 0,
       targetQuantity: policy?.targetQuantity ?? 0,
