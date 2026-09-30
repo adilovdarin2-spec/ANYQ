@@ -1,20 +1,29 @@
 import { useEffect, useState } from 'react';
-import type { DeliveryMatch } from '../types';
+import type { DeliveryMatch, Product } from '../types';
 import { readSheetFile } from '../sheet-encoding';
 import type { ImportSource } from '../api';
 import { useTranslation } from '../i18n/useLanguage';
 import { formatMoney, parseSheet } from '../utils';
 import { parseTyped } from '../typed-number';
+import { parseMarkedCode } from '../marking';
+import { codesNeeded, sameMarkedCode } from '../marking-scan';
 
 interface Props {
   match: DeliveryMatch | null;
+  /**
+   * Каталог — ради одного признака: продаётся ли товар только по коду.
+   *
+   * Накладная файлом его не несёт и нести не может: поставщик присылает
+   * названия и количества, а маркировка — наше свойство товара.
+   */
+  products: Product[];
   loading: boolean;
   error: string | null;
   submitting: boolean;
   receivedId: string | null;
   onBack: () => void;
   onMatch: (source: ImportSource) => void;
-  onReceive: (items: { productId: string; quantity: number; price: number }[]) => void;
+  onReceive: (items: { productId: string; quantity: number; price: number; codes?: string[] }[]) => void;
   onReset: () => void;
 }
 
@@ -34,6 +43,7 @@ interface Props {
  */
 export function DeliveryNoteScreen({
   match,
+  products,
   loading,
   error,
   submitting,
@@ -47,6 +57,46 @@ export function DeliveryNoteScreen({
   const [text, setText] = useState('');
   const [xlsx, setXlsx] = useState<{ name: string; base64: string } | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  /**
+   * Коды принимаемых упаковок — по товару, а не по строке.
+   *
+   * До 30.09.2026 накладная с маркированным товаром не принималась вовсе:
+   * сервер отвечал «принимается только по коду маркировки», отказывая при этом
+   * всей накладной целиком — вместе с водой, к маркировке отношения не
+   * имеющей. Поднести код на этом экране было негде.
+   */
+  const [codes, setCodes] = useState<Record<string, string[]>>({});
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  const markedIds = new Set(products.filter((p) => p.marked).map((p) => p.id));
+
+  /** Сколько кодов ждёт строка: приёмка файлом идёт без упаковок, значит по одному на штуку. */
+  function needFor(productId: string): number {
+    return codesNeeded(quantities[productId] ?? 0, 1, markedIds.has(productId));
+  }
+
+  /** Один код — одна упаковка. Те же отказы, что в приёмке руками. */
+  function scanCode(productId: string, raw: string) {
+    const mine = codes[productId] ?? [];
+    if (!parseMarkedCode(raw).ok) {
+      setCodeError(t('batch.codeUnreadable'));
+      return;
+    }
+    /* Дубль ищется по всей накладной, а не внутри строки: один товар может
+       приехать двумя строками, и одна и та же пачка, поднесённая в обеих,
+       прошла бы обе построчные проверки. */
+    if (Object.values(codes).some((seen) => seen.some((code) => sameMarkedCode(code, raw)))) {
+      setCodeError(t('batch.codeDuplicate'));
+      return;
+    }
+    const need = needFor(productId);
+    if (need > 0 && mine.length >= need) {
+      setCodeError(t('batch.codeExtra'));
+      return;
+    }
+    setCodeError(null);
+    setCodes((prev) => ({ ...prev, [productId]: [...(prev[productId] ?? []), raw] }));
+  }
 
   useEffect(() => {
     if (!match) return;
@@ -94,9 +144,16 @@ export function DeliveryNoteScreen({
           productId: line.productId!,
           quantity: quantities[line.productId!],
           price: line.receiptPrice,
+          ...(codes[line.productId!]?.length ? { codes: codes[line.productId!] } : {}),
         }))
     : [];
   const total = chosen.reduce((sum, item) => sum + Math.round(item.price * item.quantity), 0);
+  /* Строки, которым не хватает кодов. Пока они есть, приёмку отправлять
+     некуда: сервер откажет всей накладной целиком, вместе с водой. */
+  const unscanned = chosen.filter((item) => {
+    const need = needFor(item.productId);
+    return need > 0 && (codes[item.productId]?.length ?? 0) !== need;
+  });
 
   return (
     <div className="screen">
@@ -217,11 +274,51 @@ export function DeliveryNoteScreen({
                   </div>
                 ))}
 
+                {/* Коды — под списком, по строке на маркированный товар.
+                    Поставщик присылает названия и числа; какая пачка приехала,
+                    знает только сканер в руках кладовщика. */}
+                {chosen
+                  .filter((item) => needFor(item.productId) > 0)
+                  .map((item) => {
+                    const need = needFor(item.productId);
+                    const name = match.lines.find((line) => line.productId === item.productId);
+                    return (
+                      <div key={`scan-${item.productId}`} className="form-field">
+                        <label htmlFor={`delivery-scan-${item.productId}`}>
+                          {name?.ourName ?? name?.supplierName ?? ''}
+                        </label>
+                        <input
+                          id={`delivery-scan-${item.productId}`}
+                          type="text"
+                          placeholder={t('batch.scanPlaceholder')}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            const field = e.currentTarget;
+                            if (field.value.trim()) scanCode(item.productId, field.value.trim());
+                            field.value = '';
+                          }}
+                        />
+                        <span className="field-hint">
+                          {t('batch.scanned', { done: codes[item.productId]?.length ?? 0, need })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                {codeError && <div className="login-error">{codeError}</div>}
+
                 {match.truncated && <p className="order-meta">{t('priceList.truncated')}</p>}
 
+                {unscanned.length > 0 && (
+                  <p className="order-meta">
+                    {t('incoming.needCodes', {
+                      done: codes[unscanned[0].productId]?.length ?? 0,
+                      need: needFor(unscanned[0].productId),
+                    })}
+                  </p>
+                )}
                 <button
                   className="btn btn-primary btn-block"
-                  disabled={chosen.length === 0 || submitting}
+                  disabled={chosen.length === 0 || unscanned.length > 0 || submitting}
                   onClick={() => onReceive(chosen)}
                 >
                   {submitting

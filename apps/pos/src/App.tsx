@@ -1524,7 +1524,7 @@ export default function App() {
     }
   }
 
-  async function handleReceiveDelivery(items: { productId: string; quantity: number; price: number }[]) {
+  async function handleReceiveDelivery(items: { productId: string; quantity: number; price: number; codes?: string[] }[]) {
     if (!session || !currentLocationId) return;
     setDeliverySubmitting(true);
     setDeliveryError(null);
@@ -3872,6 +3872,7 @@ export default function App() {
       {view === 'delivery' && (
         <DeliveryNoteScreen
           match={delivery}
+          products={session.products}
           loading={deliveryLoading}
           error={deliveryError}
           submitting={deliverySubmitting}

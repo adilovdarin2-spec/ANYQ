@@ -100,6 +100,20 @@ describe('экран приёмки', () => {
     expect(SCREEN).toContain('codes: l.codes');
   });
 
+  it('и накладная файлом тоже даёт поднести код', () => {
+    /* Вторая дверь той же приёмки, и дыра в ней была та же: сервер отказывал
+       всей накладной целиком — вместе с водой, к маркировке отношения не
+       имеющей, — а поднести код было негде. Магазин, которому поставщик
+       присылает файл с пивом и сигаретами, не мог принять этот файл вовсе. */
+    const note = withoutComments(readFileSync(resolve(__dirname, 'components', 'DeliveryNoteScreen.tsx'), 'utf8'));
+    expect(note, 'в накладной файлом снова негде поднести код').toContain('scanCode(');
+    expect(note).toContain("t('batch.scanPlaceholder')");
+    expect(note, 'коды не уезжают вместе со строкой').toContain('codes: codes[line.productId!]');
+    // И накладную с непросканированной строкой отправлять некуда.
+    expect(note).toContain('unscanned.length > 0 || submitting');
+    expect(note, 'кнопка гаснет молча').toContain("t('incoming.needCodes'");
+  });
+
   it('а маркированное из заказа не подставляется молча', () => {
     /* Подставленная строка без кодов ушла бы на сервер и вернулась отказом, а
        дописать к ней коды нечем — они набираются до того, как строка легла в
