@@ -131,6 +131,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'receipt.notSynced': 'синхрондалмаған',
   'receipt.refused': 'серверде өткізілмеген',
   'receipt.openStuck': 'Бас тартуды шешу',
+  'receipt.punchOnRegister': 'Бұл чекті кассалық аппаратта өткізіп, нөмірін енгізіңіз — әйтпесе сатылым фискалданбаған болып қалады.',
+  'receipt.enterFiscal': 'ККМ чегінің нөмірін енгізу',
   'receipt.discount': 'Жеңілдік',
   'receipt.pointsSpent': 'Есептен шыққан ұпай',
   'receipt.pointsEarned': 'Есептелген ұпай',

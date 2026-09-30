@@ -996,6 +996,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.token, hasPharmacy]);
 
+  /* Есть ли у точки кассовый аппарат — узнаём сразу, а не на экране фискализации.
+     Иначе про него знает только тот экран, на который заходят раз в день: чек
+     после продажи молчал, и кассир, у которого рядом стоит ККМ, должен был
+     помнить сам — каждый раз, весь день. Нефискализированные продажи копятся
+     молча, а это то самое число, которое превращается в штраф. */
+  useEffect(() => {
+    if (!session || !currentLocationId) return;
+    fetchPendingFiscal(session.token, currentLocationId)
+      .then((data) => setFiscalDevice(data.device))
+      // Молча: узнать про аппарат — не то, ради чего показывают красную полоску.
+      // Экран фискализации спросит заново и скажет там, если не ответит.
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.token, currentLocationId]);
+
   async function handleFulfillOrder(id: string) {
     if (!session) return;
     setBusyOrder({ id, action: 'fulfill' });
@@ -3758,7 +3773,15 @@ export default function App() {
       )}
 
       {view === 'receipt' && lastSale && (
-        <ReceiptScreen sale={lastSale} onNewSale={() => setView('sale')} canPrint={hasTerminal} onOpenStuck={() => setView('profile')} />
+        <ReceiptScreen
+          sale={lastSale}
+          onNewSale={() => setView('sale')}
+          canPrint={hasTerminal}
+          onOpenStuck={() => setView('profile')}
+          // Аппарат стоит — значит продажу ещё надо пробить на нём.
+          needsFiscal={!!fiscalDevice}
+          onOpenFiscal={handleShowFiscal}
+        />
       )}
 
       {view === 'close-shift' && (

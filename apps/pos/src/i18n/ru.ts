@@ -133,6 +133,8 @@ export const ru = {
   'receipt.notSynced': 'не синхронизирован',
   'receipt.refused': 'не проведён на сервере',
   'receipt.openStuck': 'Разобрать отказ',
+  'receipt.punchOnRegister': 'Пробейте этот чек на кассовом аппарате и введите его номер — иначе продажа останется нефискализированной.',
+  'receipt.enterFiscal': 'Ввести номер чека ККМ',
   'receipt.discount': 'Скидка',
   'receipt.pointsSpent': 'Списано баллов',
   'receipt.pointsEarned': 'Начислено баллов',

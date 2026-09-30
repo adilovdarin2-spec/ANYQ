@@ -18,9 +18,20 @@ interface Props {
   canPrint?: boolean;
   /** Куда идти разбирать отказ. Без этого «не проведён» — тупик. */
   onOpenStuck?: () => void;
+  /**
+   * Стоит ли рядом с этой точкой кассовый аппарат.
+   *
+   * Если стоит — продажу надо ещё пробить на нём и вернуть сюда номер его чека.
+   * Пока об этом не говорили, шаг держался на памяти кассира: весь день, на
+   * каждой продаже. Нефискализированные копятся молча, а это то самое число,
+   * которое превращается в штраф.
+   */
+  needsFiscal?: boolean;
+  /** Куда идти вводить номер с чека аппарата. */
+  onOpenFiscal?: () => void;
 }
 
-export function ReceiptScreen({ sale, onNewSale, canPrint, onOpenStuck }: Props) {
+export function ReceiptScreen({ sale, onNewSale, canPrint, onOpenStuck, needsFiscal, onOpenFiscal }: Props) {
   const { t } = useTranslation();
   return (
     <div className="screen">
@@ -101,6 +112,20 @@ export function ReceiptScreen({ sale, onNewSale, canPrint, onOpenStuck }: Props)
 
             Найдено 30.09.2026: касса отказала в продаже пачки, отложенной в
             карантин, и объяснить это было нечем. */}
+        {/* Напоминание про кассовый аппарат — только там, где он есть, и только
+            у проведённой продажи: отказанную сначала разбирают, фискализировать
+            нечего. */}
+        {needsFiscal && !sale.syncError && (
+          <div className="card-alert">
+            {t('receipt.punchOnRegister')}
+            {onOpenFiscal && (
+              <div className="row-actions" style={{ marginTop: 8 }}>
+                <button className="btn btn-secondary" onClick={onOpenFiscal}>{t('receipt.enterFiscal')}</button>
+              </div>
+            )}
+          </div>
+        )}
+
         {sale.syncError && (
           <div className="login-error">
             {sale.syncError}
