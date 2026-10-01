@@ -497,6 +497,8 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'import.chosen': '{name} таңдалды. «Файлды тексеру» түймесін басыңыз — не оқылғаны жазуға дейін көрінеді.',
   'import.orPaste': 'Немесе Excel-ден қойыңыз',
   'import.recognised': 'Танылған жолдар: {rows} (тақырыпты қоса), бағандар: {columns}',
+  'import.sheetRead': '«{name}» парағы оқылды.',
+  'import.otherSheets': 'Файлда тағы бар: {names}. Егер тауарлар басқа парақта болса — оны кітаптың басына сүйреп, сақтаңыз.',
   'import.whatHappens': 'Не болады',
   'import.willAdd': 'Қосылады',
   'import.willUpdate': 'Жаңартылады',

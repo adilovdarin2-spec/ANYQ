@@ -1,4 +1,4 @@
-import { detectColumnsWith, parseNumber, type ColumnMap, type ImportField } from './import';
+import { detectColumnsWith, findHeaderRow, looksLikeTotalRow, parseNumber, tidyName, type ColumnMap, type ImportField } from './import';
 
 /**
  * Переезд из чужой программы, и разбор того, что приехало.
@@ -255,7 +255,15 @@ export function analyseCatalogue(grid: string[][], system: SourceSystem | null =
     };
   }
 
-  const [header, ...body] = nonEmpty;
+  /* Шапка ищется тем же способом, что и в самом импорте.
+
+     Разбор и план считаются по одному файлу и показываются рядом на одном
+     экране. Пока разбор считал шапкой первую строку, а план искал её, они
+     расходились на глазах: «в файле нет закупочной цены» над таблицей, в которой
+     закупочная цена разобралась и видна. */
+  const headerAt = findHeaderRow(nonEmpty, system?.aliases ?? {});
+  const header = nonEmpty[headerAt];
+  const body = nonEmpty.slice(headerAt + 1);
   const columns = detectColumnsFor(header, system);
   const found = (Object.keys(columns) as ImportField[]).filter((f) => columns[f] !== undefined);
 
@@ -290,8 +298,11 @@ export function analyseCatalogue(grid: string[][], system: SourceSystem | null =
       return at === undefined ? '' : (raw[at] ?? '').trim();
     };
 
-    const name = cell('name');
+    const name = tidyName(cell('name'));
     if (!name) return;
+    // Итог отчёта — не товар, и его суммы не деньги на полках, а сложенные
+    // деньги со всех полок сразу: без этой строки «лежит в товаре» удваивалось.
+    if (looksLikeTotalRow(name)) return;
     products += 1;
 
     const sale = parseNumber(cell('salePrice'));

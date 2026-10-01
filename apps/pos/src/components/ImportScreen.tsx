@@ -156,7 +156,14 @@ export function ImportScreen({
 
             {grid.length > 0 && (
               <p className="order-meta">
-                {t('import.recognised', { rows: grid.length, columns: grid[0]?.length ?? 0 })}
+                {/* Столбцы — по самой широкой строке, а не по первой. Выгрузка
+                    начинается с названия отчёта в одной ячейке, и строка
+                    «столбцов: 1» над таблицей из шести столбцов отправляла
+                    владельца чинить файл, с которым всё в порядке. */}
+                {t('import.recognised', {
+                  rows: grid.length,
+                  columns: grid.reduce((widest, row) => Math.max(widest, row.length), 0),
+                })}
               </p>
             )}
 
@@ -167,6 +174,18 @@ export function ImportScreen({
                 and half not, with no way to tell which. */}
             {preview && (
               <>
+                {preview.sheet && (
+                  /* С какого листа читали. В книге магазина рядом с каталогом лежат
+                     «Остатки» и пустой «Лист1» от шаблона, и разбор на нуль строк сам по
+                     себе не говорит, что дело в листе. */
+                  <p className="field-hint">
+                    {t('import.sheetRead', { name: preview.sheet })}
+                    {preview.otherSheets && preview.otherSheets.length > 0
+                      ? ` ${t('import.otherSheets', { names: preview.otherSheets.join(', ') })}`
+                      : ''}
+                  </p>
+                )}
+
                 <CatalogueAnalysisPanel analysis={preview.analysis} />
 
                 <div className="orders-section-title">{t('import.whatHappens')}</div>

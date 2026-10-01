@@ -7445,7 +7445,16 @@ const MAX_REPORTED_PROBLEMS = 200;
 /** Столько строк прайса помещается на экран без бесконечной прокрутки. */
 const MAX_PRICE_LIST_LINES = 500;
 
-type GridResult = { status: 'ok'; grid: string[][] } | { status: 'error'; message: string };
+type GridResult =
+  | {
+      status: 'ok';
+      grid: string[][];
+      /* С какого листа книги взяты строки и какие ещё там есть. Для вставленной
+         таблицы и CSV смысла не имеет и остаётся пустым. */
+      sheet?: string;
+      otherSheets?: string[];
+    }
+  | { status: 'error'; message: string };
 
 /**
  * The table, however it arrived.
@@ -7470,7 +7479,7 @@ function readGrid(body: any): GridResult {
     if (parsed.grid.length > MAX_IMPORT_ROWS) {
       return { status: 'error', message: `В файле больше ${MAX_IMPORT_ROWS} строк — разбейте на части` };
     }
-    return { status: 'ok', grid: parsed.grid };
+    return { status: 'ok', grid: parsed.grid, sheet: parsed.sheet, otherSheets: parsed.otherSheets };
   }
 
   if (!Array.isArray(body?.grid)) {
@@ -7536,6 +7545,11 @@ posRouter.post('/import/products/preview', requirePosAuth, async (req: PosAuthed
     // Enough rows to recognise your own file and see the columns landed where
     // you meant them to.
     sample: plan.rows.slice(0, 20),
+    /* И с какого листа они взяты. Читается первый видимый лист книги, а в
+       выгрузках рядом с каталогом лежат «Остатки» и «Лист1». Если взяли не тот,
+       владелец должен увидеть это здесь, а не угадывать по пустому разбору. */
+    sheet: parsed.sheet ?? '',
+    otherSheets: parsed.otherSheets ?? [],
     // Разбор считается по тому же файлу и в том же запросе: владелец должен
     // увидеть, что нашлось в его магазине, до того как что-то записано, —
     // иначе это уже не разбор, а отчёт после импорта.

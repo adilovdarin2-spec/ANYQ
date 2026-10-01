@@ -152,18 +152,29 @@ export function resolveScannedBarcode(
  * A saved CSV is handled too. Excel in a Russian or Kazakh locale writes
  * semicolons rather than commas, so the delimiter is worked out from the text
  * instead of assumed.
+ *
+ * Смотрим не одну строку, а несколько первых. Выгрузка почти всегда начинается
+ * с названия отчёта — «Остатки товаров на 01.10.2026», одна ячейка без единого
+ * разделителя. По ней разделитель не определялся, вся таблица становилась одним
+ * столбцом, и импорт отвечал «не найден столбец с ценой» — на файле, где все
+ * столбцы на месте.
  */
+/** Больше не нужно: разделитель виден по первым же строкам с данными. */
+const DELIMITER_SAMPLE_LINES = 10;
+
 export function detectDelimiter(text: string): string {
-  const firstLine = text.split(/\r?\n/).find((line) => line.trim() !== '') ?? '';
-  const counts: Record<string, number> = {
-    '\t': (firstLine.match(/\t/g) ?? []).length,
-    ';': (firstLine.match(/;/g) ?? []).length,
-    ',': (firstLine.match(/,/g) ?? []).length,
-  };
+  const lines = text
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== '')
+    .slice(0, DELIMITER_SAMPLE_LINES);
+  // Сколько строк содержат знак: настоящий разделитель стоит почти в каждой.
+  const linesWith = (mark: string): number => lines.filter((line) => line.includes(mark)).length;
+
   // Tab first: a pasted selection is unambiguous, while a comma inside a
   // product name would otherwise win the count on its own.
-  if (counts['\t'] > 0) return '\t';
-  if (counts[';'] >= counts[',']) return counts[';'] > 0 ? ';' : ',';
+  if (linesWith('\t') > 0) return '\t';
+  const semicolons = linesWith(';');
+  if (semicolons >= linesWith(',')) return semicolons > 0 ? ';' : ',';
   return ',';
 }
 

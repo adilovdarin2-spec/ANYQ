@@ -490,6 +490,8 @@ export const ru = {
   'import.chosen': 'Выбран {name}. Нажмите «Проверить файл» — что прочиталось, будет видно до записи.',
   'import.orPaste': 'Или вставьте из Excel',
   'import.recognised': 'Распознано строк: {rows} (включая заголовок), столбцов: {columns}',
+  'import.sheetRead': 'Прочитан лист «{name}».',
+  'import.otherSheets': 'В файле есть ещё: {names}. Если товары на другом листе — перетащите его в начало книги и сохраните.',
   'import.whatHappens': 'Что произойдёт',
   'import.willAdd': 'Будет добавлено',
   'import.willUpdate': 'Будет обновлено',

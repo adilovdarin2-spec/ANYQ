@@ -175,7 +175,13 @@ describe('reading a whole file', () => {
 
   it('gets the grid out of a real zip', () => {
     const result = xlsxToGrid(buildXlsx(files));
-    expect(result).toEqual({ status: 'ok', grid: [['Название', 'Цена'], ['Хлеб белый', '250']] });
+    // Без `workbook.xml` имя листа взять неоткуда — оно пустое, и это честно.
+    expect(result).toEqual({
+      status: 'ok',
+      grid: [['Название', 'Цена'], ['Хлеб белый', '250']],
+      sheet: '',
+      otherSheets: [],
+    });
   });
 
   it('reads an uncompressed entry too', () => {
@@ -222,7 +228,12 @@ describe('reading a whole file', () => {
     const inlineOnly = {
       'xl/worksheets/sheet1.xml': sheet('<row r="1"><c r="A1" t="inlineStr"><is><t>Хлеб</t></is></c></row>'),
     };
-    expect(xlsxToGrid(buildXlsx(inlineOnly))).toEqual({ status: 'ok', grid: [['Хлеб']] });
+    expect(xlsxToGrid(buildXlsx(inlineOnly))).toEqual({
+      status: 'ok',
+      grid: [['Хлеб']],
+      sheet: '',
+      otherSheets: [],
+    });
   });
 
   it('says it is not a spreadsheet when handed something else', () => {

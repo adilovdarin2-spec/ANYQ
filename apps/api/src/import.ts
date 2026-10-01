@@ -51,7 +51,12 @@ const HEADER_ALIASES: Record<ImportField, string[]> = {
   barcode: ['штрихкод', 'штрихкодтовара', 'ean', 'ean13', 'barcode', 'бар', 'шк'],
   category: ['категория', 'группа', 'раздел', 'санат', 'category', 'group'],
   unit: ['ед', 'едизм', 'единица', 'единицаизмерения', 'бірлік', 'unit', 'uom'],
-  purchasePrice: ['закуп', 'закупка', 'закупочная', 'закупочнаяцена', 'себестоимость', 'приход', 'purchase', 'cost'],
+  purchasePrice: [
+    'закуп', 'закупка', 'закупочная', 'закупочнаяцена', 'себестоимость', 'приход',
+    // «Цена закупки» начинается с «цена» и потому не ловилась ни одним прежним синонимом.
+    'ценазакупки', 'ценазакупа', 'ценапокупки', 'ценаприхода', 'ценапоступления', 'входящаяцена',
+    'сатыпалубағасы', 'purchase', 'cost',
+  ],
   salePrice: ['цена', 'ценапродажи', 'розница', 'розничнаяцена', 'продажа', 'бағасы', 'price', 'sale', 'retail'],
   quantity: ['количество', 'колво', 'остаток', 'остатки', 'запас', 'саны', 'qty', 'quantity', 'stock'],
 };
@@ -122,6 +127,31 @@ export function detectColumnsWith(
     for (const [field, aliases] of Object.entries(HEADER_ALIASES) as [ImportField, string[]][]) {
       if (map[field] !== undefined) continue;
       if (aliases.some((alias) => key.startsWith(alias))) {
+        map[field] = index;
+        return;
+      }
+    }
+  });
+
+  /* И последний проход — по слову внутри заголовка, и только для двух цен.
+
+     Две цены — единственная пара столбцов, чьи заголовки начинаются одинаково и
+     различаются тем, что стоит дальше: «Цена закупки» и «Цена продажи». Проход по
+     началу их не различает, и закупочная просто терялась — весь каталог заезжал с
+     себестоимостью ноль, и первый же отчёт показывал стопроцентную наценку.
+
+     Только для цен: для остального поиск по вхождению слишком жаден — «Наименование
+     поставщика» стало бы названием товара. */
+  const PRICE_MARKERS: Partial<Record<ImportField, string[]>> = {
+    purchasePrice: ['закуп', 'себестоим', 'приход', 'поступлен', 'покупк'],
+    salePrice: ['продаж', 'розниц', 'реализац'],
+  };
+  header.forEach((cell, index) => {
+    const key = normaliseHeader(cell ?? '');
+    if (!key || Object.values(map).includes(index)) return;
+    for (const [field, markers] of Object.entries(PRICE_MARKERS) as [ImportField, string[]][]) {
+      if (map[field] !== undefined) continue;
+      if (markers.some((marker) => key.includes(marker))) {
         map[field] = index;
         return;
       }
@@ -214,6 +244,83 @@ export interface ImportPlan {
 
 const MAX_NAME_LENGTH = 200;
 
+/**
+ * Итоговая строка — не товар.
+ *
+ * Почти каждая выгрузка кончается «Итого» с суммами по столбцам. Без этой
+ * проверки в каталог заводился товар «Итого» ценой 5 625 ₸ и остатком 1 246 штук —
+ * он вставал в сетку кассы и в начальные остатки, то есть сразу в деньги.
+ *
+ * Список закрыт и сравнивается целиком, а не по вхождению: товаров, названных ровно
+ * «Итого», не бывает, а вот «Итоговый набор посуды» вполне бывает.
+ */
+const TOTAL_ROW_NAMES = new Set([
+  'итого', 'итог', 'всего', 'сумма', 'общийитог', 'итогопоотчёту',
+  'барлығы', 'жиыны', 'сомасы',
+  'total', 'grandtotal', 'sum', 'subtotal',
+]);
+
+export function looksLikeTotalRow(name: string): boolean {
+  return TOTAL_ROW_NAMES.has(
+    name.toLowerCase().replace(/ё/g, 'е').replace(/[\s.:,_\-]/g, ''),
+  );
+}
+
+/**
+ * Название товара без лишних пробелов внутри.
+ *
+ * «Масло   подсолнечное 1 л» и «Масло подсолнечное 1 л» — один товар, а совпадение
+ * со старым каталогом ищется по названию. Двойной пробел, случайно стоящий в
+ * файле, делает повторную загрузку уже исправленного файла вторым товаром с тем
+ * же штрихкодом — а повторная загрузка в день запуска случается постоянно.
+ *
+ * Неразрывный пробел тоже пробел: Excel ставит его сам.
+ */
+export function tidyName(raw: string): string {
+  return raw.replace(/[\s\u00a0]+/g, ' ').trim();
+}
+
+/**
+ * Сколько первых строк смотрим в поисках заголовка.
+ *
+ * Выше шапки не бывает много: название отчёта, дата, организация, пустая строка.
+ * Большая глубина начала бы искать заголовок среди товаров.
+ */
+const HEADER_SEARCH_DEPTH = 10;
+
+/**
+ * Какая строка — шапка таблицы.
+ *
+ * Бралась первая непустая, и для вставленной из Excel таблицы это верно. А
+ * выгрузка почти всегда начинается с шапки отчёта: «Остатки товаров на 01.10.2026»,
+ * пустая строка, и только потом «Наименование | Штрих-код | Цена». Импорт читал
+ * заголовком название отчёта, не находил ни одного столбца и отвечал «Назовите
+ * столбец „Наименование“» — совет переименовать столбец, который так и назван. Весь
+ * каталог при этом не загружался вовсе, а день загрузки каталога — это день запуска.
+ *
+ * Шапка — строка, в которой узналось больше всего столбцов и есть название
+ * товара; при равенстве — верхняя. Если ни в одной названия нет, возвращается первая:
+ * тогда отказ говорит про неё, как и раньше.
+ */
+export function findHeaderRow(
+  rows: string[][],
+  extraAliases: Partial<Record<ImportField, string[]>> = {},
+): number {
+  let best = 0;
+  let bestScore = 0;
+  const depth = Math.min(rows.length, HEADER_SEARCH_DEPTH);
+  for (let index = 0; index < depth; index += 1) {
+    const columns = detectColumnsWith(rows[index], extraAliases);
+    if (columns.name === undefined) continue;
+    const score = Object.keys(columns).length;
+    if (score > bestScore) {
+      best = index;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 // Turns a grid of strings into what will actually be written, plus everything
 // wrong with it, each pinned to the row the person can see on screen.
 //
@@ -234,17 +341,35 @@ export function buildImportPlan(
   const problems: ImportProblem[] = [];
   const rows: ImportRow[] = [];
 
-  const nonEmpty = grid.filter((row) => row.some((cell) => (cell ?? '').trim() !== ''));
+  /* Номер строки несётся рядом с самой строкой — тот, что владелец увидит слева в
+     Excel. Считать его по порядку среди непустых значит отправить человека чинить
+     строку 7, в которой стоит совсем другой товар: пустые строки внутри выгрузки
+     встречаются ровно там, где кончается раздел. */
+  const nonEmpty = grid
+    .map((cells, index) => ({ cells, line: index + 1 }))
+    .filter((row) => row.cells.some((cell) => (cell ?? '').trim() !== ''));
   if (nonEmpty.length === 0) {
     return { rows: [], problems: [{ line: 0, severity: 'error', message: 'Файл пуст' }], created: 0, updated: 0, skipped: 0 };
   }
 
-  const [header, ...body] = nonEmpty;
+  const headerAt = findHeaderRow(nonEmpty.map((row) => row.cells), extraAliases);
+  const header = nonEmpty[headerAt].cells;
+  const body = nonEmpty.slice(headerAt + 1);
   const columns = detectColumnsWith(header, extraAliases);
+
+  if (headerAt > 0) {
+    // Сказано вслух: «взяли не ту строку за шапку» — тоже способ потерять товары.
+    problems.push({
+      line: nonEmpty[headerAt].line,
+      severity: 'warning',
+      message: `Шапка таблицы найдена в строке ${nonEmpty[headerAt].line} — всё, что выше, пропущено`,
+    });
+  }
 
   if (columns.name === undefined) {
     problems.push({
-      line: 1,
+      // Строка файла, а не единица: человек пойдёт смотреть именно туда.
+      line: nonEmpty[headerAt].line,
       severity: 'error',
       message: 'Не найден столбец с названием товара. Назовите его «Наименование» и повторите.',
     });
@@ -252,7 +377,7 @@ export function buildImportPlan(
   }
   if (columns.salePrice === undefined) {
     problems.push({
-      line: 1,
+      line: nonEmpty[headerAt].line,
       severity: 'error',
       message: 'Не найден столбец с ценой продажи. Назовите его «Цена» и повторите.',
     });
@@ -270,17 +395,22 @@ export function buildImportPlan(
 
   let skipped = 0;
 
-  body.forEach((raw, index) => {
-    // +2: one for the header, one because people count from one.
-    const line = index + 2;
+  body.forEach(({ cells: raw, line }) => {
     const cell = (field: ImportField): string => {
       const at = columns[field];
       return at === undefined ? '' : (raw[at] ?? '').trim();
     };
 
-    const name = cell('name');
+    const name = tidyName(cell('name'));
     if (!name) {
       problems.push({ line, severity: 'error', message: 'Нет названия — строка пропущена' });
+      skipped += 1;
+      return;
+    }
+    if (looksLikeTotalRow(name)) {
+      // Не ошибка файла, а его обычный конец, — но сказать надо: иначе разбор
+      // на одну строку меньше, чем видно в файле, выглядит потерей.
+      problems.push({ line, severity: 'warning', message: `Строка «${name}» — это итог отчёта, а не товар; пропущена` });
       skipped += 1;
       return;
     }

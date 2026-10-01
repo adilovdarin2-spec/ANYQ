@@ -36,7 +36,16 @@ export type XlsxFailure =
   | { status: 'noSheet' }
   | { status: 'corrupt'; detail: string };
 
-export type XlsxResult = { status: 'ok'; grid: string[][] } | XlsxFailure;
+export type XlsxResult =
+  | {
+      status: 'ok';
+      grid: string[][];
+      /** Как называется лист, с которого взяты строки. Пусто, если книга не сказала. */
+      sheet: string;
+      /** Остальные видимые листы — чтобы человек видел, что читали не всё. */
+      otherSheets: string[];
+    }
+  | XlsxFailure;
 
 export function xlsxErrorMessage(failure: XlsxFailure): string {
   switch (failure.status) {
@@ -124,7 +133,64 @@ function readZip(buffer: Buffer): ZipEntry[] | XlsxFailure {
 }
 
 function isWanted(name: string): boolean {
-  return name === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(name);
+  return (
+    name === 'xl/sharedStrings.xml'
+    // Книга и её связки: только они говорят, в каком порядке листы идут на экране.
+    || name === 'xl/workbook.xml'
+    || name === 'xl/_rels/workbook.xml.rels'
+    // Не только `sheetN.xml`: часть может называться как угодно, и имя берётся из связки.
+    || /^xl\/worksheets\/[^/]+\.xml$/.test(name)
+  );
+}
+
+/** Ссылка на лист: как его зовут на ярлыке и в какой части архива он лежит. */
+export interface SheetRef {
+  name: string;
+  part: string;
+}
+
+/** `worksheets/sheet2.xml`, `/xl/worksheets/sheet2.xml`, `../worksheets/…` → одно и то же. */
+function partPath(target: string): string {
+  const cleaned = target.replace(/^\/+/, '').replace(/^(\.\.\/)+/, '');
+  return cleaned.startsWith('xl/') ? cleaned : `xl/${cleaned}`;
+}
+
+/**
+ * Листы в том порядке, в каком их видит человек, открыв файл.
+ *
+ * Порядок ярлыков записан в `xl/workbook.xml`, а имена частей — в его связках.
+ * Это два разных порядка, и в живых файлах они расходятся: перетащить лист мышью
+ * в начало книги меняет порядок ярлыков и не меняет имён частей. Чтение «первой
+ * части по имени» брало при этом совсем не тот лист, что откроется у владельца:
+ * типичный случай — пустой «Лист1» от шаблона остался частью sheet1.xml, а
+ * каталог лежит в sheet2.xml. Импорт читал заметку бухгалтерии и отвечал, что в
+ * файле нет нужных столбцов, — в день загрузки каталога это тупик.
+ *
+ * Скрытые листы пропускаются: Excel их тоже не показывает, а первый видимый — это
+ * тот, который владелец считает «своим файлом».
+ */
+export function sheetsInTabOrder(workbookXml: string, relsXml: string): SheetRef[] {
+  const targets = new Map<string, string>();
+  for (const rel of relsXml.match(/<Relationship\b[^>]*\/?>/g) ?? []) {
+    const id = /\bId="([^"]+)"/.exec(rel)?.[1];
+    const to = /\bTarget="([^"]+)"/.exec(rel)?.[1];
+    if (id && to) targets.set(id, partPath(decodeEntities(to)));
+  }
+
+  const sheets: SheetRef[] = [];
+  for (const tag of workbookXml.match(/<sheet\b[^>]*\/?>/g) ?? []) {
+    // `hidden` и `veryHidden` — не то, что откроется перед глазами.
+    const state = /\bstate="([^"]+)"/.exec(tag)?.[1] ?? 'visible';
+    if (state !== 'visible') continue;
+    /* Префикс пространства имён пишут по-разному; двоеточие обязательно, иначе
+       сюда попадёт `sheetId`, который тоже кончается на `Id`. */
+    const id = /\s(?:[\w-]+:)id="([^"]+)"/.exec(tag)?.[1];
+    const part = id ? targets.get(id) : undefined;
+    if (!part) continue;
+    const name = decodeEntities(/\bname="([^"]*)"/.exec(tag)?.[1] ?? '');
+    sheets.push({ name, part });
+  }
+  return sheets;
 }
 
 /** The text of one `<t>` run, which may be a self-closing empty one. */
@@ -222,10 +288,12 @@ export function parseSheet(xml: string, sharedStrings: string[]): string[][] {
 /**
  * An .xlsx buffer to a grid of strings.
  *
- * The first worksheet only. A price list with several sheets is usually one
- * list and several notes, and guessing which is the data would be worse than
- * taking the first and letting the preview show what was read — which the
- * import already makes the person confirm before anything is written.
+ * The first worksheet only — первый в том смысле, в каком его видит человек: по
+ * порядку ярлыков из `workbook.xml`, а не по имени части внутри архива. Эти два
+ * порядка расходятся всякий раз, когда листы переставляли мышью.
+ *
+ * Берётся первый, а не тот, где «похоже на товары»: угадывать хуже, чем взять
+ * первый и назвать его вслух — разбор всё равно показывается до записи.
  */
 export function xlsxToGrid(buffer: Buffer): XlsxResult {
   if (buffer.length > MAX_XLSX_BYTES) return { status: 'tooLarge' };
@@ -233,16 +301,36 @@ export function xlsxToGrid(buffer: Buffer): XlsxResult {
   const entries = readZip(buffer);
   if (!Array.isArray(entries)) return entries;
 
-  const sheets = entries
-    .filter((entry) => entry.name.startsWith('xl/worksheets/'))
-    .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
-  if (sheets.length === 0) return { status: 'noSheet' };
+  const worksheets = new Map(
+    entries.filter((entry) => entry.name.startsWith('xl/worksheets/')).map((entry) => [entry.name, entry]),
+  );
+  if (worksheets.size === 0) return { status: 'noSheet' };
+
+  const workbook = entries.find((entry) => entry.name === 'xl/workbook.xml');
+  const rels = entries.find((entry) => entry.name === 'xl/_rels/workbook.xml.rels');
+  const ordered = workbook && rels
+    ? sheetsInTabOrder(workbook.data.toString('utf8'), rels.data.toString('utf8')).filter((sheet) =>
+        worksheets.has(sheet.part),
+      )
+    : [];
+
+  /* Книга без `workbook.xml` или без связок — такое пишут самодельные выгрузки. Тогда
+     по-старому: по имени части, что для однолистовой книги всегда верно. */
+  const fallback = [...worksheets.keys()].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))[0];
+  const chosen = ordered[0]?.part ?? fallback;
+  const sheet = ordered[0]?.name ?? '';
+  const otherSheets = ordered.slice(1).map((entry) => entry.name);
 
   const sharedEntry = entries.find((entry) => entry.name === 'xl/sharedStrings.xml');
   const sharedStrings = sharedEntry ? parseSharedStrings(sharedEntry.data.toString('utf8')) : [];
 
   try {
-    return { status: 'ok', grid: parseSheet(sheets[0].data.toString('utf8'), sharedStrings) };
+    return {
+      status: 'ok',
+      grid: parseSheet(worksheets.get(chosen)!.data.toString('utf8'), sharedStrings),
+      sheet,
+      otherSheets,
+    };
   } catch (err) {
     return { status: 'corrupt', detail: err instanceof Error ? err.message : 'unknown' };
   }

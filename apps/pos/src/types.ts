@@ -1097,6 +1097,14 @@ export interface ImportPreview {
   /** Total, which may exceed what is listed. */
   problemCount: number;
   sample: ImportSampleRow[];
+  /**
+   * С какого листа книги взяты строки и какие листы остались непрочитанными.
+   *
+   * Читается первый видимый лист, а в выгрузках рядом с каталогом лежат
+   * «Остатки» и пустой «Лист1». У вставленной таблицы и CSV листов нет вовсе.
+   */
+  sheet?: string;
+  otherSheets?: string[];
   /** What the file says about the shop, before anything is written. */
   analysis: CatalogueAnalysis;
 }
