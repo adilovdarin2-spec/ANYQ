@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useLanguage';
-import type { Count, Product } from '../types';
+import type { Count, HoldRelease, Product } from '../types';
 import { formatDateTime, formatStock } from '../utils';
 import { pluralPhrase } from '../i18n';
 import { parseTyped } from '../typed-number';
+import { withUnit } from '../unit-form';
 
 interface Props {
   counts: Count[];
   products: Product[];
+  /** Что последний пересчёт снял с брони и карантина. */
+  holdsReleased: HoldRelease[];
   loading: boolean;
   error: string | null;
   submitting: boolean;
@@ -20,7 +23,27 @@ interface Props {
   }) => Promise<boolean>;
 }
 
-export function CycleCountScreen({ counts, products, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
+/**
+ * Сколько лежит на полке — а не сколько можно продать.
+ *
+ * В сетке продажи `stock` — это доступное: остаток за вычетом брони и
+ * карантина, и для продажи это верно. Инвентаризация спрашивает другое — сколько
+ * штук на полке, — и сервер сравнивает именно с остатком (`totalOnHand`).
+ *
+ * До 01.10.2026 экран показывал доступное, а сервер считал от остатка: два
+ * числа из двух разных счётов. Товар, целиком лежащий в карантине, читался как
+ * «система: 0» — кладовщик видит три мешка перед собой, пишет «3» и ждёт
+ * исправления на три, а сервер отвечает «расхождений нет». И наоборот: полка,
+ * с которой товар действительно пропал, подтверждалась нулём — и недостача
+ * списывалась без единого слова о том, что пропал именно карантинный.
+ *
+ * `blocked` у старой сессии нет — тогда считается без него, как раньше.
+ */
+function onHand(product: Product): number {
+  return product.stock + (product.reserved ?? 0) + (product.blocked ?? 0);
+}
+
+export function CycleCountScreen({ counts, products, holdsReleased, loading, error, submitting, onBack, onRefresh, onSubmit }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [countedByProduct, setCountedByProduct] = useState<Record<string, string>>({});
@@ -84,6 +107,29 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
           {error && <div className="login-error">{error}</div>}
           {loading && counts.length === 0 && <div className="empty-state">{t('common.loading')}</div>}
           {!loading && counts.length === 0 && !error && <div className="empty-state">{t('cycle.none')}</div>}
+
+          {holdsReleased.length > 0 && (
+            /* Снятое удержание — не служебная подробность. Держали то, чего нет: карантин
+               на пропавшем товаре или бронь под заказ, который теперь не соберётся целиком.
+               Если не сказать сейчас — узнают на выдаче. */
+            <>
+              <div className="orders-section-title">{t('count.holdsTitle')}</div>
+              {holdsReleased.map((hold) => (
+                <div key={`hold-${hold.productId}-${hold.binLocation}`} className="report-row low">
+                  <span>
+                    {hold.name}
+                    {hold.binLocation ? ` · ${hold.binLocation}` : ''}
+                    <br />
+                    <span className="order-meta">
+                      {hold.blocked > 0 && t('count.holdBlockedOff', { count: withUnit(hold.blocked, hold.unit) })}
+                      {hold.blocked > 0 && hold.reserved > 0 ? ' ' : ''}
+                      {hold.reserved > 0 && t('count.holdReservedOff', { count: withUnit(hold.reserved, hold.unit) })}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
           {counts.map((c) => (
             <div key={c.id} className="order-card">
               <div className="order-card-head">
@@ -120,12 +166,16 @@ export function CycleCountScreen({ counts, products, loading, error, submitting,
                 {/* С единицей и по-русски. Печаталось «система: 11.75» —
                     точкой, как в коде, и без килограммов: кладовщик идёт
                     взвешивать сыр и не знает, с чем сверяется. */}
-                <div className="li-price">{t('count.system')}: {formatStock(p.stock, p.saleUnit)}</div>
+                <div className="li-price">
+                  {t('count.system')}: {formatStock(onHand(p), p.saleUnit)}
+                  {(p.reserved ?? 0) > 0 ? ` · ${t('count.reservedFor', { count: formatStock(p.reserved ?? 0, p.saleUnit) })}` : ''}
+                  {(p.blocked ?? 0) > 0 ? ` · ${t('count.inQuarantine', { count: formatStock(p.blocked ?? 0, p.saleUnit) })}` : ''}
+                </div>
               </div>
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder={formatStock(p.stock, p.saleUnit)}
+                placeholder={formatStock(onHand(p), p.saleUnit)}
                 value={countedByProduct[p.id] ?? ''}
                 onChange={(e) => setCounted(p.id, e.target.value)}
               />

@@ -1,4 +1,4 @@
-import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SettlementStatement, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord, StaffMember, StaffPayload } from './types';
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, HoldRelease, CompanyLocation, Count, CountSheetLine, DiscountType, FiscalDevice, ImportPreview, KdsTicket, KitchenStatus, LedgerDocument, Order, OwnerDashboard, Packaging, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, Replenishment, Report, RestaurantTable, ReturnRecord, ReturnableSale, SettlementAccount, SettlementStatement, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord, StaffMember, StaffPayload } from './types';
 import { getDeviceKey } from './storage';
 import { noteServerAnswered, noteServerUnreachable } from './reachable';
 import { translate } from './i18n';
@@ -557,7 +557,10 @@ export interface CreateCountPayload {
   countedAt?: string;
 }
 
-export function createCount(token: string, payload: CreateCountPayload): Promise<{ id: string; createdAt: string }> {
+export function createCount(
+  token: string,
+  payload: CreateCountPayload,
+): Promise<{ id: string; createdAt: string; holdsReleased?: HoldRelease[] }> {
   return request('/pos/counts', { method: 'POST', body: JSON.stringify(payload) }, token);
 }
 
@@ -1154,7 +1157,7 @@ export function submitBinCount(
   token: string,
   payload: BinCountPayload,
   idempotencyKey?: string,
-): Promise<{ id: string; bins: string[]; adjustments: BinCountAdjustmentResult[] }> {
+): Promise<{ id: string; bins: string[]; adjustments: BinCountAdjustmentResult[]; holdsReleased?: HoldRelease[] }> {
   return request('/pos/counts/by-bin', { method: 'POST', body: JSON.stringify(payload), headers: idempotencyHeader(idempotencyKey) }, token);
 }
 

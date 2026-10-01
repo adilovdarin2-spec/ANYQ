@@ -7,6 +7,7 @@ import type { Batch, ExpiryStatus, Product } from '../types';
 import type { UncoveredStockRow } from '../api';
 import { formatDate } from '../utils';
 import { parseTyped } from '../typed-number';
+import { withUnit } from '../unit-form';
 
 const STATUS_PHRASES: Record<ExpiryStatus, PhraseKey> = {
   expired: 'batch.expired',
@@ -134,7 +135,7 @@ export function BatchesScreen({ batches, uncovered, canReceive, products, loadin
                       <div className="order-customer">{row.productName}</div>
                       <div className="order-meta">{t('batch.uncoveredNoDate')}</div>
                     </div>
-                    <div className="order-total">{row.quantity} {row.unit}</div>
+                    <div className="order-total">{withUnit(row.quantity, row.unit)}</div>
                   </div>
                 </div>
               ))}
@@ -244,7 +245,7 @@ function BatchRow({ batch }: { batch: Batch }) {
           <div className="order-customer">{batch.productName}</div>
           <div className="order-meta">{t('batch.line', { number: batch.batchNumber, date: formatDate(batch.expiryDate) })}</div>
         </div>
-        <div className="order-total">{batch.quantity} {batch.unit}</div>
+        <div className="order-total">{withUnit(batch.quantity, batch.unit)}</div>
       </div>
       <span className={`chip-status ${batch.status === 'ok' ? 'confirmed' : 'cancelled'}`}>{t(STATUS_PHRASES[batch.status])}</span>
     </div>

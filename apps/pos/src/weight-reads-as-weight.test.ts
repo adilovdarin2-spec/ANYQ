@@ -50,9 +50,14 @@ describe('как показывается остаток', () => {
 describe('экраны зовут общее правило', () => {
   it('пересчёт — и в подписи, и в подсказке поля', () => {
     /* Тот самый экран. Показывал `{p.stock}` как есть: «система: 11.75», и то
-       же самое стояло placeholder-ом в поле ввода. */
+       же самое стояло placeholder-ом в поле ввода.
+
+       Само число с 01.10.2026 другое — `onHand(p)` вместо `p.stock`: инвентаризация
+       сверяется с остатком, а не с доступным (см. stocktake-counts-the-shelf.test.ts).
+       Здесь проверяется другое и по-прежнему: что экран зовёт общее правило, а не
+       печатает число сам. */
     const count = read('CycleCountScreen.tsx');
-    expect(count, 'пересчёт снова печатает остаток как есть').toContain("formatStock(p.stock, p.saleUnit)");
+    expect(count, 'пересчёт снова печатает остаток как есть').toContain("formatStock(onHand(p), p.saleUnit)");
     expect(count).not.toContain('{t(\'count.system\')}: {p.stock}');
     expect(count, 'подсказка поля снова без единицы').not.toContain('placeholder={String(p.stock)}');
   });

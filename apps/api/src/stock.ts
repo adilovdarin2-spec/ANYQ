@@ -2,6 +2,7 @@ import type { Tx } from '@anyq/db';
 import { allocateFromBins, allocateRelease } from './bins';
 import { allocateFefo, allocateForRemoval } from './batches';
 import type { BinStock } from './bins';
+import { trimHolds, isEmptyTrim } from './count-holds';
 
 export interface SaleItemInput {
   productId: string;
@@ -402,6 +403,50 @@ export async function releaseBlockedAcrossBins(
   for (const part of allocateRelease(quantity, rows.map((row) => ({ stockId: row.id, held: row.blocked })))) {
     await releaseBlockedOnWriteOff(tx, part.stockId, part.quantity);
   }
+}
+
+/**
+ * Привести удержания к тому, что нашёл пересчёт.
+ *
+ * Недостача по пересчёту — это уход товара с полки, и удержание на ушедшем
+ * товаре надо снимать так же, как его снимает списание (`releaseBlockedAcrossBins`
+ * выше, с той же историей). Пересчёт этого не делал, и после недостачи в строке
+ * оставалось удержание больше остатка: доступное уходило в минус и вычиталось
+ * из других полок того же товара.
+ *
+ * Строки перечитываются уже после применения пересчёта — именно потому, что
+ * недостачу по точке разносит `deductAcrossBins`, и предсказывать, сколько
+ * досталось каждой полке, значило бы считать то же самое второй раз и вторым
+ * способом.
+ *
+ * Возвращает только то, что действительно снято: вызывающий обязан сказать об
+ * этом человеку. Снятая бронь — это заказ, который соберут не полностью.
+ */
+export async function trimHoldsToStock(
+  tx: Tx,
+  stockIds: string[],
+): Promise<{ stockId: string; productId: string; binLocation: string; reserved: number; blocked: number }[]> {
+  if (stockIds.length === 0) return [];
+  const rows = await tx.stock.findMany({ where: { id: { in: stockIds } } });
+  const trimmed: { stockId: string; productId: string; binLocation: string; reserved: number; blocked: number }[] = [];
+
+  for (const row of rows) {
+    const trim = trimHolds(row.quantity, { reserved: row.reserved, blocked: row.blocked });
+    if (isEmptyTrim(trim)) continue;
+    // С полом по нулю, а не условно: снять удержание с товара, которого нет, обязано
+    // пройти. Отказ оставил бы строку с отрицательным доступным навсегда.
+    if (trim.blocked > 0) await releaseBlockedOnWriteOff(tx, row.id, trim.blocked);
+    if (trim.reserved > 0) await releaseStock(tx, row.id, trim.reserved);
+    trimmed.push({
+      stockId: row.id,
+      productId: row.productId,
+      binLocation: row.binLocation ?? '',
+      reserved: trim.reserved,
+      blocked: trim.blocked,
+    });
+  }
+
+  return trimmed;
 }
 
 // Releasing must never fail: it runs when an order is fulfilled, rejected or

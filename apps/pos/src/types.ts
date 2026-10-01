@@ -49,6 +49,14 @@ export interface Product {
    * Необязательное: сессия, сохранённая прошлой сборкой, этого поля не знает.
    */
   reserved?: number;
+  /**
+   * Из них в карантине или на закрытой полке.
+   *
+   * Для продажи не нужно — `stock` их уже не считает. Нужно для инвентаризации,
+   * где сверяются не с доступным, а с тем, что лежит на полке. Необязательное: сессия,
+   * сохранённая прошлой сборкой, этого поля не знает.
+   */
+  blocked?: number;
   stopListed: boolean;
   saleUnit: SaleUnit;
   modifiers: ProductModifierOption[];
@@ -824,6 +832,8 @@ export interface WriteOffRecord {
 export interface BinContent {
   productId: string;
   name: string;
+  /** Единица из карточки — «10» на полке мешков по 50 кг само по себе ничего не говорит. */
+  unit?: string;
   /** Everything on this shelf, including what is promised or quarantined. */
   quantity: number;
   /** What can actually be taken off it. */
@@ -936,9 +946,30 @@ export interface CountSheetLine {
 export interface BinCountAdjustmentResult {
   productId: string;
   binLocation: string;
+  /** Единица из карточки: «−2» и «−2 мешка» — разница в сто килограммов. */
+  unit?: string;
   systemQuantity: number;
   countedQuantity: number;
   delta: number;
+}
+
+/**
+ * Что пересчёт снял с удержаний.
+ *
+ * Недостача на товаре, который держали — под заказ или в карантине, — значит,
+ * держали то, чего нет. Удержание снимается на сервере, иначе доступное уходит в
+ * минус — но снятая бронь это заказ, который соберут не полностью, и узнать об этом
+ * на выдаче — поздно.
+ */
+export interface HoldRelease {
+  productId: string;
+  name: string;
+  unit: string;
+  binLocation: string;
+  /** Сколько снято с брони под заказы. */
+  reserved: number;
+  /** Сколько снято с карантина или с закрытой ячейки. */
+  blocked: number;
 }
 
 export interface LedgerMismatch {

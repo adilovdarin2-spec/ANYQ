@@ -22,6 +22,7 @@ import {
   unblockStock,
   releaseBlockedOnWriteOff,
   releaseBlockedAcrossBins,
+  trimHoldsToStock,
   findStockShortages,
   hasInvalidQuantity,
   aggregateRequestedQuantities,
@@ -559,6 +560,10 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
   // пробить ещё одну штуку: на полке их видно десять, а продать можно восемь,
   // и без этой строки касса выглядит ошибающейся.
   const reservedByProduct = new Map<string, number>();
+  /* Сколько в карантине или на закрытой полке. Нужно точно так же, как бронь:
+     без него инвентаризация показывала кладовщику «система: 0» на товар, который лежит
+     перед ним, а сервер сравнивал совсем с другим числом — с остатком. */
+  const blockedByProduct = new Map<string, number>();
   for (const row of stockRows) {
     // One product can hold stock in several bins at a location; the grid shows
     // what's sellable there in total, not whatever bin sorted last. Sellable
@@ -567,6 +572,9 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
     stockByProduct.set(row.productId, (stockByProduct.get(row.productId) ?? 0) + availableQuantity(row));
     if (row.reserved > 0) {
       reservedByProduct.set(row.productId, (reservedByProduct.get(row.productId) ?? 0) + row.reserved);
+    }
+    if (row.blocked > 0) {
+      blockedByProduct.set(row.productId, (blockedByProduct.get(row.productId) ?? 0) + row.blocked);
     }
   }
 
@@ -655,6 +663,7 @@ async function buildPosCatalog(companyId: string, modules: string[], locationId:
     category: p.category ?? '',
     stock: dishProductIds.has(p.id) ? 9999 : (stockByProduct.get(p.id) ?? 0),
     reserved: reservedByProduct.get(p.id) ?? 0,
+    blocked: blockedByProduct.get(p.id) ?? 0,
     stopListed: p.stopListed,
     // Weight-based sale is part of the same Retail Pack bundle as variants —
     // non-retail companies always see 'piece' regardless of what's stored,
@@ -5940,12 +5949,15 @@ posRouter.get('/bins', requirePosAuth, async (req: PosAuthedRequest, res) => {
     prisma.stock.findMany({ where: { locationId, quantity: { gt: 0 } }, include: { product: true } }),
   ]);
 
-  const contentsByCode = new Map<string, { productId: string; name: string; quantity: number; available: number }[]>();
+  const contentsByCode = new Map<string, { productId: string; name: string; unit: string; quantity: number; available: number }[]>();
   for (const row of stockRows) {
     const list = contentsByCode.get(row.binLocation) ?? [];
     list.push({
       productId: row.productId,
       name: row.product.name,
+      // «10» на полке мешков по 50 кг и «10» на полке килограммов сыра пишутся
+      // одинаково, а расхождение в одну единицу стоит разных денег.
+      unit: row.product.unit,
       quantity: row.quantity,
       available: availableQuantity(row),
     });
@@ -6266,6 +6278,32 @@ posRouter.post('/bins/putaway', requirePosAuth, async (req: PosAuthedRequest, re
     const destination = await prisma.storageBin.findFirst({ where: { locationId, code: toBin } });
     if (!destination) {
       res.status(404).json({ error: `Ячейки ${toBin} нет на этой точке` });
+      return;
+    }
+    /* И не на полку, с которой запрещено брать.
+
+       Блокировка сняла с продажи то, что стояло на полке в ту минуту, и
+       держит именно его — своим документом. Товар, поставленный туда после,
+       в этот документ не попадает и остаётся свободным: касса его продаёт, а
+       сборщика посылает к полке, с которой брать нельзя. А залитая полка на то,
+       что поставили позже, действует так же, как на то, что стояло там с утра. */
+    if (destination.blockedAt) {
+      const why = destination.blockedReason ? ` (${destination.blockedReason})` : '';
+      res.status(409).json({ error: `Ячейка ${toBin} заблокирована${why} — положите товар в другую` });
+      return;
+    }
+  }
+
+  if (fromBin !== '') {
+    /* С заблокированной полки не снимаем тоже: разблокировка отпускает
+       товар по своему документу и ищет его в строках этой ячейки — уехавшего она
+       уже не найдёт, и держаться будет то, что уже вернули в работу.
+
+       Отказ был и до этой проверки — свободного в такой ячейке ноль, — но словами
+       «в исходной ячейке свободно 0», а кладовщик стоит перед полной полкой. */
+    const origin = await prisma.storageBin.findFirst({ where: { locationId, code: fromBin } });
+    if (origin?.blockedAt) {
+      res.status(409).json({ error: `Ячейка ${fromBin} заблокирована — сначала снимите блокировку` });
       return;
     }
   }
@@ -6873,7 +6911,10 @@ posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, r
   }));
   const scope = [...new Set([...walkedBins, ...counted.map((line) => line.binLocation)])];
 
-  const stockRows = await prisma.stock.findMany({ where: { locationId, binLocation: { in: scope } } });
+  const stockRows = await prisma.stock.findMany({
+    where: { locationId, binLocation: { in: scope } },
+    include: { product: true },
+  });
   const current: BinSystemQuantity[] = stockRows.map((row) => ({
     productId: row.productId,
     binLocation: row.binLocation,
@@ -6958,6 +6999,12 @@ posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, r
       }
     }
 
+    /* Удержания — к найденному, как и в пересчёте по точке. Заблокированная
+       ячейка держит то, что на ней стояло, и пересчёт такой ячейки — самый короткий
+       путь к удержанию больше остатка: 10 мешков держим, 8 нашли. */
+    const released = await trimHoldsToStock(tx, stockRows.map((row) => row.id));
+    const nameById = new Map(stockRows.map((row) => [row.productId, row.product]));
+
       return {
         id: created.id,
         createdAt: created.createdAt.toISOString(),
@@ -6965,9 +7012,19 @@ posRouter.post('/counts/by-bin', requirePosAuth, async (req: PosAuthedRequest, r
         adjustments: adjustments.map((adjustment) => ({
           productId: adjustment.productId,
           binLocation: adjustment.binLocation,
+          // Единица из карточки: «−2» и «−2 мешка» — разница в сто килограммов.
+          unit: nameById.get(adjustment.productId)?.unit ?? '',
           systemQuantity: adjustment.systemQuantity,
           countedQuantity: adjustment.countedQuantity,
           delta: adjustment.delta,
+        })),
+        holdsReleased: released.map((entry) => ({
+          productId: entry.productId,
+          name: nameById.get(entry.productId)?.name ?? '',
+          unit: nameById.get(entry.productId)?.unit ?? '',
+          binLocation: entry.binLocation,
+          reserved: entry.reserved,
+          blocked: entry.blocked,
         })),
       };
     });
@@ -9704,7 +9761,32 @@ posRouter.post('/counts', requirePosAuth, async (req: PosAuthedRequest, res) => 
     }
     await Promise.all(updates);
 
-      return { id: document.id, createdAt: document.createdAt.toISOString() };
+    /* Удержания — к найденному.
+
+       Недостача оставляла бронь и карантин на товаре, которого нет: 2 мешка
+       на полке при 6 в брони — доступное −4, и этот минус вычитался из других
+       полок того же товара. Списание это умеет с 15.09.2026, пересчёт не умел. */
+    const released = await trimHoldsToStock(tx, stockRows.map((row) => row.id));
+    const releasedProducts = released.length === 0
+      ? []
+      : await tx.product.findMany({ where: { id: { in: released.map((entry) => entry.productId) } } });
+    const releasedById = new Map(releasedProducts.map((product) => [product.id, product]));
+
+      return {
+        id: document.id,
+        createdAt: document.createdAt.toISOString(),
+        // Снятая бронь — это заказ, который соберут не полностью, а снятый
+        // карантин — товар, который решили не продавать и не нашли. И то и другое
+        // случается тихо внутри пересчёта, и если не сказать — узнают на выдаче.
+        holdsReleased: released.map((entry) => ({
+          productId: entry.productId,
+          name: releasedById.get(entry.productId)?.name ?? '',
+          unit: releasedById.get(entry.productId)?.unit ?? '',
+          binLocation: entry.binLocation,
+          reserved: entry.reserved,
+          blocked: entry.blocked,
+        })),
+      };
     });
 
     res.status(outcome.statusCode).json(outcome.result);

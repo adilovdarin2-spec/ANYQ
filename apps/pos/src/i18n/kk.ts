@@ -565,6 +565,9 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'bins.shelf': 'Сөре',
   'bins.binField': 'Ұяшық',
   'bins.create': 'Ұяшық жасау',
+  'bins.frozenHere': 'Ұяшық бұғатталған — бұғат алынғанша ондағы тауар басқа жерге қойылмайды және оған тауар салынмайды.',
+  'bins.nowhereToPut': 'Бос ұяшық жоқ — қалғандарының бәрі бұғатталған. Бұғатты алыңыз немесе жаңа ұяшық қосыңыз.',
+  'bins.allHeld': 'Бәрі ұсталған — тапсырысқа немесе карантинде',
 
   // --- what to order -------------------------------------------------------
   'repl.title': 'Не тапсырыс беру',
@@ -866,6 +869,9 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'count.systemSaysEmpty': 'Жүйе бұл ұяшықты бос деп санайды',
   'count.reservedFor': 'тапсырысқа {count}',
   'count.inQuarantine': 'карантинде {count}',
+  'count.holdsTitle': 'Ұстамадан алынды',
+  'count.holdBlockedOff': 'Карантинде {count} тұрды, бірақ орнында жоқ — ұстама алынды.',
+  'count.holdReservedOff': 'Тапсырыстарға {count} уәде етілген, бірақ орнында жоқ — бронь алынды. Тапсырыс толық жиналмайды — сатып алушыға айтыңыз.',
   'count.lineLabel': 'Саналды: {name}',
   'count.close': 'Ұяшықты жабу',
 

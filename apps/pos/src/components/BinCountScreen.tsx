@@ -1,15 +1,20 @@
 import { useState } from 'react';
-import type { CountSheetLine, StorageBin } from '../types';
+import type { CountSheetLine, HoldRelease, StorageBin } from '../types';
 import { useTranslation } from '../i18n/useLanguage';
 import { parseTyped } from '../typed-number';
+import { withUnit } from '../unit-form';
 
 interface Props {
   bins: StorageBin[];
   sheet: { bin: string; lines: CountSheetLine[] } | null;
   loading: boolean;
+  /** Список ячеек ещё едет — это не то же, что «ячеек нет». */
+  binsLoading: boolean;
   error: string | null;
   submitting: boolean;
-  lastResult: { binLocation: string; name: string; systemQuantity: number; countedQuantity: number; delta: number }[] | null;
+  lastResult: { binLocation: string; name: string; unit: string; systemQuantity: number; countedQuantity: number; delta: number }[] | null;
+  /** Что пересчёт снял с брони и карантина: держали больше, чем нашли. */
+  holdsReleased: HoldRelease[];
   /** The shelf whose count is written down but has not yet reached the server. */
   queuedBin: string | null;
   /** When the sheet on screen was taken from the server, if it came from the device. */
@@ -22,17 +27,20 @@ interface Props {
 
 const UNPLACED = '';
 
-function formatQuantity(value: number): string {
-  return value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
-}
+/* Единица рядом с числом — из `withUnit`. Лист присылал единицу с самого
+   начала, а экран её не печатал: кладовщик видел «В системе: 10» и сам решал,
+   мешков это или килограммов. На складе это мешки по 50 кг и ящики по 12 литров, и
+   ошибка в одну единицу — это недостача на пятьдесят кило. */
 
 export function BinCountScreen({
   bins,
   sheet,
   loading,
+  binsLoading,
   error,
   submitting,
   lastResult,
+  holdsReleased,
   queuedBin,
   sheetCachedAt,
   onBack,
@@ -99,13 +107,36 @@ export function BinCountScreen({
                       {line.name}
                       <br />
                       <span className="order-meta">
-                        {line.binLocation || t('count.unplacedShort')} · {t('count.wasCounted', { system: formatQuantity(line.systemQuantity), counted: formatQuantity(line.countedQuantity) })}
+                        {line.binLocation || t('count.unplacedShort')} · {t('count.wasCounted', { system: withUnit(line.systemQuantity, line.unit), counted: withUnit(line.countedQuantity, line.unit) })}
                       </span>
                     </span>
-                    <span>{line.delta > 0 ? `+${formatQuantity(line.delta)}` : formatQuantity(line.delta)}</span>
+                    <span>{line.delta > 0 ? `+${withUnit(line.delta, line.unit)}` : withUnit(line.delta, line.unit)}</span>
                   </div>
                 ))
               )}
+            </>
+          )}
+
+          {holdsReleased.length > 0 && (
+            /* Снятое удержание — не служебная подробность. Держали то, чего нет:
+               карантин на пропавшем товаре или бронь под заказ, который теперь не соберётся
+               целиком. Если не сказать сейчас — узнают на выдаче. */
+            <>
+              <div className="orders-section-title">{t('count.holdsTitle')}</div>
+              {holdsReleased.map((hold) => (
+                <div key={`hold-${hold.productId}-${hold.binLocation}`} className="report-row low">
+                  <span>
+                    {hold.name}
+                    {hold.binLocation ? ` · ${hold.binLocation}` : ''}
+                    <br />
+                    <span className="order-meta">
+                      {hold.blocked > 0 && t('count.holdBlockedOff', { count: withUnit(hold.blocked, hold.unit) })}
+                      {hold.blocked > 0 && hold.reserved > 0 ? ' ' : ''}
+                      {hold.reserved > 0 && t('count.holdReservedOff', { count: withUnit(hold.reserved, hold.unit) })}
+                    </span>
+                  </span>
+                </div>
+              ))}
             </>
           )}
 
@@ -118,7 +149,11 @@ export function BinCountScreen({
               {bin.code}
             </button>
           ))}
-          {bins.length === 0 && (
+          {!binsLoading && bins.length === 0 && (
+            /* Только когда список доехал. Пока он едет, здесь стояло «Ячеек нет —
+               заведите их», и кладовщик шёл заводить то, что у него уже есть. На складе с
+               плохим wi-fi эта секунда длинная. Тот же разбор, что у очереди выше:
+               «нет» и «пока не знаем» — разные ответы. */
             <div className="empty-state">{t('count.noBins')}</div>
           )}
         </div>
@@ -148,9 +183,9 @@ export function BinCountScreen({
                       box turns a count into a confirmation, and a confirmation
                       finds nothing. */}
                   <div className="li-price">
-                    {t('count.system')}: {formatQuantity(line.systemQuantity)}
-                    {line.reserved > 0 ? ` · ${t('count.reservedFor', { count: formatQuantity(line.reserved) })}` : ''}
-                    {line.blocked > 0 ? ` · ${t('count.inQuarantine', { count: formatQuantity(line.blocked) })}` : ''}
+                    {t('count.system')}: {withUnit(line.systemQuantity, line.unit)}
+                    {line.reserved > 0 ? ` · ${t('count.reservedFor', { count: withUnit(line.reserved, line.unit) })}` : ''}
+                    {line.blocked > 0 ? ` · ${t('count.inQuarantine', { count: withUnit(line.blocked, line.unit) })}` : ''}
                   </div>
                 </div>
                 <input

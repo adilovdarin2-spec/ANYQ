@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount,
+import type { AuditEntry, Batch, CabinetInfo, DeliveryMatch, PriceListMatch, BinContent, BinCountAdjustmentResult, HoldRelease, CartLine, Count, CountSheetLine, Discount, FiscalDevice, ImportPreview, KdsTicket, LedgerDocument, LoyaltySelection, Order, OwnerDashboard, Packaging, PaymentLine, PaymentMethod, PendingFiscalReceipt, PriceRoundTrip, Product, ProductModifierOption, ProductVariantOption, ProductionRecipe, ProductionRun, PurchaseOrder, Receipt, ReconciliationReport, ReplenishmentItem, Report, RestaurantTable, ReturnRecord, ReturnableSale, Sale, SettlementAccount,
   SettlementMethod, SettlementStatement, Shift, SourceSystemInfo, StockMovementRecord, StorageBin, Supplier, SupplierReturn, TableOrder, Transfer, WriteOffReason, WriteOffRecord , StaffMember } from './types';
 import { expiringSoonByProduct } from './expiry';
 import { readScannedMarking, sameMarkedCode } from './marking-scan';
@@ -325,8 +325,14 @@ export default function App() {
   const [binCountError, setBinCountError] = useState<string | null>(null);
   const [binCountSubmitting, setBinCountSubmitting] = useState(false);
   const [binCountResult, setBinCountResult] = useState<
-    { binLocation: string; name: string; systemQuantity: number; countedQuantity: number; delta: number }[] | null
+    { binLocation: string; name: string; unit: string; systemQuantity: number; countedQuantity: number; delta: number }[] | null
   >(null);
+  /* Что пересчёт снял с удержаний — бронь под заказы или карантин на товаре,
+     которого не нашли. Сервер снимает его обязательно, иначе доступное уходит в минус;
+     здесь это показывается человеку, потому что снятая бронь — это заказ, который
+     соберут не полностью. */
+  const [binCountHolds, setBinCountHolds] = useState<HoldRelease[]>([]);
+  const [countHolds, setCountHolds] = useState<HoldRelease[]>([]);
   // The shelf whose count is written down but not yet accepted by the server.
   // Distinct from a result of zero discrepancies, which means the shelf agreed.
   const [binCountQueued, setBinCountQueued] = useState<string | null>(null);
@@ -1779,7 +1785,9 @@ export default function App() {
         countedAt: new Date().toISOString(),
       });
       const results = await outbox.drain();
-      const result = results.get(command.id) as { adjustments: BinCountAdjustmentResult[] } | undefined;
+      const result = results.get(command.id) as
+        | { adjustments: BinCountAdjustmentResult[]; holdsReleased?: HoldRelease[] }
+        | undefined;
       setCountSheet(null);
 
       if (!result) {
@@ -1792,6 +1800,7 @@ export default function App() {
         // would read as "the shelf agreed", which is the one thing we do not
         // yet know.
         setBinCountResult(null);
+        setBinCountHolds([]);
         setBinCountQueued(bin);
         // И если очередь стоит на отказе — это не «ждёт связи», а «не уедет».
         const stuck = queueStuckNotice();
@@ -1805,11 +1814,15 @@ export default function App() {
         result.adjustments.map((adjustment: BinCountAdjustmentResult) => ({
           binLocation: adjustment.binLocation,
           name: nameByProductId.get(adjustment.productId) ?? '—',
+          // Единица приходит с сервера: в сессии кассы её нет, там только
+          // штуки-или-вес. А «−2» и «−2 мешка» — разница в сто килограммов.
+          unit: adjustment.unit ?? '',
           systemQuantity: adjustment.systemQuantity,
           countedQuantity: adjustment.countedQuantity,
           delta: adjustment.delta,
         })),
       );
+      setBinCountHolds(result.holdsReleased ?? []);
       // A count changes what the register may sell, so its cached grid has to
       // hear about it.
       await refreshCatalogAfterStockChange();
@@ -2653,7 +2666,7 @@ export default function App() {
     setCountSubmitting(true);
     setCountsError(null);
     try {
-      await createCount(session.token, {
+      const created = await createCount(session.token, {
         ...payload,
         locationId: currentLocationId,
         // Момент обхода приходит с экрана: он засекается, когда кладовщик
@@ -2663,7 +2676,10 @@ export default function App() {
         // операцией, и продажа, прошедшая во время обхода, отменялась.
         countedAt: payload.countedAt,
       });
+      setCountHolds(created.holdsReleased ?? []);
       await loadCounts();
+      // Пересчёт меняет доступное — и тем больше, когда снимает удержания.
+      await refreshCatalogAfterStockChange();
       return true;
     } catch (err) {
       setCountsError(err instanceof ApiError ? err.message : t('fail.saveCount'));
@@ -3880,6 +3896,7 @@ export default function App() {
         <CycleCountScreen
           counts={counts}
           products={session.products}
+          holdsReleased={countHolds}
           loading={countsLoading}
           error={countsError}
           submitting={countSubmitting}
@@ -4006,9 +4023,11 @@ export default function App() {
           bins={bins}
           sheet={countSheet}
           loading={countSheetLoading}
+          binsLoading={binsLoading}
           error={binCountError}
           submitting={binCountSubmitting}
           lastResult={binCountResult}
+          holdsReleased={binCountHolds}
           queuedBin={binCountQueued}
           sheetCachedAt={countSheetCachedAt}
           onBack={() => setView('operations')}

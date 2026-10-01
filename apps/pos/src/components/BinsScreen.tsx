@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { BinContent, StorageBin } from '../types';
 import { useTranslation } from '../i18n/useLanguage';
 import { parseTyped } from '../typed-number';
+import { withUnit } from '../unit-form';
 
 interface Props {
   bins: StorageBin[];
@@ -19,6 +20,8 @@ interface Props {
   onUnblockBin: (binId: string) => void;
 }
 
+/* Число без единицы — только там, где единица уже написана рядом. Остальное
+   идёт через `withUnit`: «10» на полке мешков по 50 кг ничего не говорит. */
 function formatQuantity(value: number): string {
   return value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 }
@@ -47,7 +50,7 @@ export function BinsScreen({
 
   // The move being set up: which goods, out of which shelf. Started from
   // whichever row the storeman tapped, so the source is never mistyped.
-  const [moving, setMoving] = useState<{ productId: string; name: string; fromBin: string; max: number } | null>(null);
+  const [moving, setMoving] = useState<{ productId: string; name: string; unit: string; fromBin: string; max: number } | null>(null);
   const [moveQuantity, setMoveQuantity] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
   // The shelf being blocked, while the reason is typed. A block with no
@@ -83,10 +86,14 @@ export function BinsScreen({
     }
   }
 
+  /* Куда можно ставить. Заблокированная ячейка стояла в списке наравне с
+     остальными и без пометки, а первая в списке ещё и подставлялась сама. */
+  const destinations = bins.filter((b) => !b.blocked);
+
   function startMove(content: BinContent, fromBin: string) {
-    setMoving({ productId: content.productId, name: content.name, fromBin, max: content.available });
+    setMoving({ productId: content.productId, name: content.name, unit: content.unit ?? '', fromBin, max: content.available });
     setMoveQuantity(String(content.available));
-    setMoveTarget(bins.find((b) => b.code !== fromBin)?.code ?? '');
+    setMoveTarget(destinations.find((b) => b.code !== fromBin)?.code ?? '');
   }
 
   return (
@@ -116,10 +123,18 @@ export function BinsScreen({
                   <span>
                     {content.name}
                     <br />
-                    <span className="order-meta">{formatQuantity(content.quantity)} {t('bins.atLocation')}</span>
+                    <span className="order-meta">{withUnit(content.quantity, content.unit ?? '')} {t('bins.atLocation')}</span>
                   </span>
-                  {/* Обычная работа, а не удаление: нейтральный цвет. */}
-                  <button className="li-action" onClick={() => startMove(content, '')}>{t('bins.putaway')}</button>
+                  {/* Обычная работа, а не удаление: нейтральный цвет.
+
+                      А когда свободного нет, кнопки нет вовсе. В куче показан весь остаток,
+                      и по кнопке открывалась форма со «свободно 0», а сервер отвечал «количество
+                      указано неверно» — про карантин или бронь нигде ни слова. */}
+                  {content.available > 0 ? (
+                    <button className="li-action" onClick={() => startMove(content, '')}>{t('bins.putaway')}</button>
+                  ) : (
+                    <span className="order-meta">{t('bins.allHeld')}</span>
+                  )}
                 </div>
               ))}
             </>
@@ -195,7 +210,7 @@ export function BinsScreen({
                           <div key={content.productId} className="order-item-row">
                             <span>{content.name}</span>
                             <span>
-                              {formatQuantity(content.quantity)}
+                              {withUnit(content.quantity, content.unit ?? '')}
                               {content.available !== content.quantity
                                 ? ` (${t('common.free')} ${formatQuantity(content.available)})`
                                 : ''}
@@ -204,11 +219,13 @@ export function BinsScreen({
                         ))}
                       </div>
                     )}
-                    {b.contents.map((content) => (
-                      <button key={`move-${content.productId}`} className="btn btn-ghost btn-block" onClick={() => startMove(content, b.code)}>
-                        {t('bins.move', { name: content.name })}
-                      </button>
-                    ))}
+                    {b.blocked
+                      ? b.contents.length > 0 && <p className="field-hint">{t('bins.frozenHere')}</p>
+                      : b.contents.map((content) => (
+                          <button key={`move-${content.productId}`} className="btn btn-ghost btn-block" onClick={() => startMove(content, b.code)}>
+                            {t('bins.move', { name: content.name })}
+                          </button>
+                        ))}
                   </div>
                 ))}
             </div>
@@ -226,7 +243,7 @@ export function BinsScreen({
                 <div>
                   <div className="order-customer">{moving.name}</div>
                   <div className="order-meta">
-                    {moving.fromBin || t('bins.notPlaced')} · {t('common.free')} {formatQuantity(moving.max)}
+                    {moving.fromBin || t('bins.notPlaced')} · {t('common.free')} {withUnit(moving.max, moving.unit)}
                   </div>
                 </div>
               </div>
@@ -240,7 +257,7 @@ export function BinsScreen({
                   aria-label={t('bins.howMuch')}
                 />
                 <select value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)} aria-label={t('bins.where')}>
-                  {bins
+                  {destinations
                     .filter((b) => b.code !== moving.fromBin)
                     .map((b) => (
                       <option key={b.id} value={b.code}>{b.code}</option>
@@ -250,6 +267,9 @@ export function BinsScreen({
                   {submitting ? t('bins.moving') : t('bins.putaway')}
                 </button>
               </div>
+              {destinations.filter((b) => b.code !== moving.fromBin).length === 0 && (
+                <p className="field-hint">{t('bins.nowhereToPut')}</p>
+              )}
               <button className="btn btn-ghost btn-block" onClick={() => setMoving(null)}>{t('common.cancel')}</button>
             </div>
           )}

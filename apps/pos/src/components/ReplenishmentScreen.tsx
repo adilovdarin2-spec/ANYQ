@@ -3,6 +3,7 @@ import { useTranslation } from '../i18n/useLanguage';
 import type { Translator } from '../i18n/useLanguage';
 import type { ReplenishmentItem } from '../types';
 import { parseTyped } from '../typed-number';
+import { withUnit } from '../unit-form';
 
 interface Props {
   /** Весь ассортимент точки: минимум задают и тому, чего в списке нет. */
@@ -141,7 +142,7 @@ export function ReplenishmentScreen({
               <div className="card-answer">
                 <span className="label">{t('repl.order')}</span>
                 <span className="value accent">
-                  {formatQuantity(item.recommended)} {item.unit}
+                  {withUnit(item.recommended, item.unit)}
                 </span>
               </div>
 
@@ -190,12 +191,12 @@ export function ReplenishmentScreen({
                 <div className="order-items">
                   <div className="order-item-row">
                     <span>{t('repl.freeHere')}</span>
-                    <span>{formatQuantity(item.available)} {item.unit}</span>
+                    <span>{withUnit(item.available, item.unit)}</span>
                   </div>
                   {item.inTransit > 0 && (
                     <div className="order-item-row">
                       <span>{t('repl.inTransit')}</span>
-                      <span>{formatQuantity(item.inTransit)} {item.unit}</span>
+                      <span>{withUnit(item.inTransit, item.unit)}</span>
                     </div>
                   )}
                   {/* Already asked for. Shown because the reason a line is small
@@ -203,7 +204,7 @@ export function ReplenishmentScreen({
                   {item.onOrder > 0 && (
                     <div className="order-item-row">
                       <span>{t('repl.onOrder')}</span>
-                      <span>{formatQuantity(item.onOrder)} {item.unit}</span>
+                      <span>{withUnit(item.onOrder, item.unit)}</span>
                     </div>
                   )}
                   {/* Из чего сложилась скорость продаж.
@@ -231,7 +232,7 @@ export function ReplenishmentScreen({
                   {item.soldInStock !== undefined && item.soldInWindow !== item.soldInStock && (
                     <div className="order-item-row">
                       <span>{t('repl.soldInWindow', { days: windowDays })}</span>
-                      <span>{formatQuantity(item.soldInWindow)} {item.unit}</span>
+                      <span>{withUnit(item.soldInWindow, item.unit)}</span>
                     </div>
                   )}
                   {/* Shown because it is the reason to distrust the rate: a
