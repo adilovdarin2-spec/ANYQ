@@ -132,6 +132,7 @@ import { homeViewFor, mainTabFor } from './views';
 import { OpenShiftScreen } from './components/OpenShiftScreen';
 import { CloseShiftScreen } from './components/CloseShiftScreen';
 import { CloseForgottenShiftScreen } from './components/CloseForgottenShiftScreen';
+import { TariffLockedScreen } from './components/TariffLockedScreen';
 import { SearchBar } from './components/SearchBar';
 import { ProductGrid } from './components/ProductGrid';
 import { CartBar } from './components/CartBar';
@@ -465,6 +466,12 @@ export default function App() {
     refreshCatalogRef.current = () => void refreshCatalogAfterStockChange();
   });
 
+  /** Впущены ли мы только закрыть смену — для одноразово поставленного обработчика. */
+  const tariffLockedRef = useRef(false);
+  useEffect(() => {
+    tariffLockedRef.current = !!session?.tariffLock;
+  });
+
   // Один обработчик на все запросы кассы: 401 приходит откуда угодно, а
   // ответ на него один и тот же — вернуть человека ко входу и сказать, почему.
   useEffect(() => {
@@ -592,6 +599,9 @@ export default function App() {
    * Своей у этого устройства нет — иначе экрана открытия бы не было вовсе, —
    * поэтому числа только серверные, и закрывать, не дождавшись их, нельзя.
    */
+  /* «Список пуст» и «список ещё едет» — разные ответы, и считать второе по длине первого
+     значит показывать «Загрузка…» навсегда тому, у кого всё закрыто. */
+  const [openShiftsLoading, setOpenShiftsLoading] = useState(false);
   const [forgottenShift, setForgottenShift] = useState<OpenShiftInfo | null>(null);
   const [forgottenCash, setForgottenCash] = useState<ShiftCash | null>(null);
   const [forgottenError, setForgottenError] = useState<string | null>(null);
@@ -842,7 +852,12 @@ export default function App() {
    * кончившегося тарифа это важнее всего: продажи, сделанные без связи до
    * конца срока, никуда не денутся и уйдут после оплаты.
    */
-  function handleUnauthorized(message: string) {
+  function handleUnauthorized(message: string, tariffOver = false) {
+    /* Под замком тарифа отказы «reason: tariff» приходят на каждый фоновый
+       запрос — это и есть замок. Выбрасывать за них ко входу значит не пускать к
+       единственному, за чем впустили: к закрытию смены. Ссылка — потому что
+       обработчик ставится один раз и сессию видит ту, с которой его замкнули. */
+    if (tariffOver && tariffLockedRef.current) return;
     setSessionNotice(message);
     saveSession(null);
     setSession(null);
@@ -3009,22 +3024,29 @@ export default function App() {
    * открыть смену это не мешает, а открытие смены — начало рабочего дня.
    */
   useEffect(() => {
-    if (shift || !session?.token || !currentLocationId) {
+    /* Под замком тарифа список нужен всегда: закрывать придётся и ту смену,
+       которую это устройство не открывало. */
+    if ((shift && !session?.tariffLock) || !session?.token || !currentLocationId) {
       setOpenShiftsHere([]);
+      setOpenShiftsLoading(false);
       return;
     }
     let cancelled = false;
+    setOpenShiftsLoading(true);
     fetchOpenShifts(session.token, currentLocationId)
       .then((list) => {
         if (!cancelled) setOpenShiftsHere(list);
       })
       .catch(() => {
         if (!cancelled) setOpenShiftsHere([]);
+      })
+      .finally(() => {
+        if (!cancelled) setOpenShiftsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [shift, session?.token, currentLocationId, openShiftsVersion]);
+  }, [shift, session?.token, session?.tariffLock, currentLocationId, openShiftsVersion]);
 
   /**
    * Открыть закрытие забытой смены.
@@ -3611,6 +3633,37 @@ export default function App() {
       : effectiveCategoryFilter
         ? session.products.filter((p) => p.category === effectiveCategoryFilter)
         : session.products;
+
+  /* Доступ закрыт, а смена осталась открытой. Сервер впустил ровно за этим,
+     и выбрать здесь не из чего, кроме закрытия. */
+  if (session.tariffLock) {
+    if (forgottenShift) {
+      return (
+        <CloseForgottenShiftScreen
+          variant="locked"
+          shift={forgottenShift}
+          cash={forgottenCash}
+          error={forgottenError}
+          busy={forgottenBusy}
+          onCancel={() => {
+            setForgottenShift(null);
+            setForgottenCash(null);
+            setForgottenError(null);
+          }}
+          onConfirm={confirmCloseForgotten}
+        />
+      );
+    }
+    return (
+      <TariffLockedScreen
+        message={session.tariffLock.message}
+        shifts={openShiftsHere}
+        loading={openShiftsLoading}
+        onClose={beginCloseForgotten}
+        onLogout={handleLogout}
+      />
+    );
+  }
 
   if (!shift && forgottenShift) {
     return (

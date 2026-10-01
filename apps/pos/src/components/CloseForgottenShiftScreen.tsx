@@ -25,6 +25,14 @@ import { parseTyped } from '../typed-number';
  */
 
 interface Props {
+  /**
+   * Почему смену закрывают отсюда, а не обычным путём.
+   *
+   * Счёт один и тот же, а история разная. `forgotten` — смену забыли вчера, деньги того
+   * дня пересчитать уже негде. `locked` — смена сегодняшняя, ящик стоит перед человеком,
+   * и сказать ему «пересчитать не получится» — просто неправда.
+   */
+  variant?: 'forgotten' | 'locked';
   shift: OpenShiftInfo;
   /** Что сервер насчитал по этому ящику. null — пока идёт запрос. */
   cash: ShiftCash | null;
@@ -35,7 +43,7 @@ interface Props {
   onConfirm: (closingCashCounted: number) => void;
 }
 
-export function CloseForgottenShiftScreen({ shift, cash, error, busy, onCancel, onConfirm }: Props) {
+export function CloseForgottenShiftScreen({ variant = 'forgotten', shift, cash, error, busy, onCancel, onConfirm }: Props) {
   const { t } = useTranslation();
   const [counted, setCounted] = useState('');
 
@@ -47,7 +55,7 @@ export function CloseForgottenShiftScreen({ shift, cash, error, busy, onCancel, 
     <div className="screen">
       <div className="screen-header">
         <button className="icon-btn" onClick={onCancel} aria-label={t('common.back')}>←</button>
-        <span className="screen-title">{t('shift.forgotten.title')}</span>
+        <span className="screen-title">{t(variant === 'locked' ? 'shift.locked.title' : 'shift.forgotten.title')}</span>
       </div>
       <div className="screen-body">
         <div className="summary-row">
@@ -62,7 +70,7 @@ export function CloseForgottenShiftScreen({ shift, cash, error, busy, onCancel, 
         {/* Почему экран вообще другой. Кассир, закрывающий свою смену вечером,
             этого не читает — а тот, кто закрывает позавчерашнюю, должен
             понимать, что сходиться ей не обязано. */}
-        <p className="field-hint">{t('shift.forgotten.why')}</p>
+        <p className="field-hint">{t(variant === 'locked' ? 'shift.locked.why' : 'shift.forgotten.why')}</p>
 
         {error && <div className="login-error">{error}</div>}
 
@@ -113,7 +121,7 @@ export function CloseForgottenShiftScreen({ shift, cash, error, busy, onCancel, 
             value={counted}
             onChange={(e) => setCounted(e.target.value)}
           />
-          <p className="field-hint">{t('shift.forgotten.countedWhy')}</p>
+          <p className="field-hint">{t(variant === 'locked' ? 'shift.locked.countedWhy' : 'shift.forgotten.countedWhy')}</p>
         </div>
 
         {diff !== null && (

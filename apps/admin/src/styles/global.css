@@ -192,6 +192,9 @@ button.mini-card:focus-visible { outline: 2px solid var(--accent); outline-offse
 
 .drawer-header .content-title { font-size: 1.15rem; }
 .drawer-note { color: var(--ink-muted); font-size: 0.87rem; }
+/* Замечание, без которого действие не дойдёт до конца: читается как предупреждение,
+   а не как серая сноска рядом с ним. */
+.drawer-note.warn { color: var(--status-overdue); }
 .meta-text { color: var(--ink-muted); font-size: 0.82rem; }
 .storefront-link { font-size: 0.85rem; word-break: break-all; }
 

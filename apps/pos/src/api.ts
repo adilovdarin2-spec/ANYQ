@@ -57,7 +57,10 @@ export class ApiError extends Error {
  * кнопки и не понимал, почему касса перестала работать. Выход был один:
  * найти «Сменить кассира» в профиле, до которого ещё надо догадаться дойти.
  */
-type UnauthorizedHandler = (message: string) => void;
+/* Вторым доводом — был ли это отказ по тарифу. Касса, впущенная закрыть смену,
+   получает такой отказ на каждый фоновый запрос — это и есть замок, а не новость. А вот 401
+   — это мёртвый токен, и его глотать нельзя ни в каком состоянии. */
+type UnauthorizedHandler = (message: string, tariffOver: boolean) => void;
 let onUnauthorized: UnauthorizedHandler | null = null;
 
 export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
@@ -108,7 +111,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
     // это «вам нельзя», и человек должен остаться на своём экране. Разбирать
     // сообщение строкой значило бы сломать это переводом на казахский.
     const tariffOver = res.status === 403 && (data as { reason?: string }).reason === 'tariff';
-    if ((res.status === 401 || tariffOver) && token) onUnauthorized?.(message);
+    if ((res.status === 401 || tariffOver) && token) onUnauthorized?.(message, tariffOver);
     throw new ApiError(message, res.status);
   }
   return data as T;
@@ -121,6 +124,13 @@ function idempotencyHeader(key?: string): Record<string, string> {
 export interface PosSession {
   token: string;
   user: { id: string; name: string; role: string };
+  /**
+   * Впустили только закрыть смену.
+   *
+   * Тариф кончился или доступ закрыт, а смена осталась открытой и в ящике лежат
+   * деньги. Всё остальное отказывается на сервере; здесь это говорится словами.
+   */
+  tariffLock?: { state: string; message: string } | null;
   company: { id: string; name: string; slug: string | null };
   modules: string[];
   /**

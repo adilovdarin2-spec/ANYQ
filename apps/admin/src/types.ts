@@ -217,4 +217,11 @@ export interface SupportAccessState {
   reason: string;
   requestedAt: string | null;
   expiresAt: string | null;
+  /**
+   * Есть ли у компании кабинет владельца — единственное место, где отвечают на запрос.
+   *
+   * Необязательное: старый сервер этого поля не присылает, и тогда ничего не говорим —
+   * это не хуже, чем было.
+   */
+  hasCabinet?: boolean;
 }

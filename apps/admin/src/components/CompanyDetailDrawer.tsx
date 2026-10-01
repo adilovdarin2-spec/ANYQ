@@ -473,6 +473,16 @@ export function CompanyDetailDrawer({
               )}
             </div>
           )}
+          {/* Отвечают на запрос только из кабинета владельца, а у только что заведённой
+              компании кабинета нет: владелец заводит его сам из кассы. Без этой строки
+              «ждём ответа владельца» — это ожидание ответа, который некому дать. */}
+          {access && access.hasCabinet === false && access.state !== 'active' && (
+            <div className="drawer-note warn">
+              У компании ещё нет кабинета владельца — ответить на запрос некому.
+              Попросите владельца завести его в кассе: Операции → Настройка и разовое →
+              Кабинет владельца.
+            </div>
+          )}
           {access?.state === 'active' && access.expiresAt && (
             <div className="drawer-note">
               Владелец открыл доступ до {formatDateTime(access.expiresAt)}.

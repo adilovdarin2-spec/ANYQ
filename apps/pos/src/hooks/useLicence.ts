@@ -40,8 +40,14 @@ export interface Licence {
 interface Options {
   /** Сколько осталось по сессии — пока сервер не ответил впервые. */
   fallback: { validUntil: string; daysLeft: number } | null | undefined;
-  /** Тариф кончился или магазин заморожен: слова сервера, на экран входа. */
-  onRefused: (message: string) => void;
+  /**
+   * Тариф кончился или магазин заморожен: слова сервера, на экран входа.
+   *
+   * Вторым доводом — что это именно тариф, а не мёртвый токен. Касса, впущенная
+   * закрыть смену, слышит этот же отказ каждый час — и выбрасывать её за него значит не
+   * пускать к тому, за чем впустили.
+   */
+  onRefused: (message: string, tariffOver: boolean) => void;
 }
 
 export function useLicence(token: string | null, { fallback, onRefused }: Options): Licence {
@@ -104,7 +110,7 @@ export function useLicence(token: string | null, { fallback, onRefused }: Option
         setConfirmedAt(at);
         if (answer.state !== 'active' && answer.refusal) {
           refused.current = true;
-          refusalHandler.current(answer.refusal);
+          refusalHandler.current(answer.refusal, true);
         }
       } catch {
         // Молчим, но помечаем попытку: иначе касса без сети колотилась бы в

@@ -55,6 +55,77 @@ describe('вход', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toContain('тариф');
   });
+
+  /**
+   * …но не когда в ящике лежат деньги.
+   *
+   * Этот файл с самого начала говорит: смену, открытую до конца тарифа, закрыть
+   * дают — и это действительно так, если токен уже на руках. А вот вернуться за ним
+   * было нельзя: вход отказывал всем. Планшет перезагрузили, смена кассира
+   * закончилась, токен истёк — и смена оставалась открытой навсегда, с наличными внутри
+   * и без всякой сверки. Срок кончается сам, в полночь, без чьего-либо участия — то
+   * есть это не редкий случай, а расписание.
+   *
+   * Найдено 01.10.2026 прогоном админки.
+   */
+  it('открыт, пока есть незакрытая смена', async () => {
+    const shift = await api(fx.token, 'POST', '/pos/shifts', { locationId: fx.locationId, openingCash: 5000 });
+    expect(shift.status).toBe(201);
+    await expireTariff();
+
+    const res = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    // И сказано, что впустили не торговать: без этого касса выглядела бы рабочей.
+    expect(res.body.tariffLock).toMatchObject({ state: 'expired' });
+    expect(res.body.tariffLock.message).toContain('тариф');
+  });
+
+  it('и впущенный так может ровно закрыть смену', async () => {
+    const shift = await api(fx.token, 'POST', '/pos/shifts', { locationId: fx.locationId, openingCash: 5000 });
+    await expireTariff();
+    const back = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    const token = back.body.token;
+
+    // Торговать нельзя и по этому токену — дверь открыта ровно на одно действие.
+    const sale = await api(token, 'POST', '/pos/sales', {
+      locationId: fx.locationId,
+      shiftId: shift.body.id,
+      items: [{ productId: fx.productId, quantity: 1, price: 100 }],
+      payments: [{ method: 'cash', amount: 100 }],
+    });
+    expect(sale.status).toBe(403);
+
+    // Список открытых смен и сумма по ящику — то, без чего закрывать не глядя.
+    const open = await api(token, 'GET', `/pos/shifts/open?locationId=${fx.locationId}`);
+    expect(open.status).toBe(200);
+    expect(open.body).toHaveLength(1);
+    const cash = await api(token, 'GET', `/pos/shifts/${shift.body.id}/cash`);
+    expect(cash.status).toBe(200);
+    expect(cash.body.expected).toBe(5000);
+
+    const closed = await api(token, 'PATCH', `/pos/shifts/${shift.body.id}/close`, { closingCashCounted: 5000 });
+    expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+  });
+
+  it('а когда закрывать нечего — дверь снова закрыта', async () => {
+    const shift = await api(fx.token, 'POST', '/pos/shifts', { locationId: fx.locationId, openingCash: 5000 });
+    await expireTariff();
+    await api(fx.token, 'PATCH', `/pos/shifts/${shift.body.id}/close`, { closingCashCounted: 5000 });
+
+    const res = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(res.status).toBe(403);
+  });
+
+  it('и заблокированный за неоплату — точно так же', async () => {
+    /* Блокировку ставим мы, и тоже не глядя на то, стоит ли кто-то за кассой.
+       Деньги магазина — не рычаг в споре об оплате. */
+    await api(fx.token, 'POST', '/pos/shifts', { locationId: fx.locationId, openingCash: 5000 });
+    await prisma.tariff.updateMany({ where: { companyId: fx.companyId }, data: { blocked: true } });
+
+    const res = await api(null, 'POST', '/pos/login', { pin: fx.pin });
+    expect(res.status).toBe(200);
+    expect(res.body.tariffLock).toMatchObject({ state: 'blocked' });
+  });
 });
 
 describe('свернуться магазину дают', () => {

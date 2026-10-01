@@ -343,10 +343,32 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
     return;
   }
 
+  /* Тариф кончился или доступ закрыт — но не когда в ящике лежат деньги.
+
+     Блокировка закрывала и вход, и всё остальное. Если на этот момент смена была
+     открыта, она оставалась открытой навсегда: кассир не входит, смену не закрыть,
+     выручка дня ни с чем не сверена, а в ящике лежит наличность. Деньги магазина — не
+     рычаг в споре об оплате, и счёт собственной кассы мы запирать не вправе.
+
+     Срок кончается сам, без чьего-либо участия — в полночь, посреди смены круглосуточного
+     магазина или смены, которую забыли закрыть. То есть это не редкий случай, а
+     расписание.
+
+     Впускаем ровно за этим: сессия помечена `tariffLock`, и касса по такой пометке
+     показывает один экран — закрытие смены. Всё остальное отказывается на сервере
+     по-прежнему: продать, принять, открыть новую смену нельзя. */
   const state = tariffState(user.company.tariff);
+  let tariffLock: { state: string; message: string } | null = null;
   if (state !== 'active') {
-    res.status(403).json({ error: tariffDenialMessage(state) });
-    return;
+    const openShift = await prisma.shift.findFirst({
+      where: { location: { companyId: user.companyId }, closedAt: null },
+      select: { id: true },
+    });
+    if (!openShift) {
+      res.status(403).json({ error: tariffDenialMessage(state) });
+      return;
+    }
+    tariffLock = { state, message: tariffDenialMessage(state) };
   }
 
   // На каком языке с этим человеком разговаривать вне кассы.
@@ -481,6 +503,9 @@ posRouter.post('/login', loginRateLimit, async (req, res) => {
           daysLeft: daysLeft(user.company.tariff),
         }
       : null,
+    /* Впустили только закрыть смену. Касса по этой пометке показывает один
+       экран со словами сервера; всё остальное отказывается и без неё. */
+    tariffLock,
   });
 });
 

@@ -295,6 +295,13 @@ export const kk: Partial<Record<keyof typeof ru, string>> = {
   'profile.install': 'Қосымшаны орнату',
   'profile.closeShift': 'Ауысымды жабу',
   'profile.switchCashier': 'Кассирді ауыстыру',
+  'tariffLock.title': 'Қолжетім жабық',
+  'tariffLock.what': 'Қазір сауда жасауға болмайды. Бірақ ауысым ашық қалды, ал тілдегі ақшаны қайта санап, тапсыру керек — мұны жасауға болады.',
+  'tariffLock.close': 'Ауысымды жабу',
+  'tariffLock.nothingLeft': 'Ашық ауысым жоқ — бәрі жабылды.',
+  'shift.locked.title': 'Ауысымды жабу',
+  'shift.locked.why': 'Қолжетім жабық, бірақ ауысым ашық қалды. Тілдегі ақшаны санап, ауысымды жабыңыз — күннің түсімі сәйкес келеді.',
+  'shift.locked.countedWhy': 'Қазір тілде қанша қолма-қол ақша бар. Ақшаны алып кеткенге дейін санаңыз.',
 
   'staff.title': 'Қызметкерлер',
   'staff.add': '+ Қызметкер қосу',

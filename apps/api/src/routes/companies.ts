@@ -253,11 +253,19 @@ async function allowSupport(companyId: string, res: Response): Promise<boolean> 
 companiesRouter.get('/:id/support-access', async (req, res) => {
   const grant = await latestGrant(req.params.id);
   const now = new Date();
+  /* Есть ли кому отвечать.
+
+     Ответить на запрос можно только из кабинета владельца, а у только что
+     заведённой компании кабинета нет: владелец заводит его сам из кассы. Без
+     этой строки админка писала «ждём ответа владельца» про ответ, который некому
+     дать, и поддержка ждала бы его сколько угодно долго. */
+  const cabinets = await prisma.ownerCabinet.count({ where: { companyId: req.params.id } });
   res.json({
     state: grantState(grant, now),
     reason: grant?.reason ?? '',
     requestedAt: grant?.requestedAt.toISOString() ?? null,
     expiresAt: grant?.expiresAt?.toISOString() ?? null,
+    hasCabinet: cabinets > 0,
   });
 });
 

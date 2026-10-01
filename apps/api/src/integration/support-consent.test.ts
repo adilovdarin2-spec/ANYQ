@@ -119,6 +119,34 @@ describe('запрос доступа', () => {
     expect(shifts.body.error).toContain('не ответил');
   });
 
+  /**
+   * А есть ли кому отвечать.
+   *
+   * Отвечают на запрос только из кабинета владельца, а кабинет заводит сам
+   * владелец из кассы. У только что заведённой компании его нет — и панель писала
+   * «Ждём ответа владельца» про ответ, который некому дать. На семи компаниях стенда
+   * кабинета не было у четырёх.
+   *
+   * Запрос при этом не отказывается: кабинет может появиться через минуту, и
+   * запись о том, зачем просили, нужна в любом случае.
+   *
+   * Найдено 01.10.2026 прогоном админки.
+   */
+  it('говорит, есть ли вообще кому отвечать', async () => {
+    const token = await adminToken();
+    await request(token);
+
+    const before = await api(token, 'GET', `/companies/${fx.companyId}/support-access`);
+    expect(before.status).toBe(200);
+    expect(before.body.state).toBe('pending');
+    expect(before.body.hasCabinet).toBe(false);
+
+    // Владелец завёл кабинет — теперь есть.
+    await ownerToken();
+    const after = await api(token, 'GET', `/companies/${fx.companyId}/support-access`);
+    expect(after.body.hasCabinet).toBe(true);
+  });
+
   it('сохраняет имя того, кто просил, а не только ссылку на него', async () => {
     // Учётную запись переименуют или закроют, а в журнале должно остаться имя,
     // которое владелец видел в момент запроса.
