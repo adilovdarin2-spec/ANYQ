@@ -131,6 +131,41 @@ describe('замок на кабинете', () => {
     expect(second.status, 'код, срабатывающий дважды, — это пароль на бумаге').toBe(401);
   });
 
+  /**
+   * И выход на случай «потерял всё».
+   *
+   * Телефон с приложением потерян, коды восстановления кончились. Экран входа
+   * посылает за новой ссылкой в кассу — и новая ссылка снова спрашивала код из того
+   * самого приложения. Выхода не было вовсе: кабинет закрывался навсегда, вместе с
+   * PIN-ами сотрудников, которые ведутся только оттуда.
+   *
+   * Безопасность не страдает: кнопку жмёт владелец, вошедший своим PIN в кассу,
+   * которая стоит у него в магазине, — а второй фактор защищает ссылку от того,
+   * кто узнал её и пароль.
+   *
+   * Найдено 02.10.2026 прогоном кабинета.
+   */
+  it('новая ссылка из кассы снимает и замок', async () => {
+    const { secret, token } = await openCabinet();
+    await turnOnSecondFactor(token);
+
+    // До сброса одного пароля мало — это и есть замок.
+    const locked = await api(null, 'POST', `/cabinet/${secret}/login`, { password: PASSWORD });
+    expect(locked.status).toBe(401);
+
+    const reset = await api(shop.token, 'POST', '/pos/cabinet/reset', {});
+    expect(reset.status, JSON.stringify(reset.body)).toBe(201);
+    const fresh = await api(null, 'POST', `/cabinet/${reset.body.secret}/password`, { password: PASSWORD });
+    expect(fresh.status).toBe(201);
+
+    const back = await api(null, 'POST', `/cabinet/${reset.body.secret}/login`, { password: PASSWORD });
+    expect(back.status, 'после новой ссылки второй фактор всё ещё спрашивают').toBe(200);
+
+    // И старые коды восстановления больше ни к чему не подходят.
+    const left = await prisma.cabinetRecoveryCode.count();
+    expect(left).toBe(0);
+  });
+
   it('ключ, уже отсканированный, при повторном заходе тот же', async () => {
     // Та же ловушка, что чинили у админки 10.09.2026: владелец сканирует QR,
     // закрывает вкладку, возвращается ввести код — и повторное открытие

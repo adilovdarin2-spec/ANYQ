@@ -40,6 +40,9 @@ interface Props {
 export function CabinetGate({ company, needsPassword, submitting, error, needsCode, onSubmit, onEdit }: Props) {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  /* Код из приложения или код восстановления — поле одно и запрос один, разная только
+     клавиатура: шесть цифр набирают каждый вход, код восстановления — один раз в жизни. */
+  const [recovery, setRecovery] = useState(false);
   const [repeat, setRepeat] = useState('');
   const [show, setShow] = useState(false);
 
@@ -112,22 +115,44 @@ export function CabinetGate({ company, needsPassword, submitting, error, needsCo
           {needsCode && (
             <>
               <label className="cab-label" htmlFor="cab-code">
-                Код из приложения
+                {recovery ? 'Код восстановления' : 'Код из приложения'}
               </label>
+              {/* Цифровая клавиатура — только пока ждём шесть цифр.
+
+                  Поле с самого начала принимало и код восстановления — `XZ7I-VOEM`, буквы и
+                  дефис, — и подсказка прямо это предлагала. Но `inputMode="numeric"` на телефоне
+                  открывает цифровую панель, на которой букв нет вовсе. А кабинет и есть экран
+                  телефона — так написано в соседнем предупреждении про второй фактор. То есть
+                  ровно в тот единственный раз, когда код восстановления нужен, набрать его было
+                  нечем. Найдено 02.10.2026 прогоном кабинета. */}
               <input
                 id="cab-code"
                 className="cab-input"
                 type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
+                inputMode={recovery ? 'text' : 'numeric'}
+                autoComplete={recovery ? 'off' : 'one-time-code'}
+                autoCapitalize="characters"
                 value={code}
                 autoFocus
                 onChange={(e) => setCode(e.target.value)}
               />
-              <p className="cab-hint">
-                Шесть цифр из приложения-аутентификатора. Телефон потерялся — введите сюда код
-                восстановления из тех, что вы сохранили при включении.
-              </p>
+              {recovery ? (
+                <p className="cab-hint">
+                  Один из тех, что вы сохранили при включении — вроде XZ7I-VOEM. Каждый работает один раз.
+                </p>
+              ) : (
+                <p className="cab-hint">Шесть цифр из приложения-аутентификатора.</p>
+              )}
+              <button
+                className="cab-link"
+                type="button"
+                onClick={() => {
+                  setRecovery((was) => !was);
+                  setCode('');
+                }}
+              >
+                {recovery ? 'У меня есть приложение' : 'Телефон потерялся — ввести код восстановления'}
+              </button>
             </>
           )}
 

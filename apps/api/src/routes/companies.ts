@@ -116,7 +116,8 @@ function serializeCompany(company: CompanyWithRelations) {
 
 /** Четыре-шесть цифр: столько кассир согласен набирать по сто раз в день. */
 const PIN_PATTERN = /^\d{4,6}$/;
-const PIN_TAKEN = 'Этот PIN уже используется другим сотрудником';
+/** Та же фраза, что в `STAFF_PIN_TAKEN`: отказ один, откуда бы ни задавали PIN. */
+const PIN_TAKEN = 'Этот PIN уже занят — выберите другой. PIN-коды не повторяются во всей системе, и занят он может быть не вашим магазином';
 
 companiesRouter.get('/', async (_req, res) => {
   const companies = await prisma.company.findMany({ include, orderBy: { createdAt: 'desc' } });

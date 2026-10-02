@@ -182,6 +182,20 @@
 .cab-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--surface); }
 .cab-hint { margin: -6px 0 14px; font-size: 0.78rem; color: var(--ink-muted); line-height: 1.5; }
 .cab-check { display: flex; align-items: center; gap: 9px; font-size: 0.85rem; color: var(--ink-muted); margin-bottom: 18px; }
+/* Ссылка, а не кнопка: она не действие входа, а смена способа, и спорить с «Войти»
+   за внимание ей незачем. Палец при этом должен попадать — отсюда поля сверху и снизу. */
+.cab-link {
+  display: inline-block;
+  background: none;
+  border: 0;
+  padding: 10px 0;
+  margin: -8px 0 10px;
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+}
 .cab-button {
   border: none; border-radius: 12px; background: var(--accent); color: #fff;
   padding: 15px; font-size: 1rem; font-weight: 700; margin-top: 2px;

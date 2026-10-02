@@ -158,13 +158,27 @@ export async function ensureCabinet(companyId: string) {
 }
 
 /**
- * Новая ссылка и снятый пароль — ответ на «ссылка ушла не туда».
+ * Новая ссылка и снятый пароль — ответ на «ссылка ушла не туда» и на
+ * «потерял всё».
  *
  * Меняются оба сразу и поднимается tokenVersion: оставить старый пароль на
  * новой ссылке значит не закрыть ничего, если утёк как раз он.
+ *
+ * **Второй фактор снимается здесь же.** Он не снимался, и это был тупик без
+ * выхода: телефон потерялся, коды восстановления кончились, экран входа посылал
+ * за новой ссылкой в кассу — а новая ссылка снова спрашивала код из того самого
+ * приложения. Кабинет становился недоступен навсегда, вместе с PIN-ами сотрудников.
+ *
+ * Безопасность от этого не страдает. Второй фактор защищает ссылку от того, кто
+ * узнал её и пароль; эту же кнопку нажимает владелец, вошедший своим PIN в кассу,
+ * которая стоит в его магазине. Кому это доступно, тому доступно и продать, и
+ * списать, и вернуть деньги из ящика.
  */
 export async function resetCabinet(companyId: string) {
-  await ensureCabinet(companyId);
+  const cabinet = await ensureCabinet(companyId);
+  // Неиспользованные коды восстановления от старого фактора больше ни к чему не
+  // подходят, а лежат записанными на бумажке у владельца.
+  await prisma.cabinetRecoveryCode.deleteMany({ where: { cabinetId: cabinet.id } });
   return prisma.ownerCabinet.update({
     where: { companyId },
     data: {
@@ -172,6 +186,9 @@ export async function resetCabinet(companyId: string) {
       passwordHash: null,
       passwordSetAt: null,
       lastLoginAt: null,
+      totpSecret: null,
+      pendingTotpSecret: null,
+      totpEnabledAt: null,
       tokenVersion: { increment: 1 },
     },
   });
